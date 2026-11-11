@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | implement (M0 WPs) |
 | Window start | 2026-11-11T22:29Z |
 | Resume reminder | `trig_01SLjaGLUL632fioKiH2G1bk`, fires 2026-11-12T03:45Z |
-| Next action | Dispatch M0 WPs per `docs/specs/M0-scaffolding.md`: WP1 first (alone), then WP2/WP3/WP4/WP5 in parallel (max 3), then WP6 and WP7. Review each (security-critical WP1, WP5, WP6 by the design tier; mechanical WP3, WP4 by the implementation tier), merge one at a time, run `composer test`, push. Then M0 exit audit. Any WP row below marked in progress with no pushed branch must be redone after a container restart. |
+| Next action | Dispatch M0 WPs per `docs/specs/M0-scaffolding.md`: WP1 first (alone), then WP2/WP3/WP4/WP5 in parallel (max 3), then WP6 and WP7. Review each (security-critical WP1, WP5, WP6 by the design tier; mechanical WP3, WP4 by the implementation tier), merge one at a time, run `composer test`, push. Then M0 exit audit. Any WP row below marked in progress with no pushed branch must be redone after a container restart. MAINTAINER INSTRUCTION (2026-11-11): stop after M0 is done. When the M0 exit audit closes, checkpoint, delete the resume reminder, give a final status, and do not start M1 until the maintainer says so. |
 
 ## 2. Milestones
 

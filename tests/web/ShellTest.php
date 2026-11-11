@@ -410,6 +410,10 @@ final class ShellTest extends TestCase
         yield 'upper-case event handler' => [$page('<p ONLOAD="x()">x</p>')];
         yield 'javascript url' => [$page('<a href="javascript:x()">x</a>')];
         yield 'other external url' => [$page('<a href="https://example.org/">x</a>')];
+        yield 'protocol-relative stylesheet' => [$page('<link rel="stylesheet" href="//example.org/x.css" />')];
+        yield 'protocol-relative image with spaces' => [$page('<img src=" //example.org/x.png" />')];
+        yield 'backslash-relative link' => [$page('<a href="\\\\example.org/">x</a>')];
+        yield 'character reference javascript url' => [$page('<a href="&#106;avascript:a()">x</a>')];
         yield 'not well-formed' => [$page('<p>x')];
         yield 'no doctype' => ['<html lang="en"><head><title>x</title></head><body></body></html>'];
     }

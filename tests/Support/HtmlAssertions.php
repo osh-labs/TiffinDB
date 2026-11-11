@@ -82,8 +82,14 @@ final class HtmlAssertions
                 $attribute->nodeValue ?? '',
                 'No javascript: address.',
             );
+            Assert::assertDoesNotMatchRegularExpression(
+                '#^\s*[/\\\\]{2}#',
+                $attribute->nodeValue ?? '',
+                "No protocol-relative address ({$attribute->nodeName}).",
+            );
         }
         Assert::assertDoesNotMatchRegularExpression('/javascript:/i', $html, 'No javascript: anywhere.');
+        Assert::assertDoesNotMatchRegularExpression('#["\'=]\s*//#', $html, 'No protocol-relative URL.');
 
         preg_match_all('#https?://[^\s"\'<>]*#i', $html, $matches);
         foreach ($matches[0] as $url) {

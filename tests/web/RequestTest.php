@@ -52,6 +52,9 @@ final class RequestTest extends TestCase
             'unsafe script dir ignored' => ['//example.com/index.php', '//example.com/x', '', '//example.com/x', false],
             'dot script dir ignored' => ['/../index.php', '/../x', '', '/../x', false],
             'script name without slash' => ['index.php', '/x', '', '/x', false],
+            'script dir with trailing newline ignored' => ["/a\n/index.php", "/a\n/x", '', "/a\n/x", false],
+            'script dir with space' => ['/my app/index.php', '/my%20app/projects', '/my app', '/projects', false],
+            'script dir with percent and query mark' => ['/100%/a?b/index.php', '/100%25/a%3Fb/x', '/100%/a?b', '/x', false],
         ];
     }
 
@@ -103,6 +106,7 @@ final class RequestTest extends TestCase
             'other' => ['post', 'POST'],
             'not a token' => ["GET\r\nX-Evil: 1", 'INVALID'],
             'too long' => [str_repeat('A', 33), 'INVALID'],
+            'trailing newline' => ["GET\n", 'INVALID'],
             'empty' => ['', 'GET'],
         ];
     }
@@ -129,5 +133,11 @@ final class RequestTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
         new Request('GET', '/', '/trailing/');
+    }
+
+    public function testConstructorRejectsBasePathWithTrailingNewline(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new Request('GET', '/', "/a\n");
     }
 }

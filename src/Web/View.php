@@ -35,7 +35,7 @@ use Throwable;
  */
 final class View
 {
-    public const NAME_PATTERN = '#^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*$#';
+    public const NAME_PATTERN = '#^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*\z#';
 
     /** @param array<string, mixed> $config */
     public function __construct(

@@ -69,6 +69,19 @@ final class KernelTest extends TestCase
         self::assertSame($get->headers, $head->headers);
     }
 
+    public function testBasePathWithSpecialCharactersIsEncodedInLinks(): void
+    {
+        [$response] = Fixtures::handle(
+            Fixtures::kernel(),
+            Fixtures::request('GET', '/my%20dir/100%25/', [], '/my dir/100%/public/index.php'),
+        );
+
+        self::assertSame(200, $response->status);
+        self::assertStringContainsString('href="/my%20dir/100%25/assets/css/app.css?v=', $response->body);
+        self::assertStringContainsString('href="/my%20dir/100%25/?theme=dark"', $response->body);
+        self::assertStringNotContainsString('/my dir', $response->body);
+    }
+
     public function testBasePathIsUsedForLinks(): void
     {
         [$response] = Fixtures::handle(
@@ -208,6 +221,7 @@ final class KernelTest extends TestCase
             'version missing' => [array_diff_key($good, ['version' => 1])],
             'source not https' => [['source_url' => 'javascript:alert(1)'] + $good],
             'source with quote' => [['source_url' => 'https://example.com/"x'] + $good],
+            'source with trailing newline' => [['source_url' => "https://example.com/x\n"] + $good],
             'preview not bool' => [['appearance_preview' => 'yes'] + $good],
         ];
     }

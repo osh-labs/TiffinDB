@@ -81,6 +81,8 @@ final class RouterTest extends TestCase
             'path info' => ['/index.php/projects'],
             'front controller' => ['/index.php'],
             'NUL' => ["/projects\0"],
+            'trailing newline' => ["/projects\n"],
+            'root with newline' => ["/\n"],
         ];
     }
 
@@ -121,6 +123,8 @@ final class RouterTest extends TestCase
             'quote' => ['/projects/a"b'],
             'angle' => ['/projects/<x>'],
             'dot-dot' => ['/projects/..'],
+            'trailing newline' => ["/projects/abc\n"],
+            'trailing CRLF' => ["/projects/abc\r\n"],
         ];
     }
 
@@ -166,6 +170,10 @@ final class RouterTest extends TestCase
             'handler three parts' => [[['GET', '/', [HomeController::class, 'show', 'x']]]],
             'handler bad method' => [[['GET', '/', [HomeController::class, 'show-it']]]],
             'handler bad class' => [[['GET', '/', ['Not A Class', 'show']]]],
+            'literal with trailing newline' => [[['GET', "/projects\n", self::H]]],
+            'placeholder with trailing newline' => [[['GET', "/projects/{id}\n", self::H]]],
+            'handler method with trailing newline' => [[['GET', '/', [HomeController::class, "show\n"]]]],
+            'handler class with trailing newline' => [[['GET', '/', [HomeController::class . "\n", 'show']]]],
             'handler keyed' => [[['GET', '/', ['class' => HomeController::class, 'method' => 'show']]]],
         ];
     }

@@ -33,8 +33,6 @@ final class Kernel
     /** Methods the application accepts in M0. M1 adds POST with CSRF. */
     private const ACCEPTED_METHODS = ['GET', 'HEAD'];
 
-    private const FALLBACK_BODY = "Something went wrong. TiffinDB could not show this page.\n";
-
     private readonly SecurityHeaders $securityHeaders;
 
     /**
@@ -67,7 +65,7 @@ final class Kernel
                 $view = $this->view($request);
                 $response = $this->dispatch($request, $view);
             } catch (Throwable $e) {
-                self::log($e);
+                Fallback::log($e);
                 $response = $this->serverError($view);
             }
         } finally {
@@ -123,7 +121,7 @@ final class Kernel
         if (!is_string($version) || $version === '') {
             throw new UnexpectedValueException('Configuration: version must be a non-empty string.');
         }
-        if (!is_string($sourceUrl) || preg_match('#^https://[^\s"<>\\\\]+$#', $sourceUrl) !== 1) {
+        if (!is_string($sourceUrl) || preg_match('#^https://[^\s"<>\\\\]+\z#', $sourceUrl) !== 1) {
             throw new UnexpectedValueException('Configuration: source_url must be an https URL.');
         }
         if (!is_bool($preview)) {
@@ -160,20 +158,12 @@ final class Kernel
             try {
                 return $this->errorPage($view, 500);
             } catch (Throwable $e) {
-                self::log($e);
+                Fallback::log($e);
             }
         }
 
-        return new Response(500, ['Content-Type' => 'text/plain; charset=utf-8'], self::FALLBACK_BODY);
-    }
-
-    /**
-     * One line to the server's error log: class, message, file, and line.
-     * No request data; never part of the response.
-     */
-    private static function log(Throwable $e): void
-    {
-        $line = sprintf('TiffinDB: %s: %s in %s:%d', $e::class, $e->getMessage(), $e->getFile(), $e->getLine());
-        error_log((string) preg_replace('/[\x00-\x1F\x7F]+/', ' ', $line));
+        // Fallback::response() already carries the security headers; apply()
+        // in handle() sets the same values again, which changes nothing.
+        return Fallback::response();
     }
 }

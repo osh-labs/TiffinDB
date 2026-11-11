@@ -21,10 +21,10 @@ final class Router
     /** Methods a route may declare. HEAD is implied by GET. */
     public const METHODS = ['GET', 'POST'];
 
-    private const LITERAL_SEGMENT = '/^[a-z0-9._-]+$/';
-    private const PLACEHOLDER_SEGMENT = '/^\{([a-z][A-Za-z0-9_]*)\}$/';
-    private const PARAMETER_VALUE = '/^[A-Za-z0-9_-]+$/';
-    private const IDENTIFIER = '/^[A-Za-z_][A-Za-z0-9_]*$/';
+    private const LITERAL_SEGMENT = '/^[a-z0-9._-]+\z/';
+    private const PLACEHOLDER_SEGMENT = '/^\{([a-z][A-Za-z0-9_]*)\}\z/';
+    private const PARAMETER_VALUE = '/^[A-Za-z0-9_-]+\z/';
+    private const IDENTIFIER = '/^[A-Za-z_][A-Za-z0-9_]*\z/';
 
     /**
      * @var list<array{method: string, segments: list<array{0: bool, 1: string}>|null, handler: array{0: class-string, 1: string}}>

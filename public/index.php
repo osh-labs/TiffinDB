@@ -9,8 +9,17 @@
 
 declare(strict_types=1);
 
-// No PHP message may ever put a file path into a response.
+// No PHP message may ever put a file path into a response, and no response
+// (even an empty one after a fatal error) may name the PHP version.
 ini_set('display_errors', '0');
+header_remove('X-Powered-By');
+
+// Loaded directly so that every failure below, including a missing
+// autoloader or a fatal error, still gets the full security header set.
+require_once __DIR__ . '/../src/Web/Response.php';
+require_once __DIR__ . '/../src/Web/SecurityHeaders.php';
+require_once __DIR__ . '/../src/Web/Fallback.php';
+register_shutdown_function([TiffinDB\Web\Fallback::class, 'onShutdown']);
 
 $server = $_SERVER;
 
@@ -41,19 +50,20 @@ if (PHP_SAPI === 'cli-server') {
 }
 
 if (!is_file(__DIR__ . '/../vendor/autoload.php')) {
-    require __DIR__ . '/../src/Web/Response.php';
-    require __DIR__ . '/../src/Web/SecurityHeaders.php';
-    (new TiffinDB\Web\SecurityHeaders())->apply(new TiffinDB\Web\Response(
-        500,
-        ['Content-Type' => 'text/plain; charset=utf-8'],
-        "TiffinDB cannot start because its dependencies are not installed.\n",
-    ))->send();
+    TiffinDB\Web\Fallback::send(TiffinDB\Web\Fallback::DEPENDENCIES_BODY);
     return;
 }
 
-require __DIR__ . '/../vendor/autoload.php';
+try {
+    require __DIR__ . '/../vendor/autoload.php';
+    $config = require __DIR__ . '/../config/app.php';
+    $kernel = new TiffinDB\Web\Kernel(is_array($config) ? $config : [], dirname(__DIR__));
+    $request = TiffinDB\Web\Request::fromServer($server, $_GET);
+    $response = $kernel->handle($request);
+} catch (Throwable $e) {
+    TiffinDB\Web\Fallback::log($e);
+    TiffinDB\Web\Fallback::send();
+    return;
+}
 
-$config = require __DIR__ . '/../config/app.php';
-$kernel = new TiffinDB\Web\Kernel(is_array($config) ? $config : [], dirname(__DIR__));
-$request = TiffinDB\Web\Request::fromServer($server, $_GET);
-$kernel->handle($request)->send($request->method === 'HEAD');
+$response->send($request->method === 'HEAD');

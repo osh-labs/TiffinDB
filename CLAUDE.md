@@ -70,7 +70,7 @@ Accepted decisions are in `docs/decisions/`; the working plan is `docs/plan.md`.
 | Accounts | Decided (ADR 0002): household accounts, Admin and Member roles, per-project grants |
 | Forms | Decided (ADR 0003): stored HTML/CSS with binding attributes, auto-generated, simple editor |
 | v1 scope | Decided (ADR 0004): relations, attachments, CSV/XLSX/Bento import, CSV/XLSX/JSON export |
-| WYSIWYG form editor | Direction decided (ADR 0006): post-v1, same form format; layout model (snap-to-grid proposed) awaiting maintainer confirmation |
+| WYSIWYG form editor | Decided (ADR 0006): post-v1, same form format, snap-to-grid layout; some defaults awaiting confirmation |
 | MCP server | Decided (ADR 0005): post-v1, full scope, OAuth 2.1, disabled by default; OAuth design document required before implementation |
 | Platform targets | Web application on self-hosted Apache and DreamHost shared hosting; desktop/local packaging undecided |
 | Bento file/template import | Approach undecided pending file-format discovery (requires clean-room approach; no reverse-engineered proprietary code) |

@@ -1,6 +1,6 @@
 # TiffinDB Project Plan
 
-Status: draft 3, planning phase. No application code exists yet.
+Status: draft 4, planning phase. No application code exists yet.
 Decisions referenced here are recorded in `docs/decisions/`.
 
 ## 1. Goal
@@ -32,7 +32,7 @@ Design priorities, in order:
 | 11 | Language | English only in v1; UI strings still kept in one place so translation is possible later | this plan |
 | 12 | Undo | Trash with restore for records; no per-record change history in v1 | this plan |
 | 13 | Hosting targets | Self-hosted Apache, and DreamHost shared hosting as the reference shared host | this plan |
-| 15 | WYSIWYG form editor | Post-v1; drag and drop, alignment tools, static text; same HTML/CSS form format. Layout model (snap-to-grid proposed) awaiting confirmation | ADR 0006 |
+| 15 | WYSIWYG form editor | Post-v1; drag and drop, alignment tools, static text; same HTML/CSS form format. Snap-to-grid layout model | ADR 0006 |
 | 14 | MCP server | Post-v1; full scope including schema; OAuth 2.1; disabled by default | ADR 0005 |
 
 ## 3. Architecture
@@ -190,8 +190,8 @@ Findings go in `docs/formats/bento.md`. Unsupported field types are imported as 
 | M5 | Form editor and source editing with sanitizer | Editor output equals hand-editable HTML; sanitizer test corpus passes |
 | M6 | Bento import plugin | Synthetic Bento-structure fixture imports with relations and attachments; import report complete |
 | M7 | Packaging, upgrade path, host and user documentation; v1 release | Release archive installs on DreamHost shared hosting by upload and setup page only |
-| M9 (post-v1) | WYSIWYG form editor: drag and drop, alignment and distribution tools, static text elements, keyboard-operable | Forms round-trip between simple editor, WYSIWYG editor, and source view without loss; accessibility checks pass on editor output |
-| M8 (post-v1) | MCP server with OAuth 2.1, scopes, audit log, pre-change snapshots | OAuth and MCP design documents reviewed; conformance and abuse-case tests pass; disabled by default |
+| M8 (post-v1) | WYSIWYG form editor: drag and drop, alignment and distribution tools, static text elements, keyboard-operable | Forms round-trip between simple editor, WYSIWYG editor, and source view without loss; accessibility checks pass on editor output |
+| M9 (post-v1) | MCP server with OAuth 2.1, scopes, audit log, pre-change snapshots | OAuth and MCP design documents reviewed; conformance and abuse-case tests pass; disabled by default |
 
 Accessibility work is continuous from M2 onward, not a separate phase.
 
@@ -225,8 +225,8 @@ Each is to be recorded in `docs/dependencies.md` when actually added. Licenses a
 
 1. Bento source file form and application version(s) (discovery, M0).
 2. DreamHost specifics to verify on a real account before M1: PHP 8.3 availability with `pdo_sqlite`, `zip`, and `xmlreader`; whether the data directory can sit outside the web root; `Authorization` header pass-through; upload size, memory, and execution-time limits.
-3. Trash retention: kept until emptied by an Admin, or purged automatically after a period.
+3. Trash retention. Proposed default: items stay in trash until an Admin empties it; no automatic purge.
 4. MCP client registration method and whether any outbound fetch is acceptable (ADR 0005).
-5. WYSIWYG layout model and scope of "text" and styling tools (ADR 0006). Order of M8 and M9 after v1.
+5. Confirmation of the proposed defaults in ADR 0006 (text elements, token-based styling, single reflowing layout, WYSIWYG editor before MCP server).
 6. Desktop/local packaging (out of scope for v1 unless decided otherwise).
 7. Nginx or other non-Apache self-hosting (v1 assumes Apache `.htaccess`).

@@ -56,13 +56,31 @@ final class Response
         return null;
     }
 
-    /** Emits status, headers, and (unless the request was HEAD) the body. */
-    public function send(bool $headRequest = false): void
+    /**
+     * Emits status, headers, and (unless the request was HEAD) the body.
+     *
+     * $emit is a test seam: when given, it receives each step instead of
+     * PHP's header functions, as `('remove', header name)`, `('status',
+     * code)`, and `('header', full header line)`. The command-line SAPI
+     * that runs the tests does not record headers, so this is the only way
+     * to observe them in process. Production code never passes it.
+     *
+     * @param (callable(string, string|int): void)|null $emit
+     */
+    public function send(bool $headRequest = false, ?callable $emit = null): void
     {
-        header_remove('X-Powered-By');
-        http_response_code($this->status);
+        $emit ??= static function (string $step, string|int $value): void {
+            match ($step) {
+                'remove' => header_remove((string) $value),
+                'status' => http_response_code((int) $value),
+                'header' => header((string) $value, true),
+            };
+        };
+
+        $emit('remove', 'X-Powered-By');
+        $emit('status', $this->status);
         foreach ($this->headers as $name => $value) {
-            header($name . ': ' . $value, true);
+            $emit('header', $name . ': ' . $value);
         }
         if (!$headRequest) {
             echo $this->body;
@@ -76,7 +94,7 @@ final class Response
     private static function put(array $headers, string $name, mixed $value): array
     {
         // Header names are RFC 9110 tokens; values may not break the line.
-        if (preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/', $name) !== 1) {
+        if (preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+\z/', $name) !== 1) {
             throw new InvalidArgumentException('Invalid header name.');
         }
         if (!is_string($value) || preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $value) === 1) {

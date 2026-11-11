@@ -16,6 +16,8 @@ File and image attachment fields are in v1. Files are stored in the project fold
 
 Atkinson Hyperlegible is bundled and self-hosted as the default typeface. The SIL Open Font License 1.1 (`OFL-1.1`) is approved for bundled font assets only; it is not a general addition to the code dependency license list. Font files ship unmodified with their license text.
 
+Superseded in part by ADR 0007: Inter is now the default typeface. Atkinson Hyperlegible remains bundled as a user option and as the wordmark typeface, and the OFL-1.1 rule above applies unchanged to the additional families.
+
 ### Import and export
 
 Import and export are implemented as plugins against a common interface and a neutral intermediate model.

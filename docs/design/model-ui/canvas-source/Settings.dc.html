@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<title>Reading and display settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Lexend:wght@400;700&family=Source+Serif+4:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{--brand2:#C27F00}.t-dark{--brand2:#F2B441}.t-hcl{--brand2:#000000}.t-hcd{--brand2:#FFFFFF}
+.f-inter{font-family:'Inter',system-ui,sans-serif!important}
+.f-lexend{font-family:'Lexend',system-ui,sans-serif!important}
+.f-serif4{font-family:'Source Serif 4',Georgia,serif!important}
+.f-sans{font-family:system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif!important}
+.f-serif{font-family:Georgia,'Times New Roman',serif!important}
+header nav a:hover{background:var(--soft)}
+.f-atk{font-family:'Atkinson Hyperlegible',system-ui,sans-serif!important}
+a[aria-label^=TiffinDB]{font-family:'Atkinson Hyperlegible',system-ui,sans-serif}
+.a-indigo{--accent:#2A3990;--soft:#E2E6F8}
+.a-plum{--accent:#6B1F5C;--soft:#F4E1EF}
+.a-graphite{--accent:#22302D;--soft:#E1E7E5}
+.t-dark.a-indigo{--accent:#AEB9FF;--soft:#252C57}
+.t-dark.a-plum{--accent:#F0A8DD;--soft:#4A1F41}
+.t-dark.a-graphite{--accent:#D5DDDA;--soft:#2A3532}
+.r-square *{border-radius:0!important}
+.pv-below main>div:last-child{flex-direction:column!important;align-items:stretch!important}
+.pv-below main>div:last-child>*{flex:0 0 auto!important}
+body{margin:0;--bg:#F3F5F4;--surface:#FFFFFF;--sunk:#E6EBE9;--ink:#111A18;--ink2:#3A4744;--line:#C5CECB;--ctl:#6E7C78;--accent:#084F4A;--on-accent:#FFFFFF;--soft:#DCEEEB;--warn:#7A4300;--warn-soft:#FBEBD3}
+.t-dark{--bg:#0F1716;--surface:#182322;--sunk:#0A100F;--ink:#EEF3F1;--ink2:#BAC7C3;--line:#35443F;--ctl:#8C9C97;--accent:#7AD9CD;--on-accent:#06211E;--soft:#17393A;--warn:#F2B866;--warn-soft:#3A2A10}
+.t-hcl{--bg:#FFFFFF;--surface:#FFFFFF;--sunk:#FFFFFF;--ink:#000000;--ink2:#000000;--line:#000000;--ctl:#000000;--accent:#003B37;--on-accent:#FFFFFF;--soft:#D5F0EC;--warn:#4A2800;--warn-soft:#FFE9C2}
+.t-hcd{--bg:#000000;--surface:#000000;--sunk:#000000;--ink:#FFFFFF;--ink2:#FFFFFF;--line:#FFFFFF;--ctl:#FFFFFF;--accent:#8FF5E8;--on-accent:#000000;--soft:#00302C;--warn:#FFD27A;--warn-soft:#3A2A00}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=radio],input[type=checkbox]{accent-color:var(--accent);width:24px;height:24px;margin:0;flex:none}
+.z0{font-size:16px}.z1{font-size:18px}.z2{font-size:21px}.z3{font-size:24px}.z4{font-size:28px}
+.l0{line-height:1.5}.l1{line-height:1.75}.l2{line-height:2}
+.sys{font-family:system-ui,sans-serif}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="min-height: 1700px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; font-size: 18px; line-height: 1.5">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 68px; box-sizing: border-box; padding: 8px 24px; background: var(--surface); border-bottom: 1px solid var(--line)">
+<a href="Projects.dc.html" aria-label="TiffinDB, all projects" style="display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 22px; letter-spacing: -0.01em">
+<svg aria-hidden="true" width="34" height="34" viewBox="0 0 64 64" fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"></path><rect x="23" y="2.5" width="18" height="6" rx="3" fill="currentColor"></rect><rect x="15.5" y="17" width="33" height="4" rx="2" fill="currentColor"></rect><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="currentColor"></rect><rect x="17" y="34" width="30" height="10.5" rx="3" fill="var(--brand2)"></rect><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="currentColor"></rect></svg>
+<span><span style="color: var(--ink)">Tiffin</span>DB</span></a>
+<nav aria-label="Main" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 12px">
+<a href="Projects.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; color: var(--ink); text-decoration: none">Projects</a>
+</nav>
+<nav aria-label="Account" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-left: auto">
+<a href="Settings.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--soft); color: var(--accent); text-decoration: none; font-weight: 700">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="8"></circle><path d="M10 2a8 8 0 0 1 0 16z" fill="currentColor"></path></svg>
+Display</a>
+<span style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px 0 5px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg)"><span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 700">EM</span>Example Member</span>
+<a href="SignIn.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 999px; color: var(--ink); text-decoration: none">Sign out</a>
+</nav>
+</header>
+
+<main style="flex: 1 1 auto; width: 100%; max-width: 1120px; box-sizing: border-box; margin: 0 auto; padding: 32px 24px 48px; display: flex; flex-direction: column; gap: 24px">
+<div>
+<h1 style="margin: 0; font-size: 34px; line-height: 1.2">Reading and display</h1>
+<p style="margin: 4px 0 0; color: var(--ink2)">These settings are yours. They follow you to any device you sign in on, and they apply to every project and form.</p>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px">
+
+<form style="flex: 3 1 480px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 24px">
+
+<fieldset style="margin: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<legend style="padding: 0 8px; font-size: 22px; font-weight: 700">Colours</legend>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="theme" checked="{{isLight}}" onChange="{{setLight}}">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #6E7C78; border-radius: 6px; background: #F3F5F4; color: #111A18; font-weight: 700">Aa</span>
+Light</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="theme" checked="{{isDark}}" onChange="{{setDark}}">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #8C9C97; border-radius: 6px; background: #0F1716; color: #EEF3F1; font-weight: 700">Aa</span>
+Dark</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="theme" checked="{{isHcl}}" onChange="{{setHcl}}">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 2px solid #000000; border-radius: 6px; background: #FFFFFF; color: #000000; font-weight: 700">Aa</span>
+Strong contrast, light</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="theme" checked="{{isHcd}}" onChange="{{setHcd}}">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 2px solid #FFFFFF; outline: 1px solid #000000; border-radius: 6px; background: #000000; color: #FFFFFF; font-weight: 700">Aa</span>
+Strong contrast, dark</label>
+</div>
+</fieldset>
+
+<fieldset style="margin: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<legend style="padding: 0 8px; font-size: 22px; font-weight: 700">Accent colour</legend>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="accent" checked="{{aT}}" onChange="{{setAT}}">
+<span aria-hidden="true" style="flex: none; width: 36px; height: 36px; border-radius: 50%; background: #084F4A; border: 2px solid var(--surface); outline: 1px solid var(--ctl)"></span>
+Teal</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="accent" checked="{{aI}}" onChange="{{setAI}}">
+<span aria-hidden="true" style="flex: none; width: 36px; height: 36px; border-radius: 50%; background: #2A3990; border: 2px solid var(--surface); outline: 1px solid var(--ctl)"></span>
+Indigo</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="accent" checked="{{aP}}" onChange="{{setAP}}">
+<span aria-hidden="true" style="flex: none; width: 36px; height: 36px; border-radius: 50%; background: #6B1F5C; border: 2px solid var(--surface); outline: 1px solid var(--ctl)"></span>
+Plum</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px">
+<input type="radio" name="accent" checked="{{aG}}" onChange="{{setAG}}">
+<span aria-hidden="true" style="flex: none; width: 36px; height: 36px; border-radius: 50%; background: #22302D; border: 2px solid var(--surface); outline: 1px solid var(--ctl)"></span>
+Graphite</label>
+</div>
+<span style="font-size: 16px; color: var(--ink2)">Used for buttons, links, and the sidebar. The strong contrast colours always use black and white.</span>
+</fieldset>
+
+<fieldset style="margin: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<legend style="padding: 0 8px; font-size: 22px; font-weight: 700">Text size</legend>
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 28px">
+<label style="display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 16px"><input type="radio" name="size" checked="{{z0}}" onChange="{{setZ0}}"> Small</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 18px"><input type="radio" name="size" checked="{{z1}}" onChange="{{setZ1}}"> Standard</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 21px"><input type="radio" name="size" checked="{{z2}}" onChange="{{setZ2}}"> Large</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 24px"><input type="radio" name="size" checked="{{z3}}" onChange="{{setZ3}}"> Larger</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 28px"><input type="radio" name="size" checked="{{z4}}" onChange="{{setZ4}}"> Largest</label>
+</div>
+</fieldset>
+
+<fieldset style="margin: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<legend style="padding: 0 8px; font-size: 22px; font-weight: 700">Space between lines</legend>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 28px">
+<label style="display: flex; align-items: center; gap: 10px; min-height: 44px"><input type="radio" name="lead" checked="{{l0}}" onChange="{{setL0}}"> Standard</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 44px"><input type="radio" name="lead" checked="{{l1}}" onChange="{{setL1}}"> Roomy</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 44px"><input type="radio" name="lead" checked="{{l2}}" onChange="{{setL2}}"> Very roomy</label>
+</div>
+</fieldset>
+
+<fieldset style="margin: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<legend style="padding: 0 8px; font-size: 22px; font-weight: 700">Lettering and movement</legend>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 8px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: 'Atkinson Hyperlegible', system-ui, sans-serif"><input type="radio" name="face" checked="{{faceA}}" onChange="{{setFaceA}}"><span><span style="display: block; font-size: 22px; font-weight: 700">Atkinson Hyperlegible</span><span style="color: var(--ink2)">Made for easy reading</span></span></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: 'Lexend', system-ui, sans-serif"><input type="radio" name="face" checked="{{faceL}}" onChange="{{setFaceL}}"><span><span style="display: block; font-size: 22px; font-weight: 700">Lexend</span><span style="color: var(--ink2)">Wide and open letters</span></span></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: 'Inter', system-ui, sans-serif"><input type="radio" name="face" checked="{{faceI}}" onChange="{{setFaceI}}"><span><span style="display: block; font-size: 22px; font-weight: 700">Inter</span><span style="color: var(--ink2)">Standard. Plain and compact</span></span></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: 'Source Serif 4', Georgia, serif"><input type="radio" name="face" checked="{{faceR}}" onChange="{{setFaceR}}"><span><span style="display: block; font-size: 22px; font-weight: 700">Source Serif</span><span style="color: var(--ink2)">Book-style letters with serifs</span></span></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"><input type="radio" name="face" checked="{{faceS}}" onChange="{{setFaceS}}"><span><span style="display: block; font-size: 22px; font-weight: 700">This device, sans-serif</span><span style="color: var(--ink2)">The plain lettering your device uses</span></span></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 8px 14px; border: 2px solid var(--ctl); border-radius: 8px; font-family: Georgia, 'Times New Roman', serif"><input type="radio" name="face" checked="{{faceT}}" onChange="{{setFaceT}}"><span><span style="display: block; font-size: 22px; font-weight: 700">This device, serif</span><span style="color: var(--ink2)">The book-style lettering your device uses</span></span></label>
+</div>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line)"><input type="checkbox"> Reduce movement and animation</label>
+</fieldset>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<a href="Main.dc.html" style="display: flex; align-items: center; min-height: 48px; padding: 0 28px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--on-accent); text-decoration: none; font-weight: 700">Save settings</a>
+<button type="button" onClick="{{reset}}" style="min-height: 48px; padding: 0 20px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700">Back to standard</button>
+</div>
+</form>
+
+<section aria-labelledby="s-prev" style="flex: 2 1 340px; min-width: 0; box-sizing: border-box; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--surface); border: 2px solid var(--accent); border-radius: 12px">
+<h2 id="s-prev" style="margin: 0; font-size: 16px; color: var(--ink2)">Preview: how a record will look</h2>
+<div class="{{previewClass}}" style="display: flex; flex-direction: column; gap: 0.8em">
+<div style="font-size: 1.5em; font-weight: 700; line-height: 1.2">Stand mixer</div>
+<div><div style="font-weight: 700">Room</div><div>Kitchen</div></div>
+<div><div style="font-weight: 700">Purchased</div><div>14 March 2025</div></div>
+<div><div style="font-weight: 700">Notes</div><div>Comes with dough hook, whisk, and flat beater. Spare bowl is on the top shelf.</div></div>
+<div style="display: flex; align-items: center; align-self: flex-start; min-height: 44px; padding: 0 1em; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--on-accent); font-weight: 700">Save</div>
+</div>
+</section>
+
+</div>
+</main>
+
+<footer style="display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 16px 24px; border-top: 1px solid var(--line); font-size: 16px; color: var(--ink2)">
+<span>TiffinDB, free software under AGPL-3.0-or-later</span>
+<a href="https://github.com/osh-labs/tiffindb">Source code</a>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Light&quot;,&quot;Dark&quot;,&quot;High contrast light&quot;,&quot;High contrast dark&quot;],&quot;default&quot;:&quot;Light&quot;},&quot;typeface&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Atkinson Hyperlegible&quot;,&quot;Inter&quot;,&quot;Lexend&quot;,&quot;Source Serif 4&quot;,&quot;Device sans-serif&quot;,&quot;Device serif&quot;],&quot;default&quot;:&quot;Inter&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Teal&quot;,&quot;Indigo&quot;,&quot;Plum&quot;,&quot;Graphite&quot;],&quot;default&quot;:&quot;Teal&quot;},&quot;corners&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Rounded&quot;,&quot;Square&quot;],&quot;default&quot;:&quot;Rounded&quot;},&quot;previewPanel&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Beside&quot;,&quot;Below&quot;],&quot;default&quot;:&quot;Beside&quot;},&quot;$preview&quot;:{&quot;width&quot;:1360,&quot;height&quot;:1500}}">
+class Component extends DCLogic {
+renderVals() {
+var self = this;
+var s = this.state || {};
+var map = { "Light": "", "Dark": "t-dark", "High contrast light": "t-hcl", "High contrast dark": "t-hcd" };
+var theme = s.theme || this.props.theme || "Light";
+var size = s.size == null ? 1 : s.size;
+var lead = s.lead == null ? 0 : s.lead;
+var fonts = { "Inter": " f-inter", "Lexend": " f-lexend", "Source Serif 4": " f-serif4", "Device sans-serif": " f-sans", "Device serif": " f-serif" };
+fonts["Atkinson Hyperlegible"] = " f-atk"; fonts["Inter"] = "";
+var face = s.face || this.props.typeface || "Inter";
+var p = this.props;
+var accents = { "Indigo": " a-indigo", "Plum": " a-plum", "Graphite": " a-graphite" };
+var accent = s.accent || p.accent || "Teal";
+function set(patch) { return function () { self.setState(patch); }; }
+return {
+themeClass: (map[theme] || "") + (fonts[face] || "") + (/contrast/i.test(theme) ? "" : (accents[accent] || "")) + (p.corners === "Square" ? " r-square" : "") + (p.previewPanel === "Below" ? " pv-below" : ""),
+previewClass: "z" + size + " l" + lead,
+isLight: theme === "Light", isDark: theme === "Dark", isHcl: theme === "High contrast light", isHcd: theme === "High contrast dark",
+setLight: set({ theme: "Light" }), setDark: set({ theme: "Dark" }), setHcl: set({ theme: "High contrast light" }), setHcd: set({ theme: "High contrast dark" }),
+z0: size === 0, z1: size === 1, z2: size === 2, z3: size === 3, z4: size === 4,
+setZ0: set({ size: 0 }), setZ1: set({ size: 1 }), setZ2: set({ size: 2 }), setZ3: set({ size: 3 }), setZ4: set({ size: 4 }),
+l0: lead === 0, l1: lead === 1, l2: lead === 2,
+setL0: set({ lead: 0 }), setL1: set({ lead: 1 }), setL2: set({ lead: 2 }),
+faceA: face === "Atkinson Hyperlegible", faceL: face === "Lexend", faceI: face === "Inter", faceR: face === "Source Serif 4", faceS: face === "Device sans-serif", faceT: face === "Device serif",
+setFaceA: set({ face: "Atkinson Hyperlegible" }), setFaceL: set({ face: "Lexend" }), setFaceI: set({ face: "Inter" }), setFaceR: set({ face: "Source Serif 4" }), setFaceS: set({ face: "Device sans-serif" }), setFaceT: set({ face: "Device serif" }),
+aT: accent === "Teal", aI: accent === "Indigo", aP: accent === "Plum", aG: accent === "Graphite",
+setAT: set({ accent: "Teal" }), setAI: set({ accent: "Indigo" }), setAP: set({ accent: "Plum" }), setAG: set({ accent: "Graphite" }),
+reset: set({ theme: "Light", size: 1, lead: 0, face: "Inter", accent: "Teal" })
+};
+}
+}
+</script>
+</body>
+</html>

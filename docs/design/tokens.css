@@ -1,0 +1,113 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) TiffinDB contributors */
+
+/*
+ * TiffinDB design tokens: reference values for the v1 visual target (ADR 0007).
+ * The model UI in docs/design/model-ui/ uses these names and values.
+ * The application stylesheet should start from this file.
+ *
+ * Classes go on the application root element:
+ *   theme     (none) | .t-dark | .t-hcl | .t-hcd
+ *   accent    (none) | .a-indigo | .a-plum | .a-graphite   (ignored by .t-hcl and .t-hcd)
+ *   typeface  (none) | .f-atk | .f-lexend | .f-serif4 | .f-sans | .f-serif
+ */
+
+:root {
+  /* Surfaces and text */
+  --bg: #F3F5F4;          /* page ground */
+  --surface: #FFFFFF;     /* cards, bars, inputs */
+  --sunk: #E6EBE9;        /* table headers, inset rows */
+  --ink: #111A18;         /* primary text */
+  --ink2: #3A4744;        /* secondary text */
+  --line: #C5CECB;        /* dividers, card borders */
+  --ctl: #6E7C78;         /* control borders (3:1 minimum against surface) */
+
+  /* Accent (Teal, the default) */
+  --accent: #084F4A;      /* primary buttons, links, focus ring */
+  --on-accent: #FFFFFF;   /* text on accent */
+  --soft: #DCEEEB;        /* selected and hover tint */
+
+  /* Warnings and destructive actions */
+  --warn: #7A4300;
+  --warn-soft: #FBEBD3;
+
+  /* Brand second colour (middle tier of the mark) */
+  --brand2: #C27F00;
+
+  /* Colour-blocked sidebar */
+  --side: #084F4A;
+  --side-ink: #FFFFFF;
+  --side-ink2: #D3E9E5;
+  --side-on: #FFFFFF;     /* current item background */
+  --side-on-ink: #084F4A; /* current item text */
+
+  /* Type */
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-brand: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --text-base: 18px;      /* "Standard" step; see the scale below */
+  --text-small: 16px;
+  --text-h2: 22px;
+  --text-h1: 34px;
+  --leading: 1.5;
+
+  /* Shape and size */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --target-min: 44px;     /* minimum touch target */
+  --control-height: 48px; /* form inputs */
+  --border-control: 2px;
+  --focus-ring: 3px;
+}
+
+/* Themes */
+.t-dark {
+  --bg: #0F1716; --surface: #182322; --sunk: #0A100F;
+  --ink: #EEF3F1; --ink2: #BAC7C3; --line: #35443F; --ctl: #8C9C97;
+  --accent: #7AD9CD; --on-accent: #06211E; --soft: #17393A;
+  --warn: #F2B866; --warn-soft: #3A2A10; --brand2: #F2B441;
+  --side: #0B2B29; --side-ink: #EEF3F1; --side-ink2: #BAC7C3;
+  --side-on: #7AD9CD; --side-on-ink: #06211E;
+}
+.t-hcl {
+  --bg: #FFFFFF; --surface: #FFFFFF; --sunk: #FFFFFF;
+  --ink: #000000; --ink2: #000000; --line: #000000; --ctl: #000000;
+  --accent: #003B37; --on-accent: #FFFFFF; --soft: #D5F0EC;
+  --warn: #4A2800; --warn-soft: #FFE9C2; --brand2: #000000;
+  --side: #000000; --side-ink: #FFFFFF; --side-ink2: #FFFFFF;
+  --side-on: #FFFFFF; --side-on-ink: #000000;
+}
+.t-hcd {
+  --bg: #000000; --surface: #000000; --sunk: #000000;
+  --ink: #FFFFFF; --ink2: #FFFFFF; --line: #FFFFFF; --ctl: #FFFFFF;
+  --accent: #8FF5E8; --on-accent: #000000; --soft: #00302C;
+  --warn: #FFD27A; --warn-soft: #3A2A00; --brand2: #FFFFFF;
+  --side: #FFFFFF; --side-ink: #000000; --side-ink2: #000000;
+  --side-on: #000000; --side-on-ink: #FFFFFF;
+}
+
+/* Accents: light theme */
+.a-indigo   { --accent: #2A3990; --soft: #E2E6F8; --side: #2A3990; --side-ink2: #D9DEF7; --side-on-ink: #2A3990; }
+.a-plum     { --accent: #6B1F5C; --soft: #F4E1EF; --side: #6B1F5C; --side-ink2: #F0D9EA; --side-on-ink: #6B1F5C; }
+.a-graphite { --accent: #22302D; --soft: #E1E7E5; --side: #22302D; --side-ink2: #D5DDDA; --side-on-ink: #22302D; }
+
+/* Accents: dark theme */
+.t-dark.a-indigo   { --accent: #AEB9FF; --soft: #252C57; --side: #1A2045; --side-ink2: #BAC7C3; --side-on: #AEB9FF; --side-on-ink: #0E1330; }
+.t-dark.a-plum     { --accent: #F0A8DD; --soft: #4A1F41; --side: #33152D; --side-ink2: #BAC7C3; --side-on: #F0A8DD; --side-on-ink: #2A0C24; }
+.t-dark.a-graphite { --accent: #D5DDDA; --soft: #2A3532; --side: #1B2523; --side-ink2: #BAC7C3; --side-on: #D5DDDA; --side-on-ink: #111A18; }
+
+/* The high-contrast themes must not take an accent class; the server omits it. */
+
+/* Typefaces */
+.f-atk    { --font-ui: 'Atkinson Hyperlegible', system-ui, sans-serif; }
+.f-lexend { --font-ui: 'Lexend', system-ui, sans-serif; }
+.f-serif4 { --font-ui: 'Source Serif 4', Georgia, serif; }
+.f-sans   { --font-ui: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+.f-serif  { --font-ui: Georgia, 'Times New Roman', serif; }
+
+/*
+ * Text size steps (per-user setting). Implement by scaling the root font size
+ * and writing all sizes in rem, not with the `zoom` shortcut the mock-ups use.
+ *   Small 16px | Standard 18px | Large 21px | Larger 24px | Largest 28px
+ * Line spacing steps: Standard 1.5 | Roomy 1.75 | Very roomy 2.
+ */

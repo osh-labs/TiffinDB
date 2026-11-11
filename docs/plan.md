@@ -1,6 +1,6 @@
 # TiffinDB Project Plan
 
-Status: draft 2, planning phase. No application code exists yet.
+Status: draft 3, planning phase. No application code exists yet.
 Decisions referenced here are recorded in `docs/decisions/`.
 
 ## 1. Goal
@@ -32,6 +32,7 @@ Design priorities, in order:
 | 11 | Language | English only in v1; UI strings still kept in one place so translation is possible later | this plan |
 | 12 | Undo | Trash with restore for records; no per-record change history in v1 | this plan |
 | 13 | Hosting targets | Self-hosted Apache, and DreamHost shared hosting as the reference shared host | this plan |
+| 15 | WYSIWYG form editor | Post-v1; drag and drop, alignment tools, static text; same HTML/CSS form format. Layout model (snap-to-grid proposed) awaiting confirmation | ADR 0006 |
 | 14 | MCP server | Post-v1; full scope including schema; OAuth 2.1; disabled by default | ADR 0005 |
 
 ## 3. Architecture
@@ -105,6 +106,7 @@ Each type defines: storage column type, validation, HTML input rendering, displa
 - No per-form JavaScript. Forms work without JS; JS only enhances (autosave, date pickers where native ones are weak, link pickers).
 - Auto-generation: one accessible single-column layout per table (label + control pairs, `fieldset` grouping, relation lists at the end). Runs on table creation and after import.
 - Simple editor (Admin): reorder, show/hide, set width on a CSS grid, group under headings, rename labels. Output is the same HTML/CSS, so hand editing and the editor operate on one representation.
+- Format headroom for the post-v1 WYSIWYG editor (ADR 0006): the v1 format already supports explicit grid placement, static elements (headings, text blocks, dividers, images), and a per-form format version, even though the v1 editor exposes only part of this.
 - Hand editing (Admin): source view with validation, plus download and upload of a form as a file for use with an external editor. The project database remains the single copy of record.
 - Security: stored form HTML passes an allowlist sanitizer (no `script`, no event-handler attributes, no external URLs, no `style` escapes out of the form scope). A strict Content-Security-Policy backs this up. Members cannot edit forms.
 - User accessibility settings (font size, contrast, typeface) must override form CSS, not the reverse. Form CSS is restricted to layout and to design tokens.
@@ -188,6 +190,7 @@ Findings go in `docs/formats/bento.md`. Unsupported field types are imported as 
 | M5 | Form editor and source editing with sanitizer | Editor output equals hand-editable HTML; sanitizer test corpus passes |
 | M6 | Bento import plugin | Synthetic Bento-structure fixture imports with relations and attachments; import report complete |
 | M7 | Packaging, upgrade path, host and user documentation; v1 release | Release archive installs on DreamHost shared hosting by upload and setup page only |
+| M9 (post-v1) | WYSIWYG form editor: drag and drop, alignment and distribution tools, static text elements, keyboard-operable | Forms round-trip between simple editor, WYSIWYG editor, and source view without loss; accessibility checks pass on editor output |
 | M8 (post-v1) | MCP server with OAuth 2.1, scopes, audit log, pre-change snapshots | OAuth and MCP design documents reviewed; conformance and abuse-case tests pass; disabled by default |
 
 Accessibility work is continuous from M2 onward, not a separate phase.
@@ -224,5 +227,6 @@ Each is to be recorded in `docs/dependencies.md` when actually added. Licenses a
 2. DreamHost specifics to verify on a real account before M1: PHP 8.3 availability with `pdo_sqlite`, `zip`, and `xmlreader`; whether the data directory can sit outside the web root; `Authorization` header pass-through; upload size, memory, and execution-time limits.
 3. Trash retention: kept until emptied by an Admin, or purged automatically after a period.
 4. MCP client registration method and whether any outbound fetch is acceptable (ADR 0005).
-5. Desktop/local packaging (out of scope for v1 unless decided otherwise).
-6. Nginx or other non-Apache self-hosting (v1 assumes Apache `.htaccess`).
+5. WYSIWYG layout model and scope of "text" and styling tools (ADR 0006). Order of M8 and M9 after v1.
+6. Desktop/local packaging (out of scope for v1 unless decided otherwise).
+7. Nginx or other non-Apache self-hosting (v1 assumes Apache `.htaccess`).

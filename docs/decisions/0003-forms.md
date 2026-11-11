@@ -20,7 +20,7 @@ Forms are the user-configurable front end for viewing and editing records. They 
 | Option | Reason not chosen |
 |---|---|
 | Hand-edited templates only | Not usable by non-technical users |
-| Free-form drag-and-drop canvas | Largest build effort; absolute positioning conflicts with responsive layout, zoom, and screen-reader order |
+| Free-form drag-and-drop canvas in v1 | Largest build effort; absolute positioning conflicts with responsive layout, zoom, and screen-reader order. A WYSIWYG editor is planned after v1; see ADR 0006 |
 | JSON layout description rendered by code | Loses the "plain HTML/CSS" development speed and hand-editability |
 
 ## Consequences

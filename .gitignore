@@ -1,0 +1,17 @@
+# Local databases, exports, and secrets (see CLAUDE.md, Public Repository Rules)
+*.db
+*.sqlite*
+*.tiffin
+.env*
+/local/
+/data/
+
+# Legacy source files used for import discovery must never be committed
+*.bentodb
+*.bentoTemplate
+*.bento
+
+# Dependencies and tooling
+/vendor/
+.phpunit.cache/
+.DS_Store

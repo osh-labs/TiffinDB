@@ -222,6 +222,28 @@ final class HostCheckTest extends TestCase
         $this->assertNoSensitiveText($out);
     }
 
+    public function testDisabledIsLinkNeverFollowsPlantedSymlink(): void
+    {
+        $target = $this->workDir . '/keep';
+        mkdir($target, 0700);
+        file_put_contents($target . '/precious.txt', "synthetic\n");
+        $link = $this->workDir . '/tiffindb-hostcheck-00112233aabbccdd';
+        if (!@symlink($target, $link)) {
+            $this->markTestSkipped('cannot create symbolic links here');
+        }
+        touch($target, time() - 3600);
+
+        [$code, $out, $err] = $this->runCli(['disable_functions=is_link']);
+        $data = $this->extractJson($out);
+        $this->assertSame('', $err);
+        $this->assertFileExists($target . '/precious.txt', 'symlink target contents were deleted');
+        $this->assertTrue(is_link($link), 'planted symlink was removed');
+        $this->assertSame('WARN', $data['checks']['fs.stale_leftovers']['status']);
+        $this->assertSame('PASS', $data['checks']['fs.cleanup']['status']);
+        $this->assertSame($data['summary']['fail'] > 0 ? 1 : 0, $code);
+        $this->assertNoSensitiveText($out);
+    }
+
     // ----- HTTP (built-in server on loopback) ------------------------------
 
     private function startServer(): int

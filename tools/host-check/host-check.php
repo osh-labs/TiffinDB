@@ -418,9 +418,14 @@ function hc_make_temp_dir($parent, $mode)
     return $dir;
 }
 
-// Delete a tree without following symbolic links.
+// Delete a tree without following symbolic links. If is_link() is
+// unavailable, links cannot be told apart, so nothing is recursed into: only
+// files and directories this run created (tracked by name) are removed.
 function hc_rmtree($path)
 {
+    if (!function_exists('is_link')) {
+        return hc_remove_tracked($path);
+    }
     if (hc_fs('is_link', $path) || hc_fs('is_file', $path)) {
         return (bool) hc_fs('unlink', $path);
     }
@@ -429,6 +434,30 @@ function hc_rmtree($path)
     }
     foreach (hc_list_dir($path) as $item) {
         hc_rmtree($path . '/' . $item);
+    }
+    return (bool) hc_fs('rmdir', $path);
+}
+
+function hc_track($path, $isDir)
+{
+    $GLOBALS['hc'][$isDir ? 'created_dirs' : 'created_files'][] = $path;
+}
+
+function hc_remove_tracked($path)
+{
+    $prefix = $path . '/';
+    $files = isset($GLOBALS['hc']['created_files']) ? $GLOBALS['hc']['created_files'] : array();
+    $dirs = isset($GLOBALS['hc']['created_dirs']) ? $GLOBALS['hc']['created_dirs'] : array();
+    foreach ($files as $file) {
+        if (strpos($file, $prefix) === 0) {
+            hc_fs('unlink', $file); // removes a link itself, never its target
+        }
+    }
+    usort($dirs, 'hc_len_desc');
+    foreach ($dirs as $dir) {
+        if (strpos($dir, $prefix) === 0) {
+            hc_fs('rmdir', $dir);
+        }
     }
     return (bool) hc_fs('rmdir', $path);
 }
@@ -471,9 +500,10 @@ function hc_cleanup_all()
 function hc_leftovers()
 {
     $left = array();
-    $canCheck = function_exists('file_exists') && function_exists('is_link');
+    $canCheck = function_exists('file_exists');
+    $linkCheck = function_exists('is_link');
     foreach ($GLOBALS['hc']['cleanup'] as $dir => $parent) {
-        if (!$canCheck || @file_exists($dir) || @is_link($dir)) {
+        if (!$canCheck || @file_exists($dir) || ($linkCheck && @is_link($dir))) {
             $left[] = hc_mask($dir);
         }
     }
@@ -500,6 +530,9 @@ function hc_check_cleanup()
 // alone in case another run is in progress.
 function hc_sweep_stale($parent, $label, &$removed, &$kept)
 {
+    if (!function_exists('is_link')) {
+        return; // cannot tell links from directories; the caller reports this
+    }
     foreach (hc_list_dir($parent) as $item) {
         if (preg_match(HC_NAME_PATTERN, $item) !== 1) {
             continue;
@@ -880,7 +913,10 @@ function hc_check_filesystem($ctx, $isCli)
     $kept = array();
     hc_sweep_stale($ctx['outside'], $label, $removed, $kept);
     hc_sweep_stale($ctx['script_dir'], $ctx['script_label'], $removed, $kept);
-    if (count($kept) > 0) {
+    if (!function_exists('is_link')) {
+        hc_record('fs.stale_leftovers', 'WARN', 'Skipped: is_link() is disabled, so leftovers from earlier runs cannot be removed safely. Look for tiffindb-hostcheck-* directories by hand.',
+            array('removed' => array(), 'kept' => array()));
+    } elseif (count($kept) > 0) {
         hc_record('fs.stale_leftovers', 'WARN', 'Earlier-run directories left in place: ' . implode(', ', $kept)
             . (count($removed) ? '; removed: ' . implode(', ', $removed) : '') . '. Delete leftovers by hand once no check is running.',
             array('removed' => $removed, 'kept' => $kept));
@@ -942,6 +978,9 @@ function hc_check_filesystem($ctx, $isCli)
 function hc_check_sqlite_file($dir, $label)
 {
     $file = $dir . '/check.sqlite';
+    foreach (array('', '-wal', '-shm', '-journal') as $suffix) {
+        hc_track($file . $suffix, false);
+    }
     $marker = 'tiffindb-' . hc_random_hex(4);
     $pdo = null;
     $pdo2 = null;
@@ -986,6 +1025,7 @@ function hc_check_sqlite_file($dir, $label)
 function hc_check_flock($dir, $label)
 {
     $file = $dir . '/lock-test';
+    hc_track($file, false);
     if (!function_exists('flock')) {
         hc_record('fs.flock', 'FAIL', 'flock() is disabled.', false);
         return;
@@ -1232,12 +1272,14 @@ function hc_write_probe_files($sideDir, $nonce)
         'rewrite/auth.php'   => $authProbe,
     );
     foreach (array('control', 'deny', 'rewrite') as $sub) {
+        hc_track($sideDir . '/' . $sub, true);
         if (!hc_fs('mkdir', $sideDir . '/' . $sub, 0755)) {
             return null;
         }
         hc_fs('chmod', $sideDir . '/' . $sub, 0755);
     }
     foreach ($files as $rel => $content) {
+        hc_track($sideDir . '/' . $rel, false);
         if (hc_fs('file_put_contents', $sideDir . '/' . $rel, $content) === false) {
             return null;
         }

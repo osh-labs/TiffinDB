@@ -106,69 +106,31 @@ final class HtaccessTest extends TestCase
         // weakened.
         $executable = ['php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php6', 'php7', 'php8', 'phps', 'pht', 'inc'];
 
-        self::assertSame(['public/index.php'], RepoFiles::withExtension($executable, 'public'));
+        // Any dot-separated part after the first counts, so double-extension
+        // names such as x.php.png (which some handler set-ups execute) are
+        // caught too.
+        $found = array_values(array_filter(
+            RepoFiles::all('public'),
+            static fn (string $path): bool => array_intersect(
+                array_map('strtolower', array_slice(explode('.', basename($path)), 1)),
+                $executable,
+            ) !== [],
+        ));
+
+        self::assertSame(['public/index.php'], $found);
     }
 
     public function testNoOtherHtaccessFiles(): void
     {
         // A subdirectory .htaccess with any mod_rewrite directive replaces the
         // parent's rewrite rules for that subtree, which would switch the root
-        // guard off there. Checked in the working tree and, where git is
-        // available, in the tracked files.
-        $root = RepoFiles::root();
-        $skip = ['.git', '.claude', 'vendor'];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveCallbackFilterIterator(
-                new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
-                static fn (\SplFileInfo $file): bool => dirname($file->getPathname()) !== $root
-                    || !in_array($file->getFilename(), $skip, true),
-            ),
-        );
-
-        $found = [];
-        foreach ($iterator as $file) {
-            /** @var \SplFileInfo $file */
-            if ($file->getFilename() === '.htaccess') {
-                $found[] = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
-            }
-        }
-        foreach (self::trackedFiles() as $tracked) {
-            if (basename($tracked) === '.htaccess') {
-                $found[] = $tracked;
-            }
-        }
-        $found = array_values(array_unique($found));
-        sort($found, SORT_STRING);
+        // guard off there. Uses the shared repository enumeration (tracked
+        // and non-ignored files in a git checkout, otherwise a directory walk).
+        $found = array_values(array_filter(
+            RepoFiles::all(),
+            static fn (string $path): bool => basename($path) === '.htaccess',
+        ));
 
         self::assertSame(['.htaccess', 'public/.htaccess'], $found);
-    }
-
-    /**
-     * Tracked paths from `git ls-files`, or an empty list when the tree is
-     * not a git checkout or git is unavailable. Local and offline.
-     *
-     * @return list<string>
-     */
-    private static function trackedFiles(): array
-    {
-        $process = proc_open(
-            ['git', 'ls-files', '-z'],
-            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-            RepoFiles::root(),
-        );
-        if (!is_resource($process)) {
-            return [];
-        }
-        fclose($pipes[0]);
-        $output = (string) stream_get_contents($pipes[1]);
-        stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        if (proc_close($process) !== 0) {
-            return [];
-        }
-
-        return array_values(array_filter(explode("\0", $output), static fn (string $path): bool => $path !== ''));
     }
 }

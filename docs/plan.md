@@ -1,7 +1,7 @@
 # TiffinDB Project Plan
 
-Status: draft 4, planning phase. No application code exists yet.
-Decisions referenced here are recorded in `docs/decisions/`.
+Status: draft 5, planning phase. No application code exists yet.
+Decisions referenced here are recorded in `docs/decisions/`. The visual design is covered by `docs/ui-design-plan.md`.
 
 ## 1. Goal
 
@@ -26,7 +26,7 @@ Design priorities, in order:
 | 5 | Forms | Stored as plain HTML/CSS with field-binding attributes; auto-generated from schema; simple in-browser editor; Admin may hand-edit source | ADR 0003 |
 | 6 | Relations | First-class field type in v1; view and edit links | ADR 0004 |
 | 7 | Attachments | File and image fields in v1, stored in the project folder | ADR 0004 |
-| 8 | Fonts | Atkinson Hyperlegible bundled and self-hosted; OFL-1.1 approved for font assets only | ADR 0004 |
+| 8 | Fonts | Inter is the default typeface; Atkinson Hyperlegible, Lexend, and Source Serif 4 are also bundled as user options; all self-hosted; OFL-1.1 approved for font assets only | ADR 0004, ADR 0007 |
 | 9 | Import/export | Plugin architecture. v1 import: CSV, XLSX, Bento. v1 export: CSV, XLSX (plus JSON per repository portability rule) | ADR 0004 |
 | 10 | Form source location | Project database only; forms can be downloaded and uploaded as files through the Admin UI | ADR 0003 |
 | 11 | Language | English only in v1; UI strings still kept in one place so translation is possible later | this plan |
@@ -34,6 +34,7 @@ Design priorities, in order:
 | 13 | Hosting targets | Self-hosted Apache, and DreamHost shared hosting as the reference shared host | this plan |
 | 15 | WYSIWYG form editor | Post-v1; drag and drop, alignment tools, static text; same HTML/CSS form format. Snap-to-grid layout model | ADR 0006 |
 | 14 | MCP server | Post-v1; full scope including schema; OAuth 2.1; disabled by default | ADR 0005 |
+| 16 | UI appearance | The model UI in `docs/design/model-ui/` is the v1 visual target; per-user typeface and accent colour; logo in `docs/brand/` | ADR 0007 |
 
 ## 3. Architecture
 
@@ -114,8 +115,8 @@ Each type defines: storage column type, validation, HTML input rendering, displa
 ## 5. Accessibility and legibility
 
 - Target: WCAG 2.2 AA throughout; default theme aims for 7:1 text contrast (AAA level for contrast).
-- Typeface: Atkinson Hyperlegible, self-hosted. No network font loading.
-- Per-user settings, stored server-side and applied through CSS custom properties: text size (stepped scale), line spacing, theme (light, dark, high-contrast light, high-contrast dark), reduced motion, optional system-font fallback.
+- Typeface: Inter by default, self-hosted; users may switch to Atkinson Hyperlegible, Lexend, Source Serif 4, or a device font (ADR 0007). No network font loading.
+- Per-user settings, stored server-side and applied through CSS custom properties: text size (stepped scale), line spacing, theme (light, dark, high-contrast light, high-contrast dark), accent colour (teal, indigo, plum, graphite), typeface, reduced motion.
 - Layout in relative units; usable at 200% and 400% zoom without horizontal scrolling of forms.
 - Full keyboard operation, visible focus, semantic landmarks, labels on every control, error messages tied to fields.
 - Large touch targets (minimum 44 px) and plain-language UI text.
@@ -195,6 +196,8 @@ Findings go in `docs/formats/bento.md`. Unsupported field types are imported as 
 
 Accessibility work is continuous from M2 onward, not a separate phase.
 
+The UI work and added exit checks for each milestone are in `docs/ui-design-plan.md` section 11. Screens in v1 scope that have no design yet are listed in section 6.2 of that document.
+
 Constraints that apply from M1 because of the later MCP server (ADR 0005): every operation is callable through `core/` without the web layer; record trash, project snapshots, and an audit log are core features; authorization checks live in core, not in controllers.
 
 ## 9. Candidate dependencies (not yet added)
@@ -202,7 +205,10 @@ Constraints that apply from M1 because of the later MCP server (ADR 0005): every
 | Dependency | Purpose | License | Note |
 |---|---|---|---|
 | OpenSpout | Streaming CSV/XLSX read and write | MIT | Compatibility with the PHP 8.3 floor to be verified before adoption |
-| Atkinson Hyperlegible | Default UI typeface | OFL-1.1 | Font asset; approved under ADR 0004 |
+| Inter | Default UI typeface | OFL-1.1 | Font asset; ADR 0007 |
+| Atkinson Hyperlegible | Optional UI typeface; wordmark | OFL-1.1 | Font asset; approved under ADR 0004 |
+| Lexend | Optional UI typeface | OFL-1.1 | Font asset; ADR 0007 |
+| Source Serif 4 | Optional UI typeface | OFL-1.1 | Font asset; ADR 0007 |
 | PHPUnit (dev only) | Tests | BSD-3-Clause | Not shipped in releases |
 
 Each is to be recorded in `docs/dependencies.md` when actually added. Licenses above are stated from general knowledge and must be confirmed against each project's own license file at that time.
@@ -230,3 +236,5 @@ Each is to be recorded in `docs/dependencies.md` when actually added. Licenses a
 5. Confirmation of the proposed defaults in ADR 0006 (text elements, token-based styling, single reflowing layout, WYSIWYG editor before MCP server).
 6. Desktop/local packaging (out of scope for v1 unless decided otherwise).
 7. Nginx or other non-Apache self-hosting (v1 assumes Apache `.htaccess`).
+8. Differences between the model UI and this plan (`docs/ui-design-plan.md` section 9), including whether the auto-generated form may flow into columns on wide screens.
+9. Size of the four bundled font families against shared-host upload limits (ADR 0007).

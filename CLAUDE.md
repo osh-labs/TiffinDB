@@ -8,7 +8,7 @@ The official project name is TiffinDB (one word, capital T, D, B). Use it consis
 
 TiffinDB is an open-source, self-hosted personal database application inspired by Bento (Apple/FileMaker, discontinued). The goal is a free, user-owned tool for building and using small personal databases: custom fields, forms/layouts, lists, search, and filtered collections.
 
-Status: planning. No application code yet. Core stack decisions are recorded in `docs/decisions/` and the plan is in `docs/plan.md`; record any new decision there before scaffolding.
+Status: planning. No application code yet. Core stack decisions are recorded in `docs/decisions/` and the plan is in `docs/plan.md`; record any new decision there before scaffolding. The v1 visual target is the model UI in `docs/design/model-ui/`, with `docs/ui-design-plan.md` and `docs/design/tokens.css`; logo files and usage rules are in `docs/brand/`.
 
 ## Public Repository Rules (Mandatory)
 
@@ -44,7 +44,7 @@ Rules:
 
 - Every source file carries an SPDX header: `SPDX-License-Identifier: AGPL-3.0-or-later` plus a copyright line using "TiffinDB contributors" (not an individual).
 - Keep the application's "source code" link/notice reachable in the UI (e.g. footer or About page) pointing to the repository, so AGPL section 13 is satisfied for hosted instances and modified forks inherit the pattern.
-- Only add dependencies whose licenses are AGPL-3.0-compatible (MIT, BSD, Apache-2.0, ISC, LGPL, MPL-2.0, GPL-3.0, AGPL-3.0). Bundled font assets may additionally use OFL-1.1 (ADR 0004). Do not add GPL-2.0-only, proprietary, source-available, or non-commercial-restricted dependencies. Record each dependency's license in `docs/dependencies.md`.
+- Only add dependencies whose licenses are AGPL-3.0-compatible (MIT, BSD, Apache-2.0, ISC, LGPL, MPL-2.0, GPL-3.0, AGPL-3.0). Bundled font assets may additionally use OFL-1.1 (ADR 0004, ADR 0007). Do not add GPL-2.0-only, proprietary, source-available, or non-commercial-restricted dependencies. Record each dependency's license in `docs/dependencies.md`.
 - Do not copy code, schemas, UI assets, icons, or documentation from Bento or any other proprietary product. Do not use the name "Bento" in the product name, UI, or package metadata. Describing TiffinDB as "inspired by" or "a replacement for" it in prose is acceptable.
 - Do not paste code from sources of unknown or incompatible license (Stack Overflow snippets carry CC BY-SA; check before use).
 
@@ -70,6 +70,7 @@ Accepted decisions are in `docs/decisions/`; the working plan is `docs/plan.md`.
 | Accounts | Decided (ADR 0002): household accounts, Admin and Member roles, per-project grants |
 | Forms | Decided (ADR 0003): stored HTML/CSS with binding attributes, auto-generated, simple editor |
 | v1 scope | Decided (ADR 0004): relations, attachments, CSV/XLSX/Bento import, CSV/XLSX/JSON export |
+| UI design | Decided (ADR 0007): model UI is the v1 visual target; Inter default typeface; per-user typeface and accent colour; some layout differences from the plan await confirmation (`docs/ui-design-plan.md` section 9) |
 | WYSIWYG form editor | Decided (ADR 0006): post-v1, same form format, snap-to-grid layout; some defaults awaiting confirmation |
 | MCP server | Decided (ADR 0005): post-v1, full scope, OAuth 2.1, disabled by default; OAuth design document required before implementation |
 | Platform targets | Web application on self-hosted Apache and DreamHost shared hosting; desktop/local packaging undecided |

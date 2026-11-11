@@ -97,6 +97,7 @@ final class UrlGeneratorTest extends TestCase
             'empty' => [''],
             'quote' => ['css/a"b.css'],
             'NUL' => ["css/a\0.css"],
+            'trailing newline' => ["css/app.css\n"],
         ];
     }
 
@@ -116,7 +117,21 @@ final class UrlGeneratorTest extends TestCase
             'relative' => ['tiffindb'],
             'root only' => ['/'],
             'back-slash' => ['/\\example.com'],
+            'trailing newline' => ["/tiffindb\n"],
         ];
+    }
+
+    public function testBasePathSegmentsAreEncoded(): void
+    {
+        $urls = new UrlGenerator('/my app/100%/a?b#c/café', '1');
+
+        self::assertSame('/my%20app/100%25/a%3Fb%23c/caf%C3%A9/x', $urls->to('/x'));
+        self::assertSame('/my%20app/100%25/a%3Fb%23c/caf%C3%A9/', $urls->to('/'));
+        self::assertSame(
+            '/my%20app/100%25/a%3Fb%23c/caf%C3%A9/assets/css/app.css?v=1',
+            $urls->asset('css/app.css'),
+        );
+        self::assertSame('/plain-dir_1.x/x', (new UrlGenerator('/plain-dir_1.x', '1'))->to('/x'));
     }
 
     #[DataProvider('badBasePaths')]

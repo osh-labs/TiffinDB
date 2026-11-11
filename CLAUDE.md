@@ -36,14 +36,15 @@ Requirements:
 
 ## Licensing
 
-Intent: anyone may use, modify, and redistribute the software for any purpose provided attribution is retained and derivative works remain free (copyleft).
+Intent: anyone may use, modify, and redistribute the software for any purpose provided attribution is retained and derivative works remain free (copyleft), including when run as a hosted service.
 
-Proposed license: GNU GPL v3.0 or later (`GPL-3.0-or-later`). Not yet applied; the maintainer has not confirmed. Until a `LICENSE` file exists, do not add license headers or SPDX identifiers.
+License: GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`), chosen by the lead developer because TiffinDB is designed to be hosted on a standard LAMP stack. Section 13 requires network-service operators who modify the software to offer the corresponding source to remote users. The canonical text is in `LICENSE` (from gnu.org); do not edit it.
 
-Rules once the license is applied:
+Rules:
 
-- Every source file carries an SPDX header: `SPDX-License-Identifier: GPL-3.0-or-later` plus a copyright line using the project name or "TiffinDB contributors" (not an individual).
-- Only add dependencies whose licenses are GPL-3.0-compatible (MIT, BSD, Apache-2.0, LGPL, MPL-2.0, GPL-3.0). Do not add GPL-2.0-only, proprietary, source-available, or non-commercial-restricted dependencies. Record each dependency's license in `docs/dependencies.md`.
+- Every source file carries an SPDX header: `SPDX-License-Identifier: AGPL-3.0-or-later` plus a copyright line using "TiffinDB contributors" (not an individual).
+- Keep the application's "source code" link/notice reachable in the UI (e.g. footer or About page) pointing to the repository, so AGPL section 13 is satisfied for hosted instances and modified forks inherit the pattern.
+- Only add dependencies whose licenses are AGPL-3.0-compatible (MIT, BSD, Apache-2.0, ISC, LGPL, MPL-2.0, GPL-3.0, AGPL-3.0). Do not add GPL-2.0-only, proprietary, source-available, or non-commercial-restricted dependencies. Record each dependency's license in `docs/dependencies.md`.
 - Do not copy code, schemas, UI assets, icons, or documentation from Bento or any other proprietary product. Do not use the name "Bento" in the product name, UI, or package metadata. Describing TiffinDB as "inspired by" or "a replacement for" it in prose is acceptable.
 - Do not paste code from sources of unknown or incompatible license (Stack Overflow snippets carry CC BY-SA; check before use).
 
@@ -52,7 +53,7 @@ Rules once the license is applied:
 - Branching: develop on the branch assigned for the session; do not push elsewhere. Do not open pull requests unless asked.
 - Commits: small, descriptive, imperative mood.
 - State assumptions explicitly in PR descriptions and design docs. Where uncertain, say so and list the missing information.
-- Prefer a Qt/GUI-free (or UI-agnostic) core with data model, storage, query, and import/export logic separated from presentation, so the core is testable headlessly.
+- Keep the data model, storage, query, and import/export logic separated from presentation so the core is testable headlessly.
 - Data portability is a core value: user data must be stored in an open, documented format and be exportable (CSV and JSON at minimum) without the application.
 - Tests must be deterministic and run offline with synthetic fixtures only.
 - No telemetry, analytics, or network calls in the application without explicit maintainer approval and an opt-in design.
@@ -62,8 +63,7 @@ Rules once the license is applied:
 
 | Item | Status |
 |---|---|
-| License (GPL-3.0-or-later vs. AGPL-3.0-or-later) | Pending maintainer confirmation |
-| Language / UI framework | Undecided |
-| Storage engine (e.g. SQLite) and file format | Undecided |
-| Platform targets (desktop only vs. local web UI) | Undecided |
+| Language / UI framework | Undecided; must run on a standard LAMP stack (shared-hosting-compatible: no root, no long-running daemons) |
+| Storage engine and file format | Undecided (MySQL/MariaDB expected for LAMP; SQLite fallback to be evaluated) |
+| Platform targets | Web application hostable on LAMP; desktop/local packaging undecided |
 | Bento file/template import | Undecided (requires clean-room approach; no reverse-engineered proprietary code) |

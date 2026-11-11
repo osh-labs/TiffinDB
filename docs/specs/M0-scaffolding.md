@@ -228,7 +228,7 @@ Notes:
 
 A `<source>` element is added in M1, when `src/Core/` exists.
 
-The single `tests` directory suite picks up every `*Test.php` file, including the two committed tests under `tests/tools/`. Those tests need no autoload entry (they use no shared helper), start the tool scripts as child processes with `PHP_BINARY`, and write only to temporary directories. At review they passed under this configuration's settings (20 tests, PHPUnit 11.5.57); see section 17 item 10 for what was not run.
+The single `tests` directory suite picks up every `*Test.php` file, including the two committed tests under `tests/tools/`. Those tests need no autoload entry (they use no shared helper), start the tool scripts as child processes with `PHP_BINARY`, and write only to temporary directories. At review they passed under this exact configuration with PHPUnit 12.5.43 on PHP 8.3.6, with no warnings or deprecations.
 
 `tools/dev/lint.php`: a PHP CLI script that walks the repository (excluding `.git/`, `vendor/`, `node_modules/`, `data/`, `local/`, `.phpunit.cache/`), runs `php -l` with the current PHP binary (`PHP_BINARY`) on every `*.php` file, prints each failure, prints a one-line summary, and exits 0 only if every file passed and at least one file was checked. It takes no arguments and makes no network requests.
 
@@ -350,6 +350,8 @@ Exact content:
 </IfModule>
 ```
 
+How the guard denies access: it has no exceptions. A request for any path outside `public/` (`/src/...`, `/vendor/...`, `/data/...`, `/tests/...`, `/tools/...`, `/docs/...`, `/config/...`, `/templates/...`, `/strings/...`, `/.git/...`, `/composer.json`) is mapped to the same path under `public/`, where no such file exists, so it reaches the front controller and gets the 404 page. The file must never gain a rule that lets a path through unrewritten; T-REPO-3 checks that it contains exactly one `RewriteRule` and no `RewriteCond`. If `mod_rewrite` is absent, everything is refused. If the host ignores `.htaccess` files altogether, nothing in this file can help; detecting that is the job of the host check and of the M1 installer's over-HTTP test (plan section 3.2).
+
 Assumption to verify on a real server: because `public/.htaccess` sets `RewriteEngine On` itself, the root rules are not re-applied inside `public/`, so there is no rewrite loop.
 
 ## 6. Request pipeline
@@ -360,12 +362,12 @@ All classes are in namespace `TiffinDB\Web`, are `final`, and follow ADR 0008 de
 
 In order:
 
-1. SPDX block and `declare(strict_types=1);`.
-2. Built-in development server only (`PHP_SAPI === 'cli-server'`): if the request path resolves, by `realpath`, to an existing regular file inside `public/` other than a `.php` file, `return false` so the server sends it. The resolved path must start with the real path of `public/` followed by a directory separator.
-3. If `../vendor/autoload.php` does not exist: send status 500 with `Content-Type: text/plain; charset=utf-8` and one plain sentence saying the application's dependencies are not installed. Reveal no paths. Stop.
+1. SPDX block and `declare(strict_types=1);`. Then `ini_set('display_errors', '0');` so that no PHP message (a warning, or a fatal error the kernel cannot catch) can put a file path into a response, whatever the host's setting.
+2. Built-in development server only (`PHP_SAPI === 'cli-server'`): if the request path resolves, by `realpath`, to an existing regular file inside `public/` other than a `.php` file, `return false` so the server sends it. The resolved path must start with the real path of `public/` followed by a directory separator. Otherwise continue, and in step 4 pass the server array with `SCRIPT_NAME` replaced by `/index.php`: the built-in server reports the request path itself as `SCRIPT_NAME` when the path contains a dot or names an existing directory (observed at review on PHP 8.3: `/assets/` and `/a.b/c`), which would otherwise be mistaken for a base path.
+3. If `../vendor/autoload.php` does not exist: send status 500 with `Content-Type: text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`, and one plain sentence saying the application's dependencies are not installed. Reveal no paths. Stop.
 4. Require the autoloader. Load `../config/app.php`. Build the kernel with the configuration and the project root path. `Request::fromServer($_SERVER, $_GET)`, `handle()`, `send()`.
 
-No other logic belongs here. `$_POST`, `$_COOKIE`, and `$_FILES` are not read in M0.
+No other logic belongs here. `$_POST`, `$_COOKIE`, and `$_FILES` are not read in M0. Paths are built from `__DIR__`, never from the working directory, so the file behaves the same under Apache, the built-in server, and T-WEB-12.
 
 ### 6.2 `Request`
 
@@ -377,11 +379,12 @@ Immutable. `Request::fromServer(array $server, array $query): self` and a plain 
 | `path` | The route path (see below); always starts with `/` |
 | `basePath` | Detected base path; empty string or a path starting with `/` and not ending with `/` |
 | `query` | The query array as given. Values may be strings or arrays; consumers must check the type |
+| `malformed` | `true` when step 2 below rejects the request path; `path` is then `/` and `basePath` is empty |
 
 Path and base-path detection (unit-tested with the table in section 15.2, T-WEB-2):
 
 1. `uriPath` = `REQUEST_URI` up to but not including the first `?`. If absent, `/`.
-2. Percent-decode `uriPath` once (`rawurldecode`). If the result contains a NUL byte or is not valid UTF-8, the request is malformed: the kernel answers 400 with the error page.
+2. Percent-decode `uriPath` once (`rawurldecode`). If the result contains a NUL byte or is not valid UTF-8, the request is malformed: the kernel answers 400 with the error page. UTF-8 validity is tested with `preg_match('//u', $value) === 1`, because `mbstring` is not part of the PHP core and M0 application code must not need it (section 3).
 3. `scriptDir` = directory part of `SCRIPT_NAME` with back-slashes normalised to `/` and any trailing `/` removed (so `/index.php` gives the empty string, `/sub/public/index.php` gives `/sub/public`).
 4. If `scriptDir` is empty: `basePath` is empty.
 5. Else if `uriPath` equals `scriptDir` or starts with `scriptDir . '/'`: `basePath` = `scriptDir`.
@@ -405,12 +408,14 @@ Immutable value: `status` (int), `headers` (map of name to string), `body` (stri
 
 ### 6.5 `Kernel`
 
-`new Kernel(array $config, string $projectRoot)`; `handle(Request $request): Response`.
+`new Kernel(array $config, string $projectRoot, ?array $routes = null)`; `handle(Request $request): Response`.
+
+The kernel reads templates from `$projectRoot . '/templates'` and strings from `$projectRoot . '/strings/en.php'`, and nothing else from disk. `$routes` is a route table in the `routes.php` format; `null` means the table returned by `src/Web/routes.php`. These two parameters are the only test seams: tests pass `tests/web/fixtures` as the project root (so that directory mirrors the real layout: `templates/layout.php`, `templates/pages/...`, `strings/en.php`) and, where needed, a table that points at a test controller. Nothing in a request can influence either.
 
 1. Malformed request (section 6.2 step 2): 400 error page.
 2. Method not one of `GET`, `HEAD`: 405 error page with `Allow: GET, HEAD`. (M1 adds `POST` together with CSRF.)
 3. Router result: not found gives the 404 error page; method not allowed gives 405 with the `Allow` header from the match; found calls the controller method.
-4. Any `Throwable` from steps 1 to 3 is caught: log one line with `error_log` (class, message, file, line; no request data), return the 500 error page. If rendering the error page itself throws, return a 500 response with a short fixed plain-text body.
+4. Any `Throwable` from steps 1 to 3 is caught: log one line with `error_log` (class, message, file, line; no request data; the line goes to the server's error log, never to the response), return the 500 error page. If rendering the error page itself throws, return a 500 response with a short fixed plain-text body.
 5. Every response leaving `handle()`, including every error response, passes through `SecurityHeaders::apply()` exactly once.
 
 The kernel builds the `Appearance` (section 7) once per request and passes it, with the `UrlGenerator`, `Strings`, and configuration, to the `View`. Construction is explicit `new` calls in the kernel; there is no container.
@@ -419,7 +424,7 @@ Error pages use the same layout and shell as the home page, with a title, one se
 
 ### 6.6 `UrlGenerator`
 
-- `to(string $path): string` returns `basePath . $path` for an application path that starts with `/`.
+- `to(string $path, array $query = []): string` returns `basePath . $path` for an application path that starts with `/` and contains no `?` or `#` (otherwise throw). A non-empty `$query` (string keys, string values) is appended as `?` plus `http_build_query($query, '', '&', PHP_QUERY_RFC3986)`. The view helper `url()` takes the same two arguments.
 - `asset(string $file): string` returns `basePath . '/assets/' . $file . '?v=' . rawurlencode(version)`. `$file` must match `^[a-z0-9][a-z0-9./-]*$` and must not contain `..`; otherwise throw.
 - Both return unescaped strings; the view helpers escape them.
 
@@ -432,7 +437,8 @@ Loads `strings/en.php` once. `get(string $key, array $params = []): string` retu
 - `page(string $template, array $data, int $status = 200): Response` renders `templates/pages/<template>.php` to a string, then renders `templates/layout.php` with that string available as the `content` slot, and returns an HTML response.
 - Template names are fixed strings written in controllers. They must match `^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)*$`; anything else throws. A template name is never derived from request data.
 - Inside a template, `$this` is a view-scope object and `$data` is the array passed by the controller. Nothing else is in scope. `extract` is not used.
-- Scope helpers, all returning strings safe to print: `e(string|int|float|null $value)`, `t(string $key, array $params = [])`, `url(string $path)`, `asset(string $file)`, `partial(string $name, array $data = [])`, `slot(string $name)`. Layout-only accessors that return already-escaped strings may be added under the same rule (they must be called through `<?= $this->...( ?>` and be covered by tests): M0 needs `rootClassAttribute()` (section 7.3).
+- Rendering captures output with output buffering. If a template throws, the view closes every buffer it opened and discards the contents before the exception continues to the kernel, so a half-rendered page is never sent.
+- Scope helpers, all returning strings safe to print: `e(string|int|float|null $value)`, `t(string $key, array $params = [])`, `url(string $path, array $query = [])`, `asset(string $file)`, `partial(string $name, array $data = [])`, `slot(string $name)`. Layout-only accessors that return already-escaped strings may be added under the same rule (they must be called through `<?= $this->...( ?>` and be covered by tests): M0 needs `rootClassAttribute()` (section 7.3).
 - HTML responses carry `Content-Type: text/html; charset=utf-8`.
 
 ### 6.9 `HomeController`
@@ -459,7 +465,7 @@ Example: `/?theme=dark&accent=plum&font=lexend`.
 ### 7.2 Rules
 
 - `Appearance::fromQuery(array $query): self` looks each parameter up in a constant map. A missing parameter, a non-string value (for example an array from `theme[]=x`), or a value not in the map gives the default for that setting. No error, no redirect, no message.
-- The parameter value is only ever used as a lookup key. It is never written to the response, a header, or a log.
+- The parameter value is only ever used as a lookup key (a strict, case-sensitive comparison against the constant map). It is never written to the response, a header, or a log. Parameter names not in the table are ignored.
 - `rootClasses(): list<string>` returns the classes in the fixed order theme, accent, typeface, size, spacing, motion. Defaults contribute nothing.
 - When the theme is `t-hcl` or `t-hcd`, the accent class is omitted whatever the `accent` parameter says.
 - When `appearance_preview` is `false`, the kernel uses `Appearance::default()` and ignores the query parameters.
@@ -494,10 +500,10 @@ Three files under `public/assets/css/`, linked from the layout in this order: `f
   | Larger | `s-larger` | `150%` | 24 px |
   | Largest | `s-largest` | `175%` | 28 px |
 
-- **R2. Everything scales.** Every length in `tokens.css` and `app.css` is written in `rem`, computed as design px divided by 18 and rounded to four decimal places. This covers font sizes, spacing, control and bar heights, icon sizes, corner radii, and maximum content widths. One `rem` is therefore the body text size at every step.
+- **R2. Everything scales.** Every length in `tokens.css` and `app.css`, other than the R3 and R4 cases, is written in `rem`, computed as design px divided by 18 and rounded to four decimal places (half up; trailing zeros dropped, so 18 px is `1rem` and 36 px is `2rem`). This covers font sizes, spacing, control and bar heights, icon sizes, corner radii, and maximum content widths. One `rem` is therefore the body text size at every step.
 - **R3. What stays in px.** Only: border widths (`1px`, `2px`), the focus outline width and offset (`3px`, `2px`), the pill radius (`999px`), and the two floors in R4. These are hairlines and limits, not sizes that should grow with text.
 - **R4. Target floors.** The minimum touch target and control height must not shrink below their accessibility minimums at the Small step, so they are written as `max(44px, 2.4444rem)` and `max(48px, 2.6667rem)`.
-- **R5. No other units for size.** No `px` font sizes, no `zoom`, no `vw`-based font sizes. Line height is unitless and comes from `--leading`. Percentages and `fr` are fine for layout.
+- **R5. No other units for size.** No `px` font sizes, no `zoom`, no viewport-based font sizes. A `font-size` value is always a `rem` length or a `var()` of a `rem` token; the only exception is the five percentages on the root element (R1). Line height is unitless: `--leading` for text, a plain number such as `1.2` for headings. `em` is used only for `letter-spacing` (it must follow the font size of the element) and for media-query breakpoints (R6). Percentages, `fr`, and viewport units (`vh`, `dvh`) are for layout extents only, never for text, spacing, or control sizes. `0` carries no unit. Absolute units other than the px cases in R3 and R4 (`pt`, `cm`, `in`) are not used.
 - **R6. Media queries.** None are needed in M0 (the shell wraps with flexbox). When a later milestone adds one, the breakpoint is written in `em` (design px divided by 16).
 
 Conversion table for the values M0 uses (design px to `rem`):
@@ -601,7 +607,7 @@ Requirements:
 
 ### 9.3 Home page
 
-`templates/pages/home.php`: an `h1`, one sentence of secondary text and, when `appearance_preview` is on, a `nav` labelled by `home.preview.label` containing four links, one per theme: `[base]/`, `[base]/?theme=dark`, `[base]/?theme=hc-light`, `[base]/?theme=hc-dark`. The link for the theme currently shown carries `aria-current="true"`.
+`templates/pages/home.php`: an `h1`, one sentence of secondary text and, when `appearance_preview` is on, a `nav` labelled by `home.preview.label` containing four links, one per theme: `[base]/`, `[base]/?theme=dark`, `[base]/?theme=hc-light`, `[base]/?theme=hc-dark`. The controller passes each link as a path, a query array, a string key, and a current flag; the template builds the address with `url()`. The link for the theme currently shown carries `aria-current="true"`.
 
 ### 9.4 Strings
 

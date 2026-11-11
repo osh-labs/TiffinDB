@@ -34,7 +34,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | PRE-1 | pre | design | `docs/build/context-brief.md` | done (pushed) | assigned branch | orchestrator | accepted |
 | M0-D1 | M0 | design | `docs/specs/M0-scaffolding.md`, `docs/decisions/0008-*`, `docs/decisions/0009-*` | in progress (uncommitted, main tree) | assigned branch | pending | |
 | M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | in progress (uncommitted, main tree) | assigned branch | pending | |
-| M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | in progress (uncommitted, main tree) | assigned branch | pending | |
+| M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | implemented, committed unreviewed (checkpoint) | assigned branch | security review in progress | |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 

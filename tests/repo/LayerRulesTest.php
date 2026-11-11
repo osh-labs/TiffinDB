@@ -34,7 +34,7 @@ final class LayerRulesTest extends TestCase
     /** Pattern => description of what it forbids. */
     private const FORBIDDEN = [
         '/TiffinDB\\\\{1,2}(?:Web|Mcp)(?![A-Za-z0-9_])/i' => 'a reference to TiffinDB\\Web or TiffinDB\\Mcp',
-        '/TiffinDB\\\\{1,2}\{\s*(?:Web|Mcp)(?![A-Za-z0-9_])/i' => 'a group use of TiffinDB\\Web or TiffinDB\\Mcp',
+        '/TiffinDB\\\\{1,2}\{(?:[^}]*,)?\s*(?:Web|Mcp)(?![A-Za-z0-9_])/i' => 'a group use of TiffinDB\\Web or TiffinDB\\Mcp',
         '/\$(?:_GET|_POST|_SERVER|_COOKIE|_FILES|_REQUEST|_SESSION|_ENV|GLOBALS)(?![A-Za-z0-9_])/' => 'a superglobal',
         '/\bfilter_input(?:_array)?\s*\(/i' => 'reading request input through filter_input',
     ];
@@ -167,6 +167,9 @@ final class LayerRulesTest extends TestCase
         yield 'web name in a comment' => [$head . "// Called from TiffinDB\\Web.\n", [$web]];
         yield 'mcp layer, any case' => [$head . "use tiffindb\\mcp\\Server;\n", [$web]];
         yield 'group use' => [$head . "use TiffinDB\\{Web\\View, Core\\Query\\Q};\n", ['a group use of TiffinDB\\Web or TiffinDB\\Mcp']];
+        yield 'group use, web not first' => [$head . "use TiffinDB\\{Core\\Query\\Q, Web\\View};\n", ['a group use of TiffinDB\\Web or TiffinDB\\Mcp']];
+        yield 'group use, mcp across lines' => [$head . "use TiffinDB\\{\n    Core\\Query\\Q,\n    Mcp\\Server,\n};\n", ['a group use of TiffinDB\\Web or TiffinDB\\Mcp']];
+        yield 'group use of core only' => [$head . "use TiffinDB\\{Core\\Query\\Q, Core\\Schema\\Web};\n", []];
         yield 'server superglobal' => [$head . "\$m = \$_SERVER['REQUEST_METHOD'];\n", ['a superglobal']];
         yield 'globals array' => [$head . "\$g = \$GLOBALS['x'];\n", ['a superglobal']];
         yield 'session superglobal' => [$head . "\$_SESSION['k'] = 1;\n", ['a superglobal']];

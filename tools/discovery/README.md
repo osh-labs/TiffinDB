@@ -79,7 +79,7 @@ Output is sorted and repeatable: the same input and options give the same report
 
 - No row values, samples, distinct-value lists, or minimum/maximum values.
 - No file contents. Plist, text and image files are only identified by kind.
-- No literals from `CREATE` statements. Text becomes `<text>`, numbers become `<num>`, comments become `<comment>`. Only `0`, `1` and type sizes such as `VARCHAR(255)` stay. SQLite accepts `"double-quoted"` text as a string, so a quoted word is kept only when it is the name of a table, column, index, view or trigger in that database.
+- No literals from `CREATE` statements. Text becomes `<text>`, every number becomes `<num>`, comments become `<comment>`. A type size such as `VARCHAR(255)` is shown only in the column's declared-type field, and only for a known type name with a short size. SQLite accepts `"double-quoted"` text as a string, so a quoted word is kept only when it is the name of a table, column, index, view or trigger in that database.
 - No default values. A default is reported as `yes (numeric)`, `yes (text-or-blob)`, `yes (keyword)`, `yes (expression)` or `no`.
 - No absolute paths, user names, host names, dates, times, or SQLite error messages (only error codes).
 

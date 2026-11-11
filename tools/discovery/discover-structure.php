@@ -15,7 +15,7 @@
 declare(strict_types=1);
 
 const TOOL_NAME = 'discover-structure.php';
-const TOOL_VERSION = '1.1.0';
+const TOOL_VERSION = '1.1.1';
 const REPORT_FORMAT = 2;
 
 const EXIT_OK = 0;
@@ -63,7 +63,7 @@ const STRUCTURAL_NAMES = 'contents resources info pkginfo .ds_store data databas
  images image thumbnails thumbnail previews preview files documents templates template library libraries cache
  caches tmp temp backup backups metadata manifest index settings preferences config version icon icons';
 
-/** Declared type names whose parenthesised size arguments are kept, e.g. VARCHAR(255). */
+/** Declared type names that may be shown, with a short size, in the declared-type field. */
 const TYPE_WORDS = 'int integer tinyint smallint mediumint bigint character varchar varying nchar nvarchar char
  decimal numeric float double precision real number varbinary binary bit text blob string datetime timestamp time';
 
@@ -285,12 +285,20 @@ final class IdentifierRedactor
         return $shown;
     }
 
-    /** Declared column type: shown as is when made of known type words only. */
+    /**
+     * Declared column type. Shown as stored only when it is known type words
+     * followed by at most a short size, e.g. VARCHAR(255) or DECIMAL(10,2).
+     * Anything else goes through sql(), which masks numbers and literals.
+     */
     public function type(string $type): string
     {
-        foreach (preg_split('/[^A-Za-z_\x80-\xff]+/', $type) ?: [] as $word) {
-            if ($word !== '' && !isset($this->keep[strtolower($word)])) {
-                return $this->ident($type);
+        if (preg_match('/^\s*([A-Za-z_]+(?:\s+[A-Za-z_]+)*)\s*(?:\(\s*\d{1,5}\s*(?:,\s*\d{1,5}\s*)?\))?\s*$/', $type, $m) === 1) {
+            $known = true;
+            foreach (preg_split('/\s+/', $m[1]) ?: [] as $word) {
+                $known = $known && isset($this->typeWords[strtolower($word)]);
+            }
+            if ($known) {
+                return printable($type);
             }
         }
         return $this->sql($type);
@@ -298,8 +306,9 @@ final class IdentifierRedactor
 
     /**
      * Returns DDL with every literal and comment masked and identifiers passed
-     * through ident(). String literals become <text>, numbers become <num>
-     * (0, 1 and type sizes such as VARCHAR(255) are kept). A quoted token is
+     * through ident(). String literals become <text> and every number becomes
+     * <num>, with no exceptions: type names such as char, time or datetime are
+     * also functions, so a number in parentheses can be data. A quoted token is
      * treated as an identifier only if it names something in this database;
      * SQLite also accepts "double-quoted" strings, so anything else is masked.
      */
@@ -309,7 +318,6 @@ final class IdentifierRedactor
         $len = strlen($sql);
         $i = 0;
         $previousWord = '';
-        $typeArguments = false;
         while ($i < $len) {
             $c = $sql[$i];
             if ($c === '-' && substr($sql, $i, 2) === '--') {
@@ -353,7 +361,7 @@ final class IdentifierRedactor
                 continue;
             }
             if (preg_match('/\G[0-9][0-9A-Za-z_.]*/', $sql, $m, 0, $i) === 1) {
-                $out .= $typeArguments || $m[0] === '0' || $m[0] === '1' ? $m[0] : '<num>';
+                $out .= '<num>';
                 $i += strlen($m[0]);
                 $previousWord = '';
                 continue;
@@ -369,11 +377,6 @@ final class IdentifierRedactor
                 }
                 $previousWord = strtolower($word);
                 continue;
-            }
-            if ($c === '(') {
-                $typeArguments = isset($this->typeWords[$previousWord]);
-            } elseif ($c === ')') {
-                $typeArguments = false;
             }
             if (!ctype_space($c)) {
                 $previousWord = '';
@@ -1557,7 +1560,7 @@ function main(array $argv): int
 
         $statements = [
             'This report describes structure only. It contains no row values and no samples.',
-            'Text and numeric literals in CREATE statements are masked (<text>, <num>); defaults are reported by kind only.',
+            'All text and numeric literals in CREATE statements are masked (<text>, <num>); defaults are reported by kind only.',
             [
                 'flagged' => 'Identifiers that look generated or user-chosen are replaced by hashes (id_...). '
                     . 'Plain-word identifiers are SHOWN and cannot be checked by the tool: any of them may be personal.',

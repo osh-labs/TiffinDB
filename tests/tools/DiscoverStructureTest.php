@@ -51,6 +51,10 @@ final class DiscoverStructureTest extends TestCase
         '5550104',
         '5550105',
         '5550106',
+        '5550107',
+        '5550108',
+        '69,120',
+        '80,101',
         // Personal-looking identifiers.
         '555-0199',
         "Person's notes",
@@ -77,6 +81,7 @@ final class DiscoverStructureTest extends TestCase
         $this->package = $this->dir . '/data/Example Person Library';
         mkdir($this->package . '/Attachments', 0700, true);
         mkdir($this->dir . '/out', 0700);
+        mkdir($this->dir . '/tmp', 0700);
         $this->database = $this->package . '/store.db';
         $this->createDatabase($this->database);
 
@@ -171,9 +176,22 @@ final class DiscoverStructureTest extends TestCase
         self::assertStringContainsString('"<text>" AS dq, \'<text>\' AS sq, <num> AS n', $out);
         self::assertStringContainsString('SELECT "<text>"; UPDATE contacts SET pin = <num>, status = \'<text>\'', $out);
         self::assertStringContainsString('/* <comment> */', $out);
-        // Type sizes are structure and stay.
-        self::assertStringContainsString('VARCHAR(255)', $out);
-        self::assertStringContainsString('DECIMAL(10,2)', $out);
+        // Function arguments can be data (char() code points, timestamps): always masked.
+        self::assertStringContainsString('DEFAULT (char(<num>,<num>,<num>,<num>)) CHECK (letters <> char(<num>,<num>,<num>))', $out);
+        self::assertStringContainsString("DEFAULT (datetime(<num>, '<text>'))", $out);
+        self::assertStringContainsString('time(stamp) >= time(<num>)', $out);
+        // Type sizes appear only in the declared-type field, never in the statement.
+        self::assertStringContainsString('code VARCHAR(<num>)', $out);
+        self::assertStringContainsString('amount DECIMAL(<num>,<num>)', $out);
+        self::assertMatchesRegularExpression('/column \d+: code \| type=VARCHAR\(255\) \|/', $out);
+        self::assertMatchesRegularExpression('/column \d+: amount \| type=DECIMAL\(10,2\) \|/', $out);
+
+        foreach ([['--json'], ['--redact-identifiers=all'], ['--redact-identifiers=all', '--json']] as $options) {
+            [, $other] = $this->discover([...$options, $this->package]);
+            $this->assertNoSecrets($other);
+            self::assertStringContainsString('(<num>,<num>,<num>,<num>)', $other);
+            self::assertStringContainsString('(<num>,<num>,<num>)', $other);
+        }
         // A quoted name that really is a column is still treated as an identifier.
         self::assertStringContainsString('"display_name" TEXT', $out);
 
@@ -312,7 +330,7 @@ final class DiscoverStructureTest extends TestCase
         $this->discover([$this->database]);
 
         self::assertSame($before, $this->snapshot());
-        self::assertSame([], glob(sys_get_temp_dir() . '/tiffindb-discovery-*') ?: []);
+        self::assertSame([], glob($this->dir . '/tmp/*') ?: []);
     }
 
     public function testNoAbsoluteOrTemporaryPathsAppear(): void
@@ -387,6 +405,8 @@ final class DiscoverStructureTest extends TestCase
                 code VARCHAR(255),
                 amount DECIMAL(10,2),
                 \"quo\"\"te\" TEXT,
+                letters TEXT DEFAULT (char(69,120,97,109)) CHECK (letters <> char(80,101,114)),
+                stamp TEXT DEFAULT (datetime(5550107, 'unixepoch')) CHECK (stamp IS NULL OR time(stamp) >= time(5550108) OR stamp <> ''),
                 shouted TEXT GENERATED ALWAYS AS (upper(email)) VIRTUAL /* commentLiteral */
             )"
         );
@@ -441,7 +461,11 @@ final class DiscoverStructureTest extends TestCase
         $process = proc_open(
             array_merge([PHP_BINARY, self::SCRIPT], $arguments),
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes
+            $pipes,
+            null,
+            // A private temporary directory, so leftovers can be checked without
+            // being confused by other runs on the same machine.
+            array_merge(getenv(), ['TMPDIR' => $this->dir . '/tmp'])
         );
         self::assertIsResource($process);
         $stdout = (string) stream_get_contents($pipes[1]);

@@ -33,9 +33,9 @@ This spec describes what to build. It contains exact content only for configurat
 
 | Exit criterion (plan section 8, ui-design-plan section 11, `CLAUDE.md`) | How M0 meets it |
 |---|---|
-| ADRs accepted | ADRs 0008 and 0009 are recorded as provisional; the maintainer confirms. Not testable |
+| ADRs accepted | ADRs 0008 and 0009 are recorded as accepted (provisional); the maintainer's confirmation is a manual step recorded in the ledger. Test T-REPO-8 checks that every decision record exists, is numbered without gaps, and carries an accepted status |
 | `docs/formats/bento.md` first findings | Deferred, pending maintainer discovery run (ADR 0009 row D2) |
-| Empty app serves a page | Section 6; tests T-WEB-1 to T-WEB-5 |
+| Empty app serves a page | Section 6; tests T-WEB-1 to T-WEB-5, T-WEB-12 (front controller run end to end), T-REPO-3 |
 | Empty page renders the shell in all four themes | Sections 7 to 9; tests T-WEB-6 to T-WEB-10, T-DES-1 to T-DES-4 |
 | `.gitignore` entries exist before any code that creates data | Section 4; test T-REPO-1 |
 | CI runs offline tests | Section 12; tests run with no network |
@@ -64,6 +64,7 @@ tests/repo/SpdxHeaderTest.php                    WP2
 tests/repo/PhpSourceRulesTest.php                WP2
 tests/repo/DependencyLicenceTest.php             WP2
 tests/repo/LayerRulesTest.php                    WP2
+tests/repo/DecisionRecordsTest.php               WP2
 public/assets/css/tokens.css                     WP3
 public/assets/css/fonts.css                      WP4
 public/assets/fonts/inter/inter-latin-400-normal.woff2                                  WP4
@@ -75,8 +76,8 @@ public/assets/fonts/atkinson-hyperlegible/LICENSE.txt                           
 public/assets/fonts/lexend/lexend-latin-400-normal.woff2                                WP4
 public/assets/fonts/lexend/lexend-latin-700-normal.woff2                                WP4
 public/assets/fonts/lexend/LICENSE.txt                                                  WP4
-public/assets/fonts/source-serif-4/source-serif-4-latin-400-normal.woff2                WP4
-public/assets/fonts/source-serif-4/source-serif-4-latin-700-normal.woff2                WP4
+public/assets/fonts/source-serif-4/SourceSerif4-Regular.ttf.woff2                       WP4
+public/assets/fonts/source-serif-4/SourceSerif4-Bold.ttf.woff2                          WP4
 public/assets/fonts/source-serif-4/LICENSE.txt                                          WP4
 docs/dependencies.md                             WP4
 public/index.php                                 WP5
@@ -99,7 +100,7 @@ tests/web/UrlGeneratorTest.php                   WP5
 tests/web/AppearanceTest.php                     WP5
 tests/web/StringsTest.php                        WP5
 tests/web/ViewTest.php                           WP5
-tests/web/fixtures/                              WP5  (template and strings fixtures for the tests above)
+tests/web/fixtures/                              WP5  (fixture project root for the tests above: templates/, strings/en.php)
 templates/layout.php                             WP6
 templates/partials/top-bar.php                   WP6
 templates/partials/mark.php                      WP6
@@ -111,6 +112,7 @@ public/assets/css/app.css                        WP6
 tests/Support/HtmlAssertions.php                 WP6
 tests/web/ShellTest.php                          WP6
 tests/web/TemplateRulesTest.php                  WP6
+tests/web/FrontControllerTest.php                WP6
 tests/Support/CssTokens.php                      WP7
 tests/Support/Contrast.php                       WP7
 tests/design/TokenParityTest.php                 WP7
@@ -125,14 +127,14 @@ WP5 may add further small classes under `src/Web/` and tests under `tests/web/` 
 
 | Path | Reserved for |
 |---|---|
-| `tools/discovery/` | Legacy-format discovery: one PHP CLI script and a `README.md`. Handled separately |
-| `tools/host-check/` | Shared-host check: one PHP CLI script and a `README.md`. Handled separately |
-| `tests/tools/` | Tests for the scripts above. Handled separately |
+| `tools/discovery/` | Legacy-format discovery: `discover-structure.php` (CLI) and a `README.md`. Already committed; handled separately |
+| `tools/host-check/` | Shared-host check: `host-check.php` (CLI and HTTP) and a `README.md`. Already committed; handled separately |
+| `tests/tools/` | `DiscoverStructureTest.php` and `HostCheckTest.php`, namespace `TiffinDB\Tests\Tools`. Already committed; handled separately. They are part of the one test suite (section 3) |
 | `src/Core/`, `src/Mcp/`, `plugins/` | Later milestones (ADR 0008 decision 1) |
 | `data/`, `local/` | Runtime and local-only data; git-ignored; never created by tests |
 | `docs/formats/` | Format documents (M1 onward; the legacy-format findings are deferred) |
 
-The scripts under `tools/discovery/` and `tools/host-check/` are PHP source files and **must** be covered by the SPDX header test and the lint command (sections 13 and 15). They are standalone scripts that may need to start on an older PHP in order to report on it, so they are exempt from the `strict_types` rule only. Their `README.md` files are Markdown and are not required to carry a header.
+The scripts under `tools/discovery/` and `tools/host-check/` are PHP source files and **must** be covered by the SPDX header test and the lint command (sections 13 and 15). They are standalone scripts that may need to start on an older PHP in order to report on it, so they are exempt from the `strict_types` rule only (`discover-structure.php` declares it anyway; `host-check.php` deliberately keeps to syntax that old PHP versions parse, and must not be "modernised"). The lint rule is unchanged for them: both must pass `php -l` on PHP 8.3. No WP in this spec edits these four files; a WP whose test fails on one of them reports it instead. Their `README.md` files are Markdown and are not required to carry a header.
 
 ## 3. `composer.json`
 
@@ -148,7 +150,7 @@ Exact content. The package name is the lower-case technical identifier; the prod
         "php": ">=8.3"
     },
     "require-dev": {
-        "phpunit/phpunit": "^12.5"
+        "phpunit/phpunit": "12.5.43"
     },
     "autoload": {
         "psr-4": {
@@ -161,6 +163,7 @@ Exact content. The package name is the lower-case technical identifier; the prod
         }
     },
     "config": {
+        "lock": false,
         "sort-packages": true
     },
     "scripts": {
@@ -186,12 +189,12 @@ Exact content. The package name is the lower-case technical identifier; the prod
 
 Notes:
 
-- This content was checked with `composer validate --strict` during design.
+- This content was checked with `composer validate --strict` during design and again at review (Composer 2.8).
 - PHPUnit is the only development dependency. There are no runtime dependencies in M0. Do not add any package without a new decision and a row in `docs/dependencies.md`.
-- PHPUnit 12 requires PHP 8.3 or later, which matches the project floor. During design the constraint resolved to 12.5.43 with 24 transitive development packages.
+- PHPUnit 12 requires PHP 8.3 or later, which matches the project floor. The version is pinned exactly (ADR 0008 decision 12); 12.5.43 installs with 24 transitive development packages. Upgrading PHPUnit is a one-line change to this file plus the `docs/dependencies.md` row.
 - PHPUnit licence: BSD-3-Clause, confirmed by reading the `LICENSE` file on the project's main branch ("BSD 3-Clause License"). The implementer of WP4 re-confirms from `vendor/phpunit/phpunit/LICENSE` after installing and records the installed version.
 - PHP extension requirements (`pdo_sqlite`, `zip`, `xmlreader`) are added to `require` by the milestone that first uses each one. M0 application code uses only the PHP core. The tests use `ext-dom` and `ext-libxml`, which PHPUnit itself requires.
-- `composer.lock` is git-ignored (ADR 0008 decision 12: the lock file embeds package authors' names and email addresses).
+- No lock file is used (ADR 0008 decision 12: a Composer lock file embeds package authors' names and email addresses, which `CLAUDE.md` forbids in the repository). `"lock": false` stops Composer from writing one, so a stale local lock cannot make one machine resolve differently from CI; `/composer.lock` stays in `.gitignore` as a second line of defence. Direct dependencies are pinned to exact versions here instead. Transitive development packages float within PHPUnit's own constraints; that is accepted because they are not shipped and T-REPO-6 checks their licences on every run.
 - `vendor/` is git-ignored during development and is shipped only inside the release archive (M7).
 - Environment note for whoever runs the install: Composer downloads package archives from the code host. Where that host is unreachable, `composer install` may be slow or fail; that is an environment limitation, not a defect in the manifest.
 
@@ -224,6 +227,8 @@ Notes:
 ```
 
 A `<source>` element is added in M1, when `src/Core/` exists.
+
+The single `tests` directory suite picks up every `*Test.php` file, including the two committed tests under `tests/tools/`. Those tests need no autoload entry (they use no shared helper), start the tool scripts as child processes with `PHP_BINARY`, and write only to temporary directories. At review they passed under this configuration's settings (20 tests, PHPUnit 11.5.57); see section 17 item 10 for what was not run.
 
 `tools/dev/lint.php`: a PHP CLI script that walks the repository (excluding `.git/`, `vendor/`, `node_modules/`, `data/`, `local/`, `.phpunit.cache/`), runs `php -l` with the current PHP binary (`PHP_BINARY`) on every `*.php` file, prints each failure, prints a one-line summary, and exits 0 only if every file passed and at least one file was checked. It takes no arguments and makes no network requests.
 

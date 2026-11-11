@@ -200,9 +200,15 @@ final class ContrastTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function invalidColours(): iterable
     {
-        foreach (['', 'FFFFFF', '#FFFF', '#GGGGGG', '#FFFFFFFF', 'red', 'var(--ink)'] as $value) {
-            yield "'{$value}'" => [$value];
+        foreach (['', 'FFFFFF', '#FFFF', '#GGGGGG', '#FFFFFFFF', 'red', 'var(--ink)', "#FFFFFF\n"] as $value) {
+            yield var_export($value, true) => [$value];
         }
+    }
+
+    public function testHexColourCheckRejectsATrailingNewline(): void
+    {
+        self::assertTrue(CssTokens::isHexColour('#FFFFFF'));
+        self::assertFalse(CssTokens::isHexColour("#FFFFFF\n"));
     }
 
     #[DataProvider('invalidColours')]

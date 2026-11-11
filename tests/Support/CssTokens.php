@@ -146,7 +146,7 @@ final class CssTokens
 
     public static function isHexColour(string $value): bool
     {
-        return preg_match('/^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/', $value) === 1;
+        return preg_match('/^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/D', $value) === 1;
     }
 
     /**
@@ -218,7 +218,7 @@ final class CssTokens
      */
     private static function matchRootCompound(string $compound, array $classes): ?int
     {
-        if (preg_match('/^(:root|html)?((?:\.[A-Za-z0-9_-]+)*)$/', $compound, $m) !== 1 || $compound === '') {
+        if (preg_match('/^(:root|html)?((?:\.[A-Za-z0-9_-]+)*)$/D', $compound, $m) !== 1 || $compound === '') {
             throw new LogicException("Unsupported selector for token resolution: '{$compound}'.");
         }
         $required = $m[2] === '' ? [] : explode('.', ltrim($m[2], '.'));
@@ -366,7 +366,7 @@ final class CssTokens
     /** @return array{string, string} lower-case at-rule name and the rest of its prelude */
     private static function splitAtRule(string $prelude): array
     {
-        if (preg_match('/^@([A-Za-z-]+)\s*(.*)$/s', $prelude, $m) !== 1) {
+        if (preg_match('/^@([A-Za-z-]+)\s*(.*)$/sD', $prelude, $m) !== 1) {
             throw new LogicException("Malformed at-rule: '{$prelude}'.");
         }
 

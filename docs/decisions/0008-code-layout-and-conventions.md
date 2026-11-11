@@ -87,7 +87,7 @@ Top-level directories:
 ### 6. Coding standard
 
 - PER Coding Style 2.0 (the successor to PSR-12) and PSR-4.
-- Every PHP file starts with the SPDX block and `declare(strict_types=1);`.
+- Every PHP file starts with the SPDX block and `declare(strict_types=1);`. The standalone maintainer scripts under `tools/discovery/` and `tools/host-check/` carry the SPDX block but are not required to declare strict types, because they may need to start on an older PHP in order to report on it.
 - Classes are `final` unless designed for extension; properties are typed and `readonly` where possible; no global functions outside templates' scope helpers; no global state; no `static` mutable state.
 - No suppression operator (`@`), no `eval`, no variable variables, no `extract` (the view passes variables explicitly; see the M0 spec).
 - Enforcement in M0 is deliberately light because the only development dependency allowed so far is PHPUnit: `php -l` on every file, plus tests for the SPDX header and `strict_types`. Style beyond that is checked in review. Adding a formatter or static analyser is a later decision and needs its own dependency record.

@@ -34,7 +34,7 @@ final class Contrast
      */
     public static function channels(string $hex): array
     {
-        if (preg_match('/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/', $hex, $m) !== 1) {
+        if (preg_match('/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/D', $hex, $m) !== 1) {
             throw new InvalidArgumentException("Not a hex colour: '{$hex}'.");
         }
         $digits = $m[1];

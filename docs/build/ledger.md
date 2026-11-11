@@ -7,7 +7,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M0 |
-| Phase | implement (M0 WPs) |
+| Phase | audit (M0 exit audit in progress) |
 | Window start | 2026-11-11T22:29Z |
 | Resume reminder | `trig_01SLjaGLUL632fioKiH2G1bk`, fires 2026-11-12T03:45Z |
 | Next action | Dispatch M0 WPs per `docs/specs/M0-scaffolding.md`: WP1 first (alone), then WP2/WP3/WP4/WP5 in parallel (max 3), then WP6 and WP7. Review each (security-critical WP1, WP5, WP6 by the design tier; mechanical WP3, WP4 by the implementation tier), merge one at a time, run `composer test`, push. Then M0 exit audit. Any WP row below marked in progress with no pushed branch must be redone after a container restart. MAINTAINER INSTRUCTION (2026-11-11): stop after M0 is done. When the M0 exit audit closes, checkpoint, delete the resume reminder, give a final status, and do not start M1 until the maintainer says so. |
@@ -16,7 +16,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
-| M0 | in progress | Integration branch suite after WP1, WP3, WP4, WP5, WP7: `composer test` OK (418 tests, 2246 assertions); `composer lint` 49 files, 0 failed |
+| M0 | all WPs merged; exit audit in progress | Integration branch: `composer test` OK (1075 tests, 11110 assertions); `composer lint` 69 files, 0 failed; smoke test: root classes none / `t-dark` / `t-hcl` / `t-hcd` for the four themes, unknown theme ignored, CSP header present, 404 for unknown path |
 | M1 | not started | |
 | M2 | not started | |
 | M3 | not started | |
@@ -36,12 +36,12 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | done (pushed) | assigned branch | design-tier privacy reviewer | APPROVE after 4 rounds (round 3 escalated to default-deny redesign); open nit: digit-run exemption uncapped |
 | M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | done (pushed) | assigned branch | design-tier security reviewer | APPROVE after 2 rounds; PHP 7.4 parse compatibility not executed (no 7.4 binary) |
 | M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | done, merged, pushed (incl. test-hardening follow-ups) | merged | design tier | APPROVE (design-tier security review); Apache behaviour unverified (not installed) |
-| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | implemented (5 commits, local only) | `worktree-agent-a4ea3654219ec56fb` | implementation tier | review in progress (implementation tier) |
+| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | done, merged, pushed | merged | implementation tier | APPROVE after 2 rounds (round 1: licence column not checked; walker scanned ignored files) |
 | M0-WP3 | M0 | mechanical | `tokens.css` | done, merged, pushed | merged | implementation tier | APPROVE (byte-identical to spec Appendix A) |
 | M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
-| M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed; security follow-ups in progress (regex anchors, bootstrap failure headers, base-path encoding, send() tests) | merged; follow-ups on `worktree-agent-a49573e7e1d6682c4` | design tier | APPROVE with should-fix follow-ups (design-tier security review, about 60 fuzz cases) |
-| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | in progress (local worktree) | local worktree | design tier |  |
-| M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed; follow-ups in progress (non-colour token parity, regex anchors) | merged; follow-ups on `worktree-agent-ab1eacb530f86d389` | implementation tier | APPROVE (contrast figures independently recomputed) |
+| M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed (incl. security follow-ups) | merged | design tier | APPROVE; follow-ups re-verified by the same security reviewer |
+| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: template rules test bypassable by dynamic calls; shipped output clean; four themes verified in a browser) |
+| M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed (incl. follow-ups) | merged | implementation tier | APPROVE |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 

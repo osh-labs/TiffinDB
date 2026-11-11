@@ -16,7 +16,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
-| M0 | in progress | |
+| M0 | in progress | Integration branch suite after WP1, WP3, WP4, WP5, WP7: `composer test` OK (418 tests, 2246 assertions); `composer lint` 49 files, 0 failed |
 | M1 | not started | |
 | M2 | not started | |
 | M3 | not started | |
@@ -36,12 +36,12 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | done (pushed) | assigned branch | design-tier privacy reviewer | APPROVE after 4 rounds (round 3 escalated to default-deny redesign); open nit: digit-run exemption uncapped |
 | M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | done (pushed) | assigned branch | design-tier security reviewer | APPROVE after 2 rounds; PHP 7.4 parse compatibility not executed (no 7.4 binary) |
 | M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | done, merged, pushed (incl. test-hardening follow-ups) | merged | design tier | APPROVE (design-tier security review); Apache behaviour unverified (not installed) |
-| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | in progress (local worktree) | local worktree | implementation tier |  |
+| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | implemented (5 commits, local only) | `worktree-agent-a4ea3654219ec56fb` | implementation tier | review in progress (implementation tier) |
 | M0-WP3 | M0 | mechanical | `tokens.css` | done, merged, pushed | merged | implementation tier | APPROVE (byte-identical to spec Appendix A) |
 | M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
-| M0-WP5 | M0 | implementation | request pipeline (security-critical) | in progress (local worktree) | local worktree | design tier |  |
-| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | not started (needs WP3, WP4, WP5) | | design tier | |
-| M0-WP7 | M0 | implementation | design asset tests | in progress (local worktree) | local worktree | implementation tier |  |
+| M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed; security follow-ups in progress (regex anchors, bootstrap failure headers, base-path encoding, send() tests) | merged; follow-ups on `worktree-agent-a49573e7e1d6682c4` | design tier | APPROVE with should-fix follow-ups (design-tier security review, about 60 fuzz cases) |
+| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | in progress (local worktree) | local worktree | design tier |  |
+| M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed; follow-ups in progress (non-colour token parity, regex anchors) | merged; follow-ups on `worktree-agent-ab1eacb530f86d389` | implementation tier | APPROVE (contrast figures independently recomputed) |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 

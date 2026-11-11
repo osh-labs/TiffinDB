@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M0 |
-| Phase | pre-design (context brief in progress) |
+| Phase | design (M0 spec in progress; deferred-task scripts in progress) |
 | Window start | 2026-11-11T22:29Z |
 | Resume reminder | `trig_01SLjaGLUL632fioKiH2G1bk`, fires 2026-11-12T03:45Z |
-| Next action | When `docs/build/context-brief.md` exists: commit it, read it, dispatch the M0 design spec (`docs/specs/M0-*.md`). If the brief is absent, re-dispatch the context-brief agent. |
+| Next action | When `docs/specs/M0-scaffolding.md`, ADR 0008 and 0009 exist: commit, dispatch spec review, then implement WPs. When `tools/discovery/` and `tools/host-check/` exist uncommitted or committed-unreviewed: dispatch security review of each (different agent), then commit. If any of these files are absent after a container restart, re-dispatch its author. |
 
 ## 2. Milestones
 
@@ -31,7 +31,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | ID | Milestone | Model tier | Owned files | Status | Branch | Reviewer | Review result |
 |---|---|---|---|---|---|---|---|
-| PRE-1 | pre | design | `docs/build/context-brief.md` | in progress | assigned branch | orchestrator | |
+| PRE-1 | pre | design | `docs/build/context-brief.md` | done (pushed) | assigned branch | orchestrator | accepted |
+| M0-D1 | M0 | design | `docs/specs/M0-scaffolding.md`, `docs/decisions/0008-*`, `docs/decisions/0009-*` | in progress (uncommitted, main tree) | assigned branch | pending | |
+| M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | in progress (uncommitted, main tree) | assigned branch | pending | |
+| M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | in progress (uncommitted, main tree) | assigned branch | pending | |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 

@@ -35,10 +35,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M0-D1 | M0 | design | `docs/specs/M0-scaffolding.md`, `docs/decisions/0008-*`, `docs/decisions/0009-*` | done (pushed) | assigned branch | second design-tier reviewer | READY FOR IMPLEMENTATION after 13 fixes |
 | M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | done (pushed) | assigned branch | design-tier privacy reviewer | APPROVE after 4 rounds (round 3 escalated to default-deny redesign); open nit: digit-run exemption uncapped |
 | M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | done (pushed) | assigned branch | design-tier security reviewer | APPROVE after 2 rounds; PHP 7.4 parse compatibility not executed (no 7.4 binary) |
-| M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | not started | | design tier | |
+| M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | implemented (5 commits, local only, not pushed; redo if container is reclaimed) | `worktree-agent-a904290a10390ad6e` | design tier | review in progress |
 | M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | not started (needs WP1) | | implementation tier | |
-| M0-WP3 | M0 | mechanical | `tokens.css` | not started (needs WP1) | | implementation tier | |
-| M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | not started (needs WP1) | | implementation tier | |
+| M0-WP3 | M0 | mechanical | `tokens.css` | in progress (local worktree, based on WP1 branch) | local worktree | implementation tier |  |
+| M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | in progress (local worktree, based on WP1 branch) | local worktree | implementation tier |  |
 | M0-WP5 | M0 | implementation | request pipeline (security-critical) | not started (needs WP1) | | design tier | |
 | M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | not started (needs WP3, WP4, WP5) | | design tier | |
 | M0-WP7 | M0 | implementation | design asset tests | not started (needs WP3, WP4) | | implementation tier | |

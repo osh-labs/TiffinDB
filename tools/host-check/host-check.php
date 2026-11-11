@@ -427,15 +427,33 @@ function hc_rmtree($path)
     if (!hc_fs('is_dir', $path)) {
         return true;
     }
-    $items = hc_fs('scandir', $path);
-    if (is_array($items)) {
-        foreach ($items as $item) {
-            if ($item !== '.' && $item !== '..') {
-                hc_rmtree($path . '/' . $item);
-            }
-        }
+    foreach (hc_list_dir($path) as $item) {
+        hc_rmtree($path . '/' . $item);
     }
     return (bool) hc_fs('rmdir', $path);
+}
+
+// Directory entries without '.' and '..'; scandir with an opendir fallback.
+function hc_list_dir($path)
+{
+    $items = hc_fs('scandir', $path);
+    if (!is_array($items)) {
+        $items = array();
+        $dh = hc_fs('opendir', $path);
+        if (is_resource($dh)) {
+            while (($entry = @readdir($dh)) !== false) {
+                $items[] = $entry;
+            }
+            @closedir($dh);
+        }
+    }
+    $out = array();
+    foreach ($items as $item) {
+        if ($item !== '.' && $item !== '..') {
+            $out[] = (string) $item;
+        }
+    }
+    return $out;
 }
 
 function hc_cleanup_all()
@@ -482,11 +500,7 @@ function hc_check_cleanup()
 // alone in case another run is in progress.
 function hc_sweep_stale($parent, $label, &$removed, &$kept)
 {
-    $items = hc_fs('scandir', $parent);
-    if (!is_array($items)) {
-        return;
-    }
-    foreach ($items as $item) {
+    foreach (hc_list_dir($parent) as $item) {
         if (preg_match(HC_NAME_PATTERN, $item) !== 1) {
             continue;
         }

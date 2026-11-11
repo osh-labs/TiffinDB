@@ -1313,3 +1313,33 @@ Exact content.
   src: url('../fonts/source-serif-4/SourceSerif4-Bold.ttf.woff2') format('woff2');
 }
 ```
+
+## As-built notes
+
+Recorded at the M0 exit audit. Each item is a deviation from the sections above that review accepted, checked against the code. Where an item and an earlier section disagree, the item describes what was built.
+
+Repository walk and rule tests:
+
+- `.claude/` is excluded from the repository walk, and so from lint and every repository test, in addition to the non-scanned paths of section 13 (`tests/Support/RepoFiles.php`, `EXCLUDED_DIRECTORIES`). It holds local worktrees that are full copies of the repository.
+- The walker lists files through git (`git ls-files --cached --others --exclude-standard`: tracked files plus untracked files that are not ignored). Where the root is not a git checkout or git is not found, it falls back to a directory walk. `tools/dev/lint.php` uses the same class, so lint and tests see the same files.
+- SPDX position for HTML (section 13): the header must come immediately after the doctype, except under `docs/design/model-ui/canvas-source/`, where the rule is "starts with a doctype, header within the first six lines". The relaxation applies to that directory only.
+- T-REPO-7 also forbids `filter_input` and `filter_input_array` under `src/Core/`, as another way of reading request input.
+
+Request pipeline (section 6), stricter than specified:
+
+- A decoded request path longer than 2048 bytes, or one that does not start with `/`, is malformed and gives 400 (`Request::MAX_PATH_BYTES`).
+- A missing or empty `REQUEST_METHOD` is `GET`. A method that is not 1 to 32 ASCII letters becomes `INVALID` and gives 405 with `Allow: GET, HEAD`.
+- The built-in-server branch of `public/index.php` never serves a path with a segment that starts with a dot, in addition to never serving a `.php` file.
+- A PHP warning or notice raised while a request is handled becomes an exception and gives the 500 page. Deprecations are left to the previous handler.
+- `version` (non-empty string), `source_url` (an `https://` URL with no white space, quote, angle bracket, or back-slash), and `appearance_preview` (boolean) are validated on every request. A failure gives a 500 with the fixed plain-text body and the full security header set, not the error page.
+- `src/Web/Fallback.php` produces that plain-text 500. `public/index.php` loads it, `Response.php`, and `SecurityHeaders.php` before the autoloader, so a missing autoloader, a broken configuration file, and a fatal error (through a shutdown function) all get the security headers. It supersedes the two-header reply of section 6.1 step 3.
+- Files beyond section 2.1: `src/Web/Fallback.php`, `src/Web/ViewScope.php` (the object that is `$this` inside a template), `tests/web/KernelTest.php`, `tests/web/FrontControllerFailureTest.php`, `tests/repo/RepoFilesTest.php`, and the fixture helpers `tests/web/fixtures/Controllers.php` and `tests/web/fixtures/Fixtures.php`.
+
+Templates and shell:
+
+- T-WEB-11 is default-deny. A `(` may follow only an allowlisted pure function, a `$this` helper, a control keyword, or an operator; each `<?=` must be exactly one helper call; and each `<?=` must sit in element text or be the whole value of a double-quoted attribute (not `class`, `id`, `style`, or `on*`; in a URL attribute only through `url()` or `asset()`, or `e()` for the footer's configured link).
+- The theme preview `nav` (section 9.3) is labelled by a visible `h2` through `aria-labelledby`, not by an `aria-label`. The `h2` text is `home.preview.label`.
+- The footer "Source code" link has a minimum height of `--target-min` (44 px or more).
+- No favicon is served or linked in M0, as section 1.2 states; `/favicon.ico` gives the 404 page.
+
+Known open points at exit, none blocking: `Fallback::send()` writes its body on a `HEAD` request; the template scanner does not reject the pipe operator of PHP 8.5 (a syntax error on PHP 8.3, so lint catches it there) or a `/\` address written in a template's static markup (the rendered-page assertions do reject it); the discovery tool's digit-run exemption for type-like names has no length cap; the rules list in `docs/dependencies.md` omits the last sentence of section 11.1 (the count itself is stated).

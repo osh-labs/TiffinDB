@@ -6,17 +6,17 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M0 |
-| Phase | audit (M0 exit audit in progress) |
+| Milestone | M0 closed; M1 not started |
+| Phase | stopped on maintainer instruction after M0 |
 | Window start | 2026-11-11T22:29Z |
-| Resume reminder | `trig_01SLjaGLUL632fioKiH2G1bk`, fires 2026-11-12T03:45Z |
-| Next action | Dispatch M0 WPs per `docs/specs/M0-scaffolding.md`: WP1 first (alone), then WP2/WP3/WP4/WP5 in parallel (max 3), then WP6 and WP7. Review each (security-critical WP1, WP5, WP6 by the design tier; mechanical WP3, WP4 by the implementation tier), merge one at a time, run `composer test`, push. Then M0 exit audit. Any WP row below marked in progress with no pushed branch must be redone after a container restart. MAINTAINER INSTRUCTION (2026-11-11): stop after M0 is done. When the M0 exit audit closes, checkpoint, delete the resume reminder, give a final status, and do not start M1 until the maintainer says so. |
+| Resume reminder | none (deleted at stop) |
+| Next action | None until the maintainer sends `RESUME` or an equivalent instruction. On resume: record a new window start, arm a resume reminder, rebuild the offline PHPUnit install if the container was replaced (see usage log note), run `composer test`, then start M1 with the design step (`docs/specs/M1-*.md`, including designs for the installer, people and sharing, new project, and schema editor screens) and schedule the carried-forward items in section 7. |
 
 ## 2. Milestones
 
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
-| M0 | all WPs merged; exit audit in progress | Integration branch: `composer test` OK (1075 tests, 11110 assertions); `composer lint` 69 files, 0 failed; smoke test: root classes none / `t-dark` / `t-hcl` / `t-hcd` for the four themes, unknown theme ignored, CSP header present, 404 for unknown path |
+| M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | not started | |
 | M2 | not started | |
 | M3 | not started | |
@@ -26,6 +26,24 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M7 | not started | |
 | M8 | post-v1, gated | |
 | M9 | post-v1, gated | |
+
+### M0 exit results
+
+Final suite: `composer test` OK (1075 tests, 11110 assertions, none skipped); `composer lint` 69 files, 0 failed; CI workflow green on the hosted runner for the integration branch (run 13, push event).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| ADRs accepted | PASS | ADRs 0001 to 0009 carry an accepted status (0008, 0009 provisional); `DecisionRecordsTest` |
+| `docs/formats/bento.md` first findings | DEFERRED | Awaits the maintainer's private discovery run; `tools/discovery/` script and procedure ready and reviewed; nothing in the repository guesses the format |
+| Empty app serves a page | PASS | Built-in server: `/` 200 with the specified CSP and security headers, no `X-Powered-By`; 404, 400, 405 paths correct; pages well-formed |
+| Shell renders in all four themes (ui 11) | PASS | Headless browser at 1360 px and 390 px, four themes: root class, token colours, mark and wordmark, footer licence line and "Source code" link, local fonts only, no console messages, no horizontal scroll (also 320 px at largest text); `tests/web` shell tests |
+| `.gitignore` entries before data-creating code | PASS | Six mandatory entries present from the first scaffolding commit; `GitignoreTest` |
+| Scope: scaffolding, CI, tokens, fonts and licences recorded | PASS | CI green on hosted runner; token parity and contrast tests; 8 WOFF2 files (269,836 bytes) and 4 licence files recorded in `docs/dependencies.md` |
+| Repository rules | PASS | Independent SPDX scan; no names, phone numbers, credentials; emails `example.com` only; legacy product name only in docs prose and ignore patterns; no network calls in application code |
+| Tests not vacuous | PASS | Six mutations on a scratch copy each produced failures |
+| Deferred maintainer-side tools present | PASS | `tools/discovery/`, `tools/host-check/` with README procedures |
+
+Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed in the build environment; covered later by the host check); manual screen-reader pass; host-check parse compatibility on PHP 7.4.
 
 ## 3. Work packages
 
@@ -82,3 +100,18 @@ Deferred maintainer tasks (raise only at end of build):
 |---|---|
 | 2026-11-11T22:29Z | Build started; window 1 start; resume reminder armed for 03:45Z |
 | 2026-11-11 | Environment note: Composer dist downloads are refused by the network proxy and fall back to full git clones (several GB). Workaround: a trimmed PHPUnit install kept in the session scratchpad is copied into each worktree's git-ignored `vendor/` followed by `composer dump-autoload`. After a container restart this must be rebuilt (`composer require --dev phpunit/phpunit:<pinned>` in a scratch dir, delete `.git` dirs and the Composer vcs cache). Not a blocker. |
+| 2026-11-11T23:5xZ | M0 closed. Maintainer instruction: stop after M0. Resume reminder deleted; no further action until instructed. |
+
+## 7. Carried forward to M1 (open nits from reviews, none blocking)
+
+| Item | Location |
+|---|---|
+| Cap the digit-run exemption in the identifier heuristic (names like `int5550107` print verbatim; they do appear in the review list) | `tools/discovery/discover-structure.php` near line 257 |
+| Fallback response sends a body on HEAD requests | `src/Web/Fallback.php` near line 54 |
+| Template scanner should reject the pipe operator (`\|>`) before the PHP floor rises to 8.5 | `tests/web/TemplateRulesTest.php` |
+| Template source scanner accepts `href="/\\host/"` (rendered-page assertion and URL generator already reject it) | `tests/web/TemplateRulesTest.php` near line 268 |
+| Rules bullet should state the transitive package count clause | `docs/dependencies.md` line 11 |
+| `@symlink` used in a test although the code base otherwise avoids the suppression operator | `tests/tools/HostCheckTest.php` near line 231 |
+| Add a test forbidding nested `.htaccess` files with rewrite directives in release contents (`vendor/` scanned at release), and require `data/.htaccess` to use only a deny rule | M1 installer spec, M7 packaging |
+| Make `/files` routes project-scoped | M1 spec (ADR 0008 URL shapes) |
+| Static assets are served without CSP by Apache | M7 packaging |

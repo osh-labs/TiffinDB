@@ -28,10 +28,11 @@ use TiffinDB\Tests\Support\RepoFiles;
  *
  * Header lines must be exact, consecutive, in the comment syntax of the file
  * type, and within the first six lines. Positions are checked as the spec
- * table states them, with one reading recorded here: for static HTML the
- * checked rule is "the file starts with a doctype and the header is within
- * the first six lines", because the committed design exports place the
- * header after the `<meta charset>` line (which must come early).
+ * table states them. One relaxation is recorded here: the design canvas
+ * exports under docs/design/model-ui/canvas-source/ place the header after
+ * the `<meta charset>` line, so for HTML in that directory only the checked
+ * rule is "starts with a doctype, header within the first six lines".
+ * Every other HTML file must have the header immediately after the doctype.
  */
 #[CoversNothing]
 final class SpdxHeaderTest extends TestCase
@@ -39,6 +40,7 @@ final class SpdxHeaderTest extends TestCase
     private const SPDX = 'SPDX-License-Identifier: AGPL-3.0-or-later';
     private const COPYRIGHT = 'Copyright (C) TiffinDB contributors';
     private const WINDOW = 6;
+    private const HTML_RELAXED_DIRECTORY = 'docs/design/model-ui/canvas-source/';
 
     /**
      * The register of exceptions: exactly the entries of spec section 13.
@@ -173,7 +175,11 @@ final class SpdxHeaderTest extends TestCase
                 : 'the header must be the first two lines, or follow the XML declaration immediately',
             'xml' => ($at === 1 && $xmlDeclaration) ? null : 'the header must follow the XML declaration immediately',
             'shell' => ($at === 1 && str_starts_with($line(0), '#!')) ? null : 'the header must follow the "#!" line immediately',
-            'html' => preg_match('/^<!doctype html>$/i', $line(0)) === 1 ? null : 'the file must start with the doctype line',
+            'html' => match (true) {
+                preg_match('/^<!doctype html>$/i', $line(0)) !== 1 => 'the file must start with the doctype line',
+                $at === 1, str_starts_with($path, self::HTML_RELAXED_DIRECTORY) => null,
+                default => 'the header must follow the doctype line immediately',
+            },
         };
     }
 
@@ -293,7 +299,7 @@ final class SpdxHeaderTest extends TestCase
             'public/assets/css/app.css' => $two($css) . "\n.a { color: inherit; }\n",
             'public/assets/js/app.js' => $two(static fn (string $s): string => "// {$s}") . "\n'use strict';\n",
             'docs/design/page.html' => "<!DOCTYPE html>\n" . $two($xml) . "<html lang=\"en\"></html>\n",
-            'docs/design/export.html' => "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" . $two($xml) . "</head></html>\n",
+            'docs/design/model-ui/canvas-source/Export.dc.html' => "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" . $two($xml) . "</head></html>\n",
             'docs/brand/plain.svg' => $two($xml) . "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
             'docs/brand/declared.svg' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" . $two($xml) . "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
             'phpunit.xml.dist' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" . $two($xml) . "<phpunit/>\n",
@@ -366,6 +372,9 @@ final class SpdxHeaderTest extends TestCase
         yield 'js: only the identifier line' => ['public/assets/js/app.js', "// " . self::SPDX . "\n"];
 
         // Markup.
+        yield 'html: header below the head outside the canvas exports' => ['docs/design/model-ui/export.html', "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" . $two($xml)];
+        yield 'html: canvas export without a doctype first' => ['docs/design/model-ui/canvas-source/A.dc.html', "<html>\n" . $two($xml)];
+        yield 'html: canvas export header after line six' => ['docs/design/model-ui/canvas-source/A.dc.html', "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>T</title>\n" . $two($xml)];
         yield 'html: no doctype first' => ['docs/a.html', $two($xml) . "<!DOCTYPE html>\n"];
         yield 'html: header after line six' => ['docs/a.html', "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<title>T</title>\n" . $two($xml)];
         yield 'html: lines not consecutive' => ['docs/a.html', "<!DOCTYPE html>\n" . $xml(self::SPDX) . "\n<html>\n" . $xml(self::COPYRIGHT) . "\n"];

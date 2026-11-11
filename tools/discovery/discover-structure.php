@@ -15,8 +15,8 @@
 declare(strict_types=1);
 
 const TOOL_NAME = 'discover-structure.php';
-const TOOL_VERSION = '1.0.0';
-const REPORT_FORMAT = 1;
+const TOOL_VERSION = '1.1.0';
+const REPORT_FORMAT = 2;
 
 const EXIT_OK = 0;
 const EXIT_PROBLEMS = 1;
@@ -63,7 +63,21 @@ const STRUCTURAL_NAMES = 'contents resources info pkginfo .ds_store data databas
  images image thumbnails thumbnail previews preview files documents templates template library libraries cache
  caches tmp temp backup backups metadata manifest index settings preferences config version icon icons';
 
+/** Declared type names whose parenthesised size arguments are kept, e.g. VARCHAR(255). */
+const TYPE_WORDS = 'int integer tinyint smallint mediumint bigint character varchar varying nchar nvarchar char
+ decimal numeric float double precision real number varbinary binary bit text blob string datetime timestamp time';
+
+/** File extensions shown as they are. Any other extension becomes a placeholder. */
+const KNOWN_EXTENSIONS = 'db db3 sqlite sqlite3 sqlitedb zip plist xml json txt csv tsv rtf rtfd pdf html htm css js
+ jpg jpeg png gif tif tiff bmp heic heif webp svg ico icns mov mp4 m4a m4v mp3 wav aiff aif caf dat bin log bak
+ tmp strings nib lproj bundle pkg app';
+
 final class UsageError extends RuntimeException
+{
+}
+
+/** A failure whose message is written by this tool and is safe to print. */
+final class ToolError extends RuntimeException
 {
 }
 
@@ -74,7 +88,8 @@ final class Options
     public bool $json = false;
     public bool $showNames = false;
     /** 'none', 'flagged' or 'all' */
-    public string $redactIdentifiers = 'none';
+    public string $redactIdentifiers = 'flagged';
+    public bool $includeSingletons = false;
     public bool $applyWal = false;
     /** @var list<string> */
     public array $valueShapes = [];
@@ -91,10 +106,13 @@ final class NameRedactor
     private array $counters = [];
     /** @var array<string,bool> */
     private array $structural;
+    /** @var array<string,bool> */
+    private array $extensions;
 
     public function __construct(private bool $showNames)
     {
         $this->structural = array_fill_keys(word_list(STRUCTURAL_NAMES), true);
+        $this->extensions = array_fill_keys(word_list(KNOWN_EXTENSIONS), true);
     }
 
     public function path(string $relative): string
@@ -116,7 +134,7 @@ final class NameRedactor
             return printable($name);
         }
         [$stem, $ext] = $this->split($name);
-        return $this->stem($stem) . $ext;
+        return $this->stem($stem) . $this->extension($ext);
     }
 
     /** @return array{0:string,1:string} stem and extension (with its dot, or '') */
@@ -127,6 +145,19 @@ final class NameRedactor
             return [$m[1], $m[2]];
         }
         return [$name, ''];
+    }
+
+    /** Shows a known extension; replaces any other by a stable placeholder. */
+    public function extension(string $ext): string
+    {
+        if ($this->showNames || preg_match('/^\.([A-Za-z0-9]+)(-(?:wal|shm|journal))?$/', $ext, $m) !== 1) {
+            return printable($ext);
+        }
+        $suffix = $m[2] ?? '';
+        if (isset($this->extensions[strtolower($m[1])])) {
+            return '.' . $m[1] . $suffix;
+        }
+        return '.' . $this->placeholder('ext', strtolower($m[1])) . $suffix;
     }
 
     private function stem(string $stem): string
@@ -143,7 +174,12 @@ final class NameRedactor
         } else {
             $class = 'name';
         }
-        $key = $class . "\0" . $stem;
+        return $this->placeholder($class, $stem);
+    }
+
+    private function placeholder(string $class, string $value): string
+    {
+        $key = $class . "\0" . $value;
         if (!isset($this->map[$key])) {
             $n = ($this->counters[$class] ?? 0) + 1;
             $this->counters[$class] = $n;
@@ -160,12 +196,42 @@ final class IdentifierRedactor
 {
     /** @var array<string,bool> */
     private array $keep;
+    /** @var array<string,bool> */
+    private array $typeWords;
     /** @var array<string,list<string>> display name => reasons */
     private array $flagged = [];
+    /** @var array<string,bool> identifiers printed as they are */
+    private array $verbatim = [];
+    /** @var array<string,bool> lower-cased names that exist in the current database */
+    private array $known = [];
 
     public function __construct(private string $mode, private string $key)
     {
         $this->keep = array_fill_keys(word_list(KEEP_WORDS), true);
+        $this->typeWords = array_fill_keys(word_list(TYPE_WORDS), true);
+    }
+
+    /**
+     * Names of the tables, columns, indexes, views and triggers of the database
+     * being read. A quoted token in DDL is an identifier only if it is one of these.
+     *
+     * @param list<string> $names
+     */
+    public function setKnown(array $names): void
+    {
+        $this->known = ['binary' => true, 'nocase' => true, 'rtrim' => true];
+        foreach ($names as $name) {
+            $this->known[strtolower($name)] = true;
+        }
+    }
+
+    /** @return list<string> */
+    public function takeVerbatim(): array
+    {
+        $names = array_map('strval', array_keys($this->verbatim));
+        sort($names, SORT_STRING);
+        $this->verbatim = [];
+        return $names;
     }
 
     /** @return array<string,list<string>> */
@@ -184,7 +250,7 @@ final class IdentifierRedactor
             return [];
         }
         $reasons = [];
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_$]*$/', $name) !== 1) {
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,62}$/', $name) !== 1) {
             $reasons[] = 'not-a-plain-identifier';
         }
         if (preg_match('/\d{2,}/', $name) === 1
@@ -213,6 +279,9 @@ final class IdentifierRedactor
         if ($reasons !== []) {
             $this->flagged[$shown] = $reasons;
         }
+        if (!$hide && !isset($this->keep[strtolower($name)])) {
+            $this->verbatim[$shown] = true;
+        }
         return $shown;
     }
 
@@ -224,12 +293,15 @@ final class IdentifierRedactor
                 return $this->ident($type);
             }
         }
-        return printable($type);
+        return $this->sql($type);
     }
 
     /**
-     * Returns DDL with string literals and comments
-     * masked and identifiers passed through ident().
+     * Returns DDL with every literal and comment masked and identifiers passed
+     * through ident(). String literals become <text>, numbers become <num>
+     * (0, 1 and type sizes such as VARCHAR(255) are kept). A quoted token is
+     * treated as an identifier only if it names something in this database;
+     * SQLite also accepts "double-quoted" strings, so anything else is masked.
      */
     public function sql(string $sql): string
     {
@@ -237,6 +309,7 @@ final class IdentifierRedactor
         $len = strlen($sql);
         $i = 0;
         $previousWord = '';
+        $typeArguments = false;
         while ($i < $len) {
             $c = $sql[$i];
             if ($c === '-' && substr($sql, $i, 2) === '--') {
@@ -269,16 +342,18 @@ final class IdentifierRedactor
                     $j++;
                 }
                 $i = $j + 1;
-                if ($c === "'" || $previousWord === 'default') {
-                    $out .= $c . '<text:' . strlen($body) . '>' . $close;
+                $isIdentifier = $c === '`' || $c === '[' || isset($this->known[strtolower($body)]);
+                if ($isIdentifier && $previousWord !== 'default') {
+                    $shown = $this->ident($body);
+                    $out .= $c . ($close === ']' ? $shown : str_replace($close, $close . $close, $shown)) . $close;
                 } else {
-                    $out .= $c . $this->ident($body) . $close;
+                    $out .= $c . '<text>' . $close;
                 }
                 $previousWord = '';
                 continue;
             }
             if (preg_match('/\G[0-9][0-9A-Za-z_.]*/', $sql, $m, 0, $i) === 1) {
-                $out .= $m[0];
+                $out .= $typeArguments || $m[0] === '0' || $m[0] === '1' ? $m[0] : '<num>';
                 $i += strlen($m[0]);
                 $previousWord = '';
                 continue;
@@ -294,6 +369,11 @@ final class IdentifierRedactor
                 }
                 $previousWord = strtolower($word);
                 continue;
+            }
+            if ($c === '(') {
+                $typeArguments = isset($this->typeWords[$previousWord]);
+            } elseif ($c === ')') {
+                $typeArguments = false;
             }
             if (!ctype_space($c)) {
                 $previousWord = '';
@@ -316,8 +396,8 @@ final class Run
     public array $warnings = [];
     public bool $problems = false;
     public ?string $tempDir = null;
-    /** @var array<string,bool> lower-cased --value-shapes tables that matched */
-    public array $shapeTablesSeen = [];
+    /** @var array<string,bool> --value-shapes targets that matched a table */
+    public array $shapeTargetsSeen = [];
 
     public function __construct(
         public Options $options,
@@ -358,21 +438,29 @@ Usage: php discover-structure.php [options] <path>
   <path>                    Directory (package), SQLite database file, or zip archive.
 
 Options:
-  --out <file>              Write the report to <file> instead of stdout. The file
-                            must not exist and must not be inside or beside the input.
+  --out <file>              Write the report to a new file (mode 0600) instead of
+                            stdout. The file must not exist and must not be inside
+                            the input directory or in the directory of an input file.
   --json                    Emit JSON instead of plain text.
   --show-names              Show real file and directory names (default: redacted).
-  --redact-identifiers      Replace flagged SQL identifiers with keyed hashes.
   --redact-identifiers=all  Replace every SQL identifier with a keyed hash.
+                            (Default: only identifiers that look generated or
+                            user-chosen are replaced; plain-word names are shown.)
+  --show-identifiers        Show every SQL identifier as it is. Names can be
+                            personal: use only for a report you will review.
   --apply-wal               If a database has a write-ahead log beside it, analyse a
                             temporary private copy with the log applied.
   --value-shapes <table>    OPT-IN: also print shape-masked patterns of TEXT values
-                            for the named table only. May be repeated. Review the
-                            result line by line before sharing it.
+                            for the named table, in every database that has it.
+                            Use <n>:<table> for the table in "Database <n>" only.
+                            May be repeated. Patterns seen once are counted, not
+                            listed. Review the result line by line before sharing.
+  --value-shapes-singletons With --value-shapes: also list patterns seen only once.
   --help, --version
 
 Exit codes: 0 ok; 1 finished but problems were reported; 2 usage error;
-3 input or output could not be read or written; 4 pdo_sqlite is missing.
+3 input or output could not be read or written, or the run was stopped;
+4 pdo_sqlite is missing.
 
 TXT;
 }
@@ -382,6 +470,7 @@ function parse_arguments(array $argv): Options
 {
     $o = new Options();
     $positional = [];
+    $identifierModes = [];
     $args = array_slice($argv, 1);
     for ($i = 0; $i < count($args); $i++) {
         $arg = $args[$i];
@@ -423,7 +512,13 @@ function parse_arguments(array $argv): Options
                 if ($value !== null && $value !== 'all' && $value !== 'flagged') {
                     throw new UsageError('--redact-identifiers accepts only "=all" or "=flagged".');
                 }
-                $o->redactIdentifiers = $value ?? 'flagged';
+                $identifierModes[] = $value ?? 'flagged';
+                break;
+            case '--show-identifiers':
+                $identifierModes[] = 'none';
+                break;
+            case '--value-shapes-singletons':
+                $o->includeSingletons = true;
                 break;
             case '--out':
                 $o->out = $needValue();
@@ -445,6 +540,11 @@ function parse_arguments(array $argv): Options
     if (count($positional) !== 1) {
         throw new UsageError('Exactly one input path is required.');
     }
+    $identifierModes = array_values(array_unique($identifierModes));
+    if (count($identifierModes) > 1) {
+        throw new UsageError('--show-identifiers and --redact-identifiers cannot be combined.');
+    }
+    $o->redactIdentifiers = $identifierModes[0] ?? 'flagged';
     $o->input = $positional[0];
     $o->valueShapes = array_values(array_unique($o->valueShapes));
     sort($o->valueShapes, SORT_STRING);
@@ -564,7 +664,7 @@ function temp_dir(Run $run): string
     if ($run->tempDir === null) {
         $dir = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'tiffindb-discovery-' . bin2hex(random_bytes(8));
         if (!@mkdir($dir, 0700)) {
-            throw new RuntimeException('Cannot create a private temporary directory.');
+            throw new ToolError('Cannot create a private temporary directory.');
         }
         $run->tempDir = $dir;
     }
@@ -639,7 +739,10 @@ function process_zip(Run $run, string $abs, string $shownPath, int $depth): void
             $run->layout[] = ['path' => $inner, 'type' => 'dir', 'size' => null, 'kind' => 'directory'];
             continue;
         }
-        $stream = @$zip->getStream($zip->getNameIndex($item['index']) ?: $item['name']);
+        // By index where possible, so that duplicate entry names are read correctly.
+        $stream = method_exists($zip, 'getStreamIndex')
+            ? @$zip->getStreamIndex($item['index'])
+            : @$zip->getStream($item['name']);
         if ($stream === false) {
             $run->layout[] = [
                 'path' => $inner, 'type' => 'file', 'size' => $item['size'], 'kind' => 'unreadable',
@@ -667,7 +770,7 @@ function process_zip(Run $run, string $abs, string $shownPath, int $depth): void
         $target = fopen($tmp, 'wb');
         if ($target === false) {
             fclose($stream);
-            throw new RuntimeException('Cannot write to the private temporary directory.');
+            throw new ToolError('Cannot write to the private temporary directory.');
         }
         fwrite($target, $head);
         stream_copy_to_stream($stream, $target, MAX_EXTRACT_BYTES);
@@ -726,17 +829,16 @@ function sqlite_uri(string $path, bool $immutable): string
     return 'sqlite:file:' . $encoded . '?mode=ro' . ($immutable ? '&immutable=1' : '');
 }
 
-/** Describes a failure without echoing SQLite's message, which can contain names. */
-function describe_error(Throwable $e, Run $run): string
+/** Describes a failure without echoing SQLite's message, which can contain names and SQL. */
+function describe_error(Throwable $e): string
 {
+    if ($e instanceof ToolError) {
+        return $e->getMessage();
+    }
     $names = [1 => 'SQLITE_ERROR', 10 => 'SQLITE_IOERR', 11 => 'SQLITE_CORRUPT', 14 => 'SQLITE_CANTOPEN',
         23 => 'SQLITE_AUTH', 26 => 'SQLITE_NOTADB'];
     $code = $e instanceof PDOException && isset($e->errorInfo[1]) ? (int) $e->errorInfo[1] : 0;
-    $text = $code > 0 ? 'SQLite error ' . $code . (isset($names[$code]) ? ' (' . $names[$code] . ')' : '') : 'error';
-    if ($run->options->showNames) {
-        $text .= ': ' . printable($e->getMessage());
-    }
-    return $text;
+    return $code > 0 ? 'SQLite error ' . $code . (isset($names[$code]) ? ' (' . $names[$code] . ')' : '') : 'error';
 }
 
 /** @return array<string,mixed> */
@@ -762,7 +864,7 @@ function analyse_database(Run $run, string $abs, string $shownPath, bool $onDisk
             $openPath = temp_file($run);
             $copies = [$openPath, $openPath . '-wal', $openPath . '-shm'];
             if (!@copy($abs, $openPath) || !@copy($abs . '-wal', $openPath . '-wal')) {
-                throw new RuntimeException('Cannot copy the database to the private temporary directory.');
+                throw new ToolError('Cannot copy the database to the private temporary directory.');
             }
             $immutable = false;
             $db['wal'] = 'applied on a temporary private copy';
@@ -770,15 +872,19 @@ function analyse_database(Run $run, string $abs, string $shownPath, bool $onDisk
             $db['wal'] = 'present but NOT applied; recent changes may be missing (see --apply-wal)';
             $run->warnings[] = "Database $shownPath has a write-ahead log that was not applied.";
         }
+        if (($sidecars['journal_bytes'] ?? 0) > 0) {
+            $db['journal'] = 'rollback journal present and ignored; the database may be in an unfinished state';
+            $run->warnings[] = "Database $shownPath has a rollback journal beside it, which was ignored.";
+        }
         $pdo = new PDO(sqlite_uri($openPath, $immutable), null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY,
         ]);
         $pdo->exec('PRAGMA query_only = ON');
-        $db += read_schema($run, $pdo);
+        $db += read_schema($run, $pdo, count($run->databases) + 1);
         $pdo = null;
     } catch (Throwable $e) {
-        $db['error'] = describe_error($e, $run);
+        $db['error'] = describe_error($e);
         $run->problem("Database $shownPath could not be read completely: " . $db['error'] . '.');
     } finally {
         foreach ($copies as $copy) {
@@ -786,17 +892,52 @@ function analyse_database(Run $run, string $abs, string $shownPath, bool $onDisk
         }
     }
     $db['flagged_identifiers'] = $run->idents->takeFlagged();
+    $db['identifiers_shown_verbatim'] = $run->idents->takeVerbatim();
     return $db;
 }
 
+/**
+ * Column rows of a table or view. Uses table_xinfo so that hidden and
+ * generated columns are included; falls back to table_info on old SQLite.
+ *
+ * @return list<array<string,mixed>>
+ */
+function table_columns(PDO $pdo, string $table): array
+{
+    $qt = quote_identifier($table);
+    try {
+        $rows = $pdo->query("PRAGMA table_xinfo($qt)")->fetchAll(PDO::FETCH_ASSOC);
+        if ($rows !== []) {
+            return $rows;
+        }
+    } catch (Throwable) {
+        // Fall through to table_info.
+    }
+    return $pdo->query("PRAGMA table_info($qt)")->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /** @return array<string,mixed> */
-function read_schema(Run $run, PDO $pdo): array
+function read_schema(Run $run, PDO $pdo, int $databaseNumber): array
 {
     $objects = $pdo->query('SELECT type, name, tbl_name, sql FROM sqlite_master')->fetchAll(PDO::FETCH_ASSOC);
     usort($objects, static fn (array $a, array $b): int => strcmp((string) $a['name'], (string) $b['name']));
     $idents = $run->idents;
+    $known = [];
+    foreach ($objects as $object) {
+        $known[] = (string) $object['name'];
+        $known[] = (string) $object['tbl_name'];
+        if ($object['type'] === 'table' || $object['type'] === 'view') {
+            try {
+                foreach (table_columns($pdo, (string) $object['name']) as $column) {
+                    $known[] = (string) $column['name'];
+                }
+            } catch (Throwable) {
+                // A view or virtual table that cannot be resolved contributes no names.
+            }
+        }
+    }
+    $idents->setKnown($known);
     $out = ['tables' => [], 'views' => [], 'indexes' => [], 'triggers' => []];
-    $wanted = array_map('strtolower', $run->options->valueShapes);
     foreach ($objects as $object) {
         $name = (string) $object['name'];
         $entry = [
@@ -807,9 +948,12 @@ function read_schema(Run $run, PDO $pdo): array
             case 'table':
                 $entry['virtual'] = preg_match('/^\s*CREATE\s+VIRTUAL\s/i', (string) $object['sql']) === 1;
                 $entry += read_table($run, $pdo, $name);
-                if (in_array(strtolower($name), $wanted, true)) {
-                    $run->shapeTablesSeen[strtolower($name)] = true;
-                    $entry['value_shapes'] = read_value_shapes($run, $pdo, $name);
+                foreach ($run->options->valueShapes as $target) {
+                    [$number, $wanted] = split_shape_target($target);
+                    if (strcasecmp($wanted, $name) === 0 && ($number === null || $number === $databaseNumber)) {
+                        $run->shapeTargetsSeen[$target] = true;
+                        $entry['value_shapes'] ??= read_value_shapes($run, $pdo, $name);
+                    }
                 }
                 $out['tables'][] = $entry;
                 break;
@@ -822,7 +966,7 @@ function read_schema(Run $run, PDO $pdo): array
                         $columns
                     );
                 } catch (Throwable $e) {
-                    $entry['error'] = describe_error($e, $run);
+                    $entry['error'] = describe_error($e);
                     $run->problems = true;
                 }
                 $out['indexes'][] = $entry;
@@ -839,20 +983,40 @@ function read_schema(Run $run, PDO $pdo): array
     return $out;
 }
 
-/** Describes a column default without disclosing a non-numeric literal. */
-function describe_default(mixed $default): string
+/**
+ * Splits a --value-shapes target into an optional database number and a table name.
+ *
+ * @return array{0:?int,1:string}
+ */
+function split_shape_target(string $target): array
+{
+    if (preg_match('/^(\d+):(.+)$/s', $target, $m) === 1) {
+        return [(int) $m[1], $m[2]];
+    }
+    return [null, $target];
+}
+
+/**
+ * Says whether a column has a default and of what kind, never its value.
+ *
+ * @return array{present:bool,kind:?string}
+ */
+function describe_default(mixed $default): array
 {
     if ($default === null) {
-        return 'none';
+        return ['present' => false, 'kind' => null];
     }
     $text = trim((string) $default);
     if (preg_match('/^[+-]?(?:\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|0[xX][0-9a-fA-F]+)$/', $text) === 1) {
-        return $text;
+        $kind = 'numeric';
+    } elseif (preg_match('/^(?:NULL|TRUE|FALSE|CURRENT_TIME|CURRENT_DATE|CURRENT_TIMESTAMP)$/i', $text) === 1) {
+        $kind = 'keyword';
+    } elseif (preg_match('/^(?:[xX]?\'|")/', $text) === 1) {
+        $kind = 'text-or-blob';
+    } else {
+        $kind = 'expression';
     }
-    if (preg_match('/^(?:NULL|TRUE|FALSE|CURRENT_TIME|CURRENT_DATE|CURRENT_TIMESTAMP)$/i', $text) === 1) {
-        return strtoupper($text);
-    }
-    return 'present (non-numeric, hidden)';
+    return ['present' => true, 'kind' => $kind];
 }
 
 /** @return array<string,mixed> */
@@ -863,7 +1027,7 @@ function read_table(Run $run, PDO $pdo, string $table): array
     $out = ['row_count' => null, 'columns' => [], 'foreign_keys' => []];
     $realColumns = [];
     try {
-        foreach ($pdo->query("PRAGMA table_info($qt)")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        foreach (table_columns($pdo, $table) as $c) {
             $realColumns[] = (string) $c['name'];
             $out['columns'][] = [
                 'name' => $idents->ident((string) $c['name']),
@@ -871,6 +1035,8 @@ function read_table(Run $run, PDO $pdo, string $table): array
                 'notnull' => (int) $c['notnull'] !== 0,
                 'pk' => (int) $c['pk'],
                 'default' => describe_default($c['dflt_value']),
+                'hidden' => [0 => 'no', 1 => 'hidden', 2 => 'generated-virtual', 3 => 'generated-stored'][(int) ($c['hidden'] ?? 0)]
+                    ?? 'yes',
             ];
         }
         foreach ($pdo->query("PRAGMA foreign_key_list($qt)")->fetchAll(PDO::FETCH_ASSOC) as $fk) {
@@ -895,7 +1061,7 @@ function read_table(Run $run, PDO $pdo, string $table): array
                     try {
                         $stats[] = column_statistics($pdo, $qt, [$realColumns[$i]])[0];
                     } catch (Throwable $e) {
-                        $stats[] = ['error' => describe_error($e, $run)];
+                        $stats[] = ['error' => describe_error($e)];
                         $run->problems = true;
                     }
                 }
@@ -905,7 +1071,7 @@ function read_table(Run $run, PDO $pdo, string $table): array
             }
         }
     } catch (Throwable $e) {
-        $out['error'] = describe_error($e, $run);
+        $out['error'] = describe_error($e);
         $run->problem('A table could not be read completely: ' . $out['error'] . '.');
     }
     return $out;
@@ -952,7 +1118,7 @@ function column_statistics(PDO $pdo, string $quotedTable, array $columns): array
 }
 
 /** Masks a text value: letters to a/A, digits to 9, ASCII punctuation kept. */
-function shape_mask(string $value): string
+function shape_mask(string $value, bool $truncated = false): string
 {
     if (preg_match('//u', $value) !== 1) {
         $value = (string) preg_replace('/[\x80-\xff]/', '?', $value);
@@ -972,11 +1138,12 @@ function shape_mask(string $value): string
         }
         return preg_match('/^[\x20-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]$/', $ch) === 1 ? $ch : '?';
     }, $cut);
-    return strlen($cut) < strlen($value) ? $mask . '...' : $mask;
+    return $truncated || strlen($cut) < strlen($value) ? $mask . '...' : $mask;
 }
 
 /**
  * Opt-in: shape-masked patterns of TEXT values, per column, for one table.
+ * Only the first characters of each value are fetched, so memory stays bounded.
  *
  * @return list<array<string,mixed>>
  */
@@ -985,16 +1152,18 @@ function read_value_shapes(Run $run, PDO $pdo, string $table): array
     $qt = quote_identifier($table);
     $result = [];
     try {
-        $columns = $pdo->query("PRAGMA table_info($qt)")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($columns as $c) {
+        foreach (table_columns($pdo, $table) as $c) {
             $qc = quote_identifier((string) $c['name']);
             $shapes = [];
             $untracked = 0;
             $total = 0;
-            $statement = $pdo->query("SELECT $qc FROM $qt WHERE typeof($qc) = 'text'");
-            while (($value = $statement->fetchColumn()) !== false) {
+            $statement = $pdo->query(
+                "SELECT substr($qc, 1, " . SHAPE_MAX_CHARS . "), length($qc) > " . SHAPE_MAX_CHARS
+                . " FROM $qt WHERE typeof($qc) = 'text'"
+            );
+            while (($row = $statement->fetch(PDO::FETCH_NUM)) !== false) {
                 $total++;
-                $shape = shape_mask((string) $value);
+                $shape = shape_mask((string) $row[0], (int) $row[1] === 1);
                 if (isset($shapes[$shape])) {
                     $shapes[$shape]++;
                 } elseif (count($shapes) < SHAPE_MAX_TRACKED) {
@@ -1007,7 +1176,12 @@ function read_value_shapes(Run $run, PDO $pdo, string $table): array
                 continue;
             }
             $list = [];
+            $singletons = 0;
             foreach ($shapes as $shape => $count) {
+                if ($count < 2 && !$run->options->includeSingletons) {
+                    $singletons++;
+                    continue;
+                }
                 $list[] = ['shape' => (string) $shape, 'count' => $count];
             }
             usort($list, static fn (array $a, array $b): int => $b['count'] <=> $a['count'] ?: strcmp($a['shape'], $b['shape']));
@@ -1016,11 +1190,12 @@ function read_value_shapes(Run $run, PDO $pdo, string $table): array
                 'text_values' => $total,
                 'distinct_shapes' => count($shapes),
                 'distinct_shapes_is_lower_bound' => $untracked > 0,
+                'shapes_seen_once_not_listed' => $singletons,
                 'shapes' => array_slice($list, 0, SHAPE_MAX_LISTED),
             ];
         }
     } catch (Throwable $e) {
-        $run->problem('Value shapes could not be read: ' . describe_error($e, $run) . '.');
+        $run->problem('Value shapes could not be read: ' . describe_error($e) . '.');
     }
     return $result;
 }
@@ -1039,6 +1214,7 @@ function render_text(array $report): string
     $o = $report['options'];
     $l[] = '# options: file-names=' . $o['file_names'] . ' identifiers=' . $o['identifiers']
         . ' value-shapes=' . ($o['value_shapes'] === [] ? 'none' : implode(',', $o['value_shapes']))
+        . ($o['value_shapes_singletons'] ? ' (with singletons)' : '')
         . ' apply-wal=' . ($o['apply_wal'] ? 'yes' : 'no');
     $l[] = '';
     $l[] = '== Container layout ==';
@@ -1069,6 +1245,9 @@ function render_text(array $report): string
         if (isset($db['wal'])) {
             $l[] = 'write-ahead log: ' . $db['wal'];
         }
+        if (isset($db['journal'])) {
+            $l[] = 'journal: ' . $db['journal'];
+        }
         if (isset($db['error'])) {
             $l[] = 'ERROR: ' . $db['error'];
         }
@@ -1092,13 +1271,14 @@ function render_text(array $report): string
             $l[] = '   sql: ' . indent_sql($t['sql']);
             foreach ($t['columns'] as $i => $c) {
                 $l[] = sprintf(
-                    '   column %d: %s | type=%s | notnull=%s | pk=%d | default=%s',
+                    '   column %d: %s | type=%s | notnull=%s | pk=%d | default=%s%s',
                     $i + 1,
                     $c['name'],
                     $c['declared_type'] === '' ? '(none)' : $c['declared_type'],
                     $c['notnull'] ? 'yes' : 'no',
                     $c['pk'],
-                    $c['default']
+                    $c['default']['present'] ? 'yes (' . $c['default']['kind'] . ')' : 'no',
+                    $c['hidden'] === 'no' ? '' : ' | ' . $c['hidden']
                 );
                 $s = $c['statistics'] ?? null;
                 if ($s === null) {
@@ -1143,12 +1323,13 @@ function render_text(array $report): string
                 }
                 foreach ($t['value_shapes'] as $vs) {
                     $l[] = sprintf(
-                        '      column %s: text values=%d, distinct shapes=%s%d, listed=%d',
+                        '      column %s: text values=%d, distinct shapes=%s%d, listed=%d, seen once and not listed=%d',
                         $vs['column'],
                         $vs['text_values'],
                         $vs['distinct_shapes_is_lower_bound'] ? 'more than ' : '',
                         $vs['distinct_shapes'],
-                        count($vs['shapes'])
+                        count($vs['shapes']),
+                        $vs['shapes_seen_once_not_listed']
                     );
                     foreach ($vs['shapes'] as $shape) {
                         $l[] = sprintf('         %8d x  [%s]', $shape['count'], $shape['shape']);
@@ -1174,6 +1355,13 @@ function render_text(array $report): string
                 $l[] = '   ' . $name . '  [' . implode(', ', $reasons) . ']';
             }
         }
+        if ($db['identifiers_shown_verbatim'] !== []) {
+            $l[] = '';
+            $l[] = 'REVIEW LIST - every identifier printed as it is in this database (any of them may be personal):';
+            foreach ($db['identifiers_shown_verbatim'] as $name) {
+                $l[] = '   ' . $name;
+            }
+        }
     }
     $l[] = '';
     $l[] = '== Notes ==';
@@ -1197,9 +1385,51 @@ function is_inside(string $path, string $directory): bool
     return $path === $directory || str_starts_with($path, $directory . DIRECTORY_SEPARATOR);
 }
 
+/** State the shutdown handler needs to clean up after a stopped run. */
+final class Cleanup
+{
+    public static ?Run $run = null;
+    public static ?string $outPath = null;
+    public static bool $finished = false;
+
+    public static function abandon(): void
+    {
+        if (self::$run !== null) {
+            remove_temp_dir(self::$run->tempDir);
+        }
+        if (self::$outPath !== null && !self::$finished) {
+            @unlink(self::$outPath);
+            self::$outPath = null;
+        }
+    }
+}
+
+/**
+ * Keeps PHP's own error text, which contains absolute paths, off the screen
+ * and out of the report, and removes temporary copies however the run ends.
+ */
+function install_error_handling(): void
+{
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '0');
+    ini_set('html_errors', '0');
+    register_shutdown_function(static function (): void {
+        $error = error_get_last();
+        $fatal = $error !== null
+            && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true);
+        Cleanup::abandon();
+        if ($fatal) {
+            fwrite(STDERR, 'Stopped: internal error at line ' . $error['line']
+                . " (out of memory or a defect). No report was produced.\n");
+            exit(EXIT_IO);
+        }
+    });
+}
+
 /** @param list<string> $argv */
 function main(array $argv): int
 {
+    install_error_handling();
     try {
         $options = parse_arguments($argv);
     } catch (UsageError $e) {
@@ -1217,6 +1447,12 @@ function main(array $argv): int
     }
     $isDir = is_dir($input);
     $guarded = $isDir ? $input : dirname($input);
+    $systemTemp = realpath(sys_get_temp_dir());
+    if ($systemTemp !== false && is_inside($systemTemp, $guarded)) {
+        fwrite(STDERR, "The system temporary directory is inside or beside the input; move the input elsewhere.\n");
+        return EXIT_IO;
+    }
+    $outHandle = null;
     if ($options->out !== null) {
         $outDir = realpath(dirname($options->out));
         if ($outDir === false || !is_dir($outDir)) {
@@ -1224,54 +1460,63 @@ function main(array $argv): int
             return EXIT_IO;
         }
         if (is_inside($outDir, $guarded)) {
-            fwrite(STDERR, "Refusing to write the report inside or beside the input. Choose another directory.\n");
+            fwrite(STDERR, "Refusing to write the report inside the input directory or beside the input file. "
+                . "Choose another directory.\n");
             return EXIT_IO;
         }
-        if (file_exists($outDir . DIRECTORY_SEPARATOR . basename($options->out))) {
+        $outPath = $outDir . DIRECTORY_SEPARATOR . basename($options->out);
+        if (is_link($options->out) || is_link($outPath)) {
+            fwrite(STDERR, "The --out path is a symbolic link; refusing to write through it.\n");
+            return EXIT_IO;
+        }
+        if (file_exists($outPath)) {
             fwrite(STDERR, "The --out file already exists; refusing to overwrite it.\n");
             return EXIT_IO;
         }
-    }
-    $systemTemp = realpath(sys_get_temp_dir());
-    if ($systemTemp !== false && is_inside($systemTemp, $guarded)) {
-        fwrite(STDERR, "The system temporary directory is inside or beside the input; move the input elsewhere.\n");
-        return EXIT_IO;
-    }
-
-    if ($isDir) {
-        $entries = walk($input);
-    } else {
-        $size = filesize($input);
-        $entries = [['rel' => basename($input), 'abs' => $input, 'type' => 'file', 'size' => $size === false ? null : $size]];
-    }
-
-    // Key for identifier hashes: depends on the input only, so the same input
-    // always gives the same report, but hashes cannot be reversed by guessing.
-    $keyContext = hash_init('sha256');
-    foreach ($entries as $entry) {
-        hash_update($keyContext, $entry['rel'] . "\0" . ($entry['size'] ?? -1) . "\0");
-        if ($entry['type'] === 'file') {
-            hash_update($keyContext, hash('sha256', read_head($entry['abs'], KEY_HEAD_BYTES), true));
+        // Exclusive create: fails if anything, including a dangling link, is at the path.
+        $previousMask = umask(0077);
+        $outHandle = @fopen($outPath, 'x');
+        umask($previousMask);
+        if ($outHandle === false) {
+            fwrite(STDERR, "The --out file could not be created.\n");
+            return EXIT_IO;
         }
+        @chmod($outPath, 0600);
+        Cleanup::$outPath = $outPath;
     }
-
-    $run = new Run(
-        $options,
-        new NameRedactor($options->showNames),
-        new IdentifierRedactor($options->redactIdentifiers, hash_final($keyContext, true))
-    );
-    register_shutdown_function(static function () use ($run): void {
-        remove_temp_dir($run->tempDir);
-    });
 
     try {
+        if ($isDir) {
+            $entries = walk($input);
+        } else {
+            $size = filesize($input);
+            $entries = [['rel' => basename($input), 'abs' => $input, 'type' => 'file', 'size' => $size === false ? null : $size]];
+        }
+
+        // Key for identifier hashes: depends on the input only, so the same input
+        // always gives the same report, but hashes cannot be reversed by guessing.
+        $keyContext = hash_init('sha256');
+        foreach ($entries as $entry) {
+            hash_update($keyContext, $entry['rel'] . "\0" . ($entry['size'] ?? -1) . "\0");
+            if ($entry['type'] === 'file') {
+                hash_update($keyContext, hash('sha256', read_head($entry['abs'], KEY_HEAD_BYTES), true));
+            }
+        }
+
+        $run = new Run(
+            $options,
+            new NameRedactor($options->showNames),
+            new IdentifierRedactor($options->redactIdentifiers, hash_final($keyContext, true))
+        );
+        Cleanup::$run = $run;
+
         foreach ($entries as $entry) {
             if ($isDir) {
                 $shown = $run->names->path($entry['rel']);
             } elseif ($options->showNames) {
                 $shown = printable($entry['rel']);
             } else {
-                $shown = '<input>' . $run->names->split($entry['rel'])[1];
+                $shown = '<input>' . $run->names->extension($run->names->split($entry['rel'])[1]);
             }
             switch ($entry['type']) {
                 case 'file':
@@ -1292,62 +1537,79 @@ function main(array $argv): int
                     $run->layout[] = ['path' => $shown, 'type' => 'special', 'size' => null, 'kind' => 'special'];
             }
         }
-    } catch (Throwable $e) {
         remove_temp_dir($run->tempDir);
-        fwrite(STDERR, 'Stopped: ' . printable($e->getMessage()) . "\n");
-        return EXIT_IO;
-    }
-    remove_temp_dir($run->tempDir);
 
-    foreach ($options->valueShapes as $table) {
-        if (!isset($run->shapeTablesSeen[strtolower($table)])) {
-            $run->problem('A table named with --value-shapes was not found in any database.');
+        $shapeTargets = [];
+        foreach ($options->valueShapes as $target) {
+            [$number, $table] = split_shape_target($target);
+            $shapeTargets[] = ($number === null ? '' : $number . ':') . $run->idents->ident($table);
+            if (!isset($run->shapeTargetsSeen[$target])) {
+                $run->problem('A table named with --value-shapes was not found.');
+            }
         }
-    }
+        $run->idents->takeVerbatim();
 
-    $summary = [];
-    foreach ($run->layout as $row) {
-        $summary[$row['kind']] = ($summary[$row['kind']] ?? 0) + 1;
-    }
-    ksort($summary, SORT_STRING);
+        $summary = [];
+        foreach ($run->layout as $row) {
+            $summary[$row['kind']] = ($summary[$row['kind']] ?? 0) + 1;
+        }
+        ksort($summary, SORT_STRING);
 
-    $statements = [
-        'This report describes structure only. It contains no row values, no samples and no default literals.',
-        'Review it before sharing: table, column and (if shown) file names can themselves be personal.',
-    ];
-    if ($options->valueShapes !== []) {
-        $statements[] = 'WARNING: --value-shapes was used. This report ALSO contains shape-masked patterns of TEXT '
-            . 'values for the named table(s). Review those lines one by one. Never commit this output unreviewed.';
-    }
-    $report = [
-        'tool' => TOOL_NAME,
-        'version' => TOOL_VERSION,
-        'report_format' => REPORT_FORMAT,
-        'statements' => $statements,
-        'options' => [
-            'file_names' => $options->showNames ? 'shown' : 'redacted',
-            'identifiers' => ['none' => 'verbatim', 'flagged' => 'flagged-hashed', 'all' => 'all-hashed'][$options->redactIdentifiers],
-            'value_shapes' => array_map(static fn (string $t): string => $run->idents->ident($t), $options->valueShapes),
-            'apply_wal' => $options->applyWal,
-        ],
-        'input_kind' => $isDir ? 'directory' : ($run->layout[0]['kind'] ?? 'unknown'),
-        'layout' => $run->layout,
-        'kind_summary' => $summary,
-        'databases' => $run->databases,
-        'warnings' => $run->warnings,
-    ];
+        $statements = [
+            'This report describes structure only. It contains no row values and no samples.',
+            'Text and numeric literals in CREATE statements are masked (<text>, <num>); defaults are reported by kind only.',
+            [
+                'flagged' => 'Identifiers that look generated or user-chosen are replaced by hashes (id_...). '
+                    . 'Plain-word identifiers are SHOWN and cannot be checked by the tool: any of them may be personal.',
+                'all' => 'Every identifier is replaced by a hash (id_...), except SQL keywords and common type and function names.',
+                'none' => 'WARNING: --show-identifiers was used. Every table and column name is shown as stored and may be personal.',
+            ][$options->redactIdentifiers],
+            'Review every name in this report before sharing it'
+                . ($options->showNames ? '. WARNING: --show-names was used; real file names are shown.' : '.'),
+        ];
+        if ($options->valueShapes !== []) {
+            $statements[] = 'WARNING: --value-shapes was used. This report ALSO contains shape-masked patterns of TEXT '
+                . 'values for the named table(s). Review those lines one by one. Never commit this output unreviewed.';
+        }
+        $report = [
+            'tool' => TOOL_NAME,
+            'version' => TOOL_VERSION,
+            'report_format' => REPORT_FORMAT,
+            'statements' => $statements,
+            'options' => [
+                'file_names' => $options->showNames ? 'shown' : 'redacted',
+                'identifiers' => ['none' => 'verbatim', 'flagged' => 'flagged-hashed', 'all' => 'all-hashed'][$options->redactIdentifiers],
+                'value_shapes' => $shapeTargets,
+                'value_shapes_singletons' => $options->includeSingletons,
+                'apply_wal' => $options->applyWal,
+            ],
+            'input_kind' => $isDir ? 'directory' : ($run->layout[0]['kind'] ?? 'unknown'),
+            'layout' => $run->layout,
+            'kind_summary' => $summary,
+            'databases' => $run->databases,
+            'warnings' => $run->warnings,
+        ];
 
-    $text = $options->json
-        ? json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . "\n"
-        : render_text($report);
+        $text = $options->json
+            ? json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR) . "\n"
+            : render_text($report);
 
-    if ($options->out === null) {
-        fwrite(STDOUT, $text);
-    } elseif (@file_put_contents($options->out, $text, LOCK_EX) === false) {
-        fwrite(STDERR, "The report could not be written to the --out file.\n");
+        if ($outHandle === null) {
+            fwrite(STDOUT, $text);
+        } elseif (fwrite($outHandle, $text) !== strlen($text) || !fclose($outHandle)) {
+            throw new ToolError('The report could not be written to the --out file.');
+        }
+        Cleanup::$finished = true;
+        return $run->problems ? EXIT_PROBLEMS : EXIT_OK;
+    } catch (Throwable $e) {
+        Cleanup::abandon();
+        // Only this tool's own messages are printed: others can contain paths or names.
+        fwrite(STDERR, 'Stopped: ' . ($e instanceof ToolError
+            ? $e->getMessage()
+            : 'internal error (' . get_class($e) . ' at line ' . $e->getLine() . ')') . "\n");
         return EXIT_IO;
     }
-    return $run->problems ? EXIT_PROBLEMS : EXIT_OK;
 }
 
 if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {

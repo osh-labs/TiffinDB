@@ -8,6 +8,7 @@
  * requests. Exits 0 only if at least one file was checked and every file
  * passed. Run it as `composer lint`.
  *
+ * `.claude` holds local agent worktrees (full copies of the repository).
  * The excluded top-level directories must stay the same as
  * TiffinDB\Tests\Support\RepoFiles::EXCLUDED_DIRECTORIES.
  */
@@ -15,7 +16,7 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
-$excluded = ['.git', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
+$excluded = ['.git', '.claude', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
 
 $iterator = new RecursiveIteratorIterator(
     new RecursiveCallbackFilterIterator(

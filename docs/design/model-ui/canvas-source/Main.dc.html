@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<title>Items list</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Lexend:wght@400;700&family=Source+Serif+4:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;--bg:#F3F5F4;--surface:#FFFFFF;--sunk:#E6EBE9;--ink:#111A18;--ink2:#3A4744;--line:#C5CECB;--ctl:#6E7C78;--accent:#084F4A;--on-accent:#FFFFFF;--soft:#DCEEEB;--warn:#7A4300;--warn-soft:#FBEBD3;--brand2:#C27F00;--side:#084F4A;--side-ink:#FFFFFF;--side-ink2:#D3E9E5;--side-on:#FFFFFF;--side-on-ink:#084F4A}
+.t-dark{--bg:#0F1716;--surface:#182322;--sunk:#0A100F;--ink:#EEF3F1;--ink2:#BAC7C3;--line:#35443F;--ctl:#8C9C97;--accent:#7AD9CD;--on-accent:#06211E;--soft:#17393A;--warn:#F2B866;--warn-soft:#3A2A10;--brand2:#F2B441;--side:#0B2B29;--side-ink:#EEF3F1;--side-ink2:#BAC7C3;--side-on:#7AD9CD;--side-on-ink:#06211E}
+.t-hcl{--bg:#FFFFFF;--surface:#FFFFFF;--sunk:#FFFFFF;--ink:#000000;--ink2:#000000;--line:#000000;--ctl:#000000;--accent:#003B37;--on-accent:#FFFFFF;--soft:#D5F0EC;--warn:#4A2800;--warn-soft:#FFE9C2;--brand2:#000000;--side:#000000;--side-ink:#FFFFFF;--side-ink2:#FFFFFF;--side-on:#FFFFFF;--side-on-ink:#000000}
+.t-hcd{--bg:#000000;--surface:#000000;--sunk:#000000;--ink:#FFFFFF;--ink2:#FFFFFF;--line:#FFFFFF;--ctl:#FFFFFF;--accent:#8FF5E8;--on-accent:#000000;--soft:#00302C;--warn:#FFD27A;--warn-soft:#3A2A00;--brand2:#FFFFFF;--side:#FFFFFF;--side-ink:#000000;--side-ink2:#000000;--side-on:#000000;--side-on-ink:#FFFFFF}
+.f-inter{font-family:'Inter',system-ui,sans-serif!important}
+.f-lexend{font-family:'Lexend',system-ui,sans-serif!important}
+.f-serif4{font-family:'Source Serif 4',Georgia,serif!important}
+.f-sans{font-family:system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif!important}
+.f-serif{font-family:Georgia,'Times New Roman',serif!important}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+header nav a:hover{background:var(--soft)}
+.f-atk{font-family:'Atkinson Hyperlegible',system-ui,sans-serif!important}
+a[aria-label^=TiffinDB]{font-family:'Atkinson Hyperlegible',system-ui,sans-serif}
+.s-90{zoom:.9}.s-115{zoom:1.15}.s-130{zoom:1.3}.s-150{zoom:1.5}
+.lh-1{line-height:1.75!important}.lh-2{line-height:2!important}
+.a-indigo{--accent:#2A3990;--soft:#E2E6F8;--side:#2A3990;--side-ink2:#D9DEF7;--side-on-ink:#2A3990}
+.a-plum{--accent:#6B1F5C;--soft:#F4E1EF;--side:#6B1F5C;--side-ink2:#F0D9EA;--side-on-ink:#6B1F5C}
+.a-graphite{--accent:#22302D;--soft:#E1E7E5;--side:#22302D;--side-ink2:#D5DDDA;--side-on-ink:#22302D}
+.t-dark.a-indigo{--accent:#AEB9FF;--soft:#252C57;--side:#1A2045;--side-ink2:#BAC7C3;--side-on:#AEB9FF;--side-on-ink:#0E1330}
+.t-dark.a-plum{--accent:#F0A8DD;--soft:#4A1F41;--side:#33152D;--side-ink2:#BAC7C3;--side-on:#F0A8DD;--side-on-ink:#2A0C24}
+.t-dark.a-graphite{--accent:#D5DDDA;--soft:#2A3532;--side:#1B2523;--side-ink2:#BAC7C3;--side-on:#D5DDDA;--side-on-ink:#111A18}
+.r-square *{border-radius:0!important}
+.d-compact th,.d-compact td{padding:7px 12px}
+.zebra tbody tr:nth-child(even){background:var(--sunk)}
+.sb-light{--side:var(--surface);--side-ink:var(--ink);--side-ink2:var(--ink2);--side-on:var(--soft);--side-on-ink:var(--accent)}
+.sb-light nav[aria-label=Project]{border-right:1px solid var(--line)}
+.sb-ink{--side:#111A18;--side-ink:#FFFFFF;--side-ink2:#C9D3D0;--side-on:#FFFFFF;--side-on-ink:#111A18}
+.nocount nav[aria-label=Project] a span+span{display:none}
+.cols2 main{max-width:1120px!important}
+.cols2 form>fieldset:first-child{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
+nav[aria-label=Project] a:hover{text-decoration:underline}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+nav[aria-label=Project] :focus-visible{outline-color:var(--side-ink)}
+th,td{padding:14px 16px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:16px;color:var(--ink2);background:var(--sunk)}
+tbody tr:hover{background:var(--soft)}
+</style>
+</helmet>
+<div class="{{themeClass}}" style="min-height: 1040px; box-sizing: border-box; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; font-size: 18px; line-height: 1.5">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 68px; box-sizing: border-box; padding: 8px 24px; background: var(--surface); border-bottom: 1px solid var(--line)">
+<a href="Projects.dc.html" aria-label="TiffinDB, all projects" style="display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--accent); text-decoration: none; font-weight: 700; font-size: 22px; letter-spacing: -0.01em">
+<svg aria-hidden="true" width="34" height="34" viewBox="0 0 64 64" fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"></path><rect x="23" y="2.5" width="18" height="6" rx="3" fill="currentColor"></rect><rect x="15.5" y="17" width="33" height="4" rx="2" fill="currentColor"></rect><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="currentColor"></rect><rect x="17" y="34" width="30" height="10.5" rx="3" fill="var(--brand2)"></rect><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="currentColor"></rect></svg>
+<span><span style="color: var(--ink)">Tiffin</span>DB</span></a>
+<form role="search" style="flex: 1 1 280px; max-width: 520px; display: flex; align-items: center; gap: 10px; min-height: 48px; box-sizing: border-box; margin: 0 0 0 12px; padding: 0 8px 0 16px; border: 2px solid var(--ctl); border-radius: 999px; background: var(--bg)">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="6"></circle><path d="M13 13l5 5"></path></svg>
+<input type="search" aria-label="Search all tables in Home Inventory" placeholder="Search Home Inventory" style="flex: 1 1 auto; min-width: 0; min-height: 40px; border: 0; border-radius: 999px; background: transparent; color: var(--ink); font: inherit">
+</form>
+<nav aria-label="Account" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-left: auto">
+<a href="Settings.dc.html" style="display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; color: var(--ink); text-decoration: none; font-weight: 700">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="8"></circle><path d="M10 2a8 8 0 0 1 0 16z" fill="currentColor"></path></svg>
+Display</a>
+<span style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px 0 5px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg)"><span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 700">EA</span>Example Admin</span>
+<a href="SignIn.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 999px; color: var(--ink); text-decoration: none">Sign out</a>
+</nav>
+</header>
+
+<div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch">
+
+<nav aria-label="Project" style="flex: 1 1 260px; box-sizing: border-box; padding: 24px 16px 32px; display: flex; flex-direction: column; gap: 26px; background: var(--side); color: var(--side-ink)">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 0 12px">
+<span style="font-size: 15px; color: var(--side-ink2)">Project</span>
+<span style="font-size: 24px; font-weight: 700; line-height: 1.2">Home Inventory</span>
+<a href="Projects.dc.html" style="display: flex; align-items: center; align-self: flex-start; min-height: 44px; color: var(--side-ink)">Switch project</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0 0 4px 12px; font-size: 15px; color: var(--side-ink2)">Tables</h2>
+<a href="Main.dc.html" aria-current="page" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; background: var(--side-on); color: var(--side-on-ink); text-decoration: none; font-weight: 700"><span>Items</span><span>48</span></a>
+<a href="Main.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Rooms</span><span style="color: var(--side-ink2)">9</span></a>
+<a href="Main.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Warranties</span><span style="color: var(--side-ink2)">12</span></a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 style="margin: 0 0 4px 12px; font-size: 15px; color: var(--side-ink2)">Collections</h2>
+<a href="Collection.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Under warranty</span><span style="color: var(--side-ink2)">12</span></a>
+<a href="Collection.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Kitchen</span><span style="color: var(--side-ink2)">11</span></a>
+<a href="Collection.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Worth over $200</span><span style="color: var(--side-ink2)">7</span></a>
+<a href="Collection.dc.html" style="display: flex; align-items: center; gap: 8px; align-self: flex-start; min-height: 44px; margin: 6px 0 0 12px; padding: 0 16px; border: 2px solid var(--side-ink); border-radius: 999px; color: var(--side-ink); text-decoration: none; font-weight: 700">
+<svg aria-hidden="true" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 2v14M2 9h14"></path></svg>
+New collection</a>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--side-ink2)">
+<a href="Import.dc.html" style="display: flex; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none">Import</a>
+<a href="#" style="display: flex; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none">Export</a>
+<a href="#" style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; padding: 0 14px; border-radius: 10px; color: var(--side-ink); text-decoration: none"><span>Trash</span><span style="color: var(--side-ink2)">3</span></a>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 32px 40px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px">
+<div>
+<h1 style="margin: 0; font-size: 34px; line-height: 1.2">Items</h1>
+<p style="margin: 4px 0 0; color: var(--ink2)">48 records, sorted by name</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<a href="Import.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 20px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 700">Import</a>
+<a href="Record.dc.html" style="display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 20px; border: 2px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--on-accent); text-decoration: none; font-weight: 700">
+<svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 2v14M2 9h14"></path></svg>
+Add item</a>
+</div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<div style="flex: 2 1 260px; display: flex; flex-direction: column; gap: 4px">
+<label for="find" style="font-size: 16px; font-weight: 700">Find in Items</label>
+<input id="find" type="search" placeholder="Type a name, room, or category" style="min-height: 44px; box-sizing: border-box; padding: 0 14px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit">
+</div>
+<div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px">
+<label for="sort" style="font-size: 16px; font-weight: 700">Sort by</label>
+<select id="sort" style="min-height: 44px; padding: 0 12px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit"><option>Name, A to Z</option><option>Purchased, newest first</option><option>Value, highest first</option><option>Room</option></select>
+</div>
+<a href="Collection.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 18px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 700">Filter</a>
+</div>
+
+<div style="overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px">
+<table style="width: 100%; border-collapse: collapse">
+<caption style="position: absolute; width: 1px; height: 1px; overflow: hidden">Items, 10 of 48 shown</caption>
+<thead><tr><th scope="col" aria-sort="ascending">Name (A to Z)</th><th scope="col">Room</th><th scope="col">Category</th><th scope="col">Purchased</th><th scope="col" style="text-align: right">Value</th><th scope="col">Condition</th><th scope="col">Receipt</th></tr></thead>
+<tbody>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Bookshelf, oak</a></td><td>Study</td><td>Furniture</td><td>18 Sep 2021</td><td style="text-align: right">$240.00</td><td>4 of 5</td><td style="color: var(--ink2)">None</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Cordless drill</a></td><td>Garage</td><td>Tool</td><td>2 Nov 2023</td><td style="text-align: right">$149.00</td><td>4 of 5</td><td>1 file</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Dutch oven</a></td><td>Kitchen</td><td>Cookware</td><td>25 Dec 2022</td><td style="text-align: right">$95.00</td><td>5 of 5</td><td style="color: var(--ink2)">None</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Espresso machine</a></td><td>Kitchen</td><td>Appliance</td><td>20 Jan 2026</td><td style="text-align: right">$499.00</td><td>5 of 5</td><td>1 file</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Floor lamp</a></td><td>Living room</td><td>Furniture</td><td>9 Jun 2022</td><td style="text-align: right">$89.00</td><td>3 of 5</td><td style="color: var(--ink2)">None</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Monitor, 27 inch</a></td><td>Study</td><td>Electronics</td><td>23 Apr 2023</td><td style="text-align: right">$289.00</td><td>4 of 5</td><td>1 file</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Robot vacuum</a></td><td>Hallway</td><td>Appliance</td><td>6 May 2025</td><td style="text-align: right">$379.00</td><td>4 of 5</td><td>1 file</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Sewing machine</a></td><td>Study</td><td>Appliance</td><td>11 Feb 2020</td><td style="text-align: right">$265.00</td><td>3 of 5</td><td>2 files</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Stand mixer</a></td><td>Kitchen</td><td>Appliance</td><td>14 Mar 2025</td><td style="text-align: right">$329.00</td><td>5 of 5</td><td>1 file</td></tr>
+<tr><td><a href="Record.dc.html" style="font-weight: 700">Tent, 4-person</a></td><td>Garage</td><td>Outdoor</td><td>1 Jul 2024</td><td style="text-align: right">$310.00</td><td>5 of 5</td><td style="color: var(--ink2)">None</td></tr>
+</tbody>
+</table>
+</div>
+
+<nav aria-label="Pages of records" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
+<span style="color: var(--ink2)">Showing 1 to 10 of 48</span>
+<div style="display: flex; gap: 12px">
+<button type="button" disabled style="min-height: 44px; padding: 0 18px; border: 2px dashed var(--ctl); border-radius: 8px; background: transparent; color: var(--ink2); font: inherit">Previous</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border: 2px solid var(--ctl); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700">Next</button>
+</div>
+</nav>
+</main>
+</div>
+
+<footer style="display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 16px 24px; border-top: 1px solid var(--line); font-size: 16px; color: var(--ink2)">
+<span>TiffinDB, free software under AGPL-3.0-or-later</span>
+<a href="https://github.com/osh-labs/tiffindb">Source code</a>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["Light","Dark","High contrast light","High contrast dark"],"default":"Light"},"typeface":{"editor":"enum","options":["Atkinson Hyperlegible","Inter","Lexend","Source Serif 4","Device sans-serif","Device serif"],"default":"Inter"},"textSize":{"editor":"enum","options":["Small","Standard","Large","Larger","Largest"],"default":"Standard"},"lineSpacing":{"editor":"enum","options":["Standard","Roomy","Very roomy"],"default":"Standard"},"accent":{"editor":"enum","options":["Teal","Indigo","Plum","Graphite"],"default":"Teal"},"corners":{"editor":"enum","options":["Rounded","Square"],"default":"Rounded"},"sidebar":{"editor":"enum","options":["Colour block","Light","Ink"],"default":"Colour block"},"counts":{"editor":"boolean","default":true},"rows":{"editor":"enum","options":["Comfortable","Compact"],"default":"Comfortable"},"zebra":{"editor":"boolean","default":false},"$preview":{"width":1360,"height":1040}}'>
+class Component extends DCLogic {
+renderVals() {
+var map = { "Light": "", "Dark": "t-dark", "High contrast light": "t-hcl", "High contrast dark": "t-hcd" };
+var fonts = { "Inter": " f-inter", "Lexend": " f-lexend", "Source Serif 4": " f-serif4", "Device sans-serif": " f-sans", "Device serif": " f-serif" };
+fonts["Atkinson Hyperlegible"] = " f-atk"; fonts["Inter"] = "";
+var p = this.props;
+var hc = /contrast/i.test(p.theme || "");
+var sizes = { "Small": " s-90", "Large": " s-115", "Larger": " s-130", "Largest": " s-150" };
+var leads = { "Roomy": " lh-1", "Very roomy": " lh-2" };
+var accents = { "Indigo": " a-indigo", "Plum": " a-plum", "Graphite": " a-graphite" };
+var extra = (sizes[p.textSize] || "") + (leads[p.lineSpacing] || "") + (hc ? "" : (accents[p.accent] || "")) + (p.corners === "Square" ? " r-square" : "") + (p.rows === "Compact" ? " d-compact" : "") + (p.zebra ? " zebra" : "") + (p.sidebar === "Light" ? " sb-light" : (p.sidebar === "Ink" && !hc) ? " sb-ink" : "") + (p.counts === false ? " nocount" : "") + (p.columns === "Two" ? " cols2" : "");
+return { themeClass: (map[p.theme] || "") + (fonts[p.typeface] || "") + extra };
+}
+}
+</script>
+</body>
+</html>

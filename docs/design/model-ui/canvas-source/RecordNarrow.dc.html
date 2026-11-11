@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<title>Item record on a narrow screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; min-height: 3000px; background: #F3F5F4; color: #111A18; font-family: 'Inter', system-ui, sans-serif">
+<dc-import name="Record" theme="{{theme}}" typeface="{{typeface}}" text-size="{{textSize}}" line-spacing="{{lineSpacing}}" accent="{{accent}}" corners="{{corners}}" hint-size="390px,3000px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["Light","Dark","High contrast light","High contrast dark"],"default":"Light"},"typeface":{"editor":"enum","options":["Atkinson Hyperlegible","Inter","Lexend","Source Serif 4","Device sans-serif","Device serif"],"default":"Inter"},"textSize":{"editor":"enum","options":["Small","Standard","Large","Larger","Largest"],"default":"Standard"},"lineSpacing":{"editor":"enum","options":["Standard","Roomy","Very roomy"],"default":"Standard"},"accent":{"editor":"enum","options":["Teal","Indigo","Plum","Graphite"],"default":"Teal"},"corners":{"editor":"enum","options":["Rounded","Square"],"default":"Rounded"},"$preview":{"width":390,"height":3000}}'>
+class Component extends DCLogic {
+renderVals() {
+var p = this.props;
+return { theme: p.theme || "Light", typeface: p.typeface || "Inter", textSize: p.textSize || "Standard", lineSpacing: p.lineSpacing || "Standard", accent: p.accent || "Teal", corners: p.corners || "Rounded" };
+}
+}
+</script>
+</body>
+</html>

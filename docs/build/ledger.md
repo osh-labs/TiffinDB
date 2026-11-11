@@ -16,7 +16,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
-| M0 | in progress | |
+| M0 | in progress | Integration branch suite after WP1, WP3, WP4, WP5, WP7: `composer test` OK (418 tests, 2246 assertions); `composer lint` 49 files, 0 failed |
 | M1 | not started | |
 | M2 | not started | |
 | M3 | not started | |
@@ -35,13 +35,13 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M0-D1 | M0 | design | `docs/specs/M0-scaffolding.md`, `docs/decisions/0008-*`, `docs/decisions/0009-*` | done (pushed) | assigned branch | second design-tier reviewer | READY FOR IMPLEMENTATION after 13 fixes |
 | M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | done (pushed) | assigned branch | design-tier privacy reviewer | APPROVE after 4 rounds (round 3 escalated to default-deny redesign); open nit: digit-run exemption uncapped |
 | M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | done (pushed) | assigned branch | design-tier security reviewer | APPROVE after 2 rounds; PHP 7.4 parse compatibility not executed (no 7.4 binary) |
-| M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | implemented (5 commits, local only, not pushed; redo if container is reclaimed) | `worktree-agent-a904290a10390ad6e` | design tier | review in progress |
-| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | not started (needs WP1) | | implementation tier | |
-| M0-WP3 | M0 | mechanical | `tokens.css` | in progress (local worktree, based on WP1 branch) | local worktree | implementation tier |  |
-| M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | in progress (local worktree, based on WP1 branch) | local worktree | implementation tier |  |
-| M0-WP5 | M0 | implementation | request pipeline (security-critical) | not started (needs WP1) | | design tier | |
-| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | not started (needs WP3, WP4, WP5) | | design tier | |
-| M0-WP7 | M0 | implementation | design asset tests | not started (needs WP3, WP4) | | implementation tier | |
+| M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | done, merged, pushed (incl. test-hardening follow-ups) | merged | design tier | APPROVE (design-tier security review); Apache behaviour unverified (not installed) |
+| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | implemented (5 commits, local only) | `worktree-agent-a4ea3654219ec56fb` | implementation tier | review in progress (implementation tier) |
+| M0-WP3 | M0 | mechanical | `tokens.css` | done, merged, pushed | merged | implementation tier | APPROVE (byte-identical to spec Appendix A) |
+| M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
+| M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed; security follow-ups in progress (regex anchors, bootstrap failure headers, base-path encoding, send() tests) | merged; follow-ups on `worktree-agent-a49573e7e1d6682c4` | design tier | APPROVE with should-fix follow-ups (design-tier security review, about 60 fuzz cases) |
+| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | in progress (local worktree) | local worktree | design tier |  |
+| M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed; follow-ups in progress (non-colour token parity, regex anchors) | merged; follow-ups on `worktree-agent-ab1eacb530f86d389` | implementation tier | APPROVE (contrast figures independently recomputed) |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 
@@ -60,6 +60,8 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | P11 | Legacy importer plugin id, directory and UI label | Left open until M6 | ADR 0009 |
 | P12 | CI action pinning | `actions/checkout@v4` by tag, not commit SHA (lookup blocked in the build environment) | M0 spec |
 | P13 | Other brief section 12 gaps (import transaction vs chunking; sanitizer URL rule; high-contrast token values follow `tokens.css`) | Settled in M3 and M5 specs; tokens.css is the visual source of truth | ADR 0009 |
+| P14 | Commit trailers | Commits carry the session-supplied attribution trailers (a co-author line with a no-reply address and a session link). Two reviewers flagged this against the repository rule on email addresses in commit messages; kept because the session requires them. Maintainer to decide; changing past commits would need a history rewrite | this ledger |
+| P15 | Repository walk exclusions | `.claude/` (local agent worktrees) excluded from lint and repository tests in addition to the spec's list | WP1 follow-up |
 
 ## 5. Blockers
 

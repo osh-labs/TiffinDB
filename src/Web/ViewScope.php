@@ -1,0 +1,123 @@
+<?php
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (C) TiffinDB contributors
+ */
+
+declare(strict_types=1);
+
+namespace TiffinDB\Web;
+
+use OutOfBoundsException;
+
+/**
+ * The `$this` of every template: the only helpers a template may use, each
+ * returning a string that is safe to print (ADR 0008 decision 4).
+ *
+ * - e(), t(), url(), asset() escape what they return.
+ * - partial() and slot() return markup produced by templates.
+ * - rootClassAttribute() (layout only) returns markup built solely from
+ *   Appearance::rootClasses(), which are server-side constants.
+ */
+final class ViewScope
+{
+    /** @var array<string, string> */
+    private array $slots = [];
+
+    public function __construct(
+        private readonly View $view,
+        private readonly Strings $strings,
+        private readonly UrlGenerator $urls,
+        private readonly Appearance $appearance,
+    ) {
+    }
+
+    /** Escapes a value for an HTML text node or a double-quoted attribute. */
+    public function e(string|int|float|null $value): string
+    {
+        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+    }
+
+    /**
+     * A UI string, escaped, with escaped parameters substituted.
+     *
+     * @param array<string, string|int|float> $params
+     */
+    public function t(string $key, array $params = []): string
+    {
+        return $this->strings->format($key, $params, fn (string $text): string => $this->e($text));
+    }
+
+    /**
+     * An escaped application address.
+     *
+     * @param array<string, string> $query
+     */
+    public function url(string $path, array $query = []): string
+    {
+        return $this->e($this->urls->to($path, $query));
+    }
+
+    /** An escaped static asset address. */
+    public function asset(string $file): string
+    {
+        return $this->e($this->urls->asset($file));
+    }
+
+    /**
+     * Markup of `templates/partials/<name>.php`, rendered with only $data.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function partial(string $name, array $data = []): string
+    {
+        return $this->view->renderPartial($name, $this, $data);
+    }
+
+    /** Markup of a named slot (M0 has one: `content`, in the layout). */
+    public function slot(string $name): string
+    {
+        if (!array_key_exists($name, $this->slots)) {
+            throw new OutOfBoundsException("Unknown slot: {$name}");
+        }
+
+        return $this->slots[$name];
+    }
+
+    /**
+     * Layout accessor: empty, or ` class="..."` for the root element, built
+     * only from the allowlisted appearance classes.
+     */
+    public function rootClassAttribute(): string
+    {
+        $classes = $this->appearance->rootClasses();
+        if ($classes === []) {
+            return '';
+        }
+
+        return ' class="' . $this->e(implode(' ', $classes)) . '"';
+    }
+
+    /** @internal Used by View. */
+    public function setSlot(string $name, string $markup): void
+    {
+        $this->slots[$name] = $markup;
+    }
+
+    /**
+     * Runs a template file with `$this` bound to this scope and `$data` as
+     * its only variable.
+     *
+     * @param array<string, mixed> $data
+     * @internal Used by View.
+     */
+    public function run(string $file, array $data): void
+    {
+        // The file name is passed as an extra argument and read back with
+        // func_get_arg(), so that `$data` is the only local variable.
+        $runner = function (array $data): void {
+            require func_get_arg(1);
+        };
+        $runner($data, $file);
+    }
+}

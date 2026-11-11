@@ -8,36 +8,20 @@
  * requests. Exits 0 only if at least one file was checked and every file
  * passed. Run it as `composer lint`.
  *
- * `.claude` holds local agent worktrees (full copies of the repository).
- * The excluded top-level directories must stay the same as
- * TiffinDB\Tests\Support\RepoFiles::EXCLUDED_DIRECTORIES.
+ * The file set is TiffinDB\Tests\Support\RepoFiles::withExtension(['php'])
+ * (tracked and non-ignored files in a git checkout, otherwise a directory
+ * walk; the same non-scanned directories either way), so the lint command
+ * and the tests check the same files.
  */
 
 declare(strict_types=1);
 
-$root = dirname(__DIR__, 2);
-$excluded = ['.git', '.claude', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
+require dirname(__DIR__, 2) . '/tests/Support/RepoFiles.php';
 
-$iterator = new RecursiveIteratorIterator(
-    new RecursiveCallbackFilterIterator(
-        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-        static function (SplFileInfo $file) use ($root, $excluded): bool {
-            if (dirname($file->getPathname()) === $root) {
-                return !in_array($file->getFilename(), $excluded, true);
-            }
-            return true;
-        },
-    ),
-);
+use TiffinDB\Tests\Support\RepoFiles;
 
-$files = [];
-foreach ($iterator as $file) {
-    /** @var SplFileInfo $file */
-    if ($file->isFile() && $file->getExtension() === 'php') {
-        $files[] = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
-    }
-}
-sort($files, SORT_STRING);
+$root = RepoFiles::root();
+$files = RepoFiles::withExtension(['php']);
 
 $lint = static function (string $path): ?string {
     $process = proc_open(

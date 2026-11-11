@@ -26,8 +26,8 @@ final class RepoFiles
     /**
      * Top-level directories that are never scanned (generated, ignored, or
      * version-control data). `.claude` holds local agent worktrees, which
-     * are full copies of the repository. Must stay the same as the list in
-     * tools/dev/lint.php.
+     * are full copies of the repository. tools/dev/lint.php uses this class,
+     * so the lint command and the tests scan the same files.
      */
     public const EXCLUDED_DIRECTORIES = ['.git', '.claude', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
 
@@ -74,15 +74,83 @@ final class RepoFiles
      * Every regular file outside the non-scanned directories, optionally
      * below one repository-relative directory.
      *
+     * In a git checkout this is the set git would consider: tracked files
+     * plus untracked files that are not git-ignored (`git ls-files --cached
+     * --others --exclude-standard`), so ignored local files are never
+     * scanned. Without git (for example in a release archive) it falls back
+     * to a directory walk. Either way the non-scanned directories are left
+     * out and the result is sorted.
+     *
      * @return list<string>
      */
     public static function all(string $under = ''): array
     {
+        $under = trim(str_replace('\\', '/', $under), '/');
         $root = self::root();
-        $start = $under === '' ? $root : self::path(rtrim($under, '/'));
+        $start = $under === '' ? $root : self::path($under);
         if (!is_dir($start)) {
             return [];
         }
+
+        $listed = self::gitFiles();
+        if ($listed !== null) {
+            $files = array_values(array_filter(
+                $listed,
+                static fn (string $path): bool => !self::isExcluded($path)
+                    && ($under === '' || str_starts_with($path, $under . '/'))
+                    && is_file($root . '/' . $path),
+            ));
+            sort($files, SORT_STRING);
+
+            return $files;
+        }
+
+        return self::walk($start);
+    }
+
+    /**
+     * Files git would consider, or null when the root is not a git checkout
+     * or git cannot be run. Local and offline.
+     *
+     * @return list<string>|null
+     */
+    private static function gitFiles(): ?array
+    {
+        $root = self::root();
+        if (!file_exists($root . '/.git')) {
+            return null;
+        }
+        $process = proc_open(
+            ['git', '-c', 'core.quotePath=off', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            $root,
+        );
+        if (!is_resource($process)) {
+            return null;
+        }
+        fclose($pipes[0]);
+        $output = (string) stream_get_contents($pipes[1]);
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        if (proc_close($process) !== 0) {
+            return null;
+        }
+
+        $paths = array_filter(explode("\0", $output), static fn (string $path): bool => $path !== '');
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * Directory walk used when git is not available.
+     *
+     * @return list<string>
+     */
+    private static function walk(string $start): array
+    {
+        $root = self::root();
 
         $iterator = new RecursiveIteratorIterator(
             new RecursiveCallbackFilterIterator(

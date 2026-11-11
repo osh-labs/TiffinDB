@@ -8,7 +8,7 @@ TiffinDB must install on ordinary shared hosting: no root access, no long-runnin
 
 ## Decision
 
-- Server: PHP 8.2 or later (exact floor to be confirmed against dependencies), no application framework, Apache with `.htaccess`.
+- Server: PHP 8.3 or later, no application framework, Apache with `.htaccess`.
 - Client: server-rendered HTML, CSS, and vanilla JavaScript as progressive enhancement. No build step.
 - Project storage: one SQLite file per project (`project.tiffin`) inside a per-project folder that also holds attachments. User tables are real SQLite tables with typed columns; metadata is kept in reserved `_tiffin_*` tables in the same file.
 - System storage: one SQLite system database for users, sessions, the project registry, and access grants.

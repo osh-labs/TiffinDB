@@ -65,10 +65,11 @@ Accepted decisions are in `docs/decisions/`; the working plan is `docs/plan.md`.
 
 | Item | Status |
 |---|---|
-| Language / UI framework | Decided (ADR 0001): PHP 8.2+, no framework, Apache `.htaccess`, server-rendered HTML with vanilla JS, no build step. Exact PHP floor pending dependency check |
+| Language / UI framework | Decided (ADR 0001): PHP 8.3+, no framework, Apache `.htaccess`, server-rendered HTML with vanilla JS, no build step. |
 | Storage engine and file format | Decided (ADR 0001): one SQLite file per project plus a SQLite system database; MySQL/MariaDB not required |
 | Accounts | Decided (ADR 0002): household accounts, Admin and Member roles, per-project grants |
 | Forms | Decided (ADR 0003): stored HTML/CSS with binding attributes, auto-generated, simple editor |
 | v1 scope | Decided (ADR 0004): relations, attachments, CSV/XLSX/Bento import, CSV/XLSX/JSON export |
-| Platform targets | Web application on shared hosting; desktop/local packaging undecided |
+| MCP server | Decided (ADR 0005): post-v1, full scope, OAuth 2.1, disabled by default; OAuth design document required before implementation |
+| Platform targets | Web application on self-hosted Apache and DreamHost shared hosting; desktop/local packaging undecided |
 | Bento file/template import | Approach undecided pending file-format discovery (requires clean-room approach; no reverse-engineered proprietary code) |

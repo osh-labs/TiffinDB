@@ -1,6 +1,6 @@
 # TiffinDB Project Plan
 
-Status: draft 1, planning phase. No application code exists yet.
+Status: draft 2, planning phase. No application code exists yet.
 Decisions referenced here are recorded in `docs/decisions/`.
 
 ## 1. Goal
@@ -19,7 +19,7 @@ Design priorities, in order:
 
 | # | Topic | Decision | Record |
 |---|---|---|---|
-| 1 | Runtime | PHP 8.2+ (floor to be confirmed, see 9), no framework, Apache with `.htaccess`, server-rendered HTML, vanilla JS, no build step | ADR 0001 |
+| 1 | Runtime | PHP 8.3+, no framework, Apache with `.htaccess`, server-rendered HTML, vanilla JS, no build step | ADR 0001 |
 | 2 | Project storage | One SQLite file per project, inside a per-project folder | ADR 0001 |
 | 3 | System data | Small SQLite system database (users, sessions, project registry, grants). MySQL/MariaDB is not required | ADR 0001 |
 | 4 | Accounts | Household accounts, two roles (Admin, Member), per-project access grants | ADR 0002 |
@@ -28,6 +28,11 @@ Design priorities, in order:
 | 7 | Attachments | File and image fields in v1, stored in the project folder | ADR 0004 |
 | 8 | Fonts | Atkinson Hyperlegible bundled and self-hosted; OFL-1.1 approved for font assets only | ADR 0004 |
 | 9 | Import/export | Plugin architecture. v1 import: CSV, XLSX, Bento. v1 export: CSV, XLSX (plus JSON per repository portability rule) | ADR 0004 |
+| 10 | Form source location | Project database only; forms can be downloaded and uploaded as files through the Admin UI | ADR 0003 |
+| 11 | Language | English only in v1; UI strings still kept in one place so translation is possible later | this plan |
+| 12 | Undo | Trash with restore for records; no per-record change history in v1 | this plan |
+| 13 | Hosting targets | Self-hosted Apache, and DreamHost shared hosting as the reference shared host | this plan |
+| 14 | MCP server | Post-v1; full scope including schema; OAuth 2.1; disabled by default | ADR 0005 |
 
 ## 3. Architecture
 
@@ -44,6 +49,7 @@ Core logic is separated from presentation so it can be tested headlessly.
 | `core/forms` | Form generation from schema, form HTML sanitizer, binding of records to form HTML | schema |
 | `core/auth` | Users, sessions, roles, project grants, CSRF | system DB |
 | `web/` | Routing, controllers, templates, static assets | all core |
+| `mcp/` (post-v1) | MCP endpoint and OAuth; adapter over core only | all core |
 | `plugins/` | Import, export, and (later) field-type plugins | core/io interfaces |
 
 ### 3.2 On-disk layout (proposed)
@@ -61,7 +67,7 @@ tiffindb/
     projects/<project-id>/
       project.tiffin         SQLite database
       attachments/           content-addressed files
-      forms/                 optional: form HTML/CSS source mirrored for hand editing (open question)
+      snapshots/             automatic copies before migrations and other risky operations
 ```
 
 Many shared hosts force the whole application under the document root. The installer must therefore (a) prefer a `data/` location outside the web root when available, (b) otherwise write a deny-all `.htaccess` into `data/`, and (c) actively test over HTTP that `data/` is unreachable and refuse to finish setup if it is.
@@ -99,7 +105,7 @@ Each type defines: storage column type, validation, HTML input rendering, displa
 - No per-form JavaScript. Forms work without JS; JS only enhances (autosave, date pickers where native ones are weak, link pickers).
 - Auto-generation: one accessible single-column layout per table (label + control pairs, `fieldset` grouping, relation lists at the end). Runs on table creation and after import.
 - Simple editor (Admin): reorder, show/hide, set width on a CSS grid, group under headings, rename labels. Output is the same HTML/CSS, so hand editing and the editor operate on one representation.
-- Hand editing (Admin): source view with validation.
+- Hand editing (Admin): source view with validation, plus download and upload of a form as a file for use with an external editor. The project database remains the single copy of record.
 - Security: stored form HTML passes an allowlist sanitizer (no `script`, no event-handler attributes, no external URLs, no `style` escapes out of the form scope). A strict Content-Security-Policy backs this up. Members cannot edit forms.
 - User accessibility settings (font size, contrast, typeface) must override form CSS, not the reverse. Form CSS is restricted to layout and to design tokens.
 
@@ -181,15 +187,18 @@ Findings go in `docs/formats/bento.md`. Unsupported field types are imported as 
 | M4 | Relations UI, attachments, saved collections | Linked records editable from a form; attachment access control tested |
 | M5 | Form editor and source editing with sanitizer | Editor output equals hand-editable HTML; sanitizer test corpus passes |
 | M6 | Bento import plugin | Synthetic Bento-structure fixture imports with relations and attachments; import report complete |
-| M7 | Packaging, upgrade path, host and user documentation | Release archive installs on a stock shared host by upload and setup page only |
+| M7 | Packaging, upgrade path, host and user documentation; v1 release | Release archive installs on DreamHost shared hosting by upload and setup page only |
+| M8 (post-v1) | MCP server with OAuth 2.1, scopes, audit log, pre-change snapshots | OAuth and MCP design documents reviewed; conformance and abuse-case tests pass; disabled by default |
 
 Accessibility work is continuous from M2 onward, not a separate phase.
+
+Constraints that apply from M1 because of the later MCP server (ADR 0005): every operation is callable through `core/` without the web layer; record trash, project snapshots, and an audit log are core features; authorization checks live in core, not in controllers.
 
 ## 9. Candidate dependencies (not yet added)
 
 | Dependency | Purpose | License | Note |
 |---|---|---|---|
-| OpenSpout | Streaming CSV/XLSX read and write | MIT | Its minimum PHP version may set the project's PHP floor; to be verified before adoption |
+| OpenSpout | Streaming CSV/XLSX read and write | MIT | Compatibility with the PHP 8.3 floor to be verified before adoption |
 | Atkinson Hyperlegible | Default UI typeface | OFL-1.1 | Font asset; approved under ADR 0004 |
 | PHPUnit (dev only) | Tests | BSD-3-Clause | Not shipped in releases |
 
@@ -204,14 +213,16 @@ Each is to be recorded in `docs/dependencies.md` when actually added. Licenses a
 | Data directory web-reachable on some hosts | Data exposure | Installer HTTP self-test; deny rules; refuse to complete setup |
 | SQLite write contention | Lock errors under simultaneous edits | WAL mode where the filesystem supports it, busy timeout, short transactions; household scale assumed |
 | User-authored form HTML | Stored XSS | Allowlist sanitizer, CSP, Admin-only editing |
+| MCP client with write or schema scope damages data | Data loss | Scopes defaulting to read, trash instead of delete, automatic snapshots, audit log (ADR 0005) |
+| OAuth server implemented incorrectly | Account or data compromise | Separate design document and review; follow the specification rather than inventing flows; conformance tests |
+| Host strips the `Authorization` header before PHP | MCP unusable on that host | `.htaccess` pass-through rule and installer test |
 | Large imports hit PHP time/memory limits | Failed imports | Streaming readers, chunked import with resumable progress |
 
 ## 11. Open questions
 
 1. Bento source file form and application version(s) (discovery, M0).
-2. Whether form source is also mirrored to files on disk for editing with an external editor, or kept only in the project database.
-3. Minimum PHP version (8.2 vs 8.3), pending dependency check and target hosts.
-4. Localization: English only in v1, or translatable strings from the start.
-5. Record change history / undo depth for non-technical users (trash with restore is assumed as a minimum).
-6. Desktop/local packaging (out of scope for v1 unless decided otherwise).
-7. Nginx or other non-Apache hosts (v1 assumes Apache `.htaccess`).
+2. DreamHost specifics to verify on a real account before M1: PHP 8.3 availability with `pdo_sqlite`, `zip`, and `xmlreader`; whether the data directory can sit outside the web root; `Authorization` header pass-through; upload size, memory, and execution-time limits.
+3. Trash retention: kept until emptied by an Admin, or purged automatically after a period.
+4. MCP client registration method and whether any outbound fetch is acceptable (ADR 0005).
+5. Desktop/local packaging (out of scope for v1 unless decided otherwise).
+6. Nginx or other non-Apache self-hosting (v1 assumes Apache `.htaccess`).

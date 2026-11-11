@@ -12,7 +12,7 @@ Forms are the user-configurable front end for viewing and editing records. They 
 - No per-form JavaScript.
 - A basic form is auto-generated for every table on creation and after import.
 - A simple in-browser editor (Admin) supports reorder, show/hide, width, grouping, and label changes. It reads and writes the same HTML/CSS.
-- Admins may hand-edit the source.
+- Admins may hand-edit the source. Form source is held only in the project database; download and upload as a file is provided for external editing, with no on-disk mirror.
 - Stored form HTML is sanitized against an allowlist, and user accessibility settings take precedence over form CSS.
 
 ## Alternatives considered

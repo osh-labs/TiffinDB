@@ -203,6 +203,82 @@ final class DiscoverStructureTest extends TestCase
         }
     }
 
+    /**
+     * Property-style check: every place in a schema that can hold user text
+     * carries a unique marker ("zqm<n>z" or a number starting with 8800), and
+     * no marker may appear in the default, JSON or fully redacted reports.
+     */
+    public function testNoSchemaPositionLeaksUserTextByDefault(): void
+    {
+        $directory = $this->dir . '/data/markers';
+        mkdir($directory, 0700);
+        $path = $directory . '/markers.db';
+        $pdo = new PDO('sqlite:' . $path);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec(
+            "CREATE TABLE \"zqm1z tbl\" (
+                c TEXT DEFAULT 'zqm2z' CHECK (c <> 'zqm3z' AND c <> \"zqm4z\" AND length(c) < 880000005),
+                \"zqm6z col\" TEXT DEFAULT \"zqm7z\",
+                `zqm8z col` INTEGER DEFAULT 880000009,
+                [zqm10z col] BLOB DEFAULT x'8800000011',
+                d zqm12z zqm13z(880000014),
+                e \"zqm15z type\",
+                f [zqm16z type](12),
+                g TEXT DEFAULT (char(880000017, 880000018)) CHECK (g <> char(880000019)),
+                h TEXT DEFAULT (datetime(880000020, 'zqm21z')),
+                i REAL DEFAULT 880000022.5 CHECK (i <> -880000023 AND i <> 0x8800000024),
+                j TEXT GENERATED ALWAYS AS (c || 'zqm25z' || \"zqm26z\" || 880000027) VIRTUAL, -- zqm28z
+                k TEXT COLLATE NOCASE /* zqm29z */
+            )"
+        );
+        $pdo->exec(
+            "CREATE INDEX \"zqm30z idx\" ON \"zqm1z tbl\" (c) "
+            . "WHERE c <> 'zqm31z' AND c <> \"zqm32z\" AND i > 880000033"
+        );
+        $pdo->exec(
+            "CREATE VIEW \"zqm34z view\" AS WITH zqm35z AS (SELECT 880000036 AS zqm37z) "
+            . "SELECT t.c AS \"zqm38z alias\", 'zqm39z' AS a, \"zqm40z\" AS b, 880000041 AS n, "
+            . "substr(t.c, 880000042) AS s, `zqm43z`.zqm37z AS w "
+            . "FROM \"zqm1z tbl\" AS t, zqm35z AS `zqm43z` WHERE t.c LIKE 'zqm44z%'"
+        );
+        $pdo->exec(
+            "CREATE TRIGGER \"zqm45z trg\" AFTER DELETE ON \"zqm1z tbl\" WHEN OLD.c <> 'zqm46z' BEGIN "
+            . "SELECT 'zqm47z', \"zqm48z\", 880000049, char(880000050), x'8800000051' AS zqm52z; "
+            . "UPDATE \"zqm1z tbl\" SET c = 'zqm53z' WHERE i = 880000054; END"
+        );
+        $pdo->exec("INSERT INTO \"zqm1z tbl\" (c, k) VALUES ('zqm55z', 'zqm56z')");
+        $pdo = null;
+        file_put_contents($directory . '/zqm57z.zqm58z', 'zqm59z');
+
+        foreach ([[], ['--json'], ['--redact-identifiers=all'], ['--redact-identifiers=all', '--json'], ['--apply-wal']] as $options) {
+            [$code, $out, $err] = $this->discover([...$options, $directory]);
+            $label = implode(' ', $options);
+            self::assertSame(0, $code, $label);
+            self::assertMatchesRegularExpression('/rows: 1|"row_count": 1/', $out, $label);
+            self::assertSame(0, preg_match('/zqm\d*z?|8800\d{3}/i', $out . $err, $m), $label . ': ' . ($m[0] ?? ''));
+        }
+
+        // The reported repro: no partial rendering of a non-standard declared type.
+        [, $out] = $this->discover([$directory]);
+        self::assertMatchesRegularExpression('/column \d+: d \| type=<type-[0-9a-f]{8}> \|/', $out);
+        self::assertMatchesRegularExpression('/column \d+: e \| type=<type-[0-9a-f]{8}> \|/', $out);
+        self::assertMatchesRegularExpression('/column \d+: f \| type=<type-[0-9a-f]{8}> \|/', $out);
+        self::assertStringContainsString('d <word> <word>(<num>)', $out);
+        self::assertStringContainsString('e "<text>"', $out);
+        self::assertStringContainsString('f [<word>](<num>)', $out);
+        self::assertStringContainsString("DEFAULT <blob>", $out);
+        self::assertStringContainsString('WITH <word> AS (SELECT <num> AS <word>)', $out);
+
+        // --show-identifiers shows names but never literals or numbers.
+        [, $shown] = $this->discover(['--show-identifiers', $directory]);
+        self::assertStringContainsString('"zqm6z col" TEXT', $shown);
+        self::assertStringContainsString('type=zqm12z zqm13z(<num>)', $shown);
+        self::assertSame(0, preg_match('/8800\d{3}/', $shown, $m), $m[0] ?? '');
+        foreach ([2, 3, 4, 7, 21, 25, 26, 28, 29, 31, 32, 39, 40, 44, 46, 47, 48, 53, 55, 56, 59] as $n) {
+            self::assertStringNotContainsString('zqm' . $n . 'z', $shown);
+        }
+    }
+
     public function testPersonalLookingIdentifiersAreHashedByDefault(): void
     {
         [, $out] = $this->discover([$this->package]);

@@ -15,7 +15,7 @@
 declare(strict_types=1);
 
 const TOOL_NAME = 'discover-structure.php';
-const TOOL_VERSION = '1.1.1';
+const TOOL_VERSION = '1.2.0';
 const REPORT_FORMAT = 2;
 
 const EXIT_OK = 0;
@@ -64,8 +64,9 @@ const STRUCTURAL_NAMES = 'contents resources info pkginfo .ds_store data databas
  caches tmp temp backup backups metadata manifest index settings preferences config version icon icons';
 
 /** Declared type names that may be shown, with a short size, in the declared-type field. */
-const TYPE_WORDS = 'int integer tinyint smallint mediumint bigint character varchar varying nchar nvarchar char
- decimal numeric float double precision real number varbinary binary bit text blob string datetime timestamp time';
+const TYPE_WORDS = 'int integer tinyint smallint mediumint bigint int2 int8 unsigned signed big long short character
+ varchar varying nchar native nvarchar char clob decimal numeric float double precision real number varbinary binary
+ bit bool boolean text blob string date datetime timestamp time any';
 
 /** File extensions shown as they are. Any other extension becomes a placeholder. */
 const KNOWN_EXTENSIONS = 'db db3 sqlite sqlite3 sqlitedb zip plist xml json txt csv tsv rtf rtfd pdf html htm css js
@@ -286,45 +287,54 @@ final class IdentifierRedactor
     }
 
     /**
-     * Declared column type. Shown as stored only when it is known type words
-     * followed by at most a short size, e.g. VARCHAR(255) or DECIMAL(10,2).
-     * Anything else goes through sql(), which masks numbers and literals.
+     * Declared column type, default-deny. It is printed only when the whole
+     * type is made of standard type words, optionally followed by (int) or
+     * (int,int). Any other type becomes one hash placeholder, never a partial
+     * rendering. --show-identifiers shows the words but still masks numbers.
      */
     public function type(string $type): string
     {
-        if (preg_match('/^\s*([A-Za-z_]+(?:\s+[A-Za-z_]+)*)\s*(?:\(\s*\d{1,5}\s*(?:,\s*\d{1,5}\s*)?\))?\s*$/', $type, $m) === 1) {
-            $known = true;
-            foreach (preg_split('/\s+/', $m[1]) ?: [] as $word) {
-                $known = $known && isset($this->typeWords[strtolower($word)]);
+        $normal = trim((string) preg_replace('/\s+/', ' ', $type));
+        if ($normal === '') {
+            return '';
+        }
+        if (preg_match('/^([A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*) ?(?:\( ?\d{1,5} ?(?:, ?\d{1,5} ?)?\))?$/', $normal, $m) === 1) {
+            $standard = true;
+            foreach (explode(' ', $m[1]) as $word) {
+                $standard = $standard && isset($this->typeWords[strtolower($word)]);
             }
-            if ($known) {
-                return printable($type);
+            if ($standard) {
+                return $normal;
             }
         }
-        return $this->sql($type);
+        if ($this->mode === 'none') {
+            return printable((string) preg_replace('/(?<![A-Za-z_0-9])\d[\d.]*(?![A-Za-z_])/', '<num>', $normal));
+        }
+        return '<type-' . substr(hash_hmac('sha256', 'type:' . strtolower($normal), $this->key), 0, 8) . '>';
     }
 
     /**
-     * Returns DDL with every literal and comment masked and identifiers passed
-     * through ident(). String literals become <text> and every number becomes
-     * <num>, with no exceptions: type names such as char, time or datetime are
-     * also functions, so a number in parentheses can be data. A quoted token is
-     * treated as an identifier only if it names something in this database;
-     * SQLite also accepts "double-quoted" strings, so anything else is masked.
+     * Renders DDL default-deny. A token is printed only if it is punctuation,
+     * a word from the fixed list of SQL keywords, type words and built-in
+     * functions, or the name of a table, column, index, view or trigger of
+     * this database (which then follows the identifier policy of ident()).
+     * Everything else is replaced by a placeholder, whatever its context:
+     * <text> for '...' and "..." tokens, <num> for numbers, <blob> for blob
+     * literals, <comment> for comments, <word> for unknown words.
+     * --show-identifiers additionally shows unknown words and `...`/[...]
+     * tokens, which cannot be literals; it never shows text or numbers.
      */
     public function sql(string $sql): string
     {
         $out = '';
         $len = strlen($sql);
         $i = 0;
-        $previousWord = '';
         while ($i < $len) {
             $c = $sql[$i];
             if ($c === '-' && substr($sql, $i, 2) === '--') {
                 $end = strpos($sql, "\n", $i);
-                $end = $end === false ? $len : $end;
+                $i = $end === false ? $len : $end;
                 $out .= '-- <comment>';
-                $i = $end;
                 continue;
             }
             if ($c === '/' && substr($sql, $i, 2) === '/*') {
@@ -350,38 +360,39 @@ final class IdentifierRedactor
                     $j++;
                 }
                 $i = $j + 1;
-                $isIdentifier = $c === '`' || $c === '[' || isset($this->known[strtolower($body)]);
-                if ($isIdentifier && $previousWord !== 'default') {
+                $identifierOnly = $c === '`' || $c === '[';
+                if (isset($this->known[strtolower($body)]) || ($identifierOnly && $this->mode === 'none')) {
                     $shown = $this->ident($body);
                     $out .= $c . ($close === ']' ? $shown : str_replace($close, $close . $close, $shown)) . $close;
                 } else {
-                    $out .= $c . '<text>' . $close;
+                    $out .= $c . ($identifierOnly ? '<word>' : '<text>') . $close;
                 }
-                $previousWord = '';
                 continue;
             }
             if (preg_match('/\G[0-9][0-9A-Za-z_.]*/', $sql, $m, 0, $i) === 1) {
                 $out .= '<num>';
                 $i += strlen($m[0]);
-                $previousWord = '';
                 continue;
             }
             if (preg_match('/\G[A-Za-z_\x80-\xff][A-Za-z0-9_$\x80-\xff]*/', $sql, $m, 0, $i) === 1) {
                 $word = $m[0];
                 $i += strlen($word);
-                $next = $sql[$i] ?? '';
-                if (strtolower($word) === 'x' && $next === "'") {
+                $lower = strtolower($word);
+                if ($lower === 'x' && ($sql[$i] ?? '') === "'") {
+                    $end = strpos($sql, "'", $i + 1);
+                    $i = $end === false ? $len : $end + 1;
+                    $out .= '<blob>';
+                } elseif (isset($this->keep[$lower])) {
                     $out .= $word;
+                } elseif (isset($this->known[$lower]) || $this->mode === 'none') {
+                    $out .= $this->ident($word);
                 } else {
-                    $out .= isset($this->keep[strtolower($word)]) ? $word : $this->ident($word);
+                    $out .= '<word>';
                 }
-                $previousWord = strtolower($word);
                 continue;
             }
-            if (!ctype_space($c)) {
-                $previousWord = '';
-            }
-            $out .= $c;
+            // Anything else is a single byte of punctuation, an operator or white space.
+            $out .= preg_match('/[\x00-\x7f]/', $c) === 1 ? $c : '?';
             $i++;
         }
         return printable($out, true);
@@ -1560,7 +1571,8 @@ function main(array $argv): int
 
         $statements = [
             'This report describes structure only. It contains no row values and no samples.',
-            'All text and numeric literals in CREATE statements are masked (<text>, <num>); defaults are reported by kind only.',
+            'CREATE statements show only SQL keywords and names that exist in the schema; all literals, numbers and other words '
+                . 'are masked (<text>, <num>, <blob>, <word>). Defaults are reported by kind only.',
             [
                 'flagged' => 'Identifiers that look generated or user-chosen are replaced by hashes (id_...). '
                     . 'Plain-word identifiers are SHOWN and cannot be checked by the tool: any of them may be personal.',

@@ -25,7 +25,7 @@ The "Proposed resolution" column of that section is adopted as written.
 | # | Item | Provisional resolution | Takes effect | Cost to change |
 |---|---|---|---|---|
 | B1 | Trash retention (plan Q3) | Items stay in the trash until an Admin empties it. No automatic purge | M1 | Adding a purge job later is additive |
-| B2 | Font payload (plan Q9) | Measured in M0 (section "Font payload measurement" below). Rule: if the four families exceed 2 MB in total as WOFF2 Latin subsets at weights 400 and 700, the release ships Inter and Atkinson Hyperlegible and documents the others as optional downloads. Result: the rule is not triggered; all four ship | M0 | Removing a family is one directory, two `@font-face` rules, one settings option |
+| B2 | Font payload (plan Q9) | Measured in M0 (section "Font payload measurement" below). Rule: if the four families exceed 2 MB in total as bundled (WOFF2, weights 400 and 700; Latin subsets except Source Serif 4, see "Font licences"), the release ships Inter and Atkinson Hyperlegible and documents the others as optional downloads. Result: the rule is not triggered; all four ship | M0 | Removing a family is one directory, two `@font-face` rules, one settings option |
 | B3 | Desktop or local packaging (plan Q6) | Out of scope for v1 | - | None now |
 | B4 | Non-Apache hosting (plan Q7) | Out of scope for v1. v1 assumes Apache with `.htaccess` and `mod_rewrite` | - | A second set of server rules; the application itself has one entry point |
 | B5 | XLSX library (plan section 9) | OpenSpout is adopted if, when M3 starts, its own licence file confirms MIT and its package metadata confirms support for PHP 8.3. The decision is made in the M3 spec; this row only records the intent. Otherwise an alternative is selected by a new ADR | M3 | Confined to two plugins behind the importer and exporter interfaces |
@@ -61,27 +61,36 @@ These are not decided here.
 
 ## Font payload measurement
 
-Measured during M0 design on the files the M0 spec tells implementers to commit: WOFF2, Latin subset, weights 400 and 700, upright only.
+Measured on the files the M0 spec tells implementers to commit (recomputed at review): WOFF2, weights 400 and 700, upright only. Inter, Atkinson Hyperlegible, and Lexend are Latin subsets; Source Serif 4 is the complete upstream file.
 
 | Family | 400 (bytes) | 700 (bytes) | Family total (bytes) |
 |---|---|---|---|
 | Inter | 23,664 | 24,356 | 48,020 |
 | Atkinson Hyperlegible | 17,208 | 17,524 | 34,732 |
 | Lexend | 14,476 | 14,808 | 29,284 |
-| Source Serif 4 | 20,088 | 21,716 | 41,804 |
-| Total, eight font files | | | 153,840 |
-| Four licence files | | | 17,659 |
-| Total font directory | | | 171,499 |
+| Source Serif 4 | 76,260 | 81,540 | 157,800 |
+| Total, eight font files | | | 269,836 |
+| Four licence files | | | 17,660 |
+| Total font directory | | | 287,496 |
 
-153,840 bytes is about 150 KiB, roughly 7% of the 2 MB limit. All four families ship in the release.
+269,836 bytes is about 264 KiB, roughly 13% of the 2 MB limit. All four families ship in the release. (As Latin subsets the Source Serif 4 files would have been 41,804 bytes; the difference is the price of the licence position below.)
 
 ## Font licences
 
 Confirmed during M0 design by reading each family's licence file in its upstream project repository, and by reading the licence URL and copyright strings embedded in each of the eight font files: all four families are under the SIL Open Font License, Version 1.1 (`OFL-1.1`). File locations and checksums are in the M0 spec and, once the assets are added, in `docs/dependencies.md`.
 
-One point needs the maintainer's attention. The upstream licence file for Source Serif 4, and the copyright string embedded in the font files, declare a Reserved Font Name. OFL-1.1 condition 3 restricts the use of a Reserved Font Name by modified versions unless the copyright holder has given written permission. The files to be bundled are Latin subsets in WOFF2 form, prepared by the distribution channel and not by this project, and they keep the family name. Whether such a subset counts as a modified version for this purpose, and whether permission exists, was not verified. The same family is distributed in this form by a widely used font service. Provisional position: bundle it, committed byte-for-byte as obtained. If the maintainer prefers not to carry the question, Source Serif 4 is the family to drop or to offer as an optional download; row B2 gives the cost. Lexend's licence file also declares a Reserved Font Name, but that name differs from the family name used by the files, so the question does not arise there. Inter and Atkinson Hyperlegible declare none.
+Reserved Font Names were checked at review, from the fetched licence files and the embedded copyright strings. OFL-1.1 defines a Modified Version to include any derivative made by deleting components or by changing formats, and its condition 3 forbids a Modified Version from using a Reserved Font Name without the copyright holder's written permission; the restriction applies to the primary font name as presented to users. A Latin subset is therefore a Modified Version.
 
-ADR 0004 says font files "ship unmodified". This record reads that as: the project does not alter the files it obtains. The Latin subsetting is done upstream of the project.
+| Family | Reserved Font Name declared | Position |
+|---|---|---|
+| Inter | None | Latin subset bundled under the family name |
+| Atkinson Hyperlegible | None | Latin subset bundled under the family name |
+| Lexend | "RevReading Lexend" (licence file only; not in the font files) | Latin subset bundled. The family name in the files is "Lexend", which is not the reserved name. Whether sharing one word with a reserved name could matter was not determined; low residual risk, for the maintainer to note |
+| Source Serif 4 | "Source" (licence file and every font file) | The family name contains the reserved name, and no written permission was found in the upstream licence or README files. The Latin subset is **not** bundled. The release ships the copyright holder's own WOFF2 files for Regular and Bold, unmodified and under their published file names, from a tagged upstream release, with that tag's licence file |
+
+Options considered for Source Serif 4: ship the unmodified upstream files (chosen: no naming question, 116 KiB more payload, still far below the limit); rename the family in a subset (rejected: it requires the project to modify font files, contrary to ADR 0004, and shows the user an unfamiliar name); drop the family or make it an optional download (not needed; remains the fallback under row B2 if the maintainer prefers the smaller payload). ui-design-plan section 10 asks for Latin subsets; for this one family the licence takes precedence, and the difference is recorded here for the maintainer.
+
+ADR 0004 says font files "ship unmodified". This record reads that as: the project does not alter the files it obtains. For the three subset families the Latin subsetting is done upstream of the project, by the distribution channel; for Source Serif 4 the files are the copyright holder's own.
 
 ## Consequences
 

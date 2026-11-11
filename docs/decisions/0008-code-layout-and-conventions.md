@@ -64,13 +64,13 @@ Top-level directories:
 - Query strings carry view state only (search, sort, filter, paging), never identity or authority.
 - Identifiers in URLs are opaque application-generated keys, never user-entered text (plan section 7). Their format is decided in the M1 spec.
 - All links and asset references are produced by one URL helper that prepends the detected base path, so the application works in a subdirectory without configuration.
-- Reserved path prefixes: `/assets/` (static files), `/setup` (installer), `/sign-in`, `/sign-out`, `/projects`, `/settings`, `/admin`, `/about`, `/files` (attachment endpoint), `/mcp` (post-v1). The routes under each prefix are fixed by the spec of the milestone that builds them. The indicative shape for data screens is `/projects/{project}/tables/{table}/records/{record}`.
+- Reserved path prefixes: `/assets/` (static files), `/setup` (installer), `/sign-in`, `/sign-out`, `/projects`, `/settings`, `/admin`, `/about`, `/files` (attachment endpoint), and, post-v1 for ADR 0005, `/mcp`, `/oauth`, and `/.well-known/`. The routes under each prefix are fixed by the spec of the milestone that builds them. The indicative shape for data screens is `/projects/{project}/tables/{table}/records/{record}`.
 
 ### 4. Templates
 
 - Plain PHP files under `templates/`, rendered by `TiffinDB\Web\View`. No template engine.
 - A template runs inside a view-scope object and may use only that object's helpers and the variables passed to it.
-- Escaping is mandatory and mechanical. Every `<?= ... ?>` in a template must begin with a call to one of the scope helpers: `$this->e()` (escape a value), `$this->t()` (look up a string, returned escaped), `$this->url()`, `$this->asset()` (both return escaped URLs), `$this->partial()`, `$this->slot()` (both return markup that was itself produced by templates). `echo`, `print`, and `<?=` with any other expression are forbidden. A test scans every template and fails on a violation.
+- Escaping is mandatory and mechanical. Every `<?= ... ?>` in a template must begin with a call to one of the scope helpers: `$this->e()` (escape a value), `$this->t()` (look up a string, returned escaped), `$this->url()`, `$this->asset()` (both return escaped URLs), `$this->partial()`, `$this->slot()` (both return markup that was itself produced by templates). The layout may also call a small, fixed set of accessors that return markup built only from server-side constants (M0 has one, for the root element's `class` attribute); each is listed by name in the template test. `echo`, `print`, and `<?=` with any other expression are forbidden. A test scans every template and fails on a violation.
 - `e()` is `htmlspecialchars` with `ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5` and UTF-8. Attribute values are always double-quoted.
 - Markup that did not come from a template (for example sanitized form HTML in M5) will need a typed "safe HTML" value and a dedicated helper. That is deliberately not provided in M0; it is added with the sanitizer.
 - Output is HTML5 written in XML-well-formed syntax (upper-case `<!DOCTYPE html>`, void elements self-closed, every attribute with a quoted value, no named entities beyond the five XML ones). This lets the test suite check well-formedness offline with the XML parser built into PHP, with no extra dependency. PHP 8.3 has no built-in HTML5 parser.
@@ -101,9 +101,9 @@ Top-level directories:
 
 ### 8. Continuous integration
 
-- One GitHub Actions workflow, `.github/workflows/ci.yml`, on every push and pull request: check out, confirm PHP 8.3 or later, `composer install`, `composer lint`, `composer test`.
+- One GitHub Actions workflow, `.github/workflows/ci.yml`, on every push and pull request: check out, confirm PHP 8.3 or later, `composer validate --strict`, `composer install`, `composer lint`, `composer test`.
 - `composer install` is the only step that uses the network, and it belongs to CI setup. Lint and tests make no network requests.
-- The workflow uses the PHP and Composer that the hosted runner image provides, so the only third-party action is the checkout action. Assumption: the pinned runner image provides PHP 8.3 or later with the extensions PHPUnit needs; the workflow fails at its first step if that stops being true.
+- The workflow uses the PHP and Composer that the hosted runner image provides, so the only third-party action is the checkout action. The pinned runner image's published software list was read at review and gives PHP 8.3.6 and Composer 2.11.1; PHP 8.3 is the project floor, so CI runs on the oldest supported version. Remaining assumption: the image has the extensions PHPUnit needs. The workflow fails at its first steps if either stops being true, and a setup action (pinned to a full commit identifier) is then chosen by amending this record.
 - Workflow permissions are read-only.
 
 ### 9. Security headers and the Content-Security-Policy
@@ -137,7 +137,16 @@ public/assets/
 
 ### 12. Dependency lock file
 
-`composer.lock` is git-ignored for now. The lock file embeds third-party package metadata that includes personal names and email addresses of package authors, which `CLAUDE.md` forbids in the repository. The cost is that development installs are pinned only by the version constraint in `composer.json`. This must be revisited before the first runtime dependency is added (M3), because the release archive ships `vendor/` and should be reproducible. Options then: commit the lock with a maintainer exemption for that named file, or record exact versions and content hashes in `docs/dependencies.md`.
+No Composer lock file is committed, and Composer is configured not to write one (`"lock": false` in `composer.json`); `/composer.lock` also stays in `.gitignore`. Direct dependencies are pinned to exact versions in `composer.json`.
+
+Reasoning:
+
+- A lock file embeds third-party package metadata that includes personal names and email addresses of package authors. `CLAUDE.md` forbids those in the repository unless the maintainer directs otherwise for a specific, named file, so committing the lock is not a decision this record can take.
+- A stripped lock (author, funding, and support fields removed) was considered and rejected: Composer rewrites those fields on every update, so it needs a custom strip step and a guard test; the result is a hand-altered generated file; and it would still carry personal account names inside package names and source addresses.
+- An ignored but locally present lock is worse than none: each machine would stay on whatever it first resolved while CI resolves afresh. Turning the lock off makes every install resolve the same way from the manifest.
+- Exact pins in `composer.json` make every direct-dependency upgrade a reviewed one-line change and contain no names. What they do not pin is transitive packages. In M0 those are PHPUnit's own development dependencies: not shipped, bounded by PHPUnit's constraints, and licence-checked on every test run. That is accepted.
+
+Rule from the first shipped (runtime) dependency onward (M3), because the release archive ships `vendor/` and must be reproducible: every shipped package, direct or transitive, is pinned exactly in `composer.json` and listed in `docs/dependencies.md` with its version and the source reference Composer reports for it; the release build (M7) installs with `--no-dev` and fails if an installed shipped package is not in that list or differs from it. The simpler alternative, a committed `composer.lock` under a maintainer exemption for that named file, gives the same guarantee with standard tooling and is recommended to the maintainer; it replaces this rule if granted.
 
 ## Alternatives considered
 
@@ -157,7 +166,7 @@ public/assets/
 - Engineers have one place for each concern: routes table, security headers class, appearance class, strings file, URL helper.
 - XML-well-formed HTML is a stricter writing discipline than HTML5 requires. It costs a few characters per void element and gives an offline structural check. If a real HTML5 parser becomes available (PHP 8.4 or a vetted library), the rule can be relaxed.
 - Light enforcement of coding style relies on review until a formatter is approved.
-- The untracked lock file is a known gap, to be closed by M3.
+- Without a lock file, transitive development packages can differ between two installs made at different times. Shipped packages are covered by the rule in decision 12 from M3; the maintainer may replace that rule by exempting `composer.lock`.
 - The root `.htaccess` and the base-path detection have not been exercised against a real Apache server in M0; the host-check script and the M1 installer test are where that is verified.
 
 ## Costly to reverse

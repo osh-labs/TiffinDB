@@ -54,7 +54,7 @@ Requirements: PHP 8.1 or later with `pdo_sqlite`. The `zip` extension is optiona
 | `--json` | JSON instead of plain text. Same content. |
 | `--show-names` | Show real file and directory names. Off by default. |
 | `--redact-identifiers=all` | Replace every table, column, index, view and trigger name with a hash such as `id_3fa91c20be`, everywhere including the `sql:` lines. SQL keywords and common type and function names stay. Types, counts and relationships remain readable. |
-| `--show-identifiers` | Show every identifier as stored, including those the tool would hash by default. **Warning:** names may be personal. Use only for a report you will read in full before sharing. |
+| `--show-identifiers` | Show every identifier as stored, including those the tool would hash by default, non-standard declared types, and unknown words in `CREATE` statements (aliases, for example). Text and numbers stay masked. **Warning:** names may be personal. Use only for a report you will read in full before sharing. |
 | `--apply-wal` | If a database has a write-ahead log (`-wal` file) beside it, copy both to a private temporary directory, read them there, then delete the copy. Without this, the log is ignored and the report says so. |
 | `--value-shapes <table>` | Opt-in. See below. May be repeated. |
 | `--value-shapes-singletons` | With `--value-shapes`: also list patterns that occur only once. |
@@ -67,7 +67,7 @@ Exit codes: `0` success; `1` finished, but a problem was reported in the Notes s
 - A header with the tool version, the options used, and a statement of what the report holds.
 - The container layout: relative paths, sizes in bytes, and a kind detected from the first bytes of each file (`sqlite`, `zip`, `plist-xml`, `plist-binary`, `image-*`, `text`, `other`, and a few more). Entries inside zip archives appear as `archive.zip!/path`.
 - For each SQLite database: page size, text encoding, `user_version`, `application_id`, and sidecar files (`-wal`, `-journal`).
-- Every table, view, index and trigger with its `CREATE` statement, with all literals masked (see below).
+- Every table, view, index and trigger with its `CREATE` statement, reduced to keywords and schema names (see below).
 - For each table: row count, columns (name, declared type, not-null, primary key, whether a default exists and of what kind, hidden or generated), foreign keys.
 - For each column: how many values are NULL and non-NULL, how many are stored as integer, real, text or blob, and the minimum, maximum and average byte length of the text and blob values.
 - Per database: the identifiers that were hashed, and a review list of every identifier printed as stored.
@@ -79,7 +79,8 @@ Output is sorted and repeatable: the same input and options give the same report
 
 - No row values, samples, distinct-value lists, or minimum/maximum values.
 - No file contents. Plist, text and image files are only identified by kind.
-- No literals from `CREATE` statements. Text becomes `<text>`, every number becomes `<num>`, comments become `<comment>`. A type size such as `VARCHAR(255)` is shown only in the column's declared-type field, and only for a known type name with a short size. SQLite accepts `"double-quoted"` text as a string, so a quoted word is kept only when it is the name of a table, column, index, view or trigger in that database.
+- Nothing from a `CREATE` statement except what is known to be structure. A word is printed only if it is punctuation, a standard SQL keyword, type word or built-in function name, or the name of a table, column, index, view or trigger that exists in that database. Everything else is replaced, wherever it stands: quoted text becomes `<text>`, every number `<num>`, blob literals `<blob>`, comments `<comment>`, any other word `<word>`.
+- No free-form declared types. A column type is printed only if it consists of standard type words, optionally with a short size, such as `VARCHAR(255)` or `DECIMAL(10,2)`. Any other type becomes a placeholder such as `<type-3fa91c20>`.
 - No default values. A default is reported as `yes (numeric)`, `yes (text-or-blob)`, `yes (keyword)`, `yes (expression)` or `no`.
 - No absolute paths, user names, host names, dates, times, or SQLite error messages (only error codes).
 

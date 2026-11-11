@@ -17,17 +17,34 @@ use InvalidArgumentException;
  */
 final class UrlGenerator
 {
-    private const ASSET_NAME = '#^[a-z0-9][a-z0-9./-]*$#';
+    private const ASSET_NAME = '#^[a-z0-9][a-z0-9./-]*\z#';
 
+    /** The base path, percent-encoded segment by segment. */
+    private readonly string $basePath;
+
+    /**
+     * @param string $basePath The decoded base path (Request::$basePath).
+     *                         Each segment is percent-encoded on output, so
+     *                         an install directory containing a space, `%`,
+     *                         `?`, `#`, or non-ASCII letters still links
+     *                         correctly.
+     */
     public function __construct(
-        private readonly string $basePath,
+        string $basePath,
         private readonly string $version,
     ) {
         // Empty, or `/segment` parts with no empty segment: a leading `//`
         // would turn every link into a protocol-relative external address.
-        if (preg_match('#^(/[^/\\\\\x00-\x1F\x7F]+)*$#', $basePath) !== 1) {
+        if (preg_match('#^(/[^/\\\\\x00-\x1F\x7F]+)*\z#', $basePath) !== 1) {
             throw new InvalidArgumentException('Invalid base path.');
         }
+        $encoded = '';
+        if ($basePath !== '') {
+            foreach (explode('/', substr($basePath, 1)) as $segment) {
+                $encoded .= '/' . rawurlencode($segment);
+            }
+        }
+        $this->basePath = $encoded;
     }
 
     /**

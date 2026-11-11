@@ -367,10 +367,10 @@ final class StylesheetRulesTest extends TestCase
 
     private static function fontSizeProblem(string $selector, string $value): ?string
     {
-        if (preg_match('/^(?:\d+(?:\.\d+)?|\.\d+)rem$/', $value) === 1) {
+        if (preg_match('/^(?:\d+(?:\.\d+)?|\.\d+)rem$/D', $value) === 1) {
             return null;
         }
-        if (preg_match('/^var\(\s*--[A-Za-z0-9_-]+\s*\)$/', $value) === 1) {
+        if (preg_match('/^var\(\s*--[A-Za-z0-9_-]+\s*\)$/D', $value) === 1) {
             return null;
         }
         if (str_ends_with($value, '%')) {
@@ -396,7 +396,7 @@ final class StylesheetRulesTest extends TestCase
      */
     private static function rootStepClass(string $compound): ?string
     {
-        if (preg_match('/^(?::root|html)(?:\.(s-[a-z-]+))?$/', $compound, $m) !== 1) {
+        if (preg_match('/^(?::root|html)(?:\.(s-[a-z-]+))?$/D', $compound, $m) !== 1) {
             return null;
         }
 
@@ -432,7 +432,7 @@ final class StylesheetRulesTest extends TestCase
         $stack = [];
         for ($i = 0; $i < $offset; $i++) {
             if ($text[$i] === '(') {
-                preg_match('/([A-Za-z-]*)$/', substr($text, 0, $i), $m);
+                preg_match('/([A-Za-z-]*)$/D', substr($text, 0, $i), $m);
                 $stack[] = strtolower($m[1] ?? '');
             } elseif ($text[$i] === ')') {
                 array_pop($stack);

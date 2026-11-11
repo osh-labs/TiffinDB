@@ -179,6 +179,8 @@ final class ViewTest extends TestCase
             'NUL' => ["home\0"],
             'back-slash' => ['a\\b'],
             'dot' => ['.'],
+            'trailing newline' => ["home\n"],
+            'nested trailing newline' => ["a/b\n"],
         ];
     }
 

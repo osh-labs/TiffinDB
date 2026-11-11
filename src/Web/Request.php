@@ -87,7 +87,7 @@ final class Request
         if (!is_string($value) || $value === '') {
             return 'GET';
         }
-        if (preg_match('/^[A-Za-z]{1,32}$/', $value) !== 1) {
+        if (preg_match('/^[A-Za-z]{1,32}\z/', $value) !== 1) {
             return 'INVALID';
         }
 
@@ -144,7 +144,7 @@ final class Request
         if ($basePath === '') {
             return true;
         }
-        if (preg_match('#^(/[^/\\\\\x00-\x1F\x7F]+)+$#', $basePath) !== 1 || preg_match('//u', $basePath) !== 1) {
+        if (preg_match('#^(/[^/\\\\\x00-\x1F\x7F]+)+\z#', $basePath) !== 1 || preg_match('//u', $basePath) !== 1) {
             return false;
         }
         foreach (explode('/', substr($basePath, 1)) as $segment) {

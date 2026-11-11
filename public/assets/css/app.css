@@ -1,0 +1,271 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) TiffinDB contributors */
+
+/*
+ * TiffinDB application stylesheet (M0 spec section 8.4).
+ * Uses the tokens in tokens.css and never redefines them. Every size is in
+ * rem (design px divided by 18); px only for hairlines and the R4 floors
+ * (M0 spec section 8.1). No url(), no @import, no zoom.
+ */
+
+/* Base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  font-weight: 400;
+  overflow-wrap: break-word;
+}
+
+b,
+strong,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700;
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+a:hover {
+  color: var(--ink);
+}
+
+/* Focus: on every focusable element, never removed */
+:focus-visible {
+  outline: var(--focus-ring) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+/* Skip link: off-screen until focused */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 700;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: var(--space-2);
+  left: var(--space-2);
+  transform: none;
+  outline: var(--focus-ring) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+/* Page frame: the footer sits at the bottom of short pages */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Top bar */
+.top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: var(--bar-min);
+  padding: var(--space-2) var(--space-6);
+  background: var(--surface);
+  border-bottom: var(--border-card) solid var(--line);
+}
+
+/* Brand link: mark and live-text wordmark */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5556rem;
+  min-height: var(--target-min);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--accent);
+}
+
+.brand:hover .brand-word {
+  text-decoration: underline;
+}
+
+.brand-mark {
+  flex: none;
+  width: 1.8889rem;
+  height: 1.8889rem;
+}
+
+.brand-word {
+  font-family: var(--font-brand);
+  font-weight: 700;
+  font-size: 1.2222rem;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.brand-word-a {
+  color: var(--ink);
+}
+
+/* Mark: colours follow theme and accent */
+.mark-frame {
+  fill: none;
+  stroke: currentColor;
+}
+
+.mark-part {
+  fill: currentColor;
+}
+
+.mark-tier2 {
+  fill: var(--brand2);
+}
+
+/* Main */
+.page {
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: var(--width-wide);
+  margin: 0 auto;
+  padding: 2rem var(--space-6) var(--space-8);
+}
+
+h1 {
+  margin: 0;
+  font-size: var(--text-h1);
+  line-height: 1.2;
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--text-h2);
+  line-height: 1.2;
+}
+
+.lead {
+  margin: var(--space-1) 0 0;
+  color: var(--ink2);
+}
+
+.back {
+  margin: var(--space-6) 0 0;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+/* Theme preview links (M0 only) */
+.preview {
+  margin: var(--space-7) 0 0;
+}
+
+.preview-title {
+  margin: 0 0 var(--space-3);
+}
+
+.preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-link {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.preview-link:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.preview-link[aria-current="true"] {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Footer: licence line and "Source code" on every page */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border-top: var(--border-card) solid var(--line);
+  font-size: var(--text-small);
+  color: var(--ink2);
+}
+
+.site-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+/* Movement: off when the device asks, and under the reduce setting */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.m-reduce,
+.m-reduce *,
+.m-reduce *::before,
+.m-reduce *::after {
+  transition: none !important;
+  animation: none !important;
+  scroll-behavior: auto !important;
+}

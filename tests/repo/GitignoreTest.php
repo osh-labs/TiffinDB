@@ -35,4 +35,14 @@ final class GitignoreTest extends TestCase
 
         self::assertContains($entry, $lines, "'.gitignore' must contain the line '{$entry}'.");
     }
+
+    public function testNoNegationPatterns(): void
+    {
+        $lines = preg_split('/\r\n|\n|\r/', RepoFiles::read('.gitignore'));
+        self::assertIsArray($lines);
+
+        // A '!' line could silently un-ignore a mandatory entry.
+        $negations = array_values(array_filter($lines, static fn (string $line): bool => str_starts_with($line, '!')));
+        self::assertSame([], $negations, "'.gitignore' must contain no negation ('!') lines.");
+    }
 }

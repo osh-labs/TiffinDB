@@ -25,10 +25,11 @@ final class RepoFiles
 {
     /**
      * Top-level directories that are never scanned (generated, ignored, or
-     * version-control data). Must stay the same as the list in
+     * version-control data). `.claude` holds local agent worktrees, which
+     * are full copies of the repository. Must stay the same as the list in
      * tools/dev/lint.php.
      */
-    public const EXCLUDED_DIRECTORIES = ['.git', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
+    public const EXCLUDED_DIRECTORIES = ['.git', '.claude', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
 
     private function __construct()
     {

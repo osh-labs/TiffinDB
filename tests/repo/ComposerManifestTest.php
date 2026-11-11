@@ -50,6 +50,9 @@ final class ComposerManifestTest extends TestCase
 
         self::assertIsArray($requireDev);
         self::assertSame(['phpunit/phpunit'], array_keys($requireDev));
+        // Exact pin (ADR 0008 decision 12): no range, caret, tilde, or wildcard.
+        self::assertIsString($requireDev['phpunit/phpunit']);
+        self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $requireDev['phpunit/phpunit']);
     }
 
     public function testLockFileIsDisabled(): void

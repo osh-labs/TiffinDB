@@ -31,6 +31,10 @@ final class RepoFiles
      */
     public const EXCLUDED_DIRECTORIES = ['.git', '.claude', 'vendor', 'node_modules', 'data', 'local', '.phpunit.cache'];
 
+    /** @var list<string>|null */
+    private static ?array $gitListing = null;
+    private static bool $gitListed = false;
+
     private function __construct()
     {
     }
@@ -92,7 +96,7 @@ final class RepoFiles
             return [];
         }
 
-        $listed = self::gitFiles();
+        $listed = self::cachedGitFiles();
         if ($listed !== null) {
             $files = array_values(array_filter(
                 $listed,
@@ -109,19 +113,39 @@ final class RepoFiles
     }
 
     /**
-     * Files git would consider, or null when the root is not a git checkout
-     * or git cannot be run. Local and offline.
+     * The git listing for the project root, computed once per process.
      *
      * @return list<string>|null
      */
-    private static function gitFiles(): ?array
+    private static function cachedGitFiles(): ?array
     {
-        $root = self::root();
+        if (!self::$gitListed) {
+            self::$gitListing = self::gitFiles(self::root(), (string) getenv('PATH'));
+            self::$gitListed = true;
+        }
+
+        return self::$gitListing;
+    }
+
+    /**
+     * Files git would consider below a checkout root, or null when the root
+     * is not a git checkout or no runnable git is found on the search path.
+     * The executable is looked up first, so a missing git never makes
+     * proc_open emit a warning. Local and offline.
+     *
+     * @return list<string>|null
+     */
+    public static function gitFiles(string $root, string $searchPath): ?array
+    {
         if (!file_exists($root . '/.git')) {
             return null;
         }
+        $git = self::findExecutable('git', $searchPath);
+        if ($git === null) {
+            return null;
+        }
         $process = proc_open(
-            ['git', '-c', 'core.quotePath=off', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+            [$git, '-c', 'core.quotePath=off', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
             $root,
@@ -143,12 +167,31 @@ final class RepoFiles
         return array_values(array_unique($paths));
     }
 
+    /** Absolute path of a runnable executable on a PATH-style search path, or null. */
+    public static function findExecutable(string $name, string $searchPath): ?string
+    {
+        $suffixes = PHP_OS_FAMILY === 'Windows' ? ['.exe', '.cmd', '.bat', ''] : [''];
+        foreach (explode(PATH_SEPARATOR, $searchPath) as $directory) {
+            if ($directory === '') {
+                continue;
+            }
+            foreach ($suffixes as $suffix) {
+                $candidate = rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . $name . $suffix;
+                if (is_file($candidate) && is_executable($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Directory walk used when git is not available.
      *
      * @return list<string>
      */
-    private static function walk(string $start): array
+    public static function walk(string $start): array
     {
         $root = self::root();
 

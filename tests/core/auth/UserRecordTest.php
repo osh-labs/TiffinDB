@@ -33,7 +33,7 @@ final class UserRecordTest extends TestCase
         yield 'three words' => ['Example Middle Person', 'EP'];
         yield 'extra spaces' => ['  Example    Person  ', 'EP'];
         yield 'lower case' => ['example person', 'EP'];
-        yield 'non-ASCII first letters' => ["\u{e9}mile \u{f8}rsted", class_exists(\IntlChar::class) ? "\u{c9}\u{d8}" : "\u{e9}\u{f8}"];
+        yield 'non-ASCII first letters' => ["\u{e9}xample \u{f8}ther", class_exists(\IntlChar::class) ? "\u{c9}\u{d8}" : "\u{e9}\u{f8}"];
         yield 'Greek' => ["\u{3b1}\u{3bb}\u{3c6}\u{3b1} \u{3b2}\u{3b7}\u{3c4}\u{3b1}", class_exists(\IntlChar::class) ? "\u{391}\u{392}" : "\u{3b1}\u{3b2}"];
         yield 'non-breaking space separates' => ["Example\u{a0}Person", 'EP'];
         yield 'digit first' => ['4 Example', '4E'];

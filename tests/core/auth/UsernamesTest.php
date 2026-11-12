@@ -35,7 +35,7 @@ final class UsernamesTest extends TestCase
         yield 'inner space' => ['example person', false];
         yield 'at sign' => ['user@example', false];
         yield 'plus' => ['a+b', false];
-        yield 'non-ASCII letter' => ["j\u{f6}rg", false];
+        yield 'non-ASCII letter' => ["\u{f6}xample", false];
         yield 'empty' => ['', false];
         yield 'only spaces' => ['    ', false];
         yield 'tab inside' => ["ad\tmin", false];
@@ -62,7 +62,7 @@ final class UsernamesTest extends TestCase
     {
         $this->assertSame('example.admin', Usernames::normalise('Example.ADMIN'));
         $this->assertSame('admin', Usernames::normalise('  Admin '));
-        $this->assertSame("j\u{d6}rg", Usernames::normalise("J\u{d6}rg"), 'Only ASCII letters are folded.');
+        $this->assertSame("\u{d6}xample", Usernames::normalise("\u{d6}XAMPLE"), 'Only ASCII letters are folded.');
     }
 
     public function testDisplayNamesUseTheSharedTextRules(): void

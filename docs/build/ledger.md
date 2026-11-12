@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1: WP0, WP1 merged; WP8 review follow-ups in progress; wave 2 (WP2, WP3) in progress (worktrees, unpushed) |
+| Phase | M1: WP0, WP1, WP8 merged (wave 1 closed); wave 2 (WP2, WP3) in progress (worktrees, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP8: on follow-up report have reviewer verify, then merge. WP2: on report dispatch design-tier security review (include WP1 storage as used by sessions). WP3: on report dispatch design-tier review (URL/email validation). Then wave 3 (WP4 after WP3; WP6 after WP2). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
+| Next action | WP2: on report dispatch design-tier security review. WP3: on report dispatch design-tier review (URL/email validation). Then wave 3 (WP4 after WP3; WP6 after WP2). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
 
 ## 2. Milestones
 
@@ -65,9 +65,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
-| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | follow-up round in progress (worktree, unpushed) | agent worktree | design tier | APPROVE with follow-ups (show-password reset on submit; scanner gaps for meta refresh, iframe srcdoc, SVG animate; csrf() only in its partial; ENT_DISALLOWED; script element only in head; form-actions default; 44 px project-name link) |
-| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
-| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
+| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`6813e81` incl. P65, worktree, unpushed); in review | agent worktree | design tier | pending |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`96b3d9c` incl. P67, worktree, unpushed); in review | agent worktree | design tier | pending |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
@@ -104,6 +104,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P62 | Path-containment check beyond the nearest existing ancestor | `Fs::isInside` refuses NUL and `.`/`..` segments in the non-existent part (stricter than spec 4.3 algorithm) | M1-WP1 review ruling; spec as-built notes |
 | P63 | Show-password script also resets switched inputs to `password` and unticks the box on form submit | Extends M1-screens section 6 item 3 | M1-WP8 review ruling; spec as-built notes |
 | P64 | Folder removal | `Fs::removeDir` removes an empty directory only, never follows links; no recursive removal; callers remove known files first | M1-WP1 review ruling; spec as-built notes |
+| P65 | Login throttle reset | A bucket resets only when its last failure (not its window start) is over 900 s old and it is not blocked, so waiting out each block still doubles to the 15-minute cap; `login_throttle` gains `last_failure_at` (system schema v1); stale rows deleted when last failure is over a day old and not blocked | M1-WP2 ruling; spec section 6.6 as-built notes |
+| P66 | WP2 additions accepted | Repositories refuse row changes outside `write()` (`SystemDatabase::requireTransaction()`); `Authenticator::signOut` writes its own audit entry (WP5 must not repeat it); failed sign-ins record the matched person; usernames trimmed before normalising; NUL refused in passwords | M1-WP2 report; spec as-built notes |
+| P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and `< > " ` \ ( ) , ; : [ ]` in the local part refused; apostrophe allowed (amended) | M1-WP3 rulings; spec section 8 as-built notes |
 
 ## 5. Blockers
 
@@ -128,11 +131,12 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance. |
 | 2026-11-12T02:30Z | Window 2 start (new orchestrator session); M0 present on the assigned branch, which matches `main`; resume reminder armed for 07:46Z |
 | 2026-11-12T02:5xZ | Offline PHPUnit 12.5.43 rebuilt (6.4 GB before trim, 17 MB after); `composer lint` 69 files 0 failed; `composer test` OK 1075 tests. M1-D1 dispatched |
-| 2026-11-12T03:4xZ | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
-| 2026-11-12T04:0xZ | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
-| 2026-11-12T04:3xZ | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
-| 2026-11-12T05:1xZ | M1-WP0 merged after two review rounds; suite 1079 tests OK |
-| 2026-11-12T07:0xZ | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
+| 2026-11-12, 02:50Z to 04:25Z | M1-WP0 merged after two review rounds; suite 1079 tests OK |
+| 2026-11-12, 02:50Z to 04:25Z | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
+| 2026-11-12T04:4xZ | M1-WP8 merged; wave 1 closed |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -171,4 +175,8 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP12, spec | Reconcile `field-error` (section 4.4 says it outputs the `p`; the caller writes it) and section 7 heading order with the `h2` summary before `h1` | `docs/specs/M1-screens.md` |
 | WP6 | Treat a path `Fs::isInside` cannot resolve as not outside the document root (fail safe); replace files by `Fs::remove` then `Fs::writeNew` (`writeNew` never overwrites) | M1-WP1 review |
 | Maintainer (P61) | Emoji tag-sequence flags and soft hyphens are refused in names; a leading BOM is reported, not trimmed | M1-WP1 review |
+| WP12 | Add a test rendering `form-actions` without the `danger` key (mutation survivor) | `tests/web/ShellTest.php` |
+| WP5, WP6, WP7 | Wrap flash set/take, installer writes and the reset script in `write()` (repositories refuse changes outside a transaction); do not record `auth.sign_out` again; WP7 ends the old cookie's session at sign-in | M1-WP2 report |
+| WP4 | `updateField` normalises options: keep auto-number `next` and relation `relation`/`side` (types return `[]` for relation options) | M1-WP3 report |
+| M2 | `Text::trim` removes PCRE whitespace incl. U+180E and U+0085 at value ends; email values must be escaped in HTML | M1-WP3 report |
 

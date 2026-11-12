@@ -147,8 +147,13 @@ a:hover {
   padding: var(--space-8) var(--space-4) 0;
 }
 
+/* Wraps the wordmark under the mark only when the line is too narrow
+   (320 px at the Largest text size); one line at 390 px and wider. */
 .brand-lockup {
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.7778rem;
+  max-width: 100%;
 }
 
 .brand-lockup .brand-mark {
@@ -308,6 +313,11 @@ a:hover {
 .page-plain {
   align-items: center;
   padding: 1.5556rem var(--space-4) var(--space-8);
+}
+
+/* Centred children shrink to their content; never past the column. */
+.page-plain > * {
+  max-width: 100%;
 }
 
 .page-head {

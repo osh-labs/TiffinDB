@@ -47,6 +47,13 @@ final class Sqlite
      * the -wal and -shm files that SQLite creates take the same mode).
      * Throws \RuntimeException when the path already exists, and
      * \InvalidArgumentException for the paths open() refuses.
+     *
+     * When opening fails after the file was made, the file and any -wal and
+     * -shm beside it are removed. Known narrow race: the existence check and
+     * SQLite's open are separate steps, so if another process creates a file
+     * at the same path in between, that file is opened and, on failure,
+     * removed. Paths are application-generated inside the data directory,
+     * where only TiffinDB writes, so this is accepted.
      */
     public static function create(string $path, int $busyTimeoutMs = self::BUSY_TIMEOUT_MS): Database
     {

@@ -28,7 +28,13 @@ final class Database
 {
     private const SQLITE_BUSY = 5;
     private const SQLITE_LOCKED = 6;
-    private const TRANSACTION_CONTROL = '/^[\s;]*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i';
+    /**
+     * A transaction-control keyword as the first token, after any white
+     * space, semicolons, `--` line comments, and `/* ... *\/` comments
+     * (SQLite comments do not nest, so the first `*\/` ends one). An
+     * unterminated comment runs to the end of the text, so nothing follows it.
+     */
+    private const TRANSACTION_CONTROL = '#^(?:\s|;|--[^\n]*(?:\n|\z)|/\*.*?\*/)*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b#is';
 
     private ?\PDO $pdo;
     private bool $inWrite = false;

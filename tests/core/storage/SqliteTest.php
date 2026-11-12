@@ -219,10 +219,15 @@ final class SqliteTest extends TestCase
 
     public function testFloatTextDoesNotDependOnLocaleOrPrecision(): void
     {
-        $oldPrecision = ini_set('precision', '3');
         $oldLocale = setlocale(LC_NUMERIC, '0');
-        setlocale(LC_NUMERIC, 'de_DE.UTF-8', 'de_DE', 'fr_FR.UTF-8', 'C');
+        $set = setlocale(LC_NUMERIC, 'de_DE.UTF-8', 'de_DE.utf8', 'de_DE', 'fr_FR.UTF-8', 'fr_FR.utf8', 'fr_FR', 'nl_NL.UTF-8');
+        if ($set === false || (localeconv()['decimal_point'] ?? '.') !== ',') {
+            setlocale(LC_NUMERIC, (string) $oldLocale);
+            self::markTestSkipped('No locale with a comma as decimal point is installed, so locale independence cannot be shown here.');
+        }
+        $oldPrecision = ini_set('precision', '3');
         try {
+            self::assertSame('0,5', sprintf('%.1f', 0.5), 'The comma locale is active.');
             $db = $this->track(Sqlite::memory());
             self::assertSame(0.30000000000000004, $db->value('SELECT CAST(? AS REAL)', [0.1 + 0.2]));
         } finally {
@@ -249,6 +254,47 @@ final class SqliteTest extends TestCase
         yield 'savepoint' => ['SAVEPOINT a'];
         yield 'release' => ['RELEASE a'];
         yield 'after a semicolon' => [';BEGIN'];
+        yield 'after a block comment' => ['/* c */ BEGIN'];
+        yield 'after a line comment' => ["-- c\nBEGIN"];
+        yield 'after "nested" comments' => ['/* a /* b */ COMMIT'];
+        yield 'after several comments' => ["  -- one\n/* two */;\n/*\nthree\n*/ROLLBACK"];
+        yield 'after a comment, lower case' => ['/**/end'];
+    }
+
+    public function testCommentsThatHoldTheOnlyKeywordAreNotRefused(): void
+    {
+        $db = $this->track(Sqlite::memory());
+        $db->run('CREATE TABLE t (v TEXT)');
+        // An unterminated comment runs to the end, and a line comment hides the rest of its line:
+        // SQLite runs nothing, so no transaction may start.
+        foreach (['/* c BEGIN', '-- BEGIN', 'SELECT 1 /* BEGIN */'] as $sql) {
+            $db->value($sql);
+        }
+        $db->write(fn (Database $tx): int => $tx->run('INSERT INTO t (v) VALUES (?)', ['ok']));
+        self::assertSame(1, $db->value('SELECT COUNT(*) FROM t'));
+    }
+
+    public function testCommentedCommitCannotEndAWriteEarly(): void
+    {
+        $path = $this->temp->path('early-commit.sqlite');
+        $db = $this->track(Sqlite::create($path));
+        $db->run('CREATE TABLE t (v TEXT)');
+
+        foreach (['/* c */ COMMIT', "-- c\nCOMMIT", 'COMMIT'] as $commit) {
+            try {
+                $db->write(function (Database $tx) use ($commit): void {
+                    $tx->run('INSERT INTO t (v) VALUES (?)', ['one']);
+                    $tx->run($commit);
+                    $tx->run('INSERT INTO t (v) VALUES (?)', ['two']);
+                });
+                self::fail('The commit inside write() must be refused.');
+            } catch (LogicException) {
+                self::assertFalse($db->inTransaction());
+            }
+        }
+
+        $other = $this->track(Sqlite::open($path));
+        self::assertSame(0, $other->value('SELECT COUNT(*) FROM t'), 'Every failed write is rolled back completely.');
     }
 
     #[DataProvider('transactionControl')]

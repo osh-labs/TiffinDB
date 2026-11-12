@@ -120,7 +120,7 @@ With `?type=` present but unknown, step 1 is shown with the error `schema.field.
 5. The options partial for the type: `templates/partials/field-options/<id>.php` (section 7.3), in "new" mode.
 6. `div.form-actions`: primary `schema.field.new.submit` "Add field"; Cancel to `.../fields`.
 
-Field map: `name` to `field-name`, `help` to `field-help`, `options.<n>` to `opt-<n>`, `target` to `opt-target`, `reverse_name` to `opt-reverse-name`. Success: 303 to `.../fields`, flash `notice.field_added` "The field {field} has been added."
+Field map: `name` to `field-name`, `help` to `field-help`, `options.<n>` to `opt-<n>` (underscores become dashes), `options.links` to `opt-this-max`, `target` to `opt-target`, `reverse_name` to `opt-reverse-name`, `type` to the summary only. Success: 303 to `.../fields`, flash `notice.field_added` "The field {field} has been added."
 
 ### 7.3 Options per type
 

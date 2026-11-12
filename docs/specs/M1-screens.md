@@ -141,7 +141,7 @@ All controllers are in `TiffinDB\Web\Controller`. A route placeholder value that
 5. Installation state, from `Services::installState()`:
    - not `Installed` and access is not `setup` or `any`: 303 to `/setup`;
    - `Installed` and access is `setup`: 404 page.
-6. When installed: resume the session from cookie `tdb_session` through `AuthOperations::resume`. A cookie that does not resolve is deleted on the response (`Max-Age=0`).
+6. When installed: resume the session from cookie `tdb_session` through `Services::resume` (the same behaviour as `AuthOperations::resume`). A cookie that does not resolve is deleted on the response (`Max-Age=0`).
 7. Access `user` without a session: 303 to `/sign-in`. Access `guest` with a session: 303 to `/projects`.
 8. A session whose person must change their password, on any `user` route other than `AccountController::passwordForm`, `AccountController::password`, and `SignInController::signOut`: 303 to `/account/password`.
 9. CSRF for POST (section 2.5). Failure: 403 page with `error.csrf.title` and `error.csrf.body`.
@@ -169,7 +169,7 @@ Error pages keep the M0 shape (title, one sentence, link to the start page) and 
 
 `secure` is the request's `secure` flag unless `config/local.php` sets `secure_cookies` to `true` or `false`.
 
-Flash notices: controllers call `Context::flash(string $key, array $params = [])` before redirecting; the next page that renders the shell takes it (`AuthOperations::takeFlash`) and shows it with the `notice` partial (role `status`). Only signed-in pages have flash notices. The sign-in page shows "You have signed out." from a `?signed-out=1` query parameter (view state only; it changes nothing).
+Flash notices: controllers call `Context::flash(string $key, array $params = [])` before redirecting; the next page that renders the shell takes it (`Services::takeFlash`) and shows it with the `notice` partial (role `status`). Only signed-in pages have flash notices. The sign-in page shows "You have signed out." from a `?signed-out=1` query parameter (view state only; it changes nothing).
 
 ### 2.7 Appearance
 
@@ -184,6 +184,10 @@ interface Services
     public function installer(): Installer;          // \LogicException once installed
     public function operations(): Operations;        // \LogicException before installation
     public function probe(): HttpProbe;               // LoopbackHttpProbe in CoreServices
+    /** Used by the kernel; implemented over Core\Auth (Authenticator, Sessions), not over Core\App. */
+    public function resume(string $token): ?SignedIn;
+    public function takeFlash(string $token): ?array;
+    public function setFlash(string $token, string $key, array $params = []): void;
     public function close(): void;
 }
 
@@ -209,7 +213,7 @@ final class Context
 }
 ```
 
-`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, `PasswordHasher`, `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` that wraps a `CoreFixture` instance or scripted states.
+`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, `PasswordHasher`, `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` with scripted states (install state, a `SignedIn` for a given token, flash); its `operations()` and `installer()` throw unless a test supplies real ones, so WP7 does not depend on WP5. Later packages pass real objects built by `CoreFixture`.
 
 Controllers receive `Context` in their constructor: `new $class(Context $context)` (the M0 kernel passed `View`). Controllers hold no business rules and no permission checks; they read input with `Request::input`, call one `Core\App` operation, and render or redirect. When an operation throws `ValidationFailed`, the controller renders the same page with status 422, the submitted values, and the problems (section 4.5).
 
@@ -230,8 +234,8 @@ Controllers receive `Context` in their constructor: `new $class(Context $context
 | `SignInController` | Sign in (`sign-in-and-projects.md` section 2) | `AuthOperations::signIn`, `signOut` |
 | `AccountController` | Change your password (`sign-in-and-projects.md` section 4) | `AuthOperations::changeOwnPassword` |
 | `ProjectController` | Project list (`sign-in-and-projects.md` section 3), new project (`new-project.md`), project settings (`schema-editor.md` section 2) | `ProjectOperations` |
-| `SharingController` | Sharing (`people-and-sharing.md` section 5) | `ProjectOperations::sharing`, `setSharing` |
-| `PeopleController` | People screens (`people-and-sharing.md` sections 2 to 4) | `PeopleOperations` |
+| `SharingController` | Sharing (`people-and-sharing.md` section 6) | `ProjectOperations::sharing`, `setSharing` |
+| `PeopleController` | People screens (`people-and-sharing.md` sections 2 to 5) | `PeopleOperations` |
 | `TableController` | Tables, new table, table fields, delete table (`schema-editor.md` sections 3 to 6) | `SchemaOperations`, `ProjectOperations::get` |
 | `FieldController` | Add, edit, change type, delete field (`schema-editor.md` sections 7 to 10) | `SchemaOperations` |
 

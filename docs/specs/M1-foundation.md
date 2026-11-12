@@ -682,13 +682,22 @@ final class SignInResult
     ) {}
 }
 
+final class SignedIn
+{
+    public function __construct(
+        public readonly Actor $actor,
+        public readonly SessionRecord $session,
+        public readonly bool $mustChangePassword,
+    ) {}
+}
+
 final class Authenticator
 {
     public function __construct(SystemDatabase $s, Users $users, Sessions $sessions, LoginThrottle $throttle,
                                 PasswordHasher $hasher, AuditLog $audit) {}
     public function signIn(string $username, string $password, string $clientAddress): SignInResult;
     /** The actor and session for a cookie token, or null. */
-    public function resume(string $token): ?array;   // ['actor' => Actor, 'session' => SessionRecord, 'mustChangePassword' => bool]
+    public function resume(string $token): ?SignedIn;
     public function signOut(string $token): void;
 }
 ```
@@ -1127,7 +1136,7 @@ Every method whose first parameter is `Actor $actor` starts with `Authorizer::re
 | Method | Permission | Behaviour | Audit |
 |---|---|---|---|
 | `signIn(string $username, string $password, string $clientAddress): SignInResult` | none | `Authenticator::signIn` | as section 6.7 |
-| `resume(string $token): ?SignedIn` | none | `SignedIn { Actor $actor; SessionRecord $session; bool $mustChangePassword }` | |
+| `resume(string $token): ?SignedIn` | none | `Authenticator::resume`; `SignedIn` (section 6.7) is defined in `Core\Auth` | |
 | `signOut(string $token): void` | none | Ends the session when it exists | `auth.sign_out` when it existed |
 | `changeOwnPassword(Actor $actor, string $token, string $current, string $new): IssuedSession` | signed in | `$current` must verify (`current`: `problem.password.current_wrong`; a wrong value counts as a failure on the person's throttle bucket, and a blocked bucket gives `current`: `problem.throttled`); `PasswordPolicy::problems($new, username, 'password')`; new hash; `must_change_password` = 0; end all the person's sessions; start and return a new one | `auth.password_changed` |
 | `setFlash(string $token, string $key, array $params = []): void`, `takeFlash(string $token): ?array` | none | One notice carried to the next page | |
@@ -1629,9 +1638,9 @@ Order (at most three at once):
 |---|---|---|
 | 1 | WP0, WP1, WP8 | at once |
 | 2 | WP2, WP3 | WP1 merged |
-| 3 | WP4, WP6, WP7 | WP4 after WP3; WP6 after WP2; WP7 after WP2 and WP8 |
-| 4 | WP5, WP9 | WP5 after WP2 and WP4; WP9 after WP6, WP7, WP8 |
-| 5 | WP10, WP11 | after WP5, WP7, WP8 |
+| 3 | WP4, WP6 | WP4 after WP3; WP6 after WP2 |
+| 4 | WP5, WP7 | WP5 after WP2 and WP4; WP7 after WP2, WP6, and WP8 |
+| 5 | WP9, WP10, WP11 | WP9 after WP6, WP7, WP8; WP10 and WP11 after WP5, WP7, WP8 |
 | 6 | WP12 | after WP9, WP10, WP11 |
 
 Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostCheckTest`, and the `docs/dependencies.md` bullet are WP0; the `Fallback` HEAD body is WP7; the two template-scanner items are WP8; the nested `.htaccess` test and the deny-only data rule are WP6 (T-REPO-10); "`/files` project-scoped" is decided here (P35) with no code in M1; "static assets without CSP" stays with M7 packaging.
@@ -1718,7 +1727,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 | | |
 |---|---|
 | Tier | implementation |
-| Depends on | WP2 (Actor, Csrf, SessionRecord), WP8 (View constructor) |
+| Depends on | WP2 (Actor, Csrf, SessionRecord, SignedIn), WP6 (InstallState, HttpProbe), WP8 (View constructor). Not WP5: the kernel never calls `Core\App`; `Services::operations()` is only declared, and `FakeServices` may throw from it |
 | Security-critical | Yes (cookies, CSRF enforcement, authentication gate, headers) |
 | Owned files | Listed in part 2 section 10 under WP7 |
 | Scope | Part 2 sections 2 and 3.1 |
@@ -1790,7 +1799,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 | M1-WP4 | Project file, schema engine, trash | implementation | WP1, WP3 | Yes |
 | M1-WP5 | Core operations | implementation | WP2, WP4 | Yes |
 | M1-WP6 | Installer core | implementation | WP2 | Yes |
-| M1-WP7 | Web pipeline | implementation | WP2, WP8 | Yes |
+| M1-WP7 | Web pipeline | implementation | WP2, WP6, WP8 | Yes |
 | M1-WP8 | View layer, shell, components, shared strings | implementation | none | Yes |
 | M1-WP9 | Installer screens | implementation | WP6, WP7, WP8 | Yes |
 | M1-WP10 | Sign-in, password, people, sharing screens | implementation | WP5, WP7, WP8 | Yes |

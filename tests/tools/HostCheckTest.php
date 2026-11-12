@@ -228,8 +228,9 @@ final class HostCheckTest extends TestCase
         mkdir($target, 0700);
         file_put_contents($target . '/precious.txt', "synthetic\n");
         $link = $this->workDir . '/tiffindb-hostcheck-00112233aabbccdd';
-        if (!@symlink($target, $link)) {
-            $this->markTestSkipped('cannot create symbolic links here');
+        $reason = '';
+        if (!self::quietly(static fn (): bool => symlink($target, $link), $reason)) {
+            $this->markTestSkipped('cannot create symbolic links here' . ($reason !== '' ? ': ' . $reason : ''));
         }
         touch($target, time() - 3600);
 
@@ -244,11 +245,32 @@ final class HostCheckTest extends TestCase
         $this->assertNoSensitiveText($out);
     }
 
+    /**
+     * Runs $call with a local error handler instead of the @ operator, so an
+     * expected warning (no symlink support, no free port) is captured, not shown.
+     *
+     * @template T
+     * @param callable(): T $call
+     * @return T
+     */
+    private static function quietly(callable $call, string &$warning = ''): mixed
+    {
+        set_error_handler(static function (int $errno, string $message) use (&$warning): bool {
+            $warning = $message;
+            return true;
+        });
+        try {
+            return $call();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
     // ----- HTTP (built-in server on loopback) ------------------------------
 
     private function startServer(): int
     {
-        $probe = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        $probe = self::quietly(static fn () => stream_socket_server('tcp://127.0.0.1:0'));
         if ($probe === false) {
             $this->markTestSkipped('cannot bind a loopback port');
         }
@@ -265,7 +287,7 @@ final class HostCheckTest extends TestCase
             $this->markTestSkipped('cannot start the PHP built-in server');
         }
         for ($i = 0; $i < 50; $i++) {
-            $fp = @stream_socket_client('tcp://127.0.0.1:' . $port, $errno, $errstr, 0.2);
+            $fp = self::quietly(static fn () => stream_socket_client('tcp://127.0.0.1:' . $port, $errno, $errstr, 0.2));
             if ($fp !== false) {
                 fclose($fp);
                 return $port;
@@ -326,7 +348,7 @@ final class HostCheckTest extends TestCase
     {
         // A decoy listener: self-requests must never reach it, even though
         // the Host header names its port.
-        $decoy = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        $decoy = self::quietly(static fn () => stream_socket_server('tcp://127.0.0.1:0'));
         if ($decoy === false) {
             $this->markTestSkipped('cannot bind a loopback port');
         }
@@ -339,7 +361,7 @@ final class HostCheckTest extends TestCase
         $this->stopServer();
 
         stream_set_blocking($decoy, false);
-        $this->assertFalse(@stream_socket_accept($decoy, 0), 'a self-request reached the decoy listener');
+        $this->assertFalse(self::quietly(static fn () => stream_socket_accept($decoy, 0)), 'a self-request reached the decoy listener');
         fclose($decoy);
 
         foreach ([[$status, $body], [$status6, $body6]] as [$st, $out]) {

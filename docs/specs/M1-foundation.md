@@ -1257,7 +1257,7 @@ final class Installer
                                 PasswordHasher $hasher, string $appVersion) {}
     public function state(): InstallState;
     public function requirements(bool $secure, ?string $documentRoot): RequirementReport;
-    public function prepareDataFolder(ProbeTarget $target, HttpProbe $probe): DataFolderResult;
+    public function prepareDataFolder(?string $documentRoot, ?ProbeTarget $target, HttpProbe $probe): DataFolderResult;
     public function setupCodeLocation(): string;        // for messages, e.g. '../tiffindb-data/setup-code.txt'
     /** Creates the first Admin and signs them in. */
     public function createFirstAdmin(string $setupCode, string $displayName, string $username,
@@ -1356,7 +1356,7 @@ final class ExposureProbe
 }
 ```
 
-The web layer builds `ProbeTarget` only when `HTTP_HOST`, `SERVER_ADDR`, and `SERVER_PORT` are present and valid; otherwise the outcome is `inconclusive` without a probe.
+The web layer passes a null `$target` when `HTTP_HOST`, `SERVER_ADDR`, or `SERVER_PORT` is missing or invalid; when a probe is then needed, the outcome is `inconclusive` without one.
 
 `ExposureProbe::run`:
 

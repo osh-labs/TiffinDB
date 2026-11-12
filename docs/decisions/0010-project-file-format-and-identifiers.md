@@ -94,7 +94,7 @@ Files live in `attachments/` beside the database, content-addressed by SHA-256 a
 - The file is readable with any SQLite tool: one table per user table, one column per field, human-readable values except currency (minor units) and durations (seconds), both documented.
 - Display names can change freely; the SQL schema changes only when fields or tables are added, deleted, or change type.
 - Join tables for every relation cost one extra table per link field; queries are uniform.
-- The minimum SQLite library is 3.35 (`ALTER TABLE ... DROP COLUMN`); the installer checks it.
+- The minimum SQLite library is 3.35.5, the chosen floor for `ALTER TABLE ... DROP COLUMN`; the installer checks it.
 - Format versions will advance with milestones before v1. Each step is a small, tested migration.
 
 ## Costly to reverse

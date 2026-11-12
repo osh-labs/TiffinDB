@@ -256,21 +256,20 @@ final class SchemaEditor
             $relationKey = $this->newKey();
             $leftKey = $this->newKey([$relationKey]);
             $rightKey = $this->newKey([$relationKey, $leftKey]);
-            $join = Identifier::joinTable($relationKey);
             $joinName = Identifier::joinName($relationKey);
 
-            $this->db->run('CREATE TABLE ' . $join . ' (
+            $this->db->run('CREATE TABLE ' . Identifier::joinTable($relationKey) . ' (
     "left_id"  INTEGER NOT NULL REFERENCES ' . Identifier::table($table->key) . ' ("id") ON DELETE CASCADE,
     "right_id" INTEGER NOT NULL REFERENCES ' . Identifier::table($target->key) . ' ("id") ON DELETE CASCADE,
     "position" INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY ("left_id", "right_id")
 ) WITHOUT ROWID');
-            $this->db->run('CREATE INDEX ' . Identifier::index($joinName, 'r') . ' ON ' . $join . ' ("right_id")');
+            $this->db->run('CREATE INDEX ' . Identifier::index($joinName, 'r') . ' ON ' . Identifier::joinTable($relationKey) . ' ("right_id")');
             if ($thisMax === Cardinality::One) {
-                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'l1') . ' ON ' . $join . ' ("left_id")');
+                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'l1') . ' ON ' . Identifier::joinTable($relationKey) . ' ("left_id")');
             }
             if ($otherMax === Cardinality::One) {
-                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'r1') . ' ON ' . $join . ' ("right_id")');
+                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'r1') . ' ON ' . Identifier::joinTable($relationKey) . ' ("right_id")');
             }
 
             $left = $this->insertRelationField($leftKey, $table->key, Text::trim($name), $relationKey, 'left', $required, Text::trim($help));
@@ -480,11 +479,11 @@ final class SchemaEditor
         $field = $schema->field($fieldKey);
         $relation = $schema->relationOf($field);
         if ($relation !== null) {
-            $sql = $relation->sideOf($field->key) === 'left'
-                ? 'SELECT COUNT(DISTINCT "left_id") FROM ' . $relation->sql()
-                : 'SELECT COUNT(DISTINCT "right_id") FROM ' . $relation->sql();
+            if ($relation->sideOf($field->key) === 'left') {
+                return (int) $this->db->value('SELECT COUNT(DISTINCT "left_id") FROM ' . $relation->sql());
+            }
 
-            return (int) $this->db->value($sql);
+            return (int) $this->db->value('SELECT COUNT(DISTINCT "right_id") FROM ' . $relation->sql());
         }
         if ($field->type === 'attachment') {
             return (int) $this->db->value('SELECT COUNT(DISTINCT "record_id") FROM "_tiffin_attachment_links" WHERE "field_key" = ?', [$field->key]);
@@ -534,10 +533,9 @@ final class SchemaEditor
             if ($links === null) {
                 $problems[] = new Problem('options.links', 'problem.options.invalid');
             } elseif ($links === Cardinality::One && $current === Cardinality::Many) {
-                $sql = $relation->sideOf($field->key) === 'left'
-                    ? 'SELECT COUNT(*) FROM (SELECT "left_id" FROM ' . $relation->sql() . ' GROUP BY "left_id" HAVING COUNT(*) > 1)'
-                    : 'SELECT COUNT(*) FROM (SELECT "right_id" FROM ' . $relation->sql() . ' GROUP BY "right_id" HAVING COUNT(*) > 1)';
-                $conflicts = (int) $this->db->value($sql);
+                $conflicts = $relation->sideOf($field->key) === 'left'
+                    ? (int) $this->db->value('SELECT COUNT(*) FROM (SELECT "left_id" FROM ' . $relation->sql() . ' GROUP BY "left_id" HAVING COUNT(*) > 1)')
+                    : (int) $this->db->value('SELECT COUNT(*) FROM (SELECT "right_id" FROM ' . $relation->sql() . ' GROUP BY "right_id" HAVING COUNT(*) > 1)');
                 if ($conflicts > 0) {
                     $problems[] = new Problem('options.links', 'problem.relation.cardinality_conflict', ['count' => $conflicts]);
                 }
@@ -874,11 +872,11 @@ final class SchemaEditor
 
     private function recordCountOf(TableDef $table, bool $includeTrashed): int
     {
-        $sql = $includeTrashed
-            ? 'SELECT COUNT(*) FROM ' . $table->sql()
-            : 'SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE "_trashed_at" IS NULL';
+        if ($includeTrashed) {
+            return (int) $this->db->value('SELECT COUNT(*) FROM ' . $table->sql());
+        }
 
-        return (int) $this->db->value($sql);
+        return (int) $this->db->value('SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE "_trashed_at" IS NULL');
     }
 
     private function nextFieldPosition(string $tableKey): int

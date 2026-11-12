@@ -1131,6 +1131,8 @@ Every method whose first parameter is `Actor $actor` starts with `Authorizer::re
 | `signOut(string $token): void` | none | Ends the session when it exists | `auth.sign_out` when it existed |
 | `changeOwnPassword(Actor $actor, string $token, string $current, string $new): IssuedSession` | signed in | `$current` must verify (`current`: `problem.password.current_wrong`; a wrong value counts as a failure on the person's throttle bucket, and a blocked bucket gives `current`: `problem.throttled`); `PasswordPolicy::problems($new, username, 'password')`; new hash; `must_change_password` = 0; end all the person's sessions; start and return a new one | `auth.password_changed` |
 | `setFlash(string $token, string $key, array $params = []): void`, `takeFlash(string $token): ?array` | none | One notice carried to the next page | |
+| `can(Actor $actor, Permission $permission, ?string $projectKey = null): bool` | none | `Authorizer::can` after looking the project up; false for an unknown project. Lets the web layer decide which controls to show without deciding policy itself | |
+| `require(Actor $actor, Permission $permission, ?string $projectKey = null): void` | none | `Authorizer::require` after looking the project up (unknown project: `NotFound`). Used by controllers before showing a form whose submission would need the permission | |
 
 ### 9.3 `PeopleOperations`
 

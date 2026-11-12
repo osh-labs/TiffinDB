@@ -250,7 +250,7 @@ Controllers receive `Context` in their constructor: `new $class(Context $context
 `templates/layout.php` renders one of two shells, chosen by the view from the data key `shell`:
 
 - **Signed-in shell** (`shell` is a `Shell` object): skip link, top bar (section 4.2), `main`, footer. Used by every page after sign-in and by error pages when signed in.
-- **Plain shell** (`shell` null): skip link, a `header` holding the lockup (the larger mark and wordmark, linking to `/`), `main`, footer. Used by sign-in, setup, and error pages before sign-in.
+- **Plain shell** (`shell` null): skip link, a `header.lockup-bar` holding the lockup (partial `lockup`: the larger mark and wordmark, linking to `/`), `main`, and the footer with `site-footer-centered`. Used by sign-in, setup, and error pages before sign-in. `main` is `main#main.page.page-plain` (centred column, for sign-in and error pages) unless the page sets `data['wide']` to true, which gives `main#main.page` (setup). The two class strings are literal alternatives in the layout.
 
 Both keep the M0 head (charset, viewport, title, three stylesheets in order) and add, only when the page sets `data['script']` to `show-password`, `<script src="<?= $this->asset('js/show-password.js') ?>" defer="defer"></script>` at the end of `head`. No other script exists in M1.
 
@@ -278,7 +278,7 @@ final class Shell
 ### 4.3 Template rules (changes to `TemplateRulesTest`, ADR 0008 decision 4)
 
 - New scope helper `csrf()`: returns the escaped token; allowed only as the whole value of a `value` attribute.
-- New scope helper `count(string $keyBase, int $n)`: returns the escaped text of `<keyBase>.one` (when `$n` is 1) or `<keyBase>.many` with `{count}` = `$n`. Allowed in element text and in `aria-label`.
+- New scope helper `count(string $keyBase, int $n)`: returns the escaped text of `Format::count($keyBase, $n)` (section 5.3). Allowed in element text and in `aria-label`. Controllers that need a count inside another string (for example "{fields}. {records}.") call `Format::count` themselves and pass the plain text as a parameter, which `t()` escapes.
 - The `script` element is allowed only in `templates/layout.php`, only as written in section 4.1.
 - `RUNTIME_KEYS` becomes `RUNTIME_PREFIXES`: keys starting with `problem.`, `error.`, `type.`, `setup.check.`, `notice.`, `wait.`, `date.`, `count.`, `role.` are built at run time and need not appear literally in a template; every other key in the strings must.
 - The scanner rejects the pipe operator `|>` (ledger section 7) and the address forms `//` and `/\` at the start of a literal `href`, `src`, or `action` value (ledger section 7).
@@ -293,9 +293,9 @@ final class Shell
 | `footer`, `mark` | as M0 | as M0 |
 | `breadcrumb` | `items`: list of `{label (plain text), path or null}` | `nav.breadcrumb` with `aria-label` = `shell.breadcrumb`; links for items with a path; the last item as `span` with `aria-current="page"`; separators `/` in `span` with `aria-hidden="true"` |
 | `notice` | `key`, `params`, `tone` (`info` or `warn`), optional `title` key | `div.notice` or `div.notice.notice-warn`, `role="status"` for info and `role="alert"` for warn |
-| `error-summary` | `problems`: list of `{field, text}` where `field` is the id of the input or null | `div.error-summary` with `role="alert"`, `tabindex="-1"`, heading `form.errors.title` ("There is a problem" / "There are {count} problems"), a list linking each problem to `#<field id>` |
+| `error-summary` | `problems`: list of `{field, text}` where `field` is the id of the input or null | `div.error-summary` with `role="alert"`, `tabindex="-1"`, heading `count('count.problems', n)` ("There is a problem" / "There are {count} problems"), a list linking each problem to `#<field id>` |
 | `field-error` | `text` | `p.error-text` (the id is written by the calling template, see 4.5) |
-| `password-toggle` | none | `div.check.show-password` with `hidden="hidden"`, containing `label` > `input type="checkbox" data-show-password="data-show-password"` and the text `form.show_password` ("Show password") |
+| `password-toggle` | `plural` (bool, default false) | `div.check.show-password` with `hidden="hidden"`, containing `label` > `input type="checkbox" data-show-password="data-show-password"` and the text `form.show_password` ("Show password") or, plural, `form.show_passwords` ("Show passwords") |
 | `page-head` | `title` (plain text), optional `lead`, optional `actions`: list of `{label, path, primary}` | `div.page-head` with `h1`, `p.lead`, and `div.page-actions` |
 | `csrf` | none | `<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />` |
 
@@ -303,10 +303,10 @@ final class Shell
 
 Every form screen follows these rules; the design documents give ids and strings.
 
-1. `method="post"`, `action` from `url()`, `novalidate` is **not** set (browser checks are a bonus; the server checks everything), the `csrf` partial first.
+1. `method="post"` (the one exception is the GET type picker of `schema-editor.md` section 7.1, which changes nothing), `action` from `url()`, `novalidate` is **not** set (browser checks are a bonus; the server checks everything), the `csrf` partial first.
 2. Each input: `div.field` containing `label.label` (with `for`), optional `p.help` with an id, optional `p.error-text` with an id, then the control. `aria-describedby` lists the help and error ids that are present. With an error, the control has `aria-invalid="true"`.
-3. At 422, the `error-summary` partial comes first in `main`, after `h1`; the page title becomes `form.errors.page_title` ("Error: {title}"). Focus is not moved by script; the summary has `role="alert"`.
-4. Submitted values are printed back (escaped) except passwords and setup codes, which are never printed back.
+3. At 422, the `error-summary` partial comes first in `main` after the breadcrumb and any flash notice, before the `h1` (sign-in is the one exception: its single message sits inside the card, `sign-in-and-projects.md` section 2); the page title becomes `form.errors.page_title` ("Error: {title}"). Focus is not moved by script; the summary has `role="alert"`.
+4. Submitted values are printed back (escaped) except passwords and setup codes, which are never printed back. The one deliberate exception is the temporary password an Admin types or accepts for someone else (`people-and-sharing.md`), which is a visible text field by design.
 5. Problems from the core are mapped to inputs by field name (`Problem::$field`): the controller holds a map from core field names to element ids. A problem with a null field, or with a field the page does not show, goes only in the summary.
 6. Repeated controls (checkbox lists of people or projects, move buttons in a table) use a wrapping `label` or an `aria-label` built with `t()`, never generated ids.
 7. One filled (primary) button per screen (ui-design-plan section 3); secondary actions are `button` or `a.button`; destructive actions use `.button-danger` and always go to a confirmation page first.
@@ -345,8 +345,8 @@ M0 keys keep their text except where marked "changed".
 | `shell.account.label` | {name}, change your password |
 | `shell.sign_out` | Sign out |
 | `shell.breadcrumb` | Where you are |
-| `form.errors.title.one` | There is a problem |
-| `form.errors.title.many` | There are {count} problems |
+| `count.problems.one` | There is a problem |
+| `count.problems.many` | There are {count} problems |
 | `form.errors.page_title` | Error: {title} |
 | `form.show_password` | Show password |
 | `form.show_passwords` | Show passwords |
@@ -381,6 +381,8 @@ The other `error.*` keys stay as M0.
 | `relativeDate(string $timestamp): string` | `date.today` ("Today"), `date.yesterday` ("Yesterday"), else `date.day` ("{day} {month} {year}") with `date.month.1` to `date.month.12` = Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec; computed in the configured time zone |
 | `wait(int $seconds): string` | 1 to 59 seconds: `wait.second` ("1 second") or `wait.seconds` ("{count} seconds"); otherwise minutes rounded up: `wait.minute` ("1 minute") or `wait.minutes` ("{count} minutes") |
 | `problem(Problem $p): string` | The text of `$p->key` with its parameters; for `problem.throttled`, `{wait}` from `wait($p->params['seconds'])` |
+| `count(string $keyBase, int $n): string` | The text of `<keyBase>.one` when `$n` is 1, else `<keyBase>.many` with `{count}` = `number_format($n)` ("1,234") |
+| `number(int $n): string` | `number_format($n)` (record counts on the project list) |
 
 `date.last_change` = "{date}, by {name}" and `date.last_change_unknown` = "{date}" are in `format.php` too.
 
@@ -410,7 +412,7 @@ Also `type.relation.to` = "Link to {table}" (used in field lists, as in the impo
 
 ## 6. Stylesheet and script
 
-`public/assets/css/app.css` gains the component classes of `docs/design/m1/components.md`. All M0 rules stay (rem only, the px exceptions, no colour token redefined, no `url()`, no `@import`). Breakpoints, where a component needs one, are in `em` (M0 spec rule R6); `components.md` lists the only two allowed.
+`public/assets/css/app.css` gains the component classes of `docs/design/m1/components.md`. All M0 rules stay (rem only, the px exceptions, no colour token redefined, no `url()`, no `@import`). No media queries are added in M1 (`components.md`); any later breakpoint is in `em` (M0 spec rule R6).
 
 `public/assets/js/show-password.js` (WP8), the only script, loaded with `defer`:
 
@@ -521,7 +523,7 @@ For each: 1360 px and 390 px in the light theme with the measurements of 8.1; on
 | Package | Owned files | Acceptance |
 |---|---|---|
 | WP7 | `public/index.php`, `config/app.php`, `.gitignore`, `tests/repo/GitignoreTest.php`; `src/Web/Request.php`, `Response.php`, `Cookie.php`, `Kernel.php`, `Router.php`, `RouteMatch.php`, `AccessLevel.php`, `routes.php`, `Services.php`, `CoreServices.php`, `Context.php`, `Fallback.php`, `Controller/HomeController.php`; deletion of `templates/pages/home.php` and `strings/en/home.php`; `tests/web/RequestTest.php`, `ResponseTest.php`, `CookieTest.php`, `RouterTest.php`, `GateTest.php`, `KernelTest.php`, `FrontControllerTest.php`, `FrontControllerFailureTest.php`, `tests/web/fixtures/Controllers.php`, `Fixtures.php`, `FakeServices.php` | T-WEB-13 to T-WEB-17 pass; `header()` only in `Response::send` and `Fallback`; no superglobal outside `index.php` and `Fallback::onShutdown`; design-tier security review |
-| WP8 | `src/Web/View.php`, `ViewScope.php`, `Strings.php`, `Appearance.php`, `Shell.php`, `Format.php`; `templates/layout.php`, `templates/pages/error.php`, `templates/partials/*.php` (the partials of section 4.4 and the M0 ones); `strings/en.php`, `strings/en/shell.php`, `errors.php`, `format.php`, `problems.php`, `home.php` (created, section 5.1); `public/assets/css/app.css`, `public/assets/js/show-password.js`; `tests/Support/HtmlAssertions.php`; `tests/web/ShellTest.php`, `TemplateRulesTest.php`, `ViewTest.php`, `StringsTest.php`, `AppearanceTest.php`, `FormatTest.php`; `tests/web/fixtures/templates/*`, `tests/web/fixtures/strings/*`; `tests/design/StylesheetRulesTest.php` (only to allow the two `em` breakpoints of `components.md`) | T-WEB-11, T-WEB-18 to T-WEB-22 pass; every class in `components.md` exists in `app.css`; T-DES-1 to T-DES-6 still pass; the M0 kernel still serves `/` until WP7 merges; design-tier review of templates and the script |
+| WP8 | `src/Web/View.php`, `ViewScope.php`, `Strings.php`, `Appearance.php`, `Shell.php`, `Format.php`; `templates/layout.php`, `templates/pages/error.php`, `templates/partials/*.php` (the partials of section 4.4 and the M0 ones); `strings/en.php`, `strings/en/shell.php`, `errors.php`, `format.php`, `problems.php`, `home.php` (created, section 5.1); `public/assets/css/app.css`, `public/assets/js/show-password.js`; `tests/Support/HtmlAssertions.php`; `tests/web/ShellTest.php`, `TemplateRulesTest.php`, `ViewTest.php`, `StringsTest.php`, `AppearanceTest.php`, `FormatTest.php`; `tests/web/fixtures/templates/*`, `tests/web/fixtures/strings/*` | T-WEB-11, T-WEB-18 to T-WEB-22 pass; every class in `components.md` exists in `app.css`; T-DES-1 to T-DES-6 still pass; the M0 kernel still serves `/` until WP7 merges; design-tier review of templates and the script |
 | WP9 | `src/Web/Controller/SetupController.php`; `templates/pages/setup/*.php`; `strings/en/setup.php`; `tests/web/SetupScreenTest.php` | Every state in `installer.md` rendered and asserted (strings, order, `assertForm`); POST flows with `FakeServices` and a fake probe: safe redirect, exposed and inconclusive pages (409), admin creation (cookie set, `tdb_csrf` deleted, redirect), validation (422, no password or code printed back); design-tier security review |
 | WP10 | `src/Web/Controller/SignInController.php`, `AccountController.php`, `PeopleController.php`, `SharingController.php`; `templates/pages/sign-in.php`, `templates/pages/account/*.php`, `templates/pages/people/*.php`, `templates/pages/sharing.php`; `strings/en/account.php`, `strings/en/people.php`; `tests/web/SignInScreenTest.php`, `PeopleScreenTest.php`, `SharingScreenTest.php` | Every state in the two design documents rendered and asserted; sign-in success sets the cookie with the attributes of 2.6 and redirects; failure and throttling messages identical for unknown and known usernames; must-change flow; people and sharing POSTs call the right operations and map every problem to its field; design-tier security review |
 | WP11 | `src/Web/Controller/ProjectController.php`, `TableController.php`, `FieldController.php`; `templates/pages/projects/*.php`, `templates/pages/tables/*.php`, `templates/pages/fields/*.php`, `templates/partials/field-options/*.php`; `strings/en/projects.php`, `schema.php`, `types.php`; `tests/web/ProjectScreensTest.php`, `SchemaScreensTest.php` | Every state in `sign-in-and-projects.md` section 3, `new-project.md`, and `schema-editor.md` rendered and asserted; every POST maps problems to fields; confirmation pages reached for lossy changes and deletions; Member variants show no editing controls |

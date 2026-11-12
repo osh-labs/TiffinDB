@@ -67,7 +67,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | follow-up round in progress (worktree, unpushed) | agent worktree | design tier | APPROVE with should-fix (migration race; parallel-guess test gap; write lock held during password verify; write lock on every resume; token exposed via serialize; IPv6 bucket variants) |
-| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`96b3d9c` incl. P67, worktree, unpushed); in review | agent worktree | design tier | pending |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 1 fixes in progress (worktree, unpushed) | agent worktree | design tier | round 1 REQUEST CHANGES (blocking: decimal numbers read back one bit off from SQLite and fail validation; should-fix: precision limit, malformed URL ports, untested backslash rule, email local-part mailto tricks, quote/angle characters in URLs) |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
@@ -106,10 +106,12 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P64 | Folder removal | `Fs::removeDir` removes an empty directory only, never follows links; no recursive removal; callers remove known files first | M1-WP1 review ruling; spec as-built notes |
 | P65 | Login throttle reset | A bucket resets only when its last failure (not its window start) is over 900 s old and it is not blocked, so waiting out each block still doubles to the 15-minute cap; `login_throttle` gains `last_failure_at` (system schema v1); stale rows deleted when last failure is over a day old and not blocked | M1-WP2 ruling; spec section 6.6 as-built notes |
 | P66 | WP2 additions accepted | Repositories refuse row changes outside `write()` (`SystemDatabase::requireTransaction()`); `Authenticator::signOut` writes its own audit entry (WP5 must not repeat it); failed sign-ins record the matched person; usernames trimmed before normalising; NUL refused in passwords | M1-WP2 report; spec as-built notes |
-| P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and `< > " ` \ ( ) , ; : [ ]` in the local part refused; apostrophe allowed (amended) | M1-WP3 rulings; spec section 8 as-built notes |
+| P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and `< > " ` \ ( ) , ; : [ ]` in the local part refused; apostrophe allowed (amended); addendum: `? # % & /` also refused in local parts | M1-WP3 rulings; spec section 8 as-built notes |
 | P68 | Sign-in transaction shape (amends P51 for sign-in) | Three steps: short write that checks the throttle and pre-counts a failure; password verify with no transaction; short write that settles success or failure | M1-WP2 review ruling; spec section 6 as-built notes |
 | P69 | Session resume | Plain read first; write transaction only to touch (over 300 s) or delete, re-checked inside | M1-WP2 review ruling |
 | P70 | Throttle address buckets | Canonicalised with `inet_pton`/`inet_ntop`; IPv6 keyed by /64; unparseable addresses used as given | M1-WP2 review ruling; amends spec 6.6 |
+| P71 | Number magnitude | Limit is `10^(15 - decimals)` exclusive (at most 15 significant digits); applies to parse, check and min/max options; `fromStorage` snaps a float to `decimals` when within 4 ulp | M1-WP3 review ruling; amends spec 8 |
+| P72 | URL characters and hosts | Refuse `" < > `` ` `` anywhere; authority must be host or bracketed IPv6 with port 1 to 65535; refuse hex, single-integer and short-dotted numeric hosts | M1-WP3 review ruling; amends spec 8 |
 
 ## 5. Blockers
 
@@ -184,4 +186,6 @@ Brief notes for later M1 packages (from M1-WP8):
 | M2 | `Text::trim` removes PCRE whitespace incl. U+180E and U+0085 at value ends; email values must be escaped in HTML | M1-WP3 report |
 | WP5 | Re-read the actor's role and active flag inside the operation's `write()` for people, role and grant changes (`Authorizer` trusts the role read at resume) | M1-WP2 review F7 |
 | WP7 | End any previous session token when signing someone in | M1-WP2 review F9 |
+| WP4 | `RatingType::fromStorage` does not check `max`; `updateField` must clear values above a lowered max (T-SCH-9) | M1-WP3 review N3 |
+| M2 | Build `mailto:` hrefs with the local part `rawurlencode`d; escape every attribute with ENT_QUOTES | M1-WP3 review |
 

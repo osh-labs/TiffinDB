@@ -16,7 +16,7 @@ declare(strict_types=1);
 
 ?>
 <div class="form-actions">
-<?php if ($data['danger'] === true) : ?>
+<?php if (($data['danger'] ?? false) === true) : ?>
 <button class="button button-large button-danger" type="submit"><?= $this->t($data['submit']) ?></button>
 <?php else : ?>
 <button class="button button-large button-primary" type="submit"><?= $this->t($data['submit']) ?></button>

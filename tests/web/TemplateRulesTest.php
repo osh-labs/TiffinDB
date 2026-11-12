@@ -34,13 +34,17 @@ use TiffinDB\Tests\Support\RepoFiles;
  *   empty PHP block is seen whole), has no inline style or script, no
  *   event-handler attribute, no `javascript:`, external, protocol-relative
  *   (`//`), or slash-backslash URL, and no character reference or scheme
- *   at the start of a URL attribute. The one exception is the layout's
- *   show-password script element, exactly as SCRIPT_ELEMENT.
+ *   at the start of a URL attribute; no `<meta>` and no element of
+ *   FORBIDDEN_ELEMENTS (iframe, object, embed, base, SVG animation, and
+ *   the like). The exceptions are in the layout's `<head>` only: its two
+ *   fixed meta elements (LAYOUT_METAS) and the show-password script
+ *   element, exactly as SCRIPT_ELEMENT.
  * - Each `<?=` sits in element text, or is the whole value of a
- *   double-quoted attribute (not `class`, `id`, `style`, or `on*`; in a URL
- *   attribute only through url() or asset(), or e() for the footer's
- *   configured source link). csrf() only as the whole value of a `value`
- *   attribute; count() only in element text or `aria-label`. The layout
+ *   double-quoted attribute (not `class`, `id`, `style`, `on*`, or
+ *   NO_OUTPUT_ATTRIBUTES such as `srcdoc` and SVG `to`, `from`, `values`,
+ *   `attributeName`; in a URL attribute only through url() or asset(), or
+ *   e() for the footer's configured source link). csrf() only in the csrf
+ *   partial, as the whole value of a `value` attribute; count() only in element text or `aria-label`. The layout
  *   accessor may sit in the `<html>` start tag. Never in a comment or
  *   elsewhere in a tag.
  * - Every literal string key passed to t() exists, and every key in the
@@ -60,6 +64,24 @@ final class TemplateRulesTest extends TestCase
 
     /** The one template that prints a configured (not generated) URL, with e(). */
     public const FOOTER = 'templates/partials/footer.php';
+
+    /** The one template that may call csrf(). */
+    public const CSRF_PARTIAL = 'templates/partials/csrf.php';
+
+    /** The layout's fixed meta elements: the only meta elements any template may hold. */
+    public const LAYOUT_METAS = [
+        '<meta charset="utf-8" />',
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    ];
+
+    /** Elements no template may contain (they load, embed, redirect, or rewrite attributes). */
+    private const FORBIDDEN_ELEMENTS = [
+        'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'base', 'portal',
+        'animate', 'animatemotion', 'animatetransform', 'set', 'foreignobject', 'handler', 'listener',
+    ];
+
+    /** Attributes that never take output: they hold markup or name or set other attributes. */
+    private const NO_OUTPUT_ATTRIBUTES = ['srcdoc', 'to', 'from', 'values', 'by', 'attributename', 'http-equiv'];
 
     /** Plain functions a template may call: pure checks that print nothing. */
     public const ALLOWED_FUNCTIONS = ['is_array', 'is_string', 'is_int', 'is_bool', 'count', 'array_key_exists', 'in_array'];
@@ -159,6 +181,9 @@ final class TemplateRulesTest extends TestCase
         $tokens = token_get_all($source);
         $count = count($tokens);
         $allowedMethods = $file === self::LAYOUT ? [...self::HELPERS, ...self::LAYOUT_ACCESSORS] : self::HELPERS;
+        if ($file !== self::CSRF_PARTIAL) {
+            $allowedMethods = array_values(array_diff($allowedMethods, ['csrf']));
+        }
 
         // Header: SPDX block first, then strict types, then markup.
         if (preg_match('#\A<\?php\n/\*\n \* SPDX-License-Identifier: AGPL-3\.0-or-later\n \* Copyright \(C\) TiffinDB contributors\n#', $source) !== 1) {
@@ -221,7 +246,7 @@ final class TemplateRulesTest extends TestCase
             }
         }
 
-        array_push($problems, ...self::markupProblems(self::withoutAllowedScript($source, $html, $file)));
+        array_push($problems, ...self::markupProblems(self::withoutLayoutHead($source, $html, $file)));
         array_push($problems, ...self::outputContextProblems($html, $echoes, $file));
 
         return $problems;
@@ -243,24 +268,45 @@ final class TemplateRulesTest extends TestCase
     }
 
     /**
-     * The static markup with the layout's one script element removed, when
-     * the file is the layout and its source holds that element exactly once
-     * and exactly as SCRIPT_ELEMENT, and no other script. Anything else
-     * leaves the markup as it is, so markupProblems() reports the script.
+     * The static markup with what only the layout's head may hold removed:
+     *
+     * - each fixed meta element (LAYOUT_METAS) found inside the one
+     *   `<head>`...`</head>`, exactly as written (so it holds no output);
+     * - the one script element, when the source holds it exactly once and
+     *   exactly as SCRIPT_ELEMENT, with no other script, and it sits inside
+     *   that head.
+     *
+     * Anything else is left as it is, so markupProblems() reports it.
      */
-    private static function withoutAllowedScript(string $source, string $html, string $file): string
+    private static function withoutLayoutHead(string $source, string $html, string $file): string
     {
-        $stripped = '<script src="" defer="defer"></script>';
-        if (
-            $file !== self::LAYOUT
-            || substr_count($source, self::SCRIPT_ELEMENT) !== 1
-            || preg_match_all('/<\s*\/?\s*script\b/i', $source) !== 2
-            || substr_count($html, $stripped) !== 1
-        ) {
+        if ($file !== self::LAYOUT || substr_count($html, '<head>') !== 1 || substr_count($html, '</head>') !== 1) {
             return $html;
         }
+        $start = (int) strpos($html, '<head>');
+        $end = (int) strpos($html, '</head>');
+        if ($end < $start) {
+            return $html;
+        }
+        $head = substr($html, $start, $end - $start);
 
-        return str_replace($stripped, '', $html);
+        foreach (self::LAYOUT_METAS as $meta) {
+            if (substr_count($head, $meta) === 1) {
+                $head = str_replace($meta, '', $head);
+            }
+        }
+
+        $stripped = '<script src="" defer="defer"></script>';
+        if (
+            substr_count($source, self::SCRIPT_ELEMENT) === 1
+            && preg_match_all('/<\s*\/?\s*script\b/i', $source) === 2
+            && substr_count($html, $stripped) === 1
+            && substr_count($head, $stripped) === 1
+        ) {
+            $head = str_replace($stripped, '', $head);
+        }
+
+        return substr($html, 0, $start) . $head . substr($html, $end);
     }
 
     /**
@@ -321,6 +367,8 @@ final class TemplateRulesTest extends TestCase
             '#["\'=]\s*/[\t\n\r]*[/\\\\]#' => 'a slash-backslash or protocol-relative URL',
             '#["\'=]\s*\\\\#' => 'a backslash-relative URL',
             '/<\?/' => 'a short open tag or a stray <?',
+            '/<\s*\/?\s*meta\b/i' => 'a <meta> element other than the layout\'s fixed ones',
+            '/<\s*\/?\s*(?:' . implode('|', self::FORBIDDEN_ELEMENTS) . ')\b/i' => 'a forbidden element (' . implode(', ', self::FORBIDDEN_ELEMENTS) . ')',
         ];
         $problems = [];
         foreach ($rules as $pattern => $what) {
@@ -454,7 +502,11 @@ final class TemplateRulesTest extends TestCase
         if ($pos !== $valueStart || $index !== 0 || ($html[$pos] ?? '') !== '"') {
             return "output that is not the whole value of the {$attribute} attribute";
         }
-        if (in_array($attribute, ['class', 'id', 'style'], true) || str_starts_with($attribute, 'on')) {
+        if (
+            in_array($attribute, ['class', 'id', 'style'], true)
+            || in_array($attribute, self::NO_OUTPUT_ATTRIBUTES, true)
+            || str_starts_with($attribute, 'on')
+        ) {
             return "output in the {$attribute} attribute";
         }
         if ($helper === 'csrf') {
@@ -827,6 +879,7 @@ final class TemplateRulesTest extends TestCase
         $page = self::PAGE;
         $layout = self::LAYOUT;
         $footer = self::FOOTER;
+        $csrf = self::CSRF_PARTIAL;
 
         // Output and code.
         yield 'raw variable' => ['<p><?= $data[\'x\'] ?></p>', $page];
@@ -912,10 +965,10 @@ final class TemplateRulesTest extends TestCase
         yield 'slash-backslash form action' => ['<form action="/\\example.org/" method="post"></form>', $page];
         yield 'slash-tab-slash link' => ["<a href=\"/\t/example.org/\">x</a>", $page];
         yield 'protocol-relative form action' => ['<form action="//example.org/" method="post"></form>', $page];
-        yield 'csrf() in element text' => ['<p><?= $this->csrf() ?></p>', $page];
-        yield 'csrf() in a title' => ['<p title="<?= $this->csrf() ?>">x</p>', $page];
-        yield 'csrf() in an href' => ['<a href="<?= $this->csrf() ?>">x</a>', $page];
-        yield 'csrf() as part of a value' => ['<input type="hidden" name="_csrf" value="x<?= $this->csrf() ?>" />', $page];
+        yield 'csrf() in element text' => ['<p><?= $this->csrf() ?></p>', $csrf];
+        yield 'csrf() in a title' => ['<p title="<?= $this->csrf() ?>">x</p>', $csrf];
+        yield 'csrf() in an href' => ['<a href="<?= $this->csrf() ?>">x</a>', $csrf];
+        yield 'csrf() as part of a value' => ['<input type="hidden" name="_csrf" value="x<?= $this->csrf() ?>" />', $csrf];
         yield 'count() in a title' => ['<p title="<?= $this->count(\'count.problems\', 2) ?>">x</p>', $page];
         yield 'count() in a value' => ['<input value="<?= $this->count(\'count.problems\', 2) ?>" />', $page];
         yield 'count() in an href' => ['<a href="<?= $this->count(\'count.problems\', 2) ?>">x</a>', $page];
@@ -928,13 +981,52 @@ final class TemplateRulesTest extends TestCase
         yield 'two scripts in the layout' => [self::SCRIPT_ELEMENT . "\n" . self::SCRIPT_ELEMENT, $layout];
         yield 'the script and an inline one in the layout' => [self::SCRIPT_ELEMENT . "\n<script>alert(1)</script>", $layout];
         yield 'the script with content in the layout' => [str_replace('></script>', '>x</script>', self::SCRIPT_ELEMENT), $layout];
+
+        // Security review follow-ups.
+        $head = static fn (string $inner): string => "<head>\n{$inner}\n</head>\n<body>\n</body>";
+        yield 'csrf() outside the csrf partial' => ['<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', $page];
+        yield 'csrf() in the layout' => [$head('') . '<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', $layout];
+        yield 'csrf() called without output outside the partial' => ['<?php if ($this->csrf() !== \'\') : ?><p></p><?php endif; ?>', $page];
+        yield 'the script in the layout body' => ["<head>\n</head>\n<body>\n" . self::SCRIPT_ELEMENT . "\n</body>", $layout];
+        yield 'the script before the layout head' => [self::SCRIPT_ELEMENT . "\n" . $head(''), $layout];
+        yield 'the script in the layout without a head' => ['<div>' . self::SCRIPT_ELEMENT . '</div>', $layout];
+        yield 'iframe srcdoc with output' => ['<iframe srcdoc="<?= $this->e($data[\'x\']) ?>"></iframe>', $page];
+        yield 'iframe without output' => ['<iframe src="/x"></iframe>', $page];
+        yield 'srcdoc on another element' => ['<p srcdoc="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'meta refresh with output' => ['<meta http-equiv="refresh" content="<?= $this->e($data[\'x\']) ?>" />', $page];
+        yield 'meta refresh, static' => ['<meta http-equiv="refresh" content="0; url=/x" />', $page];
+        yield 'meta in a page' => ['<meta charset="utf-8" />', $page];
+        yield 'meta in the layout body' => [$head('') . "\n" . self::LAYOUT_METAS[0], $layout];
+        yield 'other meta in the layout head' => [$head('<meta name="referrer" content="unsafe-url" />'), $layout];
+        yield 'layout meta with output' => [$head('<meta name="viewport" content="<?= $this->e($data[\'v\']) ?>" />'), $layout];
+        yield 'layout meta twice' => [$head(self::LAYOUT_METAS[0] . "\n" . self::LAYOUT_METAS[0]), $layout];
+        yield 'svg animate href' => ['<svg><animate attributeName="href" to="<?= $this->e($data[\'x\']) ?>" /></svg>', $page];
+        yield 'svg animate, static' => ['<svg><a href="/x"><animate attributeName="href" to="/y" /></a></svg>', $page];
+        yield 'svg set' => ['<svg><set attributeName="href" to="/y" /></svg>', $page];
+        yield 'svg animateTransform' => ['<svg><animateTransform attributeName="transform" from="0" to="1" /></svg>', $page];
+        yield 'to with output' => ['<p to="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'from with output' => ['<p from="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'values with output' => ['<p values="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'attributeName with output' => ['<p attributeName="<?= $this->t(\'k\') ?>">x</p>', $page];
+        yield 'object' => ['<object data="/x"></object>', $page];
+        yield 'embed' => ['<embed src="/x" />', $page];
+        yield 'base' => ['<base href="/x/" />', $page];
+        yield 'base in the layout head' => [$head('<base href="/x/" />'), $layout];
+        yield 'upper-case iframe' => ['<IFRAME src="/x"></IFRAME>', $page];
+    }
+
+    public function testScannerAcceptsTheLayoutHead(): void
+    {
+        $body = "<head>\n" . implode("\n", self::LAYOUT_METAS) . "\n" . self::SCRIPT_ELEMENT . "\n</head>\n<body>\n<section><select name=\"s\"><option>x</option></select></section>\n</body>";
+        self::assertSame([], self::violations(self::HEADER . $body, self::LAYOUT));
+        self::assertSame([], self::violations(self::HEADER . '<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', self::CSRF_PARTIAL));
     }
 
     public function testScannerAcceptsTheM1Forms(): void
     {
         $page = self::HEADER . <<<'HTML'
             <form method="post" action="<?= $this->url('/sign-out') ?>">
-            <input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />
+            <?= $this->partial('csrf') ?>
             <h2><?= $this->count('count.problems', count($data['problems'])) ?></h2>
             <a href="<?= $this->url('#' . $data['field']) ?>" aria-label="<?= $this->count('count.problems', 2) ?>">x</a>
             <span aria-hidden="true">/</span>

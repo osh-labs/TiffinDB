@@ -128,11 +128,11 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance. |
 | 2026-11-12T02:30Z | Window 2 start (new orchestrator session); M0 present on the assigned branch, which matches `main`; resume reminder armed for 07:46Z |
 | 2026-11-12T02:5xZ | Offline PHPUnit 12.5.43 rebuilt (6.4 GB before trim, 17 MB after); `composer lint` 69 files 0 failed; `composer test` OK 1075 tests. M1-D1 dispatched |
-| 2026-11-12T03:4xZ | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
-| 2026-11-12T04:0xZ | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
-| 2026-11-12T04:3xZ | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
-| 2026-11-12T05:1xZ | M1-WP0 merged after two review rounds; suite 1079 tests OK |
-| 2026-11-12T07:0xZ | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
+| 2026-11-12, 02:50Z to 04:25Z | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
+| 2026-11-12, 02:50Z to 04:25Z | M1-WP0 merged after two review rounds; suite 1079 tests OK |
+| 2026-11-12, 02:50Z to 04:25Z | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

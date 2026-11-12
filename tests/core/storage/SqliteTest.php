@@ -11,6 +11,7 @@ namespace TiffinDB\Tests\Core\Storage;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use TiffinDB\Core\Error\Busy;
@@ -89,6 +90,60 @@ final class SqliteTest extends TestCase
         self::assertSame(1234, $db->value('PRAGMA busy_timeout'));
     }
 
+    public function testCreateSetsMode0640(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '/') {
+            self::markTestSkipped('This file system does not keep POSIX permission bits (non-POSIX platform).');
+        }
+        $probe = $this->temp->path('mode-probe');
+        file_put_contents($probe, '');
+        chmod($probe, 0604);
+        clearstatcache(true, $probe);
+        if ((fileperms($probe) & 0777) !== 0604) {
+            self::markTestSkipped('The temporary file system ignores permission bits set with chmod.');
+        }
+
+        $path = $this->temp->path('mode.sqlite');
+        $old = umask(0022);
+        try {
+            $db = $this->track(Sqlite::create($path));
+            $db->run('CREATE TABLE t (v TEXT)');
+            $db->run('INSERT INTO t (v) VALUES (?)', ['x']);
+        } finally {
+            umask($old);
+        }
+        clearstatcache();
+        self::assertSame(0640, fileperms($path) & 0777);
+        self::assertFileExists($path . '-wal');
+        self::assertSame(0640, fileperms($path . '-wal') & 0777, 'SQLite gives the WAL file the mode of the database.');
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function refusedPaths(): iterable
+    {
+        yield 'relative' => ['relative.sqlite'];
+        yield 'dot relative' => ['./relative.sqlite'];
+        yield 'file URI' => ['file:/tmp/x.sqlite'];
+        yield 'file URI, upper case' => ['FILE:///tmp/x.sqlite?mode=memory'];
+        yield 'memory' => [':memory:'];
+        yield 'empty' => [''];
+        yield 'NUL byte' => ["/tmp/x\0.sqlite"];
+    }
+
+    #[DataProvider('refusedPaths')]
+    public function testCreateRefusesPathsThatAreNotAbsoluteFiles(string $path): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Sqlite::create($path);
+    }
+
+    #[DataProvider('refusedPaths')]
+    public function testOpenRefusesPathsThatAreNotAbsoluteFiles(string $path): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Sqlite::open($path);
+    }
+
     public function testCreateRefusesAnExistingPath(): void
     {
         $path = $this->temp->path('taken.sqlite');
@@ -145,6 +200,69 @@ final class SqliteTest extends TestCase
         self::assertNull($db->value('SELECT name FROM t WHERE id = ?', [3]));
         self::assertSame([], $db->all('SELECT * FROM t WHERE id > ?', [10]));
         self::assertSame(2, $db->run('UPDATE t SET amount = 0 WHERE id IN (' . Database::placeholders(2) . ')', [1, 2]));
+    }
+
+    public function testFloatsAreStoredAsReal(): void
+    {
+        $db = $this->track(Sqlite::memory());
+        $db->run('CREATE TABLE t (id INTEGER PRIMARY KEY, r REAL, n NUMERIC)');
+        foreach ([0.1 + 0.2, 2.5, -1.25e-300, 1.0e100, 123456789.125] as $value) {
+            $db->run('INSERT INTO t (r, n) VALUES (?, ?)', [$value, $value]);
+            $row = $db->one('SELECT typeof(r) AS tr, typeof(n) AS tn, r, n FROM t WHERE id = ?', [$db->lastInsertId()]);
+            self::assertSame(['tr' => 'real', 'tn' => 'real', 'r' => $value, 'n' => $value], $row, "Value {$value}");
+            self::assertSame(1, $db->value('SELECT COUNT(*) FROM t WHERE r = ?', [$value]), 'Comparison against a REAL column.');
+        }
+        // NUMERIC keeps a whole value as an integer, as SQLite does for REAL input.
+        $db->run('INSERT INTO t (r, n) VALUES (?, ?)', [3.0, 3.0]);
+        self::assertSame(['real', 'integer'], array_values($db->one('SELECT typeof(r), typeof(n) FROM t WHERE id = ?', [$db->lastInsertId()]) ?? []));
+    }
+
+    public function testFloatTextDoesNotDependOnLocaleOrPrecision(): void
+    {
+        $oldPrecision = ini_set('precision', '3');
+        $oldLocale = setlocale(LC_NUMERIC, '0');
+        setlocale(LC_NUMERIC, 'de_DE.UTF-8', 'de_DE', 'fr_FR.UTF-8', 'C');
+        try {
+            $db = $this->track(Sqlite::memory());
+            self::assertSame(0.30000000000000004, $db->value('SELECT CAST(? AS REAL)', [0.1 + 0.2]));
+        } finally {
+            ini_set('precision', (string) $oldPrecision);
+            setlocale(LC_NUMERIC, (string) $oldLocale);
+        }
+    }
+
+    public function testNonFiniteFloatsAreRefused(): void
+    {
+        $db = $this->track(Sqlite::memory());
+        $this->expectException(InvalidArgumentException::class);
+        $db->value('SELECT ?', [NAN]);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function transactionControl(): iterable
+    {
+        yield 'begin' => ['BEGIN'];
+        yield 'begin immediate' => ['begin immediate'];
+        yield 'commit' => ['COMMIT'];
+        yield 'end' => ['END TRANSACTION'];
+        yield 'rollback' => ['  ROLLBACK'];
+        yield 'savepoint' => ['SAVEPOINT a'];
+        yield 'release' => ['RELEASE a'];
+        yield 'after a semicolon' => [';BEGIN'];
+    }
+
+    #[DataProvider('transactionControl')]
+    public function testTransactionControlIsRefused(string $sql): void
+    {
+        $db = $this->track(Sqlite::memory());
+        try {
+            $db->run($sql);
+            self::fail('Transaction control must go through write().');
+        } catch (LogicException) {
+            self::assertFalse($db->inTransaction());
+        }
+        $this->expectException(LogicException::class);
+        $db->value($sql);
     }
 
     public function testPlaceholders(): void

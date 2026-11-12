@@ -27,9 +27,14 @@ final class Sqlite
     {
     }
 
-    /** Opens an existing file. Throws Unavailable('missing') when it does not exist. */
+    /**
+     * Opens an existing file. Throws Unavailable('missing') when it does not
+     * exist, and \InvalidArgumentException for a path that is not absolute,
+     * is a `file:` URI, holds a NUL byte, or is MEMORY (use memory()).
+     */
     public static function open(string $path, int $busyTimeoutMs = self::BUSY_TIMEOUT_MS): Database
     {
+        self::checkPath($path);
         if (!is_file($path)) {
             throw new Unavailable(Unavailable::MISSING);
         }
@@ -37,17 +42,28 @@ final class Sqlite
         return self::connect($path, $busyTimeoutMs, false);
     }
 
-    /** Creates a new file; throws \RuntimeException when the path already exists. */
+    /**
+     * Creates a new file with mode 0640 (set before WAL is switched on, so
+     * the -wal and -shm files that SQLite creates take the same mode).
+     * Throws \RuntimeException when the path already exists, and
+     * \InvalidArgumentException for the paths open() refuses.
+     */
     public static function create(string $path, int $busyTimeoutMs = self::BUSY_TIMEOUT_MS): Database
     {
-        if ($path === '' || $path === self::MEMORY) {
-            throw new \InvalidArgumentException('Sqlite::create needs a file path.');
-        }
+        self::checkPath($path);
         if (file_exists($path) || is_link($path)) {
             throw new \RuntimeException('Cannot create a database: the path already exists.');
         }
+        try {
+            return self::connect($path, $busyTimeoutMs, true);
+        } catch (\Throwable $error) {
+            // Nothing existed at the path before, so whatever is there now was made by this call.
+            foreach (['', '-wal', '-shm'] as $suffix) {
+                Fs::remove($path . $suffix);
+            }
 
-        return self::connect($path, $busyTimeoutMs, true);
+            throw $error;
+        }
     }
 
     /** A private in-memory database, for tests and the requirement check. */
@@ -73,6 +89,22 @@ final class Sqlite
         return version_compare($version, self::MIN_VERSION, '>=');
     }
 
+    private static function checkPath(string $path): void
+    {
+        if ($path === self::MEMORY) {
+            throw new \InvalidArgumentException('Use Sqlite::memory() for a memory database.');
+        }
+        if (str_contains($path, "\0")) {
+            throw new \InvalidArgumentException('A database path must not contain a NUL byte.');
+        }
+        if (preg_match('/^file:/i', $path) === 1) {
+            throw new \InvalidArgumentException('A database path must be a plain path, not a file: URI.');
+        }
+        if (!str_starts_with($path, '/') && preg_match('#^[A-Za-z]:[/\\\\]#', $path) !== 1) {
+            throw new \InvalidArgumentException('A database path must be absolute.');
+        }
+    }
+
     private static function connect(string $path, int $busyTimeoutMs, bool $mayCreate): Database
     {
         if ($busyTimeoutMs < 0) {
@@ -89,6 +121,9 @@ final class Sqlite
         }
         try {
             $pdo = new \PDO('sqlite:' . $path, null, null, $options);
+            if ($mayCreate && $path !== self::MEMORY) {
+                self::restrictMode($path);
+            }
             // PRAGMA takes no bound parameters; the value is a checked integer.
             $pdo->exec('PRAGMA busy_timeout = ' . (string) $busyTimeoutMs);
             if ($path === self::MEMORY) {
@@ -108,6 +143,14 @@ final class Sqlite
         }
 
         return new Database($pdo, $path, strtolower($journal));
+    }
+
+    private static function restrictMode(string $path): void
+    {
+        $changed = ErrorTrap::run(static fn (): bool => chmod($path, Fs::FILE_MODE), 'Cannot set the database file mode.');
+        if (!$changed) {
+            throw new \RuntimeException('Cannot set the database file mode.');
+        }
     }
 
     private static function pragma(\PDO $pdo, string $sql): string

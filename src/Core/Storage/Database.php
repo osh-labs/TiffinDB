@@ -14,6 +14,13 @@ use TiffinDB\Core\Error\Busy;
  * One SQLite connection (M1 spec section 4.1). Built by Sqlite::open,
  * Sqlite::create, and Sqlite::memory, which apply the connection settings.
  *
+ * Parameters: null, int, bool, and string bind as themselves. A float is
+ * bound as its shortest exact decimal text, because PDO in PHP 8.3 has no
+ * float parameter type; SQLite's column affinity stores that text as REAL
+ * in a REAL or NUMERIC column (NUMERIC keeps a whole value such as 3.0 as
+ * the integer 3, as SQLite does for a REAL value). A bare `typeof(?)` of
+ * such a parameter is 'text'. Non-finite floats are refused.
+ *
  * Every method turns a PDOException whose driver code is SQLITE_BUSY (5)
  * or SQLITE_LOCKED (6) into Busy; other PDOExceptions propagate unchanged.
  */
@@ -21,6 +28,7 @@ final class Database
 {
     private const SQLITE_BUSY = 5;
     private const SQLITE_LOCKED = 6;
+    private const TRANSACTION_CONTROL = '/^[\s;]*(?:BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE)\b/i';
 
     private ?\PDO $pdo;
     private bool $inWrite = false;
@@ -32,6 +40,10 @@ final class Database
 
     /**
      * Runs one statement and returns the number of affected rows.
+     *
+     * Not for transaction control: BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT,
+     * and RELEASE are refused with \LogicException by every query method;
+     * use write() instead.
      *
      * @param array<int|string, mixed> $params
      */
@@ -169,13 +181,35 @@ final class Database
     /** @param array<int|string, mixed> $params */
     private function execute(string $sql, array $params): \PDOStatement
     {
+        if (preg_match(self::TRANSACTION_CONTROL, $sql) === 1) {
+            throw new \LogicException('Transaction control statements are not allowed here; use Database::write().');
+        }
         $statement = $this->pdo()->prepare($sql);
         foreach ($params as $name => $value) {
+            if (is_float($value)) {
+                $value = self::floatText($value);
+            }
             $statement->bindValue(is_int($name) ? $name + 1 : $name, $value, self::type($value));
         }
         $statement->execute();
 
         return $statement;
+    }
+
+    /** The shortest decimal text that reads back as exactly $value, independent of locale and ini settings. */
+    private static function floatText(float $value): string
+    {
+        if (!is_finite($value)) {
+            throw new \InvalidArgumentException('A float parameter must be finite.');
+        }
+        for ($digits = 1; $digits <= 17; $digits++) {
+            $text = sprintf('%.' . $digits . 'H', $value);
+            if ((float) $text === $value) {
+                return $text;
+            }
+        }
+
+        return sprintf('%.17H', $value);
     }
 
     private static function type(mixed $value): int

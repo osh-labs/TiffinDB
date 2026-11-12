@@ -66,15 +66,15 @@ Success: 303 to `/admin/people/{key}`, flash `notice.person_added` "{name} has b
 4. `form.form` `method="post"` `action` = `/admin/people/{key}`, containing `csrf` and `fieldset.fieldset-card` with `legend.legend` `people.details.title` "Details":
    - Name, Username, Role fields as in section 3 (ids `edit-name`, `edit-username`, `edit-role`), filled with the current values.
    - `div.form-actions`: `button.button.button-primary` `people.details.submit` "Save details".
-5. Members only: `form.form` `method="post"` `action` = `/admin/people/{key}/projects` with `fieldset.fieldset-card`, `legend.legend` `people.access.title` "Projects they can use"; `ul.check-list` of every active project, checked when granted; `div.form-actions`: `button.button` `people.access.submit` "Save projects". Admins instead get `section.fieldset-card` with `h2.legend` (same title) and `p` `people.access.admin` "Admins can use every project."
-6. `form.form` `method="post"` `action` = `/admin/people/{key}/password` with `fieldset.fieldset-card`, `legend.legend` `people.password.title` "Password":
+5. Members only: `form.form` `method="post"` `action` = `/admin/people/{key}/projects` containing `csrf` and `fieldset.fieldset-card`, `legend.legend` `people.access.title` "Projects they can use"; `ul.check-list` of every active project, checked when granted; `div.form-actions`: `button.button` `people.access.submit` "Save projects". Admins instead get `section.fieldset-card` with `h2.legend` (same title) and `p` `people.access.admin` "Admins can use every project."
+6. `form.form` `method="post"` `action` = `/admin/people/{key}/password` containing `csrf` and `fieldset.fieldset-card`, `legend.legend` `people.password.title` "Password":
    - `p` `people.password.intro` "If {name} has forgotten their password, set a temporary one. They will be signed out everywhere and will choose a new password when they next sign in."
    - When the person is the signed-in Admin: `p` `people.password.self` "This is your own account: you will be signed out too."
    - `div.field`: label for `reset-password` `people.field.temporary` "Temporary password"; help, error; `input#reset-password.input.input-medium` `type="text"` `name="temporary_password"` `autocomplete="off"`, value = a fresh suggestion.
    - `div.form-actions`: `button.button` `people.password.submit` "Set temporary password".
 7. `section.fieldset-card` with `h2.legend` `people.signin.title` "Signing in":
    - Active: `p` `people.signin.active` "{name} can sign in."; then, unless the person is the signed-in Admin or the last active Admin, `a.button.button-danger` to `/admin/people/{key}/deactivate`: `people.signin.stop` "Stop {name} from signing in". For oneself: `p.help` `people.signin.self` "You cannot stop yourself from signing in."; for the last Admin: `p.help` `people.signin.last_admin` "{name} is the only Admin who can sign in, so they cannot be stopped."
-   - Inactive: `p` `people.signin.inactive` "{name} cannot sign in. Their name stays on the changes they made."; `form.form` `method="post"` `action` = `/admin/people/{key}/reactivate` with `button.button` `people.signin.restart` "Let {name} sign in again".
+   - Inactive: `p` `people.signin.inactive` "{name} cannot sign in. Their name stays on the changes they made."; `form.form` `method="post"` `action` = `/admin/people/{key}/reactivate` containing `csrf` and `button.button` `people.signin.restart` "Let {name} sign in again".
 
 One primary button ("Save details"). Field maps: details form `display_name` to `edit-name`, `username` to `edit-username`, `role` to `edit-role`; password form `temporary_password` to `reset-password`; core problems with a null field (last Admin, admin has all) go to the summary only.
 

@@ -66,7 +66,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
-| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`300532f`, worktree, unpushed); P65 change in progress | agent worktree | design tier (next) | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
@@ -104,6 +104,8 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P62 | Path-containment check beyond the nearest existing ancestor | `Fs::isInside` refuses NUL and `.`/`..` segments in the non-existent part (stricter than spec 4.3 algorithm) | M1-WP1 review ruling; spec as-built notes |
 | P63 | Show-password script also resets switched inputs to `password` and unticks the box on form submit | Extends M1-screens section 6 item 3 | M1-WP8 review ruling; spec as-built notes |
 | P64 | Folder removal | `Fs::removeDir` removes an empty directory only, never follows links; no recursive removal; callers remove known files first | M1-WP1 review ruling; spec as-built notes |
+| P65 | Login throttle reset | A bucket resets only when its last failure (not its window start) is over 900 s old and it is not blocked, so waiting out each block still doubles to the 15-minute cap | M1-WP2 ruling; spec section 6.6 as-built notes |
+| P66 | WP2 additions accepted | Repositories refuse row changes outside `write()` (`SystemDatabase::requireTransaction()`); `Authenticator::signOut` writes its own audit entry (WP5 must not repeat it); failed sign-ins record the matched person; usernames trimmed before normalising; NUL refused in passwords | M1-WP2 report; spec as-built notes |
 
 ## 5. Blockers
 
@@ -173,4 +175,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP6 | Treat a path `Fs::isInside` cannot resolve as not outside the document root (fail safe); replace files by `Fs::remove` then `Fs::writeNew` (`writeNew` never overwrites) | M1-WP1 review |
 | Maintainer (P61) | Emoji tag-sequence flags and soft hyphens are refused in names; a leading BOM is reported, not trimmed | M1-WP1 review |
 | WP12 | Add a test rendering `form-actions` without the `danger` key (mutation survivor) | `tests/web/ShellTest.php` |
+| WP5, WP6, WP7 | Wrap flash set/take, installer writes and the reset script in `write()` (repositories refuse changes outside a transaction); do not record `auth.sign_out` again; WP7 ends the old cookie's session at sign-in | M1-WP2 report |
 

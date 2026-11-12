@@ -303,6 +303,27 @@ final class DiscoverStructureTest extends TestCase
         self::assertSame(2, $this->discover(['--show-identifiers', '--redact-identifiers=all', $this->package])[0]);
     }
 
+    public function testTypeLikeNameExemptionStopsAtFourDigits(): void
+    {
+        $package = $this->dir . '/digits';
+        mkdir($package, 0700);
+        $pdo = new PDO('sqlite:' . $package . '/digits.db');
+        $pdo->exec('CREATE TABLE widgets (int5550107 TEXT, varchar255 TEXT, int8 TEXT, real9999 TEXT, char10000 TEXT)');
+        $pdo = null;
+
+        [$code, $out] = $this->discover([$package]);
+        self::assertSame(0, $code);
+
+        // A long digit run takes the default-deny path: hashed and flagged for review.
+        self::assertStringNotContainsString('5550107', $out);
+        self::assertStringNotContainsString('10000', $out);
+        self::assertMatchesRegularExpression('/CREATE TABLE widgets \(id_[0-9a-f]{10} TEXT, varchar255 TEXT, int8 TEXT, real9999 TEXT, id_[0-9a-f]{10} TEXT\)/', $out);
+        self::assertSame(2, preg_match_all('/^\s+id_[0-9a-f]{10}  \[digit-run\]$/m', $out));
+
+        // Short type-like names are still shown and not flagged, as before.
+        self::assertDoesNotMatchRegularExpression('/^\s+(?:varchar255|int8|real9999)  \[/m', $out);
+    }
+
     public function testFileNamesAndUnknownExtensionsAreRedactedByDefault(): void
     {
         [, $out] = $this->discover([$this->package]);

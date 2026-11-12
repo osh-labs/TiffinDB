@@ -191,7 +191,13 @@ interface Services
     public function close(): void;
 }
 
-final class CoreServices implements Services { /* builds the real objects lazily from config and app root */ }
+final class CoreServices implements Services
+{
+    /** The three optional arguments are test seams; production passes none. */
+    public function __construct(array $config, string $appRoot, ?Clock $clock = null, ?Random $random = null,
+                                ?PasswordHasher $hasher = null) {}
+    /* builds the real objects lazily from config and app root */
+}
 
 final class Context
 {
@@ -213,7 +219,7 @@ final class Context
 }
 ```
 
-`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, `PasswordHasher`, `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` with scripted states (install state, a `SignedIn` for a given token, flash); its `operations()` and `installer()` throw unless a test supplies real ones, so WP7 does not depend on WP5. Later packages pass real objects built by `CoreFixture`.
+`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, and `PasswordHasher` (unless given), `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` with scripted states (install state, a `SignedIn` for a given token, flash); its `operations()` and `installer()` throw unless a test supplies real ones, so WP7 does not depend on WP5. Later packages pass real objects built by `CoreFixture`.
 
 Controllers receive `Context` in their constructor: `new $class(Context $context)` (the M0 kernel passed `View`). Controllers hold no business rules and no permission checks; they read input with `Request::input`, call one `Core\App` operation, and render or redirect. When an operation throws `ValidationFailed`, the controller renders the same page with status 422, the submitted values, and the problems (section 4.5).
 
@@ -517,10 +523,10 @@ For each: 1360 px and 390 px in the light theme with the measurements of 8.1; on
 | T-WEB-21 | `ShellTest` (rewritten) | Both shells rendered through `View` with real templates and strings: M0 structure assertions, top bar order and labels, Admin and Member variants, `aria-current`, sign-out form with CSRF, flash notice, plain shell lockup, script tag only when requested; four themes; well-formed; no inline code | WP8 |
 | T-WEB-22 | `HtmlAssertions` (extended) | `assertNoInlineCode` allows exactly one `script` element with a same-origin `src` under `/assets/js/`, `defer`, and no content; `assertForm` (new) checks rule 4.5 items 1, 2, and 6 on every form in a page | WP8 |
 | T-SCR-1 | `ScreenStructureTest` | For every GET route in each of its states listed in the design documents: well-formed, no inline code, shell assertions, `assertForm`, title text, `h1` text | WP12 (each screen package also tests its own screens) |
-| T-E2E-1 | `EndToEndTest` | From an empty temporary folder, through the kernel with real `CoreServices` (configuration `data_dir` set to a temporary folder and `DOCUMENT_ROOT` set to the repository's `public/`, so the folder is outside the document root and no probe runs; nothing is written outside the temporary folder): `/` redirects to setup; step 1 lists checks; POST data folder; read `setup-code.txt`; POST first Admin; land on the project list with the notice; create project "Home Inventory" with first table "Items"; add table "Rooms"; add a relation field "Room" from Items to Rooms; the tables page lists both tables; the fields page lists Name and Room. **Admin can create a project and a table** | WP12 |
+| T-E2E-1 | `EndToEndTest` | From an empty temporary folder, through the kernel with real `CoreServices` (`CoreServices` given a `FixedClock`, a `SeededRandom`, and a bcrypt cost 4 `PasswordHasher`; configuration `data_dir` set to a temporary folder and `DOCUMENT_ROOT` set to the repository's `public/`, so the folder is outside the document root and no probe runs; nothing is written outside the temporary folder): `/` redirects to setup; step 1 lists checks; POST data folder; read `setup-code.txt`; POST first Admin; land on the project list with the notice; create project "Home Inventory" with first table "Items"; add table "Rooms"; add a relation field "Room" from Items to Rooms; the tables page lists both tables; the fields page lists Name and Room. **Admin can create a project and a table** | WP12 |
 | T-E2E-2 | `EndToEndTest` | Admin adds Member "Example Member" with a temporary password and shares the project; the Member signs in, is sent to change their password, changes it, sees only that project, can open the tables page, gets 403 on the fields editor POST and sees no editing controls | WP12 |
 | T-E2E-3 | `EndToEndTest` | Sign-out deletes the session; the old cookie no longer works; a POST without `_csrf` is refused | WP12 |
-| T-E2E-4 | `EndToEndTest` | Five wrong passwords, then the sign-in page shows the wait message and does not sign in with the right password until the clock passes the wait | WP12 |
+| T-E2E-4 | `EndToEndTest` | Five wrong passwords, then the sign-in page shows the wait message and does not sign in with the right password until the clock passes the wait (a `FixedClock` passed to `CoreServices` and advanced by the test; no real waiting) | WP12 |
 
 ## 10. File ownership for the web packages
 

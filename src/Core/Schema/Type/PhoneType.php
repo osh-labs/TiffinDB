@@ -71,6 +71,11 @@ final class PhoneType implements FieldType
         if ($text === '') {
             return Checked::ok(null);
         }
+        // Tab and line breaks are white space here; every other control character (P61) is refused,
+        // including those PCRE counts as white space (U+0085, U+180E, U+2028, U+2029).
+        if (Text::hasControl(str_replace("\r", "\n", $text), allowTab: true, allowNewline: true)) {
+            return Checked::problem('problem.phone.invalid');
+        }
         $text = (string) preg_replace('/\s+/u', ' ', $text);
         $length = strlen($text);
         if ($length < self::MIN_LENGTH || $length > self::MAX_LENGTH || preg_match(self::PATTERN, $text, $m) !== 1) {

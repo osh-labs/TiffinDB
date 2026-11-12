@@ -23,7 +23,7 @@ use TiffinDB\Tests\Support\SeededRandom;
 #[CoversNamespace('TiffinDB\\Core\\Schema\\Type')]
 final class StrictParseTest extends TestCase
 {
-    public const CHOICES = ['choices' => [
+    private const CHOICES = ['choices' => [
         ['key' => 'aaaaaaaaaaaa', 'label' => 'Red'],
         ['key' => 'bbbbbbbbbbbb', 'label' => 'Green'],
         ['key' => 'cccccccccccc', 'label' => 'Blue'],

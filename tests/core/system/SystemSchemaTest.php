@@ -11,6 +11,7 @@ namespace TiffinDB\Tests\Core\System;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Error\Unavailable;
+use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\Storage\Sqlite;
 use TiffinDB\Core\System\SystemSchema;
@@ -90,6 +91,45 @@ final class SystemSchemaTest extends TestCase
         SystemSchema::migrate($db, $steps, $clock);
         $this->assertSame(1, $db->value('SELECT COUNT(*) FROM extra'), 'The step ran only once.');
         $this->assertCount(1, glob($this->temp->path('system-before-*')));
+    }
+
+    public function testAStepAppliedByAnotherProcessAfterTheVersionWasReadRunsOnlyOnce(): void
+    {
+        $db = $this->versionOne();
+        $other = Sqlite::open($this->temp->path('system.sqlite'));
+        $steps = SystemSchema::STEPS + [2 => [
+            'CREATE TABLE IF NOT EXISTS extra (id INTEGER PRIMARY KEY)',
+            'INSERT INTO extra (id) VALUES (NULL)',
+        ]];
+        try {
+            // The clock is read for the copy's name after this connection has read version 1 and before
+            // its step transaction begins: exactly where the other process gets in.
+            $hook = new class ($other, $steps) implements Clock {
+                private bool $done = false;
+
+                /** @param array<int, list<string>> $steps */
+                public function __construct(private readonly Database $other, private readonly array $steps)
+                {
+                }
+
+                public function now(): \DateTimeImmutable
+                {
+                    $now = new \DateTimeImmutable('2026-05-01T12:34:56Z');
+                    if (!$this->done) {
+                        $this->done = true;
+                        SystemSchema::migrate($this->other, $this->steps, new FixedClock($now));
+                    }
+
+                    return $now;
+                }
+            };
+            SystemSchema::migrate($db, $steps, $hook);
+            $this->assertSame(2, SystemSchema::currentVersion($db));
+            $this->assertSame(1, $db->value('SELECT COUNT(*) FROM extra'), 'Step 2 ran once, not once per process.');
+            $this->assertCount(1, glob($this->temp->path('system-before-v2-*.sqlite')));
+        } finally {
+            $other->close();
+        }
     }
 
     public function testAFailingStepLeavesVersionOneAndTheTablesUnchanged(): void

@@ -22,7 +22,8 @@ use TiffinDB\Core\Storage\SystemClock;
  *
  * Each step runs in its own write() transaction, which also sets
  * meta.schema_version, so a failing step leaves the previous version and
- * its tables unchanged. Before a step runs on an existing installation
+ * its tables unchanged. The version is read again inside that transaction
+ * and the step skipped when another process has already applied it. Before a step runs on an existing installation
  * (a file database already at version 1 or later), the file is copied
  * with VACUUM INTO to `system-before-v<N>-<YYYYMMDDTHHMMSSZ>.sqlite` beside
  * it.
@@ -143,11 +144,20 @@ final class SystemSchema
             throw new Unavailable(Unavailable::NEWER);
         }
         for ($version = $current + 1; $version <= $target; $version++) {
+            // Another process may have applied this step since the version was read.
+            if (self::currentVersion($db) >= $version) {
+                continue;
+            }
             if ($current >= 1 && $db->path() !== Sqlite::MEMORY) {
                 self::copyBefore($db, $version, $clock ?? new SystemClock());
             }
             $statements = $steps[$version];
             $db->write(static function (Database $db) use ($statements, $version): void {
+                // Re-read inside the transaction (BEGIN IMMEDIATE): the step runs at most once
+                // even when two processes open the database at the same moment.
+                if (self::currentVersion($db) >= $version) {
+                    return;
+                }
                 foreach ($statements as $sql) {
                     $db->run($sql);
                 }
@@ -156,7 +166,6 @@ final class SystemSchema
                     ['schema_version', (string) $version],
                 );
             });
-            $current = $version;
         }
     }
 
@@ -204,7 +213,19 @@ final class SystemSchema
     {
         $stamp = $clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Ymd\THis\Z');
         $copy = dirname($db->path()) . '/system-before-v' . $version . '-' . $stamp . '.sqlite';
-        $db->run('VACUUM INTO ?', [$copy]);
+        if (file_exists($copy)) {
+            // Another process opening the database took the copy in the same second.
+            return;
+        }
+        try {
+            $db->run('VACUUM INTO ?', [$copy]);
+        } catch (\PDOException $error) {
+            if (!file_exists($copy)) {
+                throw $error;
+            }
+
+            return;
+        }
         $changed = ErrorTrap::run(static fn (): bool => chmod($copy, Fs::FILE_MODE), 'Cannot set the copy file mode.');
         if (!$changed) {
             throw new \RuntimeException('Cannot set the copy file mode.');

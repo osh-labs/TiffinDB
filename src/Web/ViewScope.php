@@ -38,10 +38,18 @@ final class ViewScope
     ) {
     }
 
-    /** Escapes a value for an HTML text node or a double-quoted attribute. */
+    /**
+     * Escapes a value for an HTML text node or a double-quoted attribute.
+     * Invalid UTF-8 and characters not allowed in HTML (C0 controls other
+     * than tab, LF, CR, and FF; DEL; C1 controls; noncharacters) become
+     * U+FFFD. Form feed, which HTML allows but XML 1.0 does not, becomes
+     * U+FFFD too, so the output stays well-formed XML (ADR 0008 decision 4).
+     */
     public function e(string|int|float|null $value): string
     {
-        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+        $escaped = htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_DISALLOWED | ENT_HTML5, 'UTF-8');
+
+        return str_replace("\f", "\u{FFFD}", $escaped);
     }
 
     /**

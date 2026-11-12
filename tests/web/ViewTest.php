@@ -60,6 +60,31 @@ final class ViewTest extends TestCase
         self::assertSame('&amp;&lt;&gt;&quot;&apos;', self::scope()->e('&<>"\''));
     }
 
+    public function testControlCharactersBecomeReplacementCharacters(): void
+    {
+        $scope = self::scope();
+        $r = "\u{FFFD}";
+
+        self::assertSame("a{$r}{$r}{$r}b", $scope->e("a\x01\x1b\x7fb"));
+        self::assertSame("{$r}{$r}{$r}", $scope->e("\x00\x0b\x0c"));
+        self::assertSame("a\tb\nc\rd", $scope->e("a\tb\nc\rd"), 'Tab, LF, and CR are kept.');
+
+        $html = "<!DOCTYPE html>\n<p title=\"" . $scope->e("\x01\x1b\x7f\x0c") . '">' . $scope->e("\x01\x1b\x7f\x0c") . '</p>';
+        $document = new \DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $loaded = $document->loadXML($html, LIBXML_NONET);
+        $errors = libxml_get_errors();
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        self::assertTrue($loaded);
+        self::assertSame([], $errors);
+    }
+
+    public function testTranslateReplacesControlCharactersInParameters(): void
+    {
+        self::assertSame("Hello, \u{FFFD} &amp; welcome", self::scope()->t('test.greeting', ['name' => "\x1b"]));
+    }
+
     public function testEscapesScalarsAndNull(): void
     {
         $scope = self::scope();

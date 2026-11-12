@@ -95,7 +95,7 @@ final class ErrorValuesTest extends TestCase
     public function testControlCharacters(): void
     {
         self::assertFalse(Text::hasControl('Plain text, with punctuation!'));
-        self::assertFalse(Text::hasControl("Zero\u{200D}width joiner is not Cc"));
+        self::assertFalse(Text::hasControl("Zero\u{200D}width joiner is allowed (P61)"));
         self::assertTrue(Text::hasControl("tab\there"));
         self::assertFalse(Text::hasControl("tab\there", allowTab: true));
         self::assertTrue(Text::hasControl("line\nbreak"));
@@ -105,6 +105,31 @@ final class ErrorValuesTest extends TestCase
         self::assertTrue(Text::hasControl("del\x7F"));
         self::assertTrue(Text::hasControl("c1\u{0085}"));
         self::assertTrue(Text::hasControl("\xC3\x28"), 'Invalid UTF-8 counts as control.');
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function p61(): iterable
+    {
+        yield 'U+2028 line separator (Zl)' => ["a\u{2028}b", true];
+        yield 'U+2029 paragraph separator (Zp)' => ["a\u{2029}b", true];
+        yield 'U+202E right-to-left override (Cf)' => ["a\u{202E}b", true];
+        yield 'U+2066 left-to-right isolate (Cf)' => ["a\u{2066}b", true];
+        yield 'U+200B zero width space (Cf)' => ["a\u{200B}b", true];
+        yield 'U+FEFF byte order mark (Cf)' => ["\u{FEFF}ab", true];
+        yield 'U+00AD soft hyphen (Cf)' => ["a\u{00AD}b", true];
+        yield 'U+200C zero width non-joiner stays allowed' => ["\u{0645}\u{200C}\u{06CC}", false];
+        yield 'U+200D zero width joiner stays allowed' => ["\u{1F469}\u{200D}\u{1F4BB}", false];
+        yield 'ordinary punctuation and symbols' => ['Example – “Item” № 5 · €', false];
+        yield 'no-break space (Zs) is not control' => ["a\u{00A0}b", false];
+    }
+
+    #[DataProvider('p61')]
+    public function testP61ControlCategories(string $value, bool $control): void
+    {
+        self::assertSame($control, Text::hasControl($value));
+        self::assertSame($control, Text::hasControl($value, allowTab: true, allowNewline: true));
+        $keys = array_map(static fn (Problem $p): string => $p->key, Text::nameProblems($value, 'name', 60));
+        self::assertSame($control ? ['problem.text.control'] : [], $keys);
     }
 
     /** @return iterable<string, array{string, list<array{string, array<string, int>}>}> */

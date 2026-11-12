@@ -13,11 +13,17 @@ namespace TiffinDB\Core\Error;
  * valid UTF-8, trimming of white space, length in code points, control
  * characters, and the problems of a name or an optional piece of text.
  *
- * A control character is one in Unicode category Cc: U+0000 to U+001F,
- * U+007F, and U+0080 to U+009F. `mbstring` is not used.
+ * A control character (P61) is one in Unicode category Cc (U+0000 to
+ * U+001F, U+007F, U+0080 to U+009F), Zl (U+2028), Zp (U+2029), or Cf
+ * (format characters such as U+200B, U+202E, U+2066, U+FEFF), except
+ * U+200C ZERO WIDTH NON-JOINER and U+200D ZERO WIDTH JOINER, which some
+ * scripts and emoji sequences need. `mbstring` is not used.
  */
 final class Text
 {
+    /** Cc, Zl, Zp, and Cf, except U+200C and U+200D (P61). */
+    private const CONTROL = '/(?![\x{200C}\x{200D}])[\p{Cc}\p{Zl}\p{Zp}\p{Cf}]/u';
+
     private function __construct()
     {
     }
@@ -71,7 +77,7 @@ final class Text
             $s = str_replace("\n", '', $s);
         }
 
-        return preg_match('/\p{Cc}/u', $s) === 1;
+        return preg_match(self::CONTROL, $s) === 1;
     }
 
     /**

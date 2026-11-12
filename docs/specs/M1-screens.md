@@ -244,7 +244,7 @@ Controllers receive `Context` in their constructor: `new $class(Context $context
 ### 3.2 Setup controller specifics
 
 - `show`: renders the step for the current state (`NeedsDataFolder`: step 1, requirement check; `NeedsAdmin`: step 3, first Admin).
-- `dataFolder` (POST): builds a `ProbeTarget` from the request (`host`, `serverAddress`, `serverPort`, `secure`, `documentRoot`, `basePath`), or null when any of the first three is null, and calls `prepareDataFolder($request->documentRoot, $target, $services->probe())`. `safe`: 303 to `/setup`. `exposed`, `inconclusive`, `failed`: renders step 2 with that outcome, status 409.
+- `dataFolder` (POST): when the state is not `NeedsDataFolder` (for example a repeated or late submission), 303 to `/setup` without calling the installer. Otherwise builds a `ProbeTarget` from the request (`host`, `serverAddress`, `serverPort`, `secure`, `documentRoot`, `basePath`), or null when any of the first three is null, and calls `prepareDataFolder($request->documentRoot, $target, $services->probe())`. `safe`: 303 to `/setup`. `exposed`, `inconclusive`, `failed`: renders step 2 with that outcome, status 409.
 - `admin` (POST): `createFirstAdmin`; on success sets the session cookie, deletes `tdb_csrf`, flashes `notice.setup.done`, 303 to `/projects`; on `ValidationFailed`, step 3 again with 422.
 
 ## 4. Templates

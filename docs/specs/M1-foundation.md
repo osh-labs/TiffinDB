@@ -1279,6 +1279,7 @@ final class Installer
 - `NeedsDataFolder`: no candidate data directory holds `system.sqlite`.
 - `NeedsAdmin`: `system.sqlite` exists; `installed_at` absent.
 - `Installed`: `installed_at` present. Every installer method other than `state()` then throws `\LogicException`.
+- `prepareDataFolder` throws `\LogicException` in any state other than `NeedsDataFolder`, so a repeated POST after the system database exists cannot choose and initialise a second data folder; `createFirstAdmin` requires `NeedsAdmin` (10.5).
 
 ### 10.2 Requirement check
 

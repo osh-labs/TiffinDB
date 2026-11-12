@@ -65,7 +65,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); round 1 fixes in progress | agent worktree | implementation tier | round 1 REQUEST CHANGES (blocking: `Fs::makeDir` accepted an existing directory; should-fix: `isInside` with `..`/NUL beyond existing ancestor, `writeNew` through dangling link, database file mode, T-REPO-9 alias bypass, control-character set) |
-| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | implemented (`79320f4`, worktree, unpushed); in review | agent worktree | design tier | pending |
+| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | follow-up round in progress (worktree, unpushed) | agent worktree | design tier | APPROVE with follow-ups (show-password reset on submit; scanner gaps for meta refresh, iframe srcdoc, SVG animate; csrf() only in its partial; ENT_DISALLOWED; script element only in head; form-actions default; 44 px project-name link) |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
@@ -102,6 +102,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P50 to P60 | Spec review rulings J1 to J13 (P38 amended to SQLite 3.35.5): WP8 ships a form-actions partial; last-Admin check and change in one system-DB write, repositories never open writes; shared text helper owned by WP1; `changeType` converts inside the transaction; SQLite floor raised to 3.35.5 (amends P38); setup code written before the system DB and regenerated if missing; ADR 0012 allows a web composition root; probe uses a local error handler; stale `creating` projects cleared after one hour; throttling trade-offs accepted; choice-conversion dedupe and truncation; confirmation re-post excludes `_csrf`; probe Host trust verified on the host check | Ruled by the orchestrator; applied by M1-D2 | `docs/specs/M1-foundation.md` section 14 |
 | P61 | Control characters in names and text (`Core\Error\Text`) | Unicode categories Cc, Zl, Zp, Cf, except U+200C and U+200D | M1-WP1 review ruling; spec section 3.4 to be amended in as-built notes |
 | P62 | Path-containment check beyond the nearest existing ancestor | `Fs::isInside` refuses NUL and `.`/`..` segments in the non-existent part (stricter than spec 4.3 algorithm) | M1-WP1 review ruling; spec as-built notes |
+| P63 | Show-password script also resets switched inputs to `password` and unticks the box on form submit | Extends M1-screens section 6 item 3 | M1-WP8 review ruling; spec as-built notes |
 
 ## 5. Blockers
 
@@ -165,4 +166,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP7 | CSRF token and Format reach the view via `View::withCsrfToken()` and `View::withFormat()`; `Format` takes a `Closure(): DateTimeImmutable` (web may not name `Core\Storage`), so `CoreServices`/`Context` pass `$clock->now(...)` |
 | WP7 | Delete the temporary `home.preview.` entry in `RUNTIME_PREFIXES` with `templates/pages/home.php` and `strings/en/home.php`; `AppearanceTest` preview-link tests go through M0 `/` and need updating when `/` becomes a redirect |
 | WP12 | Error summary heading is an `h2` before the `h1`; change to `p` if strict heading order is enforced |
+| WP12, spec | Reconcile `field-error` (section 4.4 says it outputs the `p`; the caller writes it) and section 7 heading order with the `h2` summary before `h1` | `docs/specs/M1-screens.md` |
 

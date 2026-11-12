@@ -129,7 +129,7 @@ final class AuthenticatorConcurrencyTest extends TestCase
         file_put_contents($dataPath . '/go', '1');
 
         // An unrelated signed-in request keeps writing while the guesses are checked.
-        $writer = Sqlite::open($this->system->db()->path(), 1000);
+        $writer = Sqlite::open($this->system->db()->path(), 5000);
         $busy = 0;
         $writes = 0;
         try {

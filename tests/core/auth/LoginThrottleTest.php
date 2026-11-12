@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\LoginThrottle;
+use TiffinDB\Core\Auth\ThrottleState;
 use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\System\SystemDatabase;
 use TiffinDB\Tests\Support\FixedClock;
@@ -21,6 +22,7 @@ use TiffinDB\Tests\Support\TempDir;
 
 /** T-AUTH-6: sign-in throttling. */
 #[CoversClass(LoginThrottle::class)]
+#[CoversClass(ThrottleState::class)]
 final class LoginThrottleTest extends TestCase
 {
     private const ADDRESS = '192.0.2.10';
@@ -205,24 +207,68 @@ final class LoginThrottleTest extends TestCase
         );
     }
 
+    /** One failure counted in advance, as Authenticator step (a) does: the row before and the row written. */
+    private function advance(string $bucket, int $limit): array
+    {
+        return $this->system->db()->write(fn (): array => [
+            $this->throttle->state($bucket),
+            $this->throttle->failure($bucket, $limit),
+        ]);
+    }
+
+    private function takeBack(string $bucket, int $limit, ?ThrottleState $before, ThrottleState $counted): void
+    {
+        $this->system->db()->write(fn () => $this->throttle->takeBack($bucket, $limit, $before, $counted));
+    }
+
     public function testTakeBackWithdrawsOneFailureAndLiftsABlockBelowTheLimit(): void
     {
-        for ($i = 1; $i <= 5; $i++) {
+        for ($i = 1; $i <= 4; $i++) {
             $this->failOnce($this->user);
         }
-        $this->assertSame(30, $this->waitOf([$this->user]));
-        $this->system->db()->write(fn () => $this->throttle->takeBack($this->user, LoginThrottle::USER_LIMIT));
+        [$before, $counted] = $this->advance($this->user, LoginThrottle::USER_LIMIT);
+        $this->assertSame(30, $this->waitOf([$this->user]), 'The advance count reached the limit.');
+        $this->takeBack($this->user, LoginThrottle::USER_LIMIT, $before, $counted);
         $this->assertSame(0, $this->waitOf([$this->user]));
-        $this->assertSame(4, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
+        $this->assertEquals($before, $this->throttle->state($this->user), 'Restored exactly.');
 
-        for ($i = 1; $i <= 2; $i++) {
-            $this->failOnce($this->user);
+        [$before, $counted] = $this->advance($this->address, LoginThrottle::ADDRESS_LIMIT);
+        $this->assertNull($before);
+        $this->takeBack($this->address, LoginThrottle::ADDRESS_LIMIT, $before, $counted);
+        $this->assertNull($this->throttle->state($this->address), 'A row the advance created is removed.');
+    }
+
+    public function testTakeBackAtTheLimitAfterTheBlockRanOutIsNetZero(): void
+    {
+        for ($i = 1; $i <= LoginThrottle::ADDRESS_LIMIT; $i++) {
+            $this->failOnce($this->address, LoginThrottle::ADDRESS_LIMIT);
         }
-        $this->system->db()->write(fn () => $this->throttle->takeBack($this->user, LoginThrottle::USER_LIMIT));
-        $this->assertSame(60, $this->waitOf([$this->user]), 'Still at the limit: the block stays.');
+        $this->clock->advance($this->waitOf([$this->address]));
+        $this->clock->advance(5);
+        [$before, $counted] = $this->advance($this->address, LoginThrottle::ADDRESS_LIMIT);
+        $this->assertSame(60, $this->waitOf([$this->address]), 'The advance count armed a longer block.');
+        $this->takeBack($this->address, LoginThrottle::ADDRESS_LIMIT, $before, $counted);
+        $this->assertSame(0, $this->waitOf([$this->address]));
+        $this->assertEquals($before, $this->throttle->state($this->address));
+        $this->assertSame('2026-06-01T12:00:00Z', $before?->lastFailureAt, 'The last failure time did not move forward.');
+    }
 
-        $this->system->db()->write(fn () => $this->throttle->takeBack($this->address, LoginThrottle::ADDRESS_LIMIT));
-        $this->assertSame(0, $this->waitOf([$this->address]), 'No row: nothing to take back.');
+    public function testTakeBackAfterALaterFailureLowersTheCountAndKeepsItsBlock(): void
+    {
+        for ($i = 1; $i <= LoginThrottle::ADDRESS_LIMIT; $i++) {
+            $this->failOnce($this->address, LoginThrottle::ADDRESS_LIMIT);
+        }
+        $this->clock->advance($this->waitOf([$this->address]));
+        [$before, $counted] = $this->advance($this->address, LoginThrottle::ADDRESS_LIMIT);
+        $this->clock->advance(1);
+        $later = $this->system->db()->write(fn (): ThrottleState => $this->throttle->failure($this->address, LoginThrottle::ADDRESS_LIMIT));
+        $this->takeBack($this->address, LoginThrottle::ADDRESS_LIMIT, $before, $counted);
+
+        $state = $this->throttle->state($this->address);
+        $this->assertSame(LoginThrottle::ADDRESS_LIMIT + 1, $state?->failures, 'Only the advance count is withdrawn.');
+        $this->assertSame($later->blockedUntil, $state?->blockedUntil, "The later failure's block stands.");
+        $this->assertSame($later->lastFailureAt, $state?->lastFailureAt);
+        $this->assertGreaterThan(0, $this->waitOf([$this->address]));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -291,7 +337,7 @@ final class LoginThrottleTest extends TestCase
             $this->addToAssertionCount(1);
         }
         try {
-            $this->throttle->takeBack($this->user, 5);
+            $this->throttle->takeBack($this->user, 5, null, new ThrottleState(1, '2026-06-01T12:00:00Z', '2026-06-01T12:00:00Z', null));
             $this->fail('takeBack() ran outside a transaction.');
         } catch (LogicException) {
             $this->addToAssertionCount(1);

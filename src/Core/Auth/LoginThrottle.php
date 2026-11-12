@@ -120,7 +120,7 @@ final class LoginThrottle
     }
 
     /** Counts one failure; at $limit failures or more since the last reset, starts or lengthens a block. */
-    public function failure(string $bucket, int $limit): void
+    public function failure(string $bucket, int $limit): ThrottleState
     {
         $this->system->requireTransaction();
         self::checkBucket($bucket);
@@ -158,14 +158,41 @@ final class LoginThrottle
                  last_failure_at = excluded.last_failure_at, blocked_until = excluded.blocked_until',
             [$bucket, $failures, $windowStart, $nowText, $blockedUntil],
         );
+
+        return new ThrottleState($failures, $windowStart, $nowText, $blockedUntil);
+    }
+
+    /** The bucket's row as it is now, or null when there is none. */
+    public function state(string $bucket): ?ThrottleState
+    {
+        self::checkBucket($bucket);
+        $row = $this->system->db()->one(
+            'SELECT failures, window_started_at, last_failure_at, blocked_until FROM login_throttle WHERE bucket = ?',
+            [$bucket],
+        );
+
+        return $row === null ? null : new ThrottleState(
+            (int) $row['failures'],
+            (string) $row['window_started_at'],
+            (string) $row['last_failure_at'],
+            $row['blocked_until'] === null ? null : (string) $row['blocked_until'],
+        );
     }
 
     /**
      * Withdraws one failure counted in advance (a sign-in that then
-     * succeeded, P68). When the count falls below $limit, any block is
-     * lifted; a block that further failures since then justify stays.
+     * succeeded, P68). $before is the row as it was just before that
+     * failure() call (null: there was none) and $counted what that call
+     * wrote.
+     *
+     * When the row still holds exactly $counted, no other failure has been
+     * counted since, and the row is put back as it was before (deleted when
+     * there was none): its block, its last failure time, and its count, so
+     * a success is net-zero. Otherwise later failures have changed it: the
+     * count is lowered by one, the block those failures set is kept, and it
+     * is lifted only when the count falls below $limit.
      */
-    public function takeBack(string $bucket, int $limit): void
+    public function takeBack(string $bucket, int $limit, ?ThrottleState $before, ThrottleState $counted): void
     {
         $this->system->requireTransaction();
         self::checkBucket($bucket);
@@ -173,6 +200,19 @@ final class LoginThrottle
             throw new \InvalidArgumentException('The limit must be 1 or more.');
         }
         $db = $this->system->db();
+        $now = $this->state($bucket);
+        if ($now !== null && $now->equals($counted)) {
+            if ($before === null) {
+                $db->run('DELETE FROM login_throttle WHERE bucket = ?', [$bucket]);
+            } else {
+                $db->run(
+                    'UPDATE login_throttle SET failures = ?, window_started_at = ?, last_failure_at = ?, blocked_until = ? WHERE bucket = ?',
+                    [$before->failures, $before->windowStartedAt, $before->lastFailureAt, $before->blockedUntil, $bucket],
+                );
+            }
+
+            return;
+        }
         $db->run('UPDATE login_throttle SET failures = failures - 1 WHERE bucket = ? AND failures > 0', [$bucket]);
         $db->run('UPDATE login_throttle SET blocked_until = NULL WHERE bucket = ? AND failures < ?', [$bucket, $limit]);
     }

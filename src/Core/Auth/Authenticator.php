@@ -27,7 +27,8 @@ use TiffinDB\Core\System\SystemDatabase;
  * (c) on success, a second short write(): the person is read again and
  *     must still be active with the same password hash; then the user
  *     bucket is cleared, the advance count on the address bucket taken
- *     back, the hash replaced when it needs a rehash (the new hash is made
+ *     back (the row restored exactly when no other failure came in
+ *     between), the hash replaced when it needs a rehash (the new hash is made
  *     in step b), and the session started. On failure nothing more is
  *     written: the failure was counted in step a.
  *
@@ -66,16 +67,21 @@ final class Authenticator
         $userBucket = LoginThrottle::userBucket($this->s, Usernames::normalise($username));
         $addressBucket = LoginThrottle::addressBucket($this->s, $clientAddress);
 
-        // (a) Check the throttle and count a failure in advance.
-        $wait = $this->s->db()->write(function () use ($userBucket, $addressBucket): int {
+        // (a) Check the throttle and count a failure in advance, keeping the address row's
+        // state from before, so that a success can put it back exactly.
+        /** @var array{0: int, 1: ?ThrottleState, 2: ?ThrottleState} $advance */
+        $advance = $this->s->db()->write(function () use ($userBucket, $addressBucket): array {
             $wait = $this->throttle->wait([$userBucket, $addressBucket]);
-            if ($wait === 0) {
-                $this->throttle->failure($userBucket, LoginThrottle::USER_LIMIT);
-                $this->throttle->failure($addressBucket, LoginThrottle::ADDRESS_LIMIT);
+            if ($wait > 0) {
+                return [$wait, null, null];
             }
+            $this->throttle->failure($userBucket, LoginThrottle::USER_LIMIT);
+            $before = $this->throttle->state($addressBucket);
+            $counted = $this->throttle->failure($addressBucket, LoginThrottle::ADDRESS_LIMIT);
 
-            return $wait;
+            return [0, $before, $counted];
         });
+        [$wait, $addressBefore, $addressCounted] = $advance;
         if ($wait > 0) {
             $person = $this->users->byUsername($username);
             $this->recordFailure($person, AuditAction::REASON_THROTTLED);
@@ -110,7 +116,7 @@ final class Authenticator
         // (c) Re-check and complete the sign-in.
         $id = $person->id;
         /** @var array{0: ?UserRecord, 1: ?IssuedSession, 2: string} $outcome */
-        $outcome = $this->s->db()->write(function () use ($id, $hash, $newHash, $userBucket, $addressBucket): array {
+        $outcome = $this->s->db()->write(function () use ($id, $hash, $newHash, $userBucket, $addressBucket, $addressBefore, $addressCounted): array {
             $current = $this->users->byId($id);
             if ($current === null || !$current->active) {
                 return [$current, null, AuditAction::REASON_INACTIVE];
@@ -120,7 +126,9 @@ final class Authenticator
                 return [$current, null, AuditAction::REASON_BAD_PASSWORD];
             }
             $this->throttle->clear($userBucket);
-            $this->throttle->takeBack($addressBucket, LoginThrottle::ADDRESS_LIMIT);
+            if ($addressCounted !== null) {
+                $this->throttle->takeBack($addressBucket, LoginThrottle::ADDRESS_LIMIT, $addressBefore, $addressCounted);
+            }
             if ($newHash !== null) {
                 $this->users->replaceHash($id, $newHash);
             }

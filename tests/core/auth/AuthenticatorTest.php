@@ -400,6 +400,52 @@ final class AuthenticatorTest extends TestCase
         );
     }
 
+    /** Twenty wrong guesses from ADDRESS under different usernames, then the 30 s block waited out. */
+    private function addressAtItsLimitWithTheBlockRunOut(LoginThrottle $throttle): string
+    {
+        for ($i = 0; $i < LoginThrottle::ADDRESS_LIMIT; $i++) {
+            $this->auth->signIn('guess' . $i, 'wrong horse 1', self::ADDRESS);
+        }
+        $bucket = LoginThrottle::addressBucket($this->system, self::ADDRESS);
+        $wait = $this->system->db()->write(fn (): int => $throttle->wait([$bucket]));
+        $this->assertSame(30, $wait);
+        $this->clock->advance($wait + 5);
+
+        return $bucket;
+    }
+
+    public function testASuccessAtTheAddressLimitLeavesTheAddressBucketAsItWas(): void
+    {
+        $throttle = new LoginThrottle($this->system, $this->clock);
+        $bucket = $this->addressAtItsLimitWithTheBlockRunOut($throttle);
+        $before = $throttle->state($bucket);
+
+        $this->assertSame(SignInOutcome::Success, $this->auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+        $this->assertEquals($before, $throttle->state($bucket), 'The address row is exactly as before the success.');
+        $this->assertSame(0, $this->system->db()->write(fn (): int => $throttle->wait([$bucket])), 'Nobody else waits.');
+        $this->assertSame(SignInOutcome::Success, $this->auth->signIn('member', self::PASSWORD, self::ADDRESS)->outcome);
+        $this->assertEquals($before, $throttle->state($bucket), 'Still unchanged after another success.');
+    }
+
+    public function testAFailureCountedBetweenTheStepsOfASuccessKeepsItsBlock(): void
+    {
+        $throttle = new LoginThrottle($this->system, $this->clock);
+        $bucket = $this->addressAtItsLimitWithTheBlockRunOut($throttle);
+        $later = null;
+        $auth = $this->authWith(function () use ($throttle, $bucket, &$later): void {
+            // Another process counts a wrong guess from the same address while this password is checked.
+            $this->clock->advance(1);
+            $later = $this->system->db()->write(fn () => $throttle->failure($bucket, LoginThrottle::ADDRESS_LIMIT));
+        });
+        $this->assertSame(SignInOutcome::Success, $auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+
+        $state = $throttle->state($bucket);
+        $this->assertNotNull($later);
+        $this->assertSame(LoginThrottle::ADDRESS_LIMIT + 1, $state?->failures);
+        $this->assertSame($later->blockedUntil, $state?->blockedUntil, "The later failure's block stands.");
+        $this->assertGreaterThan(0, $this->system->db()->write(fn (): int => $throttle->wait([$bucket])));
+    }
+
     public function testAPasswordChangedWhileItIsBeingCheckedDoesNotSignIn(): void
     {
         $auth = $this->authWith(function (): void {

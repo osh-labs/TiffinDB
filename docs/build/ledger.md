@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | Window 2: rebuilding offline PHPUnit install; M1 design step next |
+| Phase | M1 design: M1-D1 dispatched (design tier, isolated worktree, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | Confirm `composer test` and `composer lint` pass, then dispatch M1-D1 (M1 spec and screen designs). If resuming after a reclaim: rebuild the PHPUnit install (guide section 9) first. |
+| Next action | On M1-D1 report: verify its commits, merge, push, dispatch an independent design-tier spec review (workflow step 2), then copy its provisional decisions to section 4 and its work packages to section 3. If resuming after a reclaim: rebuild the PHPUnit install (guide section 9) and redo M1-D1 (worktree work is lost). |
 
 ## 2. Milestones
 
@@ -59,6 +59,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
 | M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed (incl. security follow-ups) | merged | design tier | APPROVE; follow-ups re-verified by the same security reviewer |
 | M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: template rules test bypassable by dynamic calls; shipped output clean; four themes verified in a browser) |
+| M1-D1 | M1 | design | `docs/specs/M1-*.md`, `docs/design/m1/*`, `docs/decisions/0010+`, `docs/formats/tiffin.md` | in progress (worktree, unpushed) | agent worktree | pending | |
 | M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed (incl. follow-ups) | merged | implementation tier | APPROVE |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
@@ -103,6 +104,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-11T23:5xZ | M0 closed. Maintainer instruction: stop after M0. Resume reminder deleted; no further action until instructed. |
 | 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance. |
 | 2026-11-12T02:30Z | Window 2 start (new orchestrator session); M0 present on the assigned branch, which matches `main`; resume reminder armed for 07:46Z |
+| 2026-11-12T02:5xZ | Offline PHPUnit 12.5.43 rebuilt (6.4 GB before trim, 17 MB after); `composer lint` 69 files 0 failed; `composer test` OK 1075 tests. M1-D1 dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

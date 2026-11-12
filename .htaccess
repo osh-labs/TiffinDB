@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) TiffinDB contributors
+#
+# Guard for installations where the whole TiffinDB tree sits under the
+# document root. Every request is passed into public/, so nothing else
+# (src/, templates/, vendor/, data/, tests/, tools/) can be fetched.
+# Where the document root can be pointed at public/, this file is unused.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    Require all denied
+</IfModule>

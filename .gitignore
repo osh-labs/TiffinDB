@@ -12,6 +12,26 @@
 *.bento
 
 # Dependencies and tooling
+# vendor/ is git-ignored during development and shipped only in the release archive.
 /vendor/
+# The lock file embeds third-party authors' names and email addresses (ADR 0008).
+/composer.lock
+/composer.phar
 .phpunit.cache/
+/phpunit.xml
+# npm is a download channel for font files only; nothing from it is committed.
+/node_modules/
+/package.json
+/package-lock.json
+*.tgz
+
+# Release build output (M7)
+/build/
+/dist/
+
+# Operating system and editor files
 .DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

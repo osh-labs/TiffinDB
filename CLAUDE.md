@@ -8,7 +8,7 @@ The official project name is TiffinDB (one word, capital T, D, B). Use it consis
 
 TiffinDB is an open-source, self-hosted personal database application inspired by Bento (Apple/FileMaker, discontinued). The goal is a free, user-owned tool for building and using small personal databases: custom fields, forms/layouts, lists, search, and filtered collections.
 
-Status: planning. No application code yet. Core stack decisions are recorded in `docs/decisions/` and the plan is in `docs/plan.md`; record any new decision there before scaffolding. The v1 visual target is the model UI in `docs/design/model-ui/`, with `docs/ui-design-plan.md` and `docs/design/tokens.css`; logo files and usage rules are in `docs/brand/`.
+Status: in development. Milestone M0 (scaffolding, request pipeline, application shell, design tokens, fonts, repository rule tests) is complete; M1 is next. Core stack decisions are recorded in `docs/decisions/` and the plan is in `docs/plan.md`; record any new decision there before implementing it. Build state is tracked in `docs/build/ledger.md`, with per-milestone specs in `docs/specs/` and the build coordination rules in `docs/build/orchestration.md`. Run `composer test` and `composer lint` before committing. The v1 visual target is the model UI in `docs/design/model-ui/`, with `docs/ui-design-plan.md` and `docs/design/tokens.css`; logo files and usage rules are in `docs/brand/`.
 
 ## Public Repository Rules (Mandatory)
 

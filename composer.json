@@ -1,0 +1,44 @@
+{
+    "name": "tiffindb/tiffindb",
+    "description": "TiffinDB: a self-hosted personal database web application.",
+    "type": "project",
+    "license": "AGPL-3.0-or-later",
+    "require": {
+        "php": ">=8.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "12.5.43"
+    },
+    "autoload": {
+        "psr-4": {
+            "TiffinDB\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "TiffinDB\\Tests\\Support\\": "tests/Support/"
+        }
+    },
+    "config": {
+        "lock": false,
+        "sort-packages": true
+    },
+    "scripts": {
+        "lint": "@php tools/dev/lint.php",
+        "test": "phpunit",
+        "check": [
+            "@lint",
+            "@test"
+        ],
+        "serve": [
+            "Composer\\Config::disableProcessTimeout",
+            "@php -S 127.0.0.1:8080 -t public public/index.php"
+        ]
+    },
+    "scripts-descriptions": {
+        "lint": "Syntax-check every PHP file (php -l).",
+        "test": "Run the offline PHPUnit suite.",
+        "check": "Run lint, then tests. This is what CI runs.",
+        "serve": "Serve the application locally with the PHP built-in server."
+    }
+}

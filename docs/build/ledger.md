@@ -1,0 +1,118 @@
+# TiffinDB Build Ledger
+
+Single source of truth for the v1 build. Updated and pushed after every state change. Contains no personal data.
+
+## 1. Current state
+
+| Item | Value |
+|---|---|
+| Milestone | M0 closed; M1 not started |
+| Phase | M0 closed; branch prepared for a pull request to `main`; orchestration handed over to a new session |
+| Window start | 2026-11-11T22:29Z |
+| Resume reminder | none (deleted at stop) |
+| Next action | New orchestrator session: read `docs/build/orchestration.md`, this ledger, and `docs/build/context-brief.md`. Work on the branch assigned to that session (it should start from `main` after the M0 pull request is merged; if M0 is not yet in `main`, stop and tell the maintainer). Record a new window start, arm a resume reminder, rebuild the offline PHPUnit install (orchestration guide section 9), run `composer test`, then start M1 with the design step (`docs/specs/M1-*.md`, including designs for the installer, people and sharing, new project, and schema editor screens) and schedule the carried-forward items in section 7. |
+
+## 2. Milestones
+
+| Milestone | Status | Exit-criteria results |
+|---|---|---|
+| M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
+| M1 | not started | |
+| M2 | not started | |
+| M3 | not started | |
+| M4 | not started | |
+| M5 | not started | |
+| M6 | deferred (awaiting maintainer discovery output) | |
+| M7 | not started | |
+| M8 | post-v1, gated | |
+| M9 | post-v1, gated | |
+
+### M0 exit results
+
+Final suite: `composer test` OK (1075 tests, 11110 assertions, none skipped); `composer lint` 69 files, 0 failed; CI workflow green on the hosted runner for the integration branch (run 13, push event).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| ADRs accepted | PASS | ADRs 0001 to 0009 carry an accepted status (0008, 0009 provisional); `DecisionRecordsTest` |
+| `docs/formats/bento.md` first findings | DEFERRED | Awaits the maintainer's private discovery run; `tools/discovery/` script and procedure ready and reviewed; nothing in the repository guesses the format |
+| Empty app serves a page | PASS | Built-in server: `/` 200 with the specified CSP and security headers, no `X-Powered-By`; 404, 400, 405 paths correct; pages well-formed |
+| Shell renders in all four themes (ui 11) | PASS | Headless browser at 1360 px and 390 px, four themes: root class, token colours, mark and wordmark, footer licence line and "Source code" link, local fonts only, no console messages, no horizontal scroll (also 320 px at largest text); `tests/web` shell tests |
+| `.gitignore` entries before data-creating code | PASS | Six mandatory entries present from the first scaffolding commit; `GitignoreTest` |
+| Scope: scaffolding, CI, tokens, fonts and licences recorded | PASS | CI green on hosted runner; token parity and contrast tests; 8 WOFF2 files (269,836 bytes) and 4 licence files recorded in `docs/dependencies.md` |
+| Repository rules | PASS | Independent SPDX scan; no names, phone numbers, credentials; emails `example.com` only; legacy product name only in docs prose and ignore patterns; no network calls in application code |
+| Tests not vacuous | PASS | Six mutations on a scratch copy each produced failures |
+| Deferred maintainer-side tools present | PASS | `tools/discovery/`, `tools/host-check/` with README procedures |
+
+Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed in the build environment; covered later by the host check); manual screen-reader pass; host-check parse compatibility on PHP 7.4.
+
+## 3. Work packages
+
+| ID | Milestone | Model tier | Owned files | Status | Branch | Reviewer | Review result |
+|---|---|---|---|---|---|---|---|
+| PRE-1 | pre | design | `docs/build/context-brief.md` | done (pushed) | assigned branch | orchestrator | accepted |
+| M0-D1 | M0 | design | `docs/specs/M0-scaffolding.md`, `docs/decisions/0008-*`, `docs/decisions/0009-*` | done (pushed) | assigned branch | second design-tier reviewer | READY FOR IMPLEMENTATION after 13 fixes |
+| M0-T1 | M0 | design tier | `tools/discovery/*`, `tests/tools/DiscoverStructureTest.php` | done (pushed) | assigned branch | design-tier privacy reviewer | APPROVE after 4 rounds (round 3 escalated to default-deny redesign); open nit: digit-run exemption uncapped |
+| M0-T2 | M0 | implementation | `tools/host-check/*`, `tests/tools/HostCheckTest.php` | done (pushed) | assigned branch | design-tier security reviewer | APPROVE after 2 rounds; PHP 7.4 parse compatibility not executed (no 7.4 binary) |
+| M0-WP1 | M0 | implementation | manifest, `.gitignore`, `.htaccess` files, PHPUnit config, lint, CI, base tests (security-critical) | done, merged, pushed (incl. test-hardening follow-ups) | merged | design tier | APPROVE (design-tier security review); Apache behaviour unverified (not installed) |
+| M0-WP2 | M0 | implementation | SPDX, PHP rules, licence, layer, ADR tests | done, merged, pushed | merged | implementation tier | APPROVE after 2 rounds (round 1: licence column not checked; walker scanned ignored files) |
+| M0-WP3 | M0 | mechanical | `tokens.css` | done, merged, pushed | merged | implementation tier | APPROVE (byte-identical to spec Appendix A) |
+| M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
+| M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed (incl. security follow-ups) | merged | design tier | APPROVE; follow-ups re-verified by the same security reviewer |
+| M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: template rules test bypassable by dynamic calls; shipped output clean; four themes verified in a browser) |
+| M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed (incl. follow-ups) | merged | implementation tier | APPROVE |
+
+## 4. Provisional decisions awaiting maintainer confirmation
+
+| # | Item | Provisional resolution | Recorded in |
+|---|---|---|---|
+| P1 | ui-design-plan section 9, items 1 to 5 | Adopt the "Proposed resolution" column as written | to be recorded in M0/M2 specs |
+| P2 | Trash retention (plan Q3) | Items stay until an Admin empties trash; no automatic purge | to be recorded in M1 spec |
+| P3 | Font payload (plan Q9) | Measure in M0; if four families exceed 2 MB as WOFF2 Latin subsets, ship Inter and Atkinson Hyperlegible, document others as optional downloads | to be recorded in M0 spec |
+| P4 | Undesigned screens (ui-design-plan 6.2) | Designed from existing tokens and shell before each milestone; added to `docs/design/` | per-milestone specs |
+| P5 | Non-Apache hosting, desktop packaging (plan Q6, Q7) | Out of scope for v1 | this ledger |
+| P6 | XLSX library | Adopt OpenSpout if license file confirms MIT and PHP 8.3 is supported; otherwise select an alternative via ADR | to be recorded in M3 spec |
+| P7 | Code layout, namespaces, URL shapes, routing, CSP, CI (ADR 0008) | As written in ADR 0008; URL shapes and the Core/Web namespace split are the costly-to-reverse parts | ADR 0008 |
+| P8 | `composer.lock` | Not committed (`"lock": false`) because lock files embed package author names and emails; dev tool pinned to an exact version. Reviewer recommends the maintainer exempt `composer.lock` as a named file before M3 | ADR 0008 decision 12 |
+| P9 | Source Serif 4 | Shipped as the unmodified upstream WOFF2 (Reserved Font Name prevents shipping a subset under the same name); all four families ship (payload about 270 kB) | ADR 0009, M0 spec 10.5 |
+| P10 | "Source code" link target | Uses the repository URL already present in the committed mock-up (contains the hosting organization's name); maintainer to confirm | M0 spec |
+| P11 | Legacy importer plugin id, directory and UI label | Left open until M6 | ADR 0009 |
+| P12 | CI action pinning | `actions/checkout@v4` by tag, not commit SHA (lookup blocked in the build environment) | M0 spec |
+| P13 | Other brief section 12 gaps (import transaction vs chunking; sanitizer URL rule; high-contrast token values follow `tokens.css`) | Settled in M3 and M5 specs; tokens.css is the visual source of truth | ADR 0009 |
+| P14 | Commit trailers | Commits carry the session-supplied attribution trailers (a co-author line with a no-reply address and a session link). Two reviewers flagged this against the repository rule on email addresses in commit messages; kept because the session requires them. Maintainer to decide; changing past commits would need a history rewrite | this ledger |
+| P15 | Repository walk exclusions | `.claude/` (local agent worktrees) excluded from lint and repository tests in addition to the spec's list | WP1 follow-up |
+
+## 5. Blockers
+
+Open: none.
+
+Resolved: none.
+
+Deferred maintainer tasks (raise only at end of build):
+
+| Task | Status | Script / procedure |
+|---|---|---|
+| Legacy-format discovery (plan 6.4) | ready, reviewed | `tools/discovery/discover-structure.php`, procedure in `tools/discovery/README.md` |
+| Reference shared host verification (plan Q2; M7 exit criterion) | ready, reviewed | `tools/host-check/host-check.php`, procedure in `tools/host-check/README.md` |
+
+## 6. Usage log
+
+| Time (UTC) | Event |
+|---|---|
+| 2026-11-11T22:29Z | Build started; window 1 start; resume reminder armed for 03:45Z |
+| 2026-11-11 | Environment note: Composer dist downloads are refused by the network proxy and fall back to full git clones (several GB). Workaround: a trimmed PHPUnit install kept in the session scratchpad is copied into each worktree's git-ignored `vendor/` followed by `composer dump-autoload`. After a container restart this must be rebuilt (`composer require --dev phpunit/phpunit:<pinned>` in a scratch dir, delete `.git` dirs and the Composer vcs cache). Not a blocker. |
+| 2026-11-11T23:5xZ | M0 closed. Maintainer instruction: stop after M0. Resume reminder deleted; no further action until instructed. |
+| 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance.
+
+## 7. Carried forward to M1 (open nits from reviews, none blocking)
+
+| Item | Location |
+|---|---|
+| Cap the digit-run exemption in the identifier heuristic (names like `int5550107` print verbatim; they do appear in the review list) | `tools/discovery/discover-structure.php` near line 257 |
+| Fallback response sends a body on HEAD requests | `src/Web/Fallback.php` near line 54 |
+| Template scanner should reject the pipe operator (`\|>`) before the PHP floor rises to 8.5 | `tests/web/TemplateRulesTest.php` |
+| Template source scanner accepts `href="/\\host/"` (rendered-page assertion and URL generator already reject it) | `tests/web/TemplateRulesTest.php` near line 268 |
+| Rules bullet should state the transitive package count clause | `docs/dependencies.md` line 11 |
+| `@symlink` used in a test although the code base otherwise avoids the suppression operator | `tests/tools/HostCheckTest.php` near line 231 |
+| Add a test forbidding nested `.htaccess` files with rewrite directives in release contents (`vendor/` scanned at release), and require `data/.htaccess` to use only a deny rule | M1 installer spec, M7 packaging |
+| Make `/files` routes project-scoped | M1 spec (ADR 0008 URL shapes) |
+| Static assets are served without CSP by Apache | M7 packaging |

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) TiffinDB contributors
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Require PHP 8.3 or later
+        run: |
+          php --version
+          composer --version
+          php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);'
+
+      - name: Validate the Composer manifest
+        run: composer validate --strict
+
+      # The only step that uses the network. Lint and tests run offline.
+      - name: Install development dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Lint
+        run: composer lint
+
+      - name: Tests
+        run: composer test

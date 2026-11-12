@@ -36,6 +36,18 @@ use TiffinDB\Tests\Support\TempDir;
  * src/Core/Storage/SystemClock.php. A call is a T_STRING, or a
  * T_NAME_FULLY_QUALIFIED such as `\time`, followed by `(` and not preceded
  * by `->`, `?->`, `::`, `function`, or `new`.
+ *
+ * Aliases would let a file reach another area or a forbidden function
+ * without naming it, so these are refused as well: any `use` of, or any
+ * name equal to, `TiffinDB` or `TiffinDB\Core` without an area after it
+ * (for example `use TiffinDB\Core as C;`), and `use function` of a
+ * forbidden function, with or without an alias.
+ *
+ * Known limits: the rule reads tokens, not running code, so it cannot see
+ * names built at run time (concatenated or interpolated strings, for
+ * example `'TiffinDB\\Core\\' . $area`), string callables such as
+ * `call_user_func('time')` or `$f = 'time'; $f();`, or functions reached
+ * through reflection. Review covers those.
  */
 #[CoversNothing]
 final class CoreLayerRulesTest extends TestCase
@@ -139,6 +151,66 @@ final class CoreLayerRulesTest extends TestCase
     }
 
     /**
+     * Names in code equal to `TiffinDB` or `TiffinDB\Core` (any case,
+     * optional leading backslash), normalised, unique, in order.
+     *
+     * @return list<string>
+     */
+    public static function bareNamespaces(string $source): array
+    {
+        $found = [];
+        foreach (self::namesIn($source) as $name) {
+            if (preg_match('/^\\\\?TiffinDB(\\\\Core)?\\\\?$/i', $name, $m) === 1) {
+                $bare = isset($m[1]) && $m[1] !== '' ? 'TiffinDB\\Core' : 'TiffinDB';
+                if (!in_array($bare, $found, true)) {
+                    $found[] = $bare;
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Forbidden global functions imported with `use function`, aliased or
+     * not, as lower-case names in order. Names inside a group
+     * (`use function A\{b}`) are namespaced, not global, and are skipped.
+     *
+     * @return list<string>
+     */
+    public static function forbiddenFunctionImports(string $source): array
+    {
+        $tokens = self::significantTokens($source);
+        $found = [];
+        $count = count($tokens);
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            $next = $tokens[$i + 1] ?? null;
+            if (!is_array($token) || $token[0] !== T_USE || !is_array($next) || $next[0] !== T_FUNCTION) {
+                continue;
+            }
+            for ($j = $i + 2; $j < $count && $tokens[$j] !== ';'; $j++) {
+                if ($tokens[$j] === '{') {
+                    break;
+                }
+                $name = $tokens[$j];
+                $previous = $tokens[$j - 1];
+                if (!is_array($name) || !in_array($name[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true)
+                    || (is_array($previous) && $previous[0] === T_AS)) {
+                    continue;
+                }
+                $function = strtolower(ltrim($name[1], '\\'));
+                if (in_array($function, self::FORBIDDEN_FUNCTIONS, true)) {
+                    $found[] = $function;
+                }
+            }
+            $i = $j;
+        }
+
+        return $found;
+    }
+
+    /**
      * Calls to forbidden global functions, as lower-case names in order.
      *
      * @return list<string>
@@ -191,9 +263,15 @@ final class CoreLayerRulesTest extends TestCase
                 $found[] = "uses TiffinDB\\Core\\{$other}, which {$area} may not use";
             }
         }
+        foreach (self::bareNamespaces($source) as $bare) {
+            $found[] = "names {$bare} without an area";
+        }
         if (!in_array($relative, self::FUNCTION_EXEMPT, true)) {
             foreach (array_unique(self::forbiddenCalls($source)) as $function) {
                 $found[] = "calls {$function}() directly";
+            }
+            foreach (array_unique(self::forbiddenFunctionImports($source)) as $function) {
+                $found[] = "imports {$function}() with use function";
             }
         }
 
@@ -302,6 +380,17 @@ final class CoreLayerRulesTest extends TestCase
         yield 'similar names are fine' => ['src/Core/Auth/A.php', $head('Auth') . "validate(); update(); dates(); timeout(); \$time = 1; \$date(1);\n", []];
         yield 'constant without call' => ['src/Core/Auth/A.php', $head('Auth') . "\$x = ['time' => 1, 'date' => 2]; \$f = 'time';\n", []];
         yield 'namespaced function is not global' => ['src/Core/Auth/A.php', $head('Auth') . "\$t = Clock\\time();\n", []];
+        yield 'alias of the core namespace' => ['src/Core/Storage/A.php', $head('Storage') . "use TiffinDB\\Core as C;\n\$a = new C\\Auth\\Actor();\n", ['names TiffinDB\\Core without an area']];
+        yield 'alias of the root namespace' => ['src/Core/Storage/A.php', $head('Storage') . "use TiffinDB as T;\n\$a = new T\\Core\\Auth\\Actor();\n", ['names TiffinDB without an area']];
+        yield 'use of the core namespace without alias' => ['src/Core/Storage/A.php', $head('Storage') . "use TiffinDB\\Core;\n", ['names TiffinDB\\Core without an area']];
+        yield 'fully qualified bare core, any case' => ['src/Core/Storage/A.php', $head('Storage') . "use \\tiffindb\\core as C;\n", ['names TiffinDB\\Core without an area']];
+        yield 'group use of the core namespace' => ['src/Core/Storage/A.php', $head('Storage') . "use TiffinDB\\{Core as C};\n", ['names TiffinDB\\Core without an area']];
+        yield 'use function with alias' => ['src/Core/Auth/A.php', $head('Auth') . "use function time as now;\n\$t = now();\n", ['imports time() with use function']];
+        yield 'use function without alias' => ['src/Core/Auth/A.php', $head('Auth') . "use function \\random_bytes;\n", ['imports random_bytes() with use function']];
+        yield 'use function list' => ['src/Core/Auth/A.php', $head('Auth') . "use function strlen, date as d, MICROTIME;\n", ['imports date() with use function', 'imports microtime() with use function']];
+        yield 'use function of a namespaced function' => ['src/Core/Auth/A.php', $head('Auth') . "use function TiffinDB\\Core\\Auth\\time;\nuse function TiffinDB\\Core\\Auth\\{date};\n", []];
+        yield 'use function of an allowed function' => ['src/Core/Auth/A.php', $head('Auth') . "use function strlen as len;\n", []];
+        yield 'closure use is not an import' => ['src/Core/Auth/A.php', $head('Auth') . "\$f = function () use (\$time) { return \$time; };\n", []];
         yield 'exempt file' => ['src/Core/Storage/SecureRandom.php', $head('Storage') . "\$b = random_bytes(8);\n", []];
         yield 'exempt clock' => ['src/Core/Storage/SystemClock.php', $head('Storage') . "\$t = time();\n", []];
         yield 'exemption is by path' => ['src/Core/System/SecureRandom.php', $head('System') . "\$b = random_bytes(8);\n", ['calls random_bytes() directly']];

@@ -1488,7 +1488,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 
 | ID | Test | Asserts |
 |---|---|---|
-| T-REPO-9 | `CoreLayerRulesTest` | Section 2.1 table; no `random_bytes`, `random_int`, `mt_rand`, `rand(`, `time(`, `date(`, `microtime(` under `src/Core/` except in `SecureRandom.php` and `SystemClock.php`; negative cases built in a temp tree |
+| T-REPO-9 | `CoreLayerRulesTest` | Section 2.1 table; no call to the global functions `random_bytes`, `random_int`, `mt_rand`, `rand`, `time`, `date`, `microtime` under `src/Core/` except in `SecureRandom.php` and `SystemClock.php`, found with `token_get_all` (a `T_STRING`, or `T_NAME_FULLY_QUALIFIED` such as `\time`, followed by `(` and not preceded by `->`, `?->`, `::`, `function`, or `new`), so that methods such as `Users::update()` or `validate()` are not mistaken for `date(`; negative cases built in a temp tree |
 | T-REPO-10 | `HtaccessTest` (extended) | The data-folder `.htaccess` text in `Core\Install` equals the two lines of section 10.3 and contains no `Rewrite`, `Options`, `Header`, or `Allow` directive; the existing "no other `.htaccess` files" assertion stays (ledger section 7 item) |
 
 ### 13.2 Storage (`tests/core/storage/`)

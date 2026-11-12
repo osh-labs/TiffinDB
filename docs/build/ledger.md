@@ -142,7 +142,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12, 02:50Z to 04:25Z | M1-WP0 merged after two review rounds; suite 1079 tests OK |
 | 2026-11-12, 02:50Z to 04:25Z | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
 | 2026-11-12T04:4xZ | M1-WP8 merged; wave 1 closed |
-| 2026-11-12T05:2xZ | M1-WP3 merged; WP4 dispatched |
+| 2026-11-12T05:1xZ | M1-WP3 merged; WP4 dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

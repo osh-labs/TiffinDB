@@ -324,6 +324,24 @@ final class DiscoverStructureTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/^\s+(?:varchar255|int8|real9999)  \[/m', $out);
     }
 
+    public function testIdentifierEndingInANewlineIsHashedAndFlagged(): void
+    {
+        $package = $this->dir . '/newline';
+        mkdir($package, 0700);
+        $pdo = new PDO('sqlite:' . $package . '/newline.db');
+        $pdo->exec("CREATE TABLE widgets (\"Example\n\" TEXT, \"int1234\n\" TEXT, plain TEXT)");
+        $pdo = null;
+
+        [$code, $out] = $this->discover([$package]);
+        self::assertSame(0, $code);
+
+        self::assertStringNotContainsString('Example', $out);
+        self::assertStringNotContainsString('int1234', $out);
+        self::assertMatchesRegularExpression('/CREATE TABLE widgets \("id_[0-9a-f]{10}" TEXT, "id_[0-9a-f]{10}" TEXT, plain TEXT\)/', $out);
+        self::assertSame(2, preg_match_all('/^\s+id_[0-9a-f]{10}  \[not-a-plain-identifier(?:, digit-run)?\]$/m', $out));
+        self::assertMatchesRegularExpression('/^\s+id_[0-9a-f]{10}  \[not-a-plain-identifier, digit-run\]$/m', $out);
+    }
+
     public function testFileNamesAndUnknownExtensionsAreRedactedByDefault(): void
     {
         [, $out] = $this->discover([$this->package]);

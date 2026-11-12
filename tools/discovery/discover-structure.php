@@ -251,13 +251,13 @@ final class IdentifierRedactor
             return [];
         }
         $reasons = [];
-        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,62}$/', $name) !== 1) {
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,62}$/D', $name) !== 1) {
             $reasons[] = 'not-a-plain-identifier';
         }
         // Type-like names (varchar255, int64) are exempt only up to four
         // digits; a longer run may be a user number and is flagged.
         if (preg_match('/\d{2,}/', $name) === 1
-            && preg_match('/^(?:u?int|float|real|varchar|char|decimal|numeric|utf|fts)\d{1,4}$/i', $name) !== 1) {
+            && preg_match('/^(?:u?int|float|real|varchar|char|decimal|numeric|utf|fts)\d{1,4}$/iD', $name) !== 1) {
             $reasons[] = 'digit-run';
         }
         return $reasons;

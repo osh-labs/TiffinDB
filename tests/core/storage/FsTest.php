@@ -224,6 +224,66 @@ final class FsTest extends TestCase
         }
     }
 
+    public function testRemoveDirRemovesAnEmptyDirectory(): void
+    {
+        $dir = $this->temp->path('empty');
+        mkdir($dir);
+        Fs::removeDir($dir);
+        self::assertDirectoryDoesNotExist($dir);
+    }
+
+    public function testRemoveDirRefusesANonEmptyDirectory(): void
+    {
+        $dir = $this->temp->path('full');
+        mkdir($dir);
+        file_put_contents($dir . '/.hidden', 'x');
+        try {
+            Fs::removeDir($dir);
+            self::fail('removeDir must refuse a directory that is not empty.');
+        } catch (RuntimeException) {
+            self::assertFileExists($dir . '/.hidden');
+        }
+    }
+
+    public function testRemoveDirRefusesALinkToADirectory(): void
+    {
+        $target = $this->temp->path('target');
+        mkdir($target);
+        $link = $this->temp->path('link');
+        $this->symlinkOrSkip($target, $link);
+        try {
+            Fs::removeDir($link);
+            self::fail('removeDir must refuse a symbolic link.');
+        } catch (RuntimeException) {
+            self::assertTrue(is_link($link));
+            self::assertDirectoryExists($target);
+        }
+    }
+
+    public function testRemoveDirRefusesAFile(): void
+    {
+        $file = $this->temp->path('file');
+        file_put_contents($file, 'x');
+        try {
+            Fs::removeDir($file);
+            self::fail('removeDir must refuse a file.');
+        } catch (RuntimeException) {
+            self::assertFileExists($file);
+        }
+    }
+
+    public function testRemoveDirRefusesAMissingPath(): void
+    {
+        $this->expectException(RuntimeException::class);
+        Fs::removeDir($this->temp->path('missing'));
+    }
+
+    public function testRemoveDirRefusesANulByte(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Fs::removeDir($this->temp->path() . "\0");
+    }
+
     public function testIsWritableDir(): void
     {
         $file = $this->temp->path('file');

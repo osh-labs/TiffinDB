@@ -96,6 +96,37 @@ final class Fs
         }
     }
 
+    /**
+     * Removes an empty directory (P64). Throws \RuntimeException when the
+     * path is missing, is a symbolic link (never followed, whatever it
+     * points to), is not a directory, or is not empty. There is no
+     * recursive removal: callers delete the files they know of first.
+     */
+    public static function removeDir(string $path): void
+    {
+        self::refuseNul($path);
+        if (is_link($path)) {
+            throw new \RuntimeException('Cannot remove the directory: the path is a symbolic link.');
+        }
+        if (!file_exists($path)) {
+            throw new \RuntimeException('Cannot remove the directory: nothing is there.');
+        }
+        if (!is_dir($path)) {
+            throw new \RuntimeException('Cannot remove the directory: the path is not a directory.');
+        }
+        $entries = ErrorTrap::run(static fn (): array|false => scandir($path), 'Cannot read the directory.');
+        if ($entries === false) {
+            throw new \RuntimeException('Cannot read the directory.');
+        }
+        if (array_diff($entries, ['.', '..']) !== []) {
+            throw new \RuntimeException('Cannot remove the directory: it is not empty.');
+        }
+        $removed = ErrorTrap::run(static fn (): bool => rmdir($path), 'Cannot remove the directory.');
+        if (!$removed) {
+            throw new \RuntimeException('Cannot remove the directory.');
+        }
+    }
+
     public static function isWritableDir(string $path): bool
     {
         return !str_contains($path, "\0") && is_dir($path) && is_writable($path);

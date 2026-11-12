@@ -27,7 +27,7 @@ The web layer calls `Core\App` (and `Core\Install` during setup) only; it never 
 
 - Every `Core\App` operation takes an `Actor` as its first argument and checks a named `Permission` before doing anything. Controllers make no authorization decision; they only require that someone is signed in.
 - A Member asking for a project they hold no grant for gets "not found", not "access denied", so project names and keys do not leak.
-- The permission table (M1 spec section 9.2) decides v1 Member rights: Members view and change records, move records to the trash, and restore them, in granted projects. Only Admins empty the trash, change schema or forms, import, export, share, manage people and plugins, and take snapshots. Saved collections are provisionally open to Members (to be confirmed in the M4 spec).
+- The permission table (M1 spec section 6.9) decides v1 Member rights: Members view and change records, move records to the trash, and restore them, in granted projects. Only Admins empty the trash, change schema or forms, import, export, share, manage people and plugins, and take snapshots. Saved collections are provisionally open to Members (to be confirmed in the M4 spec).
 
 ### 3. Snapshots
 

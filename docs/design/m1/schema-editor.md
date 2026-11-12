@@ -68,7 +68,7 @@ Field map: `name` to `table-name`, `item_name` to `table-item`. Success: 303 to 
      - `td`: `schema.fields.required.yes` "Yes" or `schema.fields.required.no` "No".
      - `td` > `div.cell-actions`: unless first, `form` (POST `.../fields/{f}/move`, `csrf`, hidden `direction` = `up`) with `button.button` `schema.fields.up` "Up" and `aria-label` `schema.fields.up_label` "Move {field} up"; unless last, the same with `down`, "Down", `schema.fields.down_label` "Move {field} down".
    - Without fields: `p.notice` `schema.fields.empty` "This table has no fields yet. Select Add a field to make one."
-5. `form.form` (POST `.../tables/{t}/settings`) with `fieldset.fieldset-card`, `legend.legend` `schema.table.settings` "Table settings":
+5. `form.form` (POST `.../tables/{t}/settings`) containing `csrf` and `fieldset.fieldset-card`, `legend.legend` `schema.table.settings` "Table settings":
    - Field `settings-name` (`schema.table.name`, `name="name"`), field `settings-item` (`schema.table.item`, `name="item_name"`), both with their help.
    - Field `settings-title`: label `schema.table.title_field` "Field shown as the title"; help `schema.table.title_field_help` "Shown as each record's name in lists and links."; `select#settings-title.input` `name="title_field"`: `option value=""` `schema.table.title_none` "None", then each field whose type can be a title.
    - `div.form-actions`: `button.button` `schema.table.settings_submit` "Save table settings".

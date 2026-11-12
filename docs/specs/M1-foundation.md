@@ -42,7 +42,7 @@ src/Core/Error/       shared exceptions and Problem
 src/Core/Storage/     Database, Sqlite, Clock, Random, Keys, Timestamp, DataDirectory, Fs, Snapshots
 src/Core/System/      SystemDatabase, SystemSchema, ProjectRegistry, AuditLog
 src/Core/Auth/        Role, GrantLevel, Permission, Actor, PasswordHasher, PasswordPolicy, Usernames,
-                      Users, Grants, Sessions, LoginThrottle, Authenticator, Csrf, Authorizer
+                      DisplayNames, Users, Grants, Sessions, LoginThrottle, Authenticator, Csrf, Authorizer
 src/Core/Schema/      Identifier, ProjectFile, FormatMigrations, Schema, TableDef, FieldDef,
                       RelationDef, Cardinality, SchemaEditor, FieldTypes
 src/Core/Schema/Type/ FieldType, Checked, and one class per field type
@@ -535,7 +535,7 @@ final class UserRecord
 
 `Usernames::normalise(string): string` lower-cases ASCII letters. `Usernames::problems(string $username): list<Problem>`: after trimming, 3 to 32 characters, each in `A-Z a-z 0-9 . _ -` (key `problem.username.invalid`, field `username`).
 
-Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`).
+Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`). `DisplayNames::problems(string $name, string $field = 'display_name'): list<Problem>` applies these rules; `Installer::createFirstAdmin` and `PeopleOperations` both call it.
 
 ```php
 final class PasswordPolicy
@@ -554,9 +554,11 @@ final class PasswordHasher
     public function verify(string $password, string $hash): bool;
     public function needsRehash(string $hash): bool;
     public function algorithm(): string;           // 'argon2id' | 'bcrypt'
-    public function verifyDummy(string $password): void;  // same cost as verify against a hash made once per instance
+    public function verifyDummy(string $password): void;  // one verify against a fixed dummy hash, no hashing
 }
 ```
+
+`verifyDummy` must cost one verification and nothing else, so that an unknown username takes as long as a known one. The dummy hashes are constants in `PasswordHasher` (`DUMMY_ARGON2ID`, `DUMMY_BCRYPT`: hashes of a fixed throwaway string made once, by the implementer, with the default parameters above); only when non-default options are passed (tests) is the dummy hash made in the constructor. Creating the dummy hash lazily on the first unknown-user sign-in would make that request cost a hash plus a verify, a timing difference that reveals whether a username exists.
 
 Passwords are never trimmed. Password problems use keys `problem.password.too_short` (`min` 10), `problem.password.too_long`, `problem.password.same_as_username`.
 
@@ -868,7 +870,7 @@ final class Schema
 }
 ```
 
-`Schema` validates what it reads: keys must match the pattern, `type` must be known to `FieldTypes`, options must decode to a JSON object. A file that fails is `Unavailable('not-project')`. Keys arriving from a URL are checked with `Keys::isValid` before any lookup and give `NotFound` when invalid.
+`Schema` validates what it reads: keys must match the pattern, `type` must be known to `FieldTypes`, options must decode to a JSON object. Writers therefore encode options as `json_encode((object) $options, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)`: plain `json_encode([])` gives `[]`, which a type with no options would otherwise store and `Schema` would then refuse. A file that fails is `Unavailable('not-project')`. Keys arriving from a URL are checked with `Keys::isValid` before any lookup and give `NotFound` when invalid.
 
 ### 7.4 `SchemaEditor`
 
@@ -973,12 +975,12 @@ For relation fields, the options `updateField` accepts are `{"links": "one"|"man
 1. Refuse tables with more than 50,000 records (null: `problem.table.too_large_to_convert`, `max`). Read every row's `id` and value (live and trashed). Convert each non-empty value: `to->parse(from->toText(value, fromOptions), toOptions, lenient: true)`. Count failures. For a `choice` target whose `choices` option is empty, first fill it with the distinct non-empty source texts, sorted, at most 200 (more: `options.choices`: `problem.options.choices_too_many`).
 2. If failures > 0 and not `$confirmLoss`: throw `ConfirmationRequired(records with a cleared value, failures)`.
 3. Snapshot `field-type-change`.
-4. One transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1; update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
+4. One transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1 that is not null (values that failed or are empty are not written, so the new column keeps its default: null, or 0 for a `checkbox` target, whose column is `NOT NULL`); update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
 5. Return `Impact(records with a cleared value, values cleared)`.
 
 **`moveField`**: swap `position` with the neighbour in the direction given; renumber to 1..n.
 
-**`deleteField`**: snapshot `field-delete`. One transaction: for a relation field, `DROP TABLE` the join table (its indexes go with it) and delete both field rows and the relation row; for an attachment field, delete its `_tiffin_attachment_links` rows and its field row; for a field with a column, drop its own indexes, `ALTER TABLE <t> DROP COLUMN <f>`, and delete the field row; clear `title_field` where it named a deleted field; renumber positions in each affected table.
+**`deleteField`**: snapshot `field-delete`. One transaction: for a relation field, `DROP TABLE` the join table (its indexes go with it), delete the relation row, then both field rows (in that order: `_tiffin_relations` references both fields without `ON DELETE`, so deleting a field row first fails the foreign-key check); for an attachment field, delete its `_tiffin_attachment_links` rows and its field row; for a field with a column, drop its own indexes, `ALTER TABLE <t> DROP COLUMN <f>`, and delete the field row; clear `title_field` where it named a deleted field; renumber positions in each affected table.
 
 ### 7.5 `FieldTypes`
 
@@ -1279,6 +1281,7 @@ final class Installer
 - `NeedsDataFolder`: no candidate data directory holds `system.sqlite`.
 - `NeedsAdmin`: `system.sqlite` exists; `installed_at` absent.
 - `Installed`: `installed_at` present. Every installer method other than `state()` then throws `\LogicException`.
+- `prepareDataFolder` throws `\LogicException` in any state other than `NeedsDataFolder`, so a repeated POST after the system database exists cannot choose and initialise a second data folder; `createFirstAdmin` requires `NeedsAdmin` (10.5).
 
 ### 10.2 Requirement check
 
@@ -1488,7 +1491,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 
 | ID | Test | Asserts |
 |---|---|---|
-| T-REPO-9 | `CoreLayerRulesTest` | Section 2.1 table; no `random_bytes`, `random_int`, `mt_rand`, `rand(`, `time(`, `date(`, `microtime(` under `src/Core/` except in `SecureRandom.php` and `SystemClock.php`; negative cases built in a temp tree |
+| T-REPO-9 | `CoreLayerRulesTest` | Section 2.1 table; no call to the global functions `random_bytes`, `random_int`, `mt_rand`, `rand`, `time`, `date`, `microtime` under `src/Core/` except in `SecureRandom.php` and `SystemClock.php`, found with `token_get_all` (a `T_STRING`, or `T_NAME_FULLY_QUALIFIED` such as `\time`, followed by `(` and not preceded by `->`, `?->`, `::`, `function`, or `new`), so that methods such as `Users::update()` or `validate()` are not mistaken for `date(`; negative cases built in a temp tree |
 | T-REPO-10 | `HtaccessTest` (extended) | The data-folder `.htaccess` text in `Core\Install` equals the two lines of section 10.3 and contains no `Rewrite`, `Options`, `Header`, or `Allow` directive; the existing "no other `.htaccess` files" assertion stays (ledger section 7 item) |
 
 ### 13.2 Storage (`tests/core/storage/`)
@@ -1514,7 +1517,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 | T-SYS-4 | `ProjectRegistry`: add, activate, `byKey`, `nameTaken` ignoring ASCII case, `all` and `forMember` order, `creating` projects excluded from both |
 | T-AUD-1 | `AuditLog`: `recent` newest first; detail decoded; failed sign-in rows older than 90 days pruned on the next failed sign-in, other actions kept; `record` on a closed database logs and does not throw |
 | T-AUTH-1 | `PasswordPolicy`: 9 characters fail, 10 pass; 72 bytes pass, 73 fail (also with multi-byte characters); equal to the username ignoring case fails; invalid UTF-8 fails |
-| T-AUTH-2 | `PasswordHasher`: hash and verify; `needsRehash` after a cost change; `algorithm()` matches what PHP provides |
+| T-AUTH-2 | `PasswordHasher`: hash and verify; `needsRehash` after a cost change; `algorithm()` matches what PHP provides; `DUMMY_ARGON2ID` and `DUMMY_BCRYPT` are valid hashes with exactly the default parameters (`password_get_info`), and `verifyDummy` with default options makes no new hash (checked through a test seam that counts `hash` calls) |
 | T-AUTH-3 | `Usernames`: valid and invalid cases table; normalisation |
 | T-AUTH-4 | `Users`: create inserts a default `user_settings` row; usernames unique ignoring case; `countActiveAdmins` |
 | T-AUTH-5 | `Sessions`: token 43 characters; the database holds the hash, never the token (search every column); touch at 299 seconds does nothing, at 301 seconds moves `idle_expires_at`; idle expiry after 7 days; absolute expiry after 30 days even when used daily; an inactive user's session resolves to null and is deleted; `endAllFor`; flash is read once |
@@ -1532,7 +1535,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 | T-SCH-2 | `open` refuses a plain SQLite file (`not-project`), a newer version, a different project key, a missing file |
 | T-SCH-3 | An injected format step: `format-upgrade` snapshot taken first, version and meta updated; a failing step rolls back |
 | T-SCH-4 | `Identifier`: outputs for valid keys; rejects upper case, wrong length, quotes, spaces, non-ASCII, `x"; DROP TABLE t; --`; `system()` rejects other names; `index()` rejects other purposes |
-| T-SCH-5 | Names from people never become identifiers: tables and fields named `"; DROP TABLE x; --`, `Name"`, `Ünïcödé`, and 60 characters of `x` are created; afterwards every name in `sqlite_master` matches `^(_tiffin_\w+|sqlite_\w+|[tfjx]_[a-z2-7]{12}(_\w+)?)$`, and the display names are stored unchanged |
+| T-SCH-5 | Names from people never become identifiers: tables and fields named `"; DROP TABLE x; --`, `Name"`, `Ünïcödé`, and 60 characters of `x` are created; afterwards every name in `sqlite_master` matches `^(_tiffin_\w+|sqlite_\w+|[tfj]_[a-z2-7]{12}|x_[tfj]_[a-z2-7]{12}_(trash|u|r|l1|r1))$`, and the display names are stored unchanged |
 | T-SCH-6 | `createTable` with and without the Name field; positions; title field; every validation problem of section 7.4, all reported together |
 | T-SCH-7 | `addField` for each type with a column: the declared column type from `PRAGMA table_xinfo` equals section 8.2; `checkbox` is `NOT NULL DEFAULT 0`; `auto_number` numbers three existing records 1, 2, 3 and has the unique index |
 | T-SCH-8 | `addRelation`: join table DDL, the indexes for each of the four cardinality pairs, both field rows, a self-relation, reverse-name conflicts; deleting a record row removes its join rows (cascade) |
@@ -1772,7 +1775,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 |---|---|
 | Tier | implementation |
 | Depends on | WP5, WP7, WP8 |
-| Security-critical | No (every change goes through `Core\App`; reviewed by the implementation tier) |
+| Security-critical | Yes (templates that emit HTML, orchestration guide section 2 rule 4; authorization itself stays in `Core\App`) |
 | Owned files | Part 2 section 10, WP11 row |
 | Scope | `docs/design/m1/sign-in-and-projects.md` (project list), `new-project.md`, `schema-editor.md` |
 | Acceptance | Part 2 section 10, WP11 row |
@@ -1803,7 +1806,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 | M1-WP8 | View layer, shell, components, shared strings | implementation | none | Yes |
 | M1-WP9 | Installer screens | implementation | WP6, WP7, WP8 | Yes |
 | M1-WP10 | Sign-in, password, people, sharing screens | implementation | WP5, WP7, WP8 | Yes |
-| M1-WP11 | Projects and schema editor screens | implementation | WP5, WP7, WP8 | No |
+| M1-WP11 | Projects and schema editor screens | implementation | WP5, WP7, WP8 | Yes |
 | M1-WP12 | End-to-end tests and visual check | implementation | WP9, WP10, WP11 | No |
 
 No package is mechanical: every one has judgement in it. The strings files are written from exact tables, but they belong to the packages whose templates use them, so that the unused-key test passes in each.

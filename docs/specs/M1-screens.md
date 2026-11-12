@@ -191,7 +191,13 @@ interface Services
     public function close(): void;
 }
 
-final class CoreServices implements Services { /* builds the real objects lazily from config and app root */ }
+final class CoreServices implements Services
+{
+    /** The three optional arguments are test seams; production passes none. */
+    public function __construct(array $config, string $appRoot, ?Clock $clock = null, ?Random $random = null,
+                                ?PasswordHasher $hasher = null) {}
+    /* builds the real objects lazily from config and app root */
+}
 
 final class Context
 {
@@ -213,7 +219,7 @@ final class Context
 }
 ```
 
-`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, `PasswordHasher`, `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` with scripted states (install state, a `SignedIn` for a given token, flash); its `operations()` and `installer()` throw unless a test supplies real ones, so WP7 does not depend on WP5. Later packages pass real objects built by `CoreFixture`.
+`CoreServices` builds, once per request: `SystemClock`, `SecureRandom`, and `PasswordHasher` (unless given), `DataDirectory::locate`, `SystemDatabase::open`, `Operations`, `Installer`, and `LoopbackHttpProbe`. Tests give the kernel a `tests/web/fixtures/FakeServices.php` with scripted states (install state, a `SignedIn` for a given token, flash); its `operations()` and `installer()` throw unless a test supplies real ones, so WP7 does not depend on WP5. Later packages pass real objects built by `CoreFixture`.
 
 Controllers receive `Context` in their constructor: `new $class(Context $context)` (the M0 kernel passed `View`). Controllers hold no business rules and no permission checks; they read input with `Request::input`, call one `Core\App` operation, and render or redirect. When an operation throws `ValidationFailed`, the controller renders the same page with status 422, the submitted values, and the problems (section 4.5).
 
@@ -244,8 +250,8 @@ Controllers receive `Context` in their constructor: `new $class(Context $context
 ### 3.2 Setup controller specifics
 
 - `show`: renders the step for the current state (`NeedsDataFolder`: step 1, requirement check; `NeedsAdmin`: step 3, first Admin).
-- `dataFolder` (POST): builds a `ProbeTarget` from the request (`host`, `serverAddress`, `serverPort`, `secure`, `documentRoot`, `basePath`), or null when any of the first three is null, and calls `prepareDataFolder($request->documentRoot, $target, $services->probe())`. `safe`: 303 to `/setup`. `exposed`, `inconclusive`, `failed`: renders step 2 with that outcome, status 409.
-- `admin` (POST): `createFirstAdmin`; on success sets the session cookie, deletes `tdb_csrf`, flashes `notice.setup.done`, 303 to `/projects`; on `ValidationFailed`, step 3 again with 422.
+- `dataFolder` (POST): when the state is not `NeedsDataFolder` (for example a repeated or late submission), 303 to `/setup` without calling the installer. Otherwise builds a `ProbeTarget` from the request (`host`, `serverAddress`, `serverPort`, `secure`, `documentRoot`, `basePath`), or null when any of the first three is null, and calls `prepareDataFolder($request->documentRoot, $target, $services->probe())`. `safe`: 303 to `/setup`. `exposed`, `inconclusive`, `failed`: renders step 2 with that outcome, status 409.
+- `admin` (POST): when the state is not `NeedsAdmin`, 303 to `/setup`. Otherwise `createFirstAdmin`; on success sets the session cookie, deletes `tdb_csrf`, flashes `notice.setup.done`, 303 to `/projects`; on `ValidationFailed`, step 3 again with 422.
 
 ## 4. Templates
 
@@ -517,10 +523,10 @@ For each: 1360 px and 390 px in the light theme with the measurements of 8.1; on
 | T-WEB-21 | `ShellTest` (rewritten) | Both shells rendered through `View` with real templates and strings: M0 structure assertions, top bar order and labels, Admin and Member variants, `aria-current`, sign-out form with CSRF, flash notice, plain shell lockup, script tag only when requested; four themes; well-formed; no inline code | WP8 |
 | T-WEB-22 | `HtmlAssertions` (extended) | `assertNoInlineCode` allows exactly one `script` element with a same-origin `src` under `/assets/js/`, `defer`, and no content; `assertForm` (new) checks rule 4.5 items 1, 2, and 6 on every form in a page | WP8 |
 | T-SCR-1 | `ScreenStructureTest` | For every GET route in each of its states listed in the design documents: well-formed, no inline code, shell assertions, `assertForm`, title text, `h1` text | WP12 (each screen package also tests its own screens) |
-| T-E2E-1 | `EndToEndTest` | From an empty temporary folder, through the kernel with real `CoreServices` (configuration `data_dir` set to a temporary folder and `DOCUMENT_ROOT` set to the repository's `public/`, so the folder is outside the document root and no probe runs; nothing is written outside the temporary folder): `/` redirects to setup; step 1 lists checks; POST data folder; read `setup-code.txt`; POST first Admin; land on the project list with the notice; create project "Home Inventory" with first table "Items"; add table "Rooms"; add a relation field "Room" from Items to Rooms; the tables page lists both tables; the fields page lists Name and Room. **Admin can create a project and a table** | WP12 |
+| T-E2E-1 | `EndToEndTest` | From an empty temporary folder, through the kernel with real `CoreServices` (`CoreServices` given a `FixedClock`, a `SeededRandom`, and a bcrypt cost 4 `PasswordHasher`; configuration `data_dir` set to a temporary folder and `DOCUMENT_ROOT` set to the repository's `public/`, so the folder is outside the document root and no probe runs; nothing is written outside the temporary folder): `/` redirects to setup; step 1 lists checks; POST data folder; read `setup-code.txt`; POST first Admin; land on the project list with the notice; create project "Home Inventory" with first table "Items"; add table "Rooms"; add a relation field "Room" from Items to Rooms; the tables page lists both tables; the fields page lists Name and Room. **Admin can create a project and a table** | WP12 |
 | T-E2E-2 | `EndToEndTest` | Admin adds Member "Example Member" with a temporary password and shares the project; the Member signs in, is sent to change their password, changes it, sees only that project, can open the tables page, gets 403 on the fields editor POST and sees no editing controls | WP12 |
 | T-E2E-3 | `EndToEndTest` | Sign-out deletes the session; the old cookie no longer works; a POST without `_csrf` is refused | WP12 |
-| T-E2E-4 | `EndToEndTest` | Five wrong passwords, then the sign-in page shows the wait message and does not sign in with the right password until the clock passes the wait | WP12 |
+| T-E2E-4 | `EndToEndTest` | Five wrong passwords, then the sign-in page shows the wait message and does not sign in with the right password until the clock passes the wait (a `FixedClock` passed to `CoreServices` and advanced by the test; no real waiting) | WP12 |
 
 ## 10. File ownership for the web packages
 
@@ -530,7 +536,7 @@ For each: 1360 px and 390 px in the light theme with the measurements of 8.1; on
 | WP8 | `src/Web/View.php`, `ViewScope.php`, `Strings.php`, `Appearance.php`, `Shell.php`, `Format.php`; `templates/layout.php`, `templates/pages/error.php`, `templates/partials/*.php` (the partials of section 4.4 and the M0 ones); `strings/en.php`, `strings/en/shell.php`, `errors.php`, `format.php`, `problems.php`, `home.php` (created, section 5.1); `public/assets/css/app.css`, `public/assets/js/show-password.js`; `tests/Support/HtmlAssertions.php`; `tests/web/ShellTest.php`, `TemplateRulesTest.php`, `ViewTest.php`, `StringsTest.php`, `AppearanceTest.php`, `FormatTest.php`; `tests/web/fixtures/templates/*`, `tests/web/fixtures/strings/*` | T-WEB-11, T-WEB-18 to T-WEB-22 pass; every class in `components.md` exists in `app.css`; T-DES-1 to T-DES-6 still pass; the M0 kernel still serves `/` until WP7 merges; design-tier review of templates and the script |
 | WP9 | `src/Web/Controller/SetupController.php`; `templates/pages/setup/*.php`; `strings/en/setup.php`; `tests/web/SetupScreenTest.php` | Every state in `installer.md` rendered and asserted (strings, order, `assertForm`); POST flows with `FakeServices` and a fake probe: safe redirect, exposed and inconclusive pages (409), admin creation (cookie set, `tdb_csrf` deleted, redirect), validation (422, no password or code printed back); design-tier security review |
 | WP10 | `src/Web/Controller/SignInController.php`, `AccountController.php`, `PeopleController.php`, `SharingController.php`; `templates/pages/sign-in.php`, `templates/pages/account/*.php`, `templates/pages/people/*.php`, `templates/pages/sharing.php`; `strings/en/account.php`, `strings/en/people.php`; `tests/web/SignInScreenTest.php`, `PeopleScreenTest.php`, `SharingScreenTest.php` | Every state in the two design documents rendered and asserted; sign-in success sets the cookie with the attributes of 2.6 and redirects; failure and throttling messages identical for unknown and known usernames; must-change flow; people and sharing POSTs call the right operations and map every problem to its field; design-tier security review |
-| WP11 | `src/Web/Controller/ProjectController.php`, `TableController.php`, `FieldController.php`; `templates/pages/projects/*.php`, `templates/pages/tables/*.php`, `templates/pages/fields/*.php`, `templates/partials/field-options/*.php`; `strings/en/projects.php`, `schema.php`, `types.php`; `tests/web/ProjectScreensTest.php`, `SchemaScreensTest.php` | Every state in `sign-in-and-projects.md` section 3, `new-project.md`, and `schema-editor.md` rendered and asserted; every POST maps problems to fields; confirmation pages reached for lossy changes and deletions; Member variants show no editing controls |
+| WP11 | `src/Web/Controller/ProjectController.php`, `TableController.php`, `FieldController.php`; `templates/pages/projects/*.php`, `templates/pages/tables/*.php`, `templates/pages/fields/*.php`, `templates/partials/field-options/*.php`; `strings/en/projects.php`, `schema.php`, `types.php`; `tests/web/ProjectScreensTest.php`, `SchemaScreensTest.php` | Every state in `sign-in-and-projects.md` section 3, `new-project.md`, and `schema-editor.md` rendered and asserted; every POST maps problems to fields; confirmation pages reached for lossy changes and deletions; Member variants show no editing controls; design-tier review of templates |
 | WP12 | `tests/web/EndToEndTest.php`, `tests/web/ScreenStructureTest.php` | T-SCR-1, T-E2E-1 to T-E2E-4 pass; the visual procedure of 8.4 run and reported |
 
 WP9, WP10, and WP11 must not change `app.css`, shared partials, or another package's strings; a missing class or partial is reported to the orchestrator, who routes it to a follow-up on WP8's files.

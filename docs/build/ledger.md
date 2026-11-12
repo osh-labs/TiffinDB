@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1: pausing on maintainer instruction once in-flight agents finish (WP2 round 3 fix, WP4 implementation); no new dispatches |
+| Phase | M1 paused by the maintainer; no agents running. Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | none (deleted for the maintainer's pause; the maintainer resumes the build) |
-| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix, then merge; (2) WP4: dispatch the design-tier review (SQL identifier generation), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
+| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix (`f9030b5`), then merge; (2) WP4: dispatch the design-tier review of `Identifier`, every SQL string and the nine author choices in its report (help-text key, checkbox and rating conversions, removed-choice rewrite, untested `updateField` retry, `valueCount`, `Trash::list` arrays, trash not touching project meta), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
 
@@ -68,7 +68,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 3 fix done (`f9030b5`); awaiting reviewer verification; preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp2` (not merged) | wip-wp2 | design tier | round 2 REQUEST CHANGES for one regression: takeback not net-zero at the address limit (fixed in `f9030b5`, unverified); round 1 APPROVE with should-fix |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
-| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | in progress (worktree); to be preserved on `claude/magical-hamilton-isy74q-wip-wp4` when it reports | agent worktree | | |
+| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | implemented (`5154df5`, 2833 tests OK per author); preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp4` (not merged); design-tier review not started | wip-wp4 | design tier (on resume) | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
@@ -146,6 +146,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:1xZ | Maintainer instruction: stop at the end of M1 (after the exit audit and checkpoint); do not start M2 until instructed |
 | 2026-11-12T05:2xZ | Maintainer instructions: apply review-economy options 1 and 2; pause once WP4 is done and wait for the maintainer to resume. Resume reminder deleted |
 | 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
+| 2026-11-12T05:3xZ | WP4 implemented and pushed to `-wip-wp4`; build paused, no agents running |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -194,4 +195,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | M2 | Build `mailto:` hrefs with the local part `rawurlencode`d; escape every attribute with ENT_QUOTES | M1-WP3 review |
 | WP6, WP7 | Call `LoginThrottle::wait()` inside `write()`; read session tokens via `IssuedSession::token()` (property no longer public) | M1-WP2 follow-up |
 | URL rule refuses any host label starting `0x` (e.g. `0xford.example`); apply the hex test to the last label only and require hex digits | `src/Core/Schema/Type/UrlType.php` `looksLikeOtherIpv4` |
+| `docs/formats/tiffin.md` section 11 says format upgrades run in one transaction; spec 7.2 (implemented) runs each step in its own transaction; correct the format doc | `docs/formats/tiffin.md` |
 

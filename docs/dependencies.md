@@ -8,7 +8,7 @@ This file records every third-party component used by TiffinDB and the licence i
 - The licence is confirmed from the dependency's own licence file, never from memory or from a third-party summary. If it could not be confirmed, the row says so and the dependency is not merged.
 - Allowed licences are those listed in `CLAUDE.md`; `OFL-1.1` is allowed for font assets only.
 - No personal names or email addresses are written in this file. Copyright notices stay in the shipped licence files, which are reproduced verbatim as their licences require.
-- Transitive development packages are not listed one by one. They are covered by `tests/repo/DependencyLicenceTest.php`, which reads the licence each installed package declares and fails on anything outside the allowlist.
+- Transitive development packages are not listed one by one. They are covered by `tests/repo/DependencyLicenceTest.php`, which reads the licence each installed package declares and fails on anything outside the allowlist. The file states the count and the licences seen at the last verification.
 
 ## Runtime dependencies (shipped)
 

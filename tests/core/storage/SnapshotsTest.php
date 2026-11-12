@@ -98,6 +98,31 @@ final class SnapshotsTest extends TestCase
         self::assertDirectoryExists($this->folder . '/snapshots');
     }
 
+    public function testAnExistingSnapshotsFolderIsUsed(): void
+    {
+        mkdir($this->folder . '/snapshots', 0750);
+        $info = $this->snapshots->take($this->project(), $this->folder, SnapshotReason::Manual);
+        self::assertFileExists($this->folder . '/snapshots/' . $info->file);
+    }
+
+    public function testAFileWhereTheSnapshotsFolderShouldBeIsRefused(): void
+    {
+        file_put_contents($this->folder . '/snapshots', 'synthetic');
+        $this->expectException(\RuntimeException::class);
+        $this->snapshots->take($this->project(), $this->folder, SnapshotReason::Manual);
+    }
+
+    public function testSnapshotFileHasMode0640(): void
+    {
+        $info = $this->snapshots->take($this->project(), $this->folder, SnapshotReason::Manual);
+        $path = $this->folder . '/snapshots/' . $info->file;
+        clearstatcache(true, $path);
+        if (DIRECTORY_SEPARATOR !== '/') {
+            self::markTestSkipped('This file system does not keep POSIX permission bits (non-POSIX platform).');
+        }
+        self::assertSame(0640, fileperms($path) & 0777);
+    }
+
     public function testCopyHoldsDataCommittedJustBeforeIncludingTheWal(): void
     {
         $db = $this->project();

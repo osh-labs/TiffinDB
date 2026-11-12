@@ -12,7 +12,8 @@ namespace TiffinDB\Core\Storage;
  * File-system helpers: the only place in the core, besides SQLite, that
  * touches the file system (M1 spec section 4.3). Directories are made with
  * mode 0750, files with 0640 (ADR 0011 decision 1). Calls that can warn run
- * under ErrorTrap, never with `@`.
+ * under ErrorTrap, never with `@`. No method accepts a path containing a
+ * NUL byte.
  */
 final class Fs
 {
@@ -24,17 +25,15 @@ final class Fs
     }
 
     /**
-     * Makes one directory (not recursive) with mode 0750. An existing
-     * directory is left as it is. Throws \RuntimeException on failure or
-     * when the path exists as something other than a directory.
+     * Makes one directory (not recursive) with mode 0750. Throws
+     * \RuntimeException on failure, and when anything already exists at the
+     * path: a directory, a file, or a symbolic link (dangling or not).
      */
     public static function makeDir(string $path): void
     {
-        if (is_dir($path)) {
-            return;
-        }
+        self::refuseNul($path);
         if (file_exists($path) || is_link($path)) {
-            throw new \RuntimeException('Cannot make a directory: the path exists and is not a directory.');
+            throw new \RuntimeException('Cannot make a directory: the path already exists.');
         }
         $made = ErrorTrap::run(static fn (): bool => mkdir($path, self::DIR_MODE, false), 'Cannot make a directory.');
         if (!$made) {
@@ -47,17 +46,25 @@ final class Fs
     }
 
     /**
-     * Creates a new file (fails when anything exists at the path), writes
-     * $contents, closes it, and sets mode 0640. A partly written file is
-     * removed again.
+     * Creates a new file, sets mode 0640, writes $contents, and closes it.
+     * Fails when anything exists at the path, including a dangling symbolic
+     * link. A partly written file is removed again.
      */
     public static function writeNew(string $path, string $contents): void
     {
+        self::refuseNul($path);
+        if (file_exists($path) || is_link($path)) {
+            throw new \RuntimeException('Cannot create the file: the path already exists.');
+        }
         $handle = ErrorTrap::run(static fn (): mixed => fopen($path, 'x'), 'Cannot create the file.');
         if (!is_resource($handle)) {
             throw new \RuntimeException('Cannot create the file.');
         }
         try {
+            $changed = ErrorTrap::run(static fn (): bool => chmod($path, self::FILE_MODE), 'Cannot set the file mode.');
+            if (!$changed) {
+                throw new \RuntimeException('Cannot set the file mode.');
+            }
             $written = ErrorTrap::run(static fn (): int|false => fwrite($handle, $contents), 'Cannot write the file.');
             if ($written !== strlen($contents)) {
                 throw new \RuntimeException('Cannot write the file.');
@@ -65,10 +72,6 @@ final class Fs
             $closed = ErrorTrap::run(static fn (): bool => fclose($handle), 'Cannot close the file.');
             if (!$closed) {
                 throw new \RuntimeException('Cannot close the file.');
-            }
-            $changed = ErrorTrap::run(static fn (): bool => chmod($path, self::FILE_MODE), 'Cannot set the file mode.');
-            if (!$changed) {
-                throw new \RuntimeException('Cannot set the file mode.');
             }
         } catch (\Throwable $error) {
             if (is_resource($handle)) {
@@ -83,6 +86,7 @@ final class Fs
     /** Deletes a file (or a symbolic link); no error when nothing is there. */
     public static function remove(string $path): void
     {
+        self::refuseNul($path);
         if (!file_exists($path) && !is_link($path)) {
             return;
         }
@@ -94,21 +98,30 @@ final class Fs
 
     public static function isWritableDir(string $path): bool
     {
-        return is_dir($path) && is_writable($path);
+        return !str_contains($path, "\0") && is_dir($path) && is_writable($path);
     }
 
-    /** The real path of $path, or of its closest existing ancestor; null when none can be resolved. */
+    /**
+     * The real path of $path, or of its closest existing ancestor.
+     *
+     * Null when the path is empty or holds a NUL byte, when nothing can be
+     * resolved, or when the part beyond the closest existing ancestor holds
+     * a `.` or `..` segment or a dangling symbolic link: that part cannot be
+     * resolved without guessing, so it is refused instead of dropped (P62).
+     */
     public static function nearestExisting(string $path): ?string
     {
-        if ($path === '') {
+        if ($path === '' || str_contains($path, "\0")) {
             return null;
         }
         $current = $path;
-        while (true) {
-            if (file_exists($current)) {
-                $real = realpath($current);
-
-                return $real === false ? null : $real;
+        while (!file_exists($current)) {
+            if (is_link($current)) {
+                return null;
+            }
+            $name = basename($current);
+            if ($name === '.' || $name === '..') {
+                return null;
             }
             $parent = dirname($current);
             if ($parent === $current) {
@@ -116,14 +129,22 @@ final class Fs
             }
             $current = $parent;
         }
+        $real = realpath($current);
+
+        return $real === false ? null : $real;
     }
 
     /**
      * Whether $path is $root or below it, after resolving both with
-     * nearestExisting() (so symbolic links and `..` are followed).
+     * nearestExisting() (so symbolic links and `..` in existing parts are
+     * followed). False when either cannot be resolved, including any NUL
+     * byte or a `.`/`..` segment in a part that does not exist yet.
      */
     public static function isInside(string $path, string $root): bool
     {
+        if (str_contains($path, "\0") || str_contains($root, "\0")) {
+            return false;
+        }
         $resolvedPath = self::nearestExisting($path);
         $resolvedRoot = self::nearestExisting($root);
         if ($resolvedPath === null || $resolvedRoot === null) {
@@ -134,5 +155,12 @@ final class Fs
         }
 
         return str_starts_with($resolvedPath, rtrim($resolvedRoot, '/') . '/');
+    }
+
+    private static function refuseNul(string $path): void
+    {
+        if ($path === '' || str_contains($path, "\0")) {
+            throw new \InvalidArgumentException('A path must not be empty or contain a NUL byte.');
+        }
     }
 }

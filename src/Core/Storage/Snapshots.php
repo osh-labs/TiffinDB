@@ -38,14 +38,16 @@ final class Snapshots
             throw new \LogicException('A snapshot must not be taken inside a transaction.');
         }
         $folder = self::folder($projectFolder);
-        Fs::makeDir($folder);
+        if (!is_dir($folder)) {
+            Fs::makeDir($folder);
+        }
 
         $takenAt = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));
         $stamp = $takenAt->format(self::TIME_FORMAT);
         $file = null;
         for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
             $name = $stamp . '-' . $reason->value . '-' . $this->keys->short(self::SUFFIX_LENGTH) . '.tiffin';
-            if (!file_exists($folder . '/' . $name)) {
+            if (!file_exists($folder . '/' . $name) && !is_link($folder . '/' . $name)) {
                 $file = $name;
 
                 break;
@@ -56,12 +58,21 @@ final class Snapshots
         }
         $path = $folder . '/' . $file;
 
-        $db->run('VACUUM INTO ?', [$path]);
-        ErrorTrap::run(static fn (): bool => chmod($path, Fs::FILE_MODE), 'Cannot set the snapshot file mode.');
-        clearstatcache(true, $path);
-        $size = ErrorTrap::run(static fn (): int|false => filesize($path), 'Cannot read the snapshot size.');
+        try {
+            $db->run('VACUUM INTO ?', [$path]);
+            $changed = ErrorTrap::run(static fn (): bool => chmod($path, Fs::FILE_MODE), 'Cannot set the snapshot file mode.');
+            if (!$changed) {
+                throw new \RuntimeException('Cannot set the snapshot file mode.');
+            }
+            $size = self::size($path);
+        } catch (\Throwable $error) {
+            // A failed or partial copy is never left behind to be mistaken for a snapshot.
+            Fs::remove($path);
 
-        $info = new SnapshotInfo($file, self::parseTime($stamp) ?? $takenAt, $reason, $size === false ? 0 : $size);
+            throw $error;
+        }
+
+        $info = new SnapshotInfo($file, self::parseTime($stamp) ?? $takenAt, $reason, $size);
         $this->prune($folder, $file, $reason);
 
         return $info;
@@ -94,12 +105,22 @@ final class Snapshots
             if ($reason === null || $takenAt === null || !is_file($path) || is_link($path)) {
                 continue;
             }
-            $size = filesize($path);
-            $found[] = new SnapshotInfo($name, $takenAt, $reason, $size === false ? 0 : $size);
+            $found[] = new SnapshotInfo($name, $takenAt, $reason, self::size($path));
         }
         usort($found, static fn (SnapshotInfo $a, SnapshotInfo $b): int => [$b->takenAt, $b->file] <=> [$a->takenAt, $a->file]);
 
         return $found;
+    }
+
+    private static function size(string $path): int
+    {
+        clearstatcache(true, $path);
+        $size = ErrorTrap::run(static fn (): int|false => filesize($path), 'Cannot read the snapshot size.');
+        if ($size === false) {
+            throw new \RuntimeException('Cannot read the snapshot size.');
+        }
+
+        return $size;
     }
 
     private static function folder(string $projectFolder): string

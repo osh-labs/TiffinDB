@@ -82,12 +82,37 @@ final class FsTest extends TestCase
         Fs::makeDir($this->temp->path('missing/child'));
     }
 
-    public function testMakeDirLeavesAnExistingDirectoryAlone(): void
+    public function testMakeDirRefusesAnExistingDirectory(): void
     {
         $dir = $this->temp->path('existing');
         mkdir($dir, 0700);
+        $this->expectException(RuntimeException::class);
         Fs::makeDir($dir);
-        self::assertDirectoryExists($dir);
+    }
+
+    public function testMakeDirRefusesASymbolicLinkToADirectory(): void
+    {
+        mkdir($this->temp->path('elsewhere'));
+        $this->symlinkOrSkip($this->temp->path('elsewhere'), $this->temp->path('link'));
+        $this->expectException(RuntimeException::class);
+        Fs::makeDir($this->temp->path('link'));
+    }
+
+    public function testMakeDirRefusesADanglingSymbolicLink(): void
+    {
+        $this->symlinkOrSkip($this->temp->path('not-there'), $this->temp->path('dangling'));
+        try {
+            Fs::makeDir($this->temp->path('dangling'));
+            self::fail('makeDir must refuse a dangling symbolic link.');
+        } catch (RuntimeException) {
+            self::assertDirectoryDoesNotExist($this->temp->path('not-there'));
+        }
+    }
+
+    public function testMakeDirRefusesANulByte(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Fs::makeDir($this->temp->path("bad\0name"));
     }
 
     public function testMakeDirRefusesAFile(): void
@@ -125,6 +150,36 @@ final class FsTest extends TestCase
             self::assertStringNotContainsString($this->temp->path(), $e->getMessage(), 'No path in the message.');
         }
         self::assertSame('original', file_get_contents($file));
+    }
+
+    public function testWriteNewRefusesADanglingSymbolicLink(): void
+    {
+        $target = $this->temp->path('target.txt');
+        $link = $this->temp->path('dangling.txt');
+        $this->symlinkOrSkip($target, $link);
+
+        $this->expectException(RuntimeException::class);
+        try {
+            Fs::writeNew($link, 'must not be written through the link');
+        } finally {
+            self::assertFileDoesNotExist($target);
+            self::assertTrue(is_link($link), 'The link itself is left alone.');
+        }
+    }
+
+    public function testWriteNewRefusesASymbolicLinkToAFile(): void
+    {
+        $target = $this->temp->path('target.txt');
+        file_put_contents($target, 'original');
+        $link = $this->temp->path('link.txt');
+        $this->symlinkOrSkip($target, $link);
+
+        try {
+            Fs::writeNew($link, 'replacement');
+            self::fail('writeNew must refuse a symbolic link.');
+        } catch (RuntimeException) {
+            self::assertSame('original', file_get_contents($target));
+        }
     }
 
     public function testWriteNewRefusesAMissingDirectory(): void
@@ -187,6 +242,10 @@ final class FsTest extends TestCase
         self::assertSame($root, Fs::nearestExisting($root . '/a/..'));
         self::assertSame($root, Fs::nearestExisting($root . '/missing/deeper'));
         self::assertNull(Fs::nearestExisting(''));
+        self::assertNull(Fs::nearestExisting($root . '/missing/../a'), '.. beyond the existing part is refused, not dropped.');
+        self::assertNull(Fs::nearestExisting($root . '/a/missing/..'));
+        self::assertNull(Fs::nearestExisting($root . '/a/missing/./x'));
+        self::assertNull(Fs::nearestExisting($root . "/a\0"));
     }
 
     public function testIsInsideWithDotDot(): void
@@ -207,6 +266,43 @@ final class FsTest extends TestCase
         self::assertFalse(Fs::isInside($root . '/docroot', $root . '/docroot/sub'));
         self::assertFalse(Fs::isInside($root . '/tiffindb-data', $root . '/docroot'), 'A sibling still to be made.');
         self::assertTrue(Fs::isInside($root . '/docroot/sub', $root . '/docroot/./'));
+    }
+
+    public function testIsInsideRefusesDotSegmentsBeyondTheExistingPart(): void
+    {
+        $root = $this->temp->path();
+        mkdir($root . '/docroot');
+        mkdir($root . '/docroot/sub');
+        mkdir($root . '/outside');
+        $r = $root . '/docroot';
+
+        self::assertFalse(Fs::isInside("{$r}/nx/../../outside", $r));
+        self::assertFalse(Fs::isInside("{$r}/nx/..", $r), 'Even when it would resolve inside.');
+        self::assertFalse(Fs::isInside("{$r}/sub/nx/./deeper", $r));
+        self::assertFalse(Fs::isInside("{$r}/nx/../../outside", "{$r}/nx/.."));
+    }
+
+    public function testIsInsideRefusesNulBytes(): void
+    {
+        $root = $this->temp->path();
+        mkdir($root . '/docroot');
+        mkdir($root . '/docroot/sub');
+        mkdir($root . '/outside');
+        $r = $root . '/docroot';
+
+        self::assertFalse(Fs::isInside("{$r}/sub\0/../../outside", $r));
+        self::assertFalse(Fs::isInside("{$r}/sub\0", $r));
+        self::assertFalse(Fs::isInside($root . '/outside', "{$r}\0/.."), 'A NUL byte in the root does not widen it.');
+        self::assertFalse(Fs::isInside($root . '/outside', "{$root}\0"));
+    }
+
+    public function testIsInsideRefusesADanglingLinkInTheNewPart(): void
+    {
+        $root = $this->temp->path();
+        mkdir($root . '/docroot');
+        $this->symlinkOrSkip($root . '/outside-not-yet', $root . '/docroot/dangling');
+        self::assertFalse(Fs::isInside($root . '/docroot/dangling', $root . '/docroot'));
+        self::assertFalse(Fs::isInside($root . '/docroot/dangling/new', $root . '/docroot'));
     }
 
     public function testIsInsideFollowsSymbolicLinks(): void

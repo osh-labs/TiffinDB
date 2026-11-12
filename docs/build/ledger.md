@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1: WP0, WP1, WP3, WP8 merged; WP2 re-review in progress; WP4 in progress (worktrees, unpushed) |
+| Phase | M1: pausing on maintainer instruction once in-flight agents finish (WP2 round 3 fix, WP4 implementation); no new dispatches |
 | Window start | 2026-11-12T02:30Z (window 2) |
-| Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP2: on re-review APPROVE merge, then dispatch WP6. WP4: on report dispatch design-tier review (SQL identifier generation). Then WP5 and WP7 (wave 4). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. Maintainer instruction: stop when M1 closes (exit audit recorded, checkpoint pushed, resume reminder deleted); do not start M2. |
+| Resume reminder | none (deleted for the maintainer's pause; the maintainer resumes the build) |
+| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix, then merge; (2) WP4: dispatch the design-tier review (SQL identifier generation), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first). |
 
 ## 2. Milestones
 
@@ -144,6 +144,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T04:4xZ | M1-WP8 merged; wave 1 closed |
 | 2026-11-12T05:1xZ | M1-WP3 merged; WP4 dispatched |
 | 2026-11-12T05:1xZ | Maintainer instruction: stop at the end of M1 (after the exit audit and checkpoint); do not start M2 until instructed |
+| 2026-11-12T05:2xZ | Maintainer instructions: apply review-economy options 1 and 2; pause once WP4 is done and wait for the maintainer to resume. Resume reminder deleted |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

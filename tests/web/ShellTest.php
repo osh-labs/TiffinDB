@@ -735,6 +735,13 @@ final class ShellTest extends TestCase
         self::assertSame([], $missing, 'Classes of components.md missing from app.css.');
     }
 
+    public function testTheProjectNameLinkIsAFullTarget(): void
+    {
+        $css = RepoFiles::read('public/assets/css/app.css');
+
+        self::assertMatchesRegularExpression('/\.project-name a \{[^}]*min-height: var\(--target-min\);[^}]*\}/', $css);
+    }
+
     public function testEveryClassInTheTemplatesHasAStyleOrIsStructural(): void
     {
         // Classes the shared templates write that carry no style of their own.
@@ -776,6 +783,30 @@ final class ShellTest extends TestCase
         self::assertStringContainsString("'input[type=\"password\"]'", $code);
         self::assertStringContainsString("removeAttribute('hidden')", $code);
         self::assertStringContainsString("closest('form')", $code);
+    }
+
+    public function testTheScriptUnticksOnLoadAndRestoresPasswordsOnSubmit(): void
+    {
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#^\s*//.*$#m'], '', RepoFiles::read('public/assets/js/show-password.js'));
+
+        // On load, before the row is shown: the box starts unticked.
+        $load = strpos($code, 'box.checked = false;');
+        $show = strpos($code, "row.removeAttribute('hidden');");
+        self::assertNotFalse($load);
+        self::assertNotFalse($show);
+        self::assertLessThan($show, $load, 'The box is unticked before the row is shown.');
+
+        // P63: on submit, every switched input is a password input again and the box is unticked.
+        self::assertSame(
+            1,
+            preg_match(
+                "/form\\.addEventListener\\('submit', function \\(\\) \\{\\s*switched\\.forEach\\(function \\(input\\) \\{\\s*input\\.type = 'password';\\s*\\}\\);\\s*box\\.checked = false;\\s*\\}\\);/",
+                $code,
+            ),
+            'A submit handler restores every switched input to type password and unticks the box.',
+        );
+        self::assertSame(1, substr_count($code, "addEventListener('submit'"));
+        self::assertSame(1, substr_count($code, "addEventListener('change'"));
     }
 
     // Self-checks: the shared assertions reject what they must.

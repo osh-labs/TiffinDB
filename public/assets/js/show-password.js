@@ -10,6 +10,8 @@
  * 2. Its checkbox (input[data-show-password]) switches, on change, every
  *    password input in the same form, and every input it switched before,
  *    between type password and type text.
+ * 3. On the form's submit event, every input it switched becomes a
+ *    password input again and the box is unticked (P63).
  *
  * Nothing else: no network, no storage, no inline styles, no markup.
  */
@@ -38,6 +40,16 @@
       switched.forEach(function (input) {
         input.type = box.checked ? 'text' : 'password';
       });
+    });
+
+    // P63: before the form is sent, every input switched to text becomes a
+    // password input again and the box is unticked, so a password is never
+    // submitted from (or remembered as) a text input.
+    form.addEventListener('submit', function () {
+      switched.forEach(function (input) {
+        input.type = 'password';
+      });
+      box.checked = false;
     });
 
     row.removeAttribute('hidden');

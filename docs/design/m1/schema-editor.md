@@ -173,7 +173,7 @@ Shown with status 409 when the core throws `ConfirmationRequired` for a field ch
 
 `main#main.page`: breadcrumb as the screen it came from; `h1` `schema.confirm.title` "Clear {values} values?" (`schema.confirm.title_one` "Clear 1 value?" for one); `p` `schema.confirm.body` "With this change, {values} values in {records} records no longer fit and will be cleared. TiffinDB saves a copy of the project first." (`{records}` from `count.records.*`).
 
-`form.form` with the same `action` as the form that was submitted: `csrf`; every submitted field again as `input type="hidden"` (name and value escaped; never a password, and none exist on these forms); `input type="hidden" name="confirm" value="1"`; `div.form-actions`: `button.button.button-danger.button-large` `schema.confirm.submit` "Clear {values} values and save" (`schema.confirm.submit_one` "Clear 1 value and save"); `a` back to the form's page: `schema.confirm.back` "Go back without saving".
+`form.form` with the same `action` as the form that was submitted: `csrf` (the current token); every submitted field again as `input type="hidden"` except `_csrf` and `confirm` (name and value escaped; never a password, and none exist on these forms) (P59); `input type="hidden" name="confirm" value="1"`; `div.form-actions`: `button.button.button-danger.button-large` `schema.confirm.submit` "Clear {values} values and save" (`schema.confirm.submit_one` "Clear 1 value and save"); `a` back to the form's page: `schema.confirm.back` "Go back without saving".
 
 ## 12. Behaviour common to these screens
 

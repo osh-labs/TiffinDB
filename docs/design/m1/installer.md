@@ -52,7 +52,7 @@ Check names and explanations (runtime keys, prefix `setup.check.`):
 | Id | Name key and text | Explanation keys and text |
 |---|---|---|
 | `php` | `setup.check.php` "PHP version" | ok `setup.check.php.ok` "PHP {version}. TiffinDB needs 8.3 or later."; failed `setup.check.php.failed` "PHP {version} is too old. Ask your host to switch this site to PHP 8.3 or later." |
-| `sqlite` | `setup.check.sqlite` "SQLite database support" | ok `setup.check.sqlite.ok` "SQLite {version} is available."; `setup.check.sqlite.missing` "PHP's SQLite support (pdo_sqlite) is not turned on. Ask your host to turn it on."; `setup.check.sqlite.old` "SQLite {version} is too old. TiffinDB needs 3.35 or later." |
+| `sqlite` | `setup.check.sqlite` "SQLite database support" | ok `setup.check.sqlite.ok` "SQLite {version} is available."; `setup.check.sqlite.missing` "PHP's SQLite support (pdo_sqlite) is not turned on. Ask your host to turn it on."; `setup.check.sqlite.old` "SQLite {version} is too old. TiffinDB needs 3.35.5 or later." |
 | `zip` | `setup.check.zip` "Zip archives" | ok `setup.check.zip.ok` "Available. Needed to save and bring in whole projects."; failed `setup.check.zip.failed` "PHP's zip support is not turned on. Ask your host to turn it on." |
 | `xmlreader` | `setup.check.xmlreader` "Reading spreadsheet files" | ok `setup.check.xmlreader.ok` "Available. Needed to bring in XLSX spreadsheets."; failed `setup.check.xmlreader.failed` "PHP's XMLReader support is not turned on. Ask your host to turn it on." |
 | `random` | `setup.check.random` "Secure random numbers" | ok `setup.check.random.ok` "Available."; failed `setup.check.random.failed` "PHP cannot make secure random numbers on this server. TiffinDB cannot run safely without them." |
@@ -102,6 +102,8 @@ After the shared top (steps 1 and 2 done, step 3 current):
 The page sets `script` to `show-password`. Field map: `setup_code` to `setup-code`, `display_name` to `setup-name`, `username` to `setup-username`, `password` to `setup-password`. The web layer adds `setup.admin.mismatch` "The two passwords are different." on `setup-repeat` when `password` and `repeat` differ, and then does not call the core.
 
 Success: 303 to `/projects` with the session cookie set, `tdb_csrf` deleted, and flash `notice.setup.done` "TiffinDB is ready. Select New project to make your first project."
+
+On every `GET /setup` in this state the controller first calls `Installer::ensureSetupCode()`, so a deleted code file is replaced and the location shown always holds a code.
 
 ## 6. States summary
 

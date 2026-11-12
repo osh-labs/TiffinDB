@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1 design: M1-D1 dispatched (design tier, isolated worktree, unpushed) |
+| Phase | M1 design: M1-D1 merged and pushed; spec review M1-R1 in progress (worktree, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | On M1-D1 report: verify its commits, merge, push, dispatch an independent design-tier spec review (workflow step 2), then copy its provisional decisions to section 4 and its work packages to section 3. If resuming after a reclaim: rebuild the PHPUnit install (guide section 9) and redo M1-D1 (worktree work is lost). |
+| Next action | On M1-R1 report: merge reviewer fixes, resolve judgement calls (record here), then dispatch wave 1 (M1-WP0, WP1, WP8). If resuming after a reclaim: rebuild PHPUnit install, redo M1-R1. |
 
 ## 2. Milestones
 
@@ -59,8 +59,22 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M0-WP4 | M0 | mechanical | fonts, licences, `fonts.css`, `docs/dependencies.md` | done, merged, pushed | merged | implementation tier | APPROVE (12 checksums verified; one optional nit in `docs/dependencies.md` rules bullet) |
 | M0-WP5 | M0 | implementation | request pipeline (security-critical) | done, merged, pushed (incl. security follow-ups) | merged | design tier | APPROVE; follow-ups re-verified by the same security reviewer |
 | M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: template rules test bypassable by dynamic calls; shipped output clean; four themes verified in a browser) |
-| M1-D1 | M1 | design | `docs/specs/M1-*.md`, `docs/design/m1/*`, `docs/decisions/0010+`, `docs/formats/tiffin.md` | in progress (worktree, unpushed) | agent worktree | pending | |
 | M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed (incl. follow-ups) | merged | implementation tier | APPROVE |
+| M1-D1 | M1 | design | `docs/specs/M1-*.md`, `docs/design/m1/*`, ADRs 0010 to 0012, `docs/formats/tiffin.md` | done, merged, pushed | merged | M1-R1 (design tier) | pending |
+| M1-R1 | M1 | design | fixes to the D1 files only | in progress (worktree, unpushed) | agent worktree | n/a |  |
+| M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | not started | | | |
+| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | not started | | | |
+| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | not started | | | |
+| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
+| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
+| M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
+| M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
+| M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
+| M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | not started | | | |
+| M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | not started | | | |
+| M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: no) | not started | | | |
+| M1-WP12 | M1 | implementation | per spec (depends on WP9, WP10, WP11; security-critical: no) | not started | | | |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 
@@ -81,6 +95,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P13 | Other brief section 12 gaps (import transaction vs chunking; sanitizer URL rule; high-contrast token values follow `tokens.css`) | Settled in M3 and M5 specs; tokens.css is the visual source of truth | ADR 0009 |
 | P14 | Commit trailers | Commits carry the session-supplied attribution trailers (a co-author line with a no-reply address and a session link). Two reviewers flagged this against the repository rule on email addresses in commit messages; kept because the session requires them. Maintainer to decide; changing past commits would need a history rewrite | this ledger |
 | P15 | Repository walk exclusions | `.claude/` (local agent worktrees) excluded from lint and repository tests in addition to the spec's list | WP1 follow-up |
+| P16 to P47 | M1 design defaults (match criterion for undesigned screens, namespaces, 12-char base32 keys and generated SQL names, field storage, trash columns, snapshots via `VACUUM INTO` keeping 20 automatic, audit log in system DB, join-table relations, SHA-256 attachments, Admin-mediated password reset plus CLI, one-time setup code, Member permissions, sessions 7 d idle / 30 d absolute, throttling, password length, CSRF, URL shapes, data-directory search order, SQLite 3.35+, deactivate-not-delete people, split strings files, and others) | As listed with rationales in the spec | `docs/specs/M1-foundation.md` section 14 |
+| P48 | Installer data-directory exposure test makes one HTTP request from the server to itself | Accepted: plan 3.2 and ADR 0001 require an HTTP test; not a third-party call; skipped when data is outside the web root | `docs/specs/M1-foundation.md` section 16 |
+| P49 | Deferred from M1: snapshot restore, project deletion, audit-log screen, trash screen (M4), lone-Admin recovery without shell (M7) | Deferred | `docs/specs/M1-foundation.md` section 16 |
 
 ## 5. Blockers
 
@@ -105,6 +122,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance. |
 | 2026-11-12T02:30Z | Window 2 start (new orchestrator session); M0 present on the assigned branch, which matches `main`; resume reminder armed for 07:46Z |
 | 2026-11-12T02:5xZ | Offline PHPUnit 12.5.43 rebuilt (6.4 GB before trim, 17 MB after); `composer lint` 69 files 0 failed; `composer test` OK 1075 tests. M1-D1 dispatched |
+| 2026-11-12T03:4xZ | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -119,3 +137,5 @@ Deferred maintainer tasks (raise only at end of build):
 | Add a test forbidding nested `.htaccess` files with rewrite directives in release contents (`vendor/` scanned at release), and require `data/.htaccess` to use only a deny rule | M1 installer spec, M7 packaging |
 | Make `/files` routes project-scoped | M1 spec (ADR 0008 URL shapes) |
 | Static assets are served without CSP by Apache | M7 packaging |
+
+Mapping (M1 spec): WP0 takes the digit-run cap, `@symlink`, dependencies bullet; WP7 the HEAD body; WP8 the template scanner items; WP6 the nested `.htaccess` test and deny-only data rule; `/files` scoping decided as P35; static-asset CSP stays in M7.

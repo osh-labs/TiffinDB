@@ -28,10 +28,10 @@ use TiffinDB\Core\System\SystemDatabase;
  * blocked now. Someone who waits out each block therefore keeps doubling
  * (30, 60, 120, 240, 480, 900, 900, ...), as ADR 0011 intends.
  *
- * A repository (P51): failure() and clear() throw \LogicException outside
- * the caller's write() transaction, so that a wait() check and the
- * failure it leads to are one transaction and parallel guesses cannot all
- * pass the check before any is counted.
+ * A repository (P51): wait(), failure(), takeBack(), and clear() throw
+ * \LogicException outside the caller's write() transaction, so that a
+ * wait() check and the failure it leads to are one transaction and
+ * parallel guesses cannot all pass the check before any is counted.
  */
 final class LoginThrottle
 {
@@ -54,18 +54,52 @@ final class LoginThrottle
         return 'u:' . $s->hmac('throttle-user', $usernameNorm);
     }
 
+    /** The bucket of the client address, after canonicalAddress(). */
     public static function addressBucket(SystemDatabase $s, string $address): string
     {
-        return 'a:' . $s->hmac('throttle-address', $address);
+        return 'a:' . $s->hmac('throttle-address', self::canonicalAddress($address));
     }
 
     /**
-     * Seconds to wait (0 = go ahead): the longest remaining block among the buckets.
+     * The form of a client address that is counted (P70): an IPv4 address
+     * as inet_ntop writes it; an IPv6 address as its /64 prefix
+     * (`2001:db8::/64`), since one household or device usually holds a whole
+     * /64; an IPv4-mapped IPv6 address as its IPv4 address. Anything that
+     * does not parse as an IP address is used as given.
+     */
+    public static function canonicalAddress(string $address): string
+    {
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
+            return $address;
+        }
+        $packed = inet_pton($address);
+        if ($packed === false) {
+            return $address;
+        }
+        if (strlen($packed) === 16 && str_starts_with($packed, str_repeat("\0", 10) . "\xff\xff")) {
+            $packed = substr($packed, 12);
+        }
+        if (strlen($packed) === 4) {
+            $text = inet_ntop($packed);
+
+            return $text === false ? $address : $text;
+        }
+        $text = inet_ntop(substr($packed, 0, 8) . str_repeat("\0", 8));
+
+        return $text === false ? $address : $text . '/64';
+    }
+
+    /**
+     * Seconds to wait (0 = go ahead): the longest remaining block among the
+     * buckets. Throws \LogicException outside the caller's write()
+     * transaction, so that the check and the failure counted on its strength
+     * cannot be separated.
      *
      * @param list<string> $buckets
      */
     public function wait(array $buckets): int
     {
+        $this->system->requireTransaction();
         if ($buckets === []) {
             return 0;
         }
@@ -124,6 +158,23 @@ final class LoginThrottle
                  last_failure_at = excluded.last_failure_at, blocked_until = excluded.blocked_until',
             [$bucket, $failures, $windowStart, $nowText, $blockedUntil],
         );
+    }
+
+    /**
+     * Withdraws one failure counted in advance (a sign-in that then
+     * succeeded, P68). When the count falls below $limit, any block is
+     * lifted; a block that further failures since then justify stays.
+     */
+    public function takeBack(string $bucket, int $limit): void
+    {
+        $this->system->requireTransaction();
+        self::checkBucket($bucket);
+        if ($limit < 1) {
+            throw new \InvalidArgumentException('The limit must be 1 or more.');
+        }
+        $db = $this->system->db();
+        $db->run('UPDATE login_throttle SET failures = failures - 1 WHERE bucket = ? AND failures > 0', [$bucket]);
+        $db->run('UPDATE login_throttle SET blocked_until = NULL WHERE bucket = ? AND failures < ?', [$bucket, $limit]);
     }
 
     public function clear(string $bucket): void

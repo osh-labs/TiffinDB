@@ -43,8 +43,12 @@ final class PasswordHasher
     private int $hashCalls = 0;
     private int $verifyCalls = 0;
 
-    /** @param array<string, mixed>|null $options */
-    public function __construct(?array $options = null)
+    /**
+     * @param array<string, mixed>|null $options
+     * @param \Closure(): void|null $onVerify test seam (T-AUTH-7): called just before every
+     *     verification, verifyDummy() included, so a test can see what is open at that moment
+     */
+    public function __construct(?array $options = null, private readonly ?\Closure $onVerify = null)
     {
         [$this->algorithm, $this->options] = self::resolve($options);
         if ($this->algorithm === self::ALGORITHM_ARGON2ID && $this->options === self::DEFAULT_ARGON2ID) {
@@ -80,6 +84,9 @@ final class PasswordHasher
     public function verify(#[\SensitiveParameter] string $password, string $hash): bool
     {
         $this->verifyCalls++;
+        if ($this->onVerify !== null) {
+            ($this->onVerify)();
+        }
         $ok = password_verify($password, $hash);
 
         return $ok && !str_contains($password, "\0");
@@ -100,6 +107,9 @@ final class PasswordHasher
     public function verifyDummy(#[\SensitiveParameter] string $password): void
     {
         $this->verifyCalls++;
+        if ($this->onVerify !== null) {
+            ($this->onVerify)();
+        }
         password_verify($password, $this->dummy);
     }
 

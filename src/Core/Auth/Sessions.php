@@ -24,7 +24,8 @@ use TiffinDB\Core\System\SystemDatabase;
  *
  * A repository (P51): no write() of its own. Every method that may change
  * rows (start, resolve, end, endAllFor, setFlash, takeFlash) throws
- * \LogicException outside the caller's write() transaction.
+ * \LogicException outside the caller's write() transaction. lookup() is a
+ * plain read, so that resuming a fresh session takes no write lock (P69).
  */
 final class Sessions
 {
@@ -32,6 +33,9 @@ final class Sessions
     public const ABSOLUTE_SECONDS = 2592000;
     public const TOUCH_SECONDS = 300;
     public const TOKEN_PATTERN = '/^[A-Za-z0-9_-]{43}\z/';
+    private const FRESH = 'fresh';
+    private const TOUCH = 'touch';
+    private const GONE = 'gone';
     private const FLASH_KEY = '/^[a-z0-9_]+(?:\.[a-z0-9_]+)*\z/';
 
     public function __construct(
@@ -65,11 +69,36 @@ final class Sessions
     }
 
     /**
+     * A plain read, outside any transaction (P69): the live session when
+     * it needs no write, needsWrite when resolve() must run inside write()
+     * (the session is expired, its person is inactive, or it was last seen
+     * more than TOUCH_SECONDS ago), or absent for a malformed or unknown
+     * token. A fresh, valid session therefore costs no write transaction.
+     */
+    public function lookup(#[\SensitiveParameter] string $token): SessionLookup
+    {
+        if (!self::wellFormed($token)) {
+            return SessionLookup::absent();
+        }
+        $hash = self::hashToken($token);
+        $row = $this->row($hash);
+        if ($row === null) {
+            return SessionLookup::absent();
+        }
+
+        return match (self::state($row, $this->clock->now())) {
+            self::FRESH => SessionLookup::fresh(self::record($hash, $row)),
+            default => SessionLookup::needsWrite(),
+        };
+    }
+
+    /**
      * The live session for a cookie token, or null for a malformed or
      * unknown token, an expired session (deleted), or a session whose
      * person is inactive (deleted). Moves the idle expiry forward when the
      * session was last seen more than TOUCH_SECONDS ago, never beyond the
-     * absolute expiry.
+     * absolute expiry. Everything is read again inside the caller's
+     * transaction, so a lookup() made before it may be stale.
      */
     public function resolve(#[\SensitiveParameter] string $token): ?SessionRecord
     {
@@ -79,35 +108,61 @@ final class Sessions
         }
         $db = $this->system->db();
         $hash = self::hashToken($token);
-        $row = $db->one(
+        $row = $this->row($hash);
+        if ($row === null) {
+            return null;
+        }
+        $now = $this->clock->now();
+        $state = self::state($row, $now);
+        if ($state === self::GONE) {
+            $db->run('DELETE FROM sessions WHERE token_hash = ?', [$hash]);
+
+            return null;
+        }
+        if ($state === self::TOUCH) {
+            $idle = Timestamp::format($now->modify('+' . self::IDLE_SECONDS . ' seconds'));
+            $absolute = (string) $row['absolute_expires_at'];
+            $db->run(
+                'UPDATE sessions SET last_seen_at = ?, idle_expires_at = ? WHERE token_hash = ?',
+                [Timestamp::format($now), strcmp($idle, $absolute) < 0 ? $idle : $absolute, $hash],
+            );
+        }
+
+        return self::record($hash, $row);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function row(string $hash): ?array
+    {
+        return $this->system->db()->one(
             'SELECT s.token_hash, s.user_id, s.csrf_token, s.created_at, s.last_seen_at, s.idle_expires_at,
                     s.absolute_expires_at, u.active
                FROM sessions s JOIN users u ON u.id = s.user_id
               WHERE s.token_hash = ?',
             [$hash],
         );
-        if ($row === null) {
-            return null;
-        }
-        $now = $this->clock->now();
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function state(array $row, \DateTimeImmutable $now): string
+    {
         $nowText = Timestamp::format($now);
         $expired = strcmp($nowText, (string) $row['idle_expires_at']) >= 0
             || strcmp($nowText, (string) $row['absolute_expires_at']) >= 0;
         if ($expired || (int) $row['active'] !== 1) {
-            $db->run('DELETE FROM sessions WHERE token_hash = ?', [$hash]);
-
-            return null;
+            return self::GONE;
         }
         $lastSeen = Timestamp::parse((string) $row['last_seen_at']);
         if ($now->getTimestamp() - $lastSeen->getTimestamp() > self::TOUCH_SECONDS) {
-            $idle = Timestamp::format($now->modify('+' . self::IDLE_SECONDS . ' seconds'));
-            $absolute = (string) $row['absolute_expires_at'];
-            $db->run(
-                'UPDATE sessions SET last_seen_at = ?, idle_expires_at = ? WHERE token_hash = ?',
-                [$nowText, strcmp($idle, $absolute) < 0 ? $idle : $absolute, $hash],
-            );
+            return self::TOUCH;
         }
 
+        return self::FRESH;
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function record(string $hash, array $row): SessionRecord
+    {
         return new SessionRecord(
             $hash,
             (int) $row['user_id'],

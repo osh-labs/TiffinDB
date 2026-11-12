@@ -122,7 +122,7 @@ final class AuthenticatorTest extends TestCase
     {
         $first = $this->auth->signIn('admin', self::PASSWORD, self::ADDRESS);
         $second = $this->auth->signIn('admin', self::PASSWORD, self::ADDRESS);
-        $this->assertNotSame($first->session?->token, $second->session?->token);
+        $this->assertNotSame($first->session?->token(), $second->session?->token());
         $this->assertSame(2, $this->sessionCount());
     }
 
@@ -241,7 +241,7 @@ final class AuthenticatorTest extends TestCase
     {
         $issued = $this->auth->signIn('member', self::PASSWORD, self::ADDRESS)->session;
         $this->assertNotNull($issued);
-        $signedIn = $this->auth->resume($issued->token);
+        $signedIn = $this->auth->resume($issued->token());
         $this->assertNotNull($signedIn);
         $this->assertEquals(new Actor($this->member->id, $this->member->key, Role::Member, 'Example Member'), $signedIn->actor);
         $this->assertSame($issued->record->csrfToken, $signedIn->session->csrfToken);
@@ -252,7 +252,7 @@ final class AuthenticatorTest extends TestCase
         $this->assertNull($this->auth->resume(str_repeat('A', 43)));
 
         $this->system->db()->write(fn () => $this->users->setActive($this->member->id, false));
-        $this->assertNull($this->auth->resume($issued->token));
+        $this->assertNull($this->auth->resume($issued->token()));
         $this->assertSame(0, $this->sessionCount());
     }
 
@@ -265,23 +265,23 @@ final class AuthenticatorTest extends TestCase
             $this->users->update($this->member->id, 'member', 'Example Member', Role::Admin);
             $this->sessions->endAllFor($this->member->id);
         });
-        $this->assertNull($this->auth->resume($issued->token));
+        $this->assertNull($this->auth->resume($issued->token()));
     }
 
     public function testSignOut(): void
     {
         $issued = $this->auth->signIn('admin', self::PASSWORD, self::ADDRESS)->session;
         $this->assertNotNull($issued);
-        $this->auth->signOut($issued->token);
-        $this->assertNull($this->auth->resume($issued->token));
-        $this->auth->signOut($issued->token);
+        $this->auth->signOut($issued->token());
+        $this->assertNull($this->auth->resume($issued->token()));
+        $this->auth->signOut($issued->token());
         $this->auth->signOut('garbage');
         $actions = array_column($this->auditRows(), 'action');
         $this->assertSame([AuditAction::SIGN_IN, AuditAction::SIGN_OUT], $actions, 'Only a live session is recorded as signed out.');
         $last = $this->auditRows()[1];
         $this->assertSame($this->admin->id, $last['actor_user_id']);
         $this->assertSame($this->admin->key, $last['target_key']);
-        $this->assertNoSecretsIn('admin', self::PASSWORD, $issued->token);
+        $this->assertNoSecretsIn('admin', self::PASSWORD, $issued->token());
     }
 
     public function testInactiveAndWrongPasswordForTheSamePersonLookAlike(): void
@@ -292,6 +292,166 @@ final class AuthenticatorTest extends TestCase
         $this->assertEquals($inactive, $wrong);
         $this->assertEquals($inactive, $unknown);
         $this->assertSame($this->inactive->id, $this->auditRows()[0]['actor_user_id']);
+    }
+
+    /** An Authenticator over the same database whose hasher runs $onVerify before each verification. */
+    private function authWith(\Closure $onVerify): Authenticator
+    {
+        return new Authenticator(
+            $this->system,
+            $this->users,
+            $this->sessions,
+            new LoginThrottle($this->system, $this->clock),
+            new PasswordHasher(['bcrypt' => 4], $onVerify),
+            new AuditLog($this->system, $this->clock),
+        );
+    }
+
+    /** @return array<string, int> outcome name => count, from the audit log */
+    private function failureReasons(): array
+    {
+        $counts = [];
+        foreach ($this->auditRows() as $row) {
+            if ($row['action'] === AuditAction::SIGN_IN_FAILED) {
+                $reason = (string) json_decode((string) $row['detail'], true)['reason'];
+                $counts[$reason] = ($counts[$reason] ?? 0) + 1;
+            }
+        }
+        ksort($counts);
+
+        return $counts;
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function everyVerifyingPath(): iterable
+    {
+        yield 'right password' => ['admin', self::PASSWORD];
+        yield 'wrong password' => ['admin', 'wrong horse 1'];
+        yield 'unknown user' => ['nobody', self::PASSWORD];
+        yield 'inactive user' => ['member2', self::PASSWORD];
+    }
+
+    #[DataProvider('everyVerifyingPath')]
+    public function testNoTransactionOrWriteLockIsHeldDuringTheVerify(string $username, string $password): void
+    {
+        $path = $this->system->db()->path();
+        $seen = [];
+        $auth = $this->authWith(function () use (&$seen, $path): void {
+            $seen[] = $this->system->db()->inTransaction();
+            // An unrelated request on another connection, which does not wait at all for the lock.
+            $other = \TiffinDB\Core\Storage\Sqlite::open($path, 0);
+            try {
+                $other->write(static fn ($db) => $db->run("UPDATE meta SET value = value WHERE key = 'created_at'"));
+            } finally {
+                $other->close();
+            }
+        });
+        $auth->signIn($username, $password, self::ADDRESS);
+        $this->assertSame([false], $seen, 'Exactly one verification, with no transaction open.');
+    }
+
+    public function testInterleavedGuessesAreAllCountedAndNoneSlipsThroughWhileOneIsBeingVerified(): void
+    {
+        $results = [];
+        $nested = false;
+        $auth = null;
+        $auth = $this->authWith(function () use (&$results, &$nested, &$auth): void {
+            if ($nested) {
+                return;
+            }
+            $nested = true;
+            // While the first guess is being verified, seven more arrive.
+            for ($i = 0; $i < 7; $i++) {
+                $results[] = $auth->signIn('admin', 'wrong horse ' . $i, '198.51.100.' . $i)->outcome;
+            }
+        });
+        $results[] = $auth->signIn('admin', 'wrong horse 9', self::ADDRESS)->outcome;
+
+        $this->assertSame(
+            [SignInOutcome::Invalid, SignInOutcome::Invalid, SignInOutcome::Invalid, SignInOutcome::Invalid,
+             SignInOutcome::Throttled, SignInOutcome::Throttled, SignInOutcome::Throttled, SignInOutcome::Invalid],
+            $results,
+            'The guess being verified was already counted, so only four more are checked.',
+        );
+        $userBucket = LoginThrottle::userBucket($this->system, 'admin');
+        $this->assertSame(5, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$userBucket]));
+        $this->assertSame(['bad-password' => 5, 'throttled' => 3], $this->failureReasons());
+    }
+
+    public function testASuccessDuringParallelGuessesTakesBackOnlyItsOwnAdvanceCount(): void
+    {
+        $nested = false;
+        $auth = null;
+        $auth = $this->authWith(function () use (&$nested, &$auth): void {
+            if ($nested) {
+                return;
+            }
+            $nested = true;
+            for ($i = 0; $i < 3; $i++) {
+                $auth->signIn('guess' . $i, 'wrong horse 1', self::ADDRESS);
+            }
+        });
+        $this->assertSame(SignInOutcome::Success, $auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+        $addressBucket = LoginThrottle::addressBucket($this->system, self::ADDRESS);
+        $this->assertSame(3, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$addressBucket]));
+        $this->assertNull(
+            $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [LoginThrottle::userBucket($this->system, 'admin')]),
+            'The user bucket is cleared on success.',
+        );
+    }
+
+    public function testAPasswordChangedWhileItIsBeingCheckedDoesNotSignIn(): void
+    {
+        $auth = $this->authWith(function (): void {
+            $this->system->db()->write(fn () => $this->users->setPassword($this->admin->id, $this->hasher->hash('another horse 2'), false));
+        });
+        $result = $auth->signIn('admin', self::PASSWORD, self::ADDRESS);
+        $this->assertEquals(new SignInResult(SignInOutcome::Invalid), $result);
+        $this->assertSame(0, $this->sessionCount());
+        $this->assertSame(['bad-password' => 1], $this->failureReasons());
+    }
+
+    public function testAPersonDeactivatedWhileTheirPasswordIsBeingCheckedDoesNotSignIn(): void
+    {
+        $auth = $this->authWith(function (): void {
+            $this->system->db()->write(fn () => $this->users->setActive($this->admin->id, false));
+        });
+        $result = $auth->signIn('admin', self::PASSWORD, self::ADDRESS);
+        $this->assertEquals(new SignInResult(SignInOutcome::Invalid), $result);
+        $this->assertSame(0, $this->sessionCount());
+        $this->assertSame(['inactive' => 1], $this->failureReasons());
+        $userBucket = LoginThrottle::userBucket($this->system, 'admin');
+        $this->assertSame(1, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$userBucket]), 'Still counted.');
+    }
+
+    public function testAFreshSessionResumesWithoutAWriteTransaction(): void
+    {
+        $issued = $this->auth->signIn('member', self::PASSWORD, self::ADDRESS)->session;
+        $this->assertNotNull($issued);
+        $this->clock->advance(Sessions::TOUCH_SECONDS);
+        $holder = \TiffinDB\Core\Storage\Sqlite::open($this->system->db()->path(), 0);
+        try {
+            // Another connection holds the write lock: a resume that needed write() would be refused as busy.
+            $signedIn = $holder->write(fn () => $this->auth->resume($issued->token()));
+        } finally {
+            $holder->close();
+        }
+        $this->assertNotNull($signedIn);
+        $this->assertSame($this->member->id, $signedIn->actor->userId);
+        $this->assertSame('2026-06-01T12:00:00Z', $this->system->db()->value('SELECT last_seen_at FROM sessions'));
+
+        $this->clock->advance(1);
+        $this->assertNotNull($this->auth->resume($issued->token()));
+        $this->assertSame('2026-06-01T12:05:01Z', $this->system->db()->value('SELECT last_seen_at FROM sessions'), 'A stale session is touched.');
+    }
+
+    public function testResumeOfAnExpiredSessionDeletesIt(): void
+    {
+        $issued = $this->auth->signIn('member', self::PASSWORD, self::ADDRESS)->session;
+        $this->assertNotNull($issued);
+        $this->clock->advance(Sessions::IDLE_SECONDS);
+        $this->assertNull($this->auth->resume($issued->token()));
+        $this->assertSame(0, $this->sessionCount());
     }
 
     private function assertNoSecretsIn(string ...$secrets): void

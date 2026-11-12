@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\IssuedSession;
 use TiffinDB\Core\Auth\Role;
+use TiffinDB\Core\Auth\SessionLookup;
 use TiffinDB\Core\Auth\SessionRecord;
 use TiffinDB\Core\Auth\Sessions;
 use TiffinDB\Core\Auth\Users;
@@ -27,6 +28,7 @@ use TiffinDB\Tests\Support\TempDir;
 #[CoversClass(Sessions::class)]
 #[CoversClass(SessionRecord::class)]
 #[CoversClass(IssuedSession::class)]
+#[CoversClass(SessionLookup::class)]
 final class SessionsTest extends TestCase
 {
     private TempDir $temp;
@@ -76,15 +78,15 @@ final class SessionsTest extends TestCase
     public function testStartIssuesA43CharacterTokenAndStoresOnlyItsHash(): void
     {
         $issued = $this->start($this->member);
-        $this->assertSame(43, strlen($issued->token));
-        $this->assertMatchesRegularExpression(Sessions::TOKEN_PATTERN, $issued->token);
-        $this->assertSame(hash('sha256', $issued->token), $issued->record->tokenHash);
+        $this->assertSame(43, strlen($issued->token()));
+        $this->assertMatchesRegularExpression(Sessions::TOKEN_PATTERN, $issued->token());
+        $this->assertSame(hash('sha256', $issued->token()), $issued->record->tokenHash);
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}\z/', $issued->record->csrfToken);
         $this->assertSame($this->member, $issued->record->userId);
         $this->assertSame('2026-06-01T12:00:00Z', $issued->record->createdAt);
         $this->assertSame('2026-07-01T12:00:00Z', $issued->record->absoluteExpiresAt);
 
-        $row = $this->row($issued->token);
+        $row = $this->row($issued->token());
         $this->assertNotNull($row);
         $this->assertSame('2026-06-08T12:00:00Z', $row['idle_expires_at']);
         $this->assertSame('2026-07-01T12:00:00Z', $row['absolute_expires_at']);
@@ -94,32 +96,84 @@ final class SessionsTest extends TestCase
         foreach ($tables as $table) {
             foreach ($this->system->db()->all('SELECT * FROM "' . $table . '"') as $stored) {
                 foreach ($stored as $value) {
-                    $this->assertStringNotContainsString($issued->token, (string) $value, 'Token stored in ' . $table);
+                    $this->assertStringNotContainsString($issued->token(), (string) $value, 'Token stored in ' . $table);
                 }
             }
         }
-        $this->assertStringNotContainsString($issued->token, print_r($issued, true));
-        $this->assertStringNotContainsString($issued->token, var_export($issued->record, true));
+        $this->assertStringNotContainsString($issued->token(), print_r($issued, true));
+        $this->assertStringNotContainsString($issued->token(), var_export($issued->record, true));
+    }
+
+    public function testTheIssuedTokenIsNotExposedByExportCastOrSerialize(): void
+    {
+        $issued = $this->start($this->member);
+        $token = $issued->token();
+        $this->assertStringNotContainsString($token, var_export($issued, true), 'var_export');
+        $this->assertStringNotContainsString($token, print_r($issued, true), 'print_r');
+        ob_start();
+        var_dump($issued);
+        $this->assertStringNotContainsString($token, (string) ob_get_clean(), 'var_dump');
+        $cast = (array) $issued;
+        array_walk_recursive($cast, function (mixed $value) use ($token): void {
+            $this->assertFalse(is_string($value) && str_contains($value, $token), '(array) cast');
+        });
+        $this->assertStringNotContainsString($token, (string) json_encode($cast), '(array) cast as JSON');
+        $this->assertStringNotContainsString($token, (string) json_encode($issued), 'json_encode');
+        try {
+            serialize($issued);
+            $this->fail('serialize() did not throw.');
+        } catch (LogicException) {
+            $this->addToAssertionCount(1);
+        }
+        $this->assertSame($token, $issued->token());
+    }
+
+    public function testLookupIsAPlainReadThatSaysWhenAWriteIsNeeded(): void
+    {
+        $issued = $this->start($this->member);
+        $fresh = $this->sessions->lookup($issued->token());
+        $this->assertFalse($fresh->needsWrite);
+        $this->assertSame($issued->record->tokenHash, $fresh->record?->tokenHash);
+        $this->assertFalse($this->system->db()->inTransaction());
+
+        $this->clock->advance(Sessions::TOUCH_SECONDS + 1);
+        $stale = $this->sessions->lookup($issued->token());
+        $this->assertTrue($stale->needsWrite, 'Needs a touch.');
+        $this->assertNull($stale->record);
+        $this->assertSame('2026-06-01T12:00:00Z', $this->row($issued->token())['last_seen_at'], 'lookup() wrote nothing.');
+
+        $this->assertNotNull($this->resolve($issued->token()));
+        $this->assertFalse($this->sessions->lookup($issued->token())->needsWrite);
+
+        $this->system->db()->write(fn () => $this->users->setActive($this->member, false));
+        $this->assertTrue($this->sessions->lookup($issued->token())->needsWrite, 'Needs a delete: the person is inactive.');
+        $this->assertNotNull($this->row($issued->token()));
+
+        foreach (['', 'not a token', str_repeat('A', 43)] as $token) {
+            $absent = $this->sessions->lookup($token);
+            $this->assertFalse($absent->needsWrite);
+            $this->assertNull($absent->record);
+        }
     }
 
     public function testTokensDiffer(): void
     {
         $a = $this->start($this->member);
         $b = $this->start($this->member);
-        $this->assertNotSame($a->token, $b->token);
+        $this->assertNotSame($a->token(), $b->token());
         $this->assertNotSame($a->record->csrfToken, $b->record->csrfToken);
     }
 
     public function testResolve(): void
     {
         $issued = $this->start($this->member);
-        $resolved = $this->resolve($issued->token);
+        $resolved = $this->resolve($issued->token());
         $this->assertNotNull($resolved);
         $this->assertSame($issued->record->tokenHash, $resolved->tokenHash);
         $this->assertSame($issued->record->csrfToken, $resolved->csrfToken);
-        $this->assertNull($this->resolve(strrev($issued->token)));
+        $this->assertNull($this->resolve(strrev($issued->token())));
         $this->assertNull($this->resolve(''));
-        $this->assertNull($this->resolve($issued->token . 'x'));
+        $this->assertNull($this->resolve($issued->token() . 'x'));
         $this->assertNull($this->resolve(str_repeat('!', 43)));
     }
 
@@ -127,25 +181,25 @@ final class SessionsTest extends TestCase
     {
         $issued = $this->start($this->member);
         $this->clock->advance(299);
-        $this->assertNotNull($this->resolve($issued->token));
-        $this->assertSame('2026-06-01T12:00:00Z', $this->row($issued->token)['last_seen_at']);
-        $this->assertSame('2026-06-08T12:00:00Z', $this->row($issued->token)['idle_expires_at']);
+        $this->assertNotNull($this->resolve($issued->token()));
+        $this->assertSame('2026-06-01T12:00:00Z', $this->row($issued->token())['last_seen_at']);
+        $this->assertSame('2026-06-08T12:00:00Z', $this->row($issued->token())['idle_expires_at']);
 
         $this->clock->advance(2);
-        $this->assertNotNull($this->resolve($issued->token));
-        $this->assertSame('2026-06-01T12:05:01Z', $this->row($issued->token)['last_seen_at']);
-        $this->assertSame('2026-06-08T12:05:01Z', $this->row($issued->token)['idle_expires_at']);
+        $this->assertNotNull($this->resolve($issued->token()));
+        $this->assertSame('2026-06-01T12:05:01Z', $this->row($issued->token())['last_seen_at']);
+        $this->assertSame('2026-06-08T12:05:01Z', $this->row($issued->token())['idle_expires_at']);
     }
 
     public function testIdleExpiryAfterSevenDays(): void
     {
         $issued = $this->start($this->member);
         $this->clock->advance(Sessions::IDLE_SECONDS - 1);
-        $this->assertNotNull($this->resolve($issued->token));
+        $this->assertNotNull($this->resolve($issued->token()));
         $kept = $this->start($this->member);
         $this->clock->advance(Sessions::IDLE_SECONDS);
-        $this->assertNull($this->resolve($kept->token));
-        $this->assertNull($this->row($kept->token), 'The expired row is deleted.');
+        $this->assertNull($this->resolve($kept->token()));
+        $this->assertNull($this->row($kept->token()), 'The expired row is deleted.');
     }
 
     public function testAbsoluteExpiryAfterThirtyDaysEvenWhenUsedDaily(): void
@@ -153,24 +207,24 @@ final class SessionsTest extends TestCase
         $issued = $this->start($this->member);
         for ($day = 1; $day <= 29; $day++) {
             $this->clock->advance(86400);
-            $this->assertNotNull($this->resolve($issued->token), 'Day ' . $day);
-            $idle = (string) $this->row($issued->token)['idle_expires_at'];
+            $this->assertNotNull($this->resolve($issued->token()), 'Day ' . $day);
+            $idle = (string) $this->row($issued->token())['idle_expires_at'];
             $this->assertLessThanOrEqual(0, strcmp($idle, '2026-07-01T12:00:00Z'), 'The idle expiry never passes the absolute one.');
         }
-        $this->assertSame('2026-07-01T12:00:00Z', $this->row($issued->token)['idle_expires_at']);
+        $this->assertSame('2026-07-01T12:00:00Z', $this->row($issued->token())['idle_expires_at']);
         $this->clock->advance(86400 - 1);
-        $this->assertNotNull($this->resolve($issued->token));
+        $this->assertNotNull($this->resolve($issued->token()));
         $this->clock->advance(1);
-        $this->assertNull($this->resolve($issued->token));
-        $this->assertNull($this->row($issued->token));
+        $this->assertNull($this->resolve($issued->token()));
+        $this->assertNull($this->row($issued->token()));
     }
 
     public function testAnInactivePersonsSessionResolvesToNullAndIsDeleted(): void
     {
         $issued = $this->start($this->member);
         $this->system->db()->write(fn () => $this->users->setActive($this->member, false));
-        $this->assertNull($this->resolve($issued->token));
-        $this->assertNull($this->row($issued->token));
+        $this->assertNull($this->resolve($issued->token()));
+        $this->assertNull($this->row($issued->token()));
     }
 
     public function testStartDeletesExpiredSessionsOfAnyone(): void
@@ -178,7 +232,7 @@ final class SessionsTest extends TestCase
         $old = $this->start($this->other);
         $this->clock->advance(Sessions::IDLE_SECONDS + 1);
         $this->start($this->member);
-        $this->assertNull($this->row($old->token));
+        $this->assertNull($this->row($old->token()));
     }
 
     public function testEndAndEndAllFor(): void
@@ -186,24 +240,24 @@ final class SessionsTest extends TestCase
         $a = $this->start($this->member);
         $b = $this->start($this->member);
         $c = $this->start($this->other);
-        $this->system->db()->write(fn () => $this->sessions->end($a->token));
-        $this->assertNull($this->resolve($a->token));
-        $this->assertNotNull($this->resolve($b->token));
+        $this->system->db()->write(fn () => $this->sessions->end($a->token()));
+        $this->assertNull($this->resolve($a->token()));
+        $this->assertNotNull($this->resolve($b->token()));
         $this->system->db()->write(fn () => $this->sessions->endAllFor($this->member));
-        $this->assertNull($this->resolve($b->token));
-        $this->assertNotNull($this->resolve($c->token));
+        $this->assertNull($this->resolve($b->token()));
+        $this->assertNotNull($this->resolve($c->token()));
         $this->system->db()->write(fn () => $this->sessions->end('not a token'));
     }
 
     public function testFlashIsReadOnce(): void
     {
         $issued = $this->start($this->member);
-        $take = fn (): ?array => $this->system->db()->write(fn (): ?array => $this->sessions->takeFlash($issued->token));
+        $take = fn (): ?array => $this->system->db()->write(fn (): ?array => $this->sessions->takeFlash($issued->token()));
         $this->assertNull($take());
-        $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token, 'notice.saved', ['name' => 'Recipes', 'count' => 2]));
+        $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token(), 'notice.saved', ['name' => 'Recipes', 'count' => 2]));
         $this->assertSame(['key' => 'notice.saved', 'params' => ['name' => 'Recipes', 'count' => 2]], $take());
         $this->assertNull($take());
-        $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token, 'notice.saved'));
+        $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token(), 'notice.saved'));
         $this->assertSame(['key' => 'notice.saved', 'params' => []], $take());
     }
 
@@ -212,7 +266,7 @@ final class SessionsTest extends TestCase
         $issued = $this->start($this->member);
         foreach ([['Not A Key', []], ['notice.saved', ['x' => ['nested']]], ['notice.saved', [1 => 'positional']]] as [$key, $params]) {
             try {
-                $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token, $key, $params));
+                $this->system->db()->write(fn () => $this->sessions->setFlash($issued->token(), $key, $params));
                 $this->fail('Accepted ' . $key);
             } catch (\InvalidArgumentException) {
                 $this->addToAssertionCount(1);
@@ -225,11 +279,11 @@ final class SessionsTest extends TestCase
         $issued = $this->start($this->member);
         $calls = [
             fn () => $this->sessions->start($this->member),
-            fn () => $this->sessions->resolve($issued->token),
-            fn () => $this->sessions->end($issued->token),
+            fn () => $this->sessions->resolve($issued->token()),
+            fn () => $this->sessions->end($issued->token()),
             fn () => $this->sessions->endAllFor($this->member),
-            fn () => $this->sessions->setFlash($issued->token, 'notice.saved'),
-            fn () => $this->sessions->takeFlash($issued->token),
+            fn () => $this->sessions->setFlash($issued->token(), 'notice.saved'),
+            fn () => $this->sessions->takeFlash($issued->token()),
         ];
         foreach ($calls as $i => $call) {
             try {

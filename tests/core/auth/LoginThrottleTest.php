@@ -10,6 +10,7 @@ namespace TiffinDB\Tests\Core\Auth;
 
 use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\LoginThrottle;
 use TiffinDB\Core\Storage\DataDirectory;
@@ -51,6 +52,12 @@ final class LoginThrottleTest extends TestCase
         $this->temp->remove();
     }
 
+    /** @param list<string> $buckets */
+    private function waitOf(array $buckets): int
+    {
+        return $this->system->db()->write(fn (): int => $this->throttle->wait($buckets));
+    }
+
     private function failOnce(string $bucket, int $limit = LoginThrottle::USER_LIMIT): void
     {
         $this->system->db()->write(fn () => $this->throttle->failure($bucket, $limit));
@@ -60,17 +67,17 @@ final class LoginThrottleTest extends TestCase
     {
         for ($i = 1; $i <= 4; $i++) {
             $this->failOnce($this->user);
-            $this->assertSame(0, $this->throttle->wait([$this->user]), 'After failure ' . $i);
+            $this->assertSame(0, $this->waitOf([$this->user]), 'After failure ' . $i);
         }
         $this->failOnce($this->user);
-        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        $this->assertSame(30, $this->waitOf([$this->user]));
         $this->clock->advance(10);
-        $this->assertSame(20, $this->throttle->wait([$this->user]));
+        $this->assertSame(20, $this->waitOf([$this->user]));
 
         // Each further failure (here counted while still blocked, which the algorithm allows) doubles the wait, up to 900 s.
         foreach ([60, 120, 240, 480, 900, 900, 900] as $wait) {
             $this->failOnce($this->user);
-            $this->assertSame($wait, $this->throttle->wait([$this->user]));
+            $this->assertSame($wait, $this->waitOf([$this->user]));
         }
     }
 
@@ -80,12 +87,12 @@ final class LoginThrottleTest extends TestCase
         for ($i = 1; $i <= 5; $i++) {
             $this->failOnce($this->user);
         }
-        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        $this->assertSame(30, $this->waitOf([$this->user]));
         foreach ([60, 120, 240, 480, 900, 900] as $wait) {
-            $this->clock->advance($this->throttle->wait([$this->user]));
-            $this->assertSame(0, $this->throttle->wait([$this->user]));
+            $this->clock->advance($this->waitOf([$this->user]));
+            $this->assertSame(0, $this->waitOf([$this->user]));
             $this->failOnce($this->user);
-            $this->assertSame($wait, $this->throttle->wait([$this->user]));
+            $this->assertSame($wait, $this->waitOf([$this->user]));
         }
         $this->assertSame(11, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
     }
@@ -97,11 +104,11 @@ final class LoginThrottleTest extends TestCase
         }
         $this->clock->advance(LoginThrottle::WINDOW_SECONDS);
         $this->failOnce($this->user);
-        $this->assertSame(30, $this->throttle->wait([$this->user]), 'Exactly 900 s after the last failure still counts.');
+        $this->assertSame(30, $this->waitOf([$this->user]), 'Exactly 900 s after the last failure still counts.');
 
         $this->clock->advance(LoginThrottle::WINDOW_SECONDS + 1);
         $this->failOnce($this->user);
-        $this->assertSame(0, $this->throttle->wait([$this->user]));
+        $this->assertSame(0, $this->waitOf([$this->user]));
         $row = $this->system->db()->one('SELECT failures, window_started_at, last_failure_at FROM login_throttle WHERE bucket = ?', [$this->user]);
         $this->assertSame(['failures' => 1, 'window_started_at' => '2026-06-01T12:30:01Z', 'last_failure_at' => '2026-06-01T12:30:01Z'], $row);
     }
@@ -114,7 +121,7 @@ final class LoginThrottleTest extends TestCase
             $this->clock->advance(800);
         }
         $this->failOnce($this->user);
-        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        $this->assertSame(30, $this->waitOf([$this->user]));
         $this->assertSame('2026-06-01T12:00:00Z', $this->system->db()->value('SELECT window_started_at FROM login_throttle WHERE bucket = ?', [$this->user]));
     }
 
@@ -125,7 +132,7 @@ final class LoginThrottleTest extends TestCase
             $this->clock->advance(200);
         }
         $this->failOnce($this->user);
-        $this->assertSame(30, $this->throttle->wait([$this->user]), 'The fifth failure 800 seconds after the first blocks.');
+        $this->assertSame(30, $this->waitOf([$this->user]), 'The fifth failure 800 seconds after the first blocks.');
     }
 
     public function testClear(): void
@@ -133,9 +140,9 @@ final class LoginThrottleTest extends TestCase
         for ($i = 1; $i <= 5; $i++) {
             $this->failOnce($this->user);
         }
-        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        $this->assertSame(30, $this->waitOf([$this->user]));
         $this->system->db()->write(fn () => $this->throttle->clear($this->user));
-        $this->assertSame(0, $this->throttle->wait([$this->user]));
+        $this->assertSame(0, $this->waitOf([$this->user]));
         $this->assertSame(0, (int) $this->system->db()->value('SELECT COUNT(*) FROM login_throttle'));
     }
 
@@ -144,24 +151,24 @@ final class LoginThrottleTest extends TestCase
         for ($i = 1; $i <= 19; $i++) {
             $this->failOnce($this->address, LoginThrottle::ADDRESS_LIMIT);
         }
-        $this->assertSame(0, $this->throttle->wait([$this->address]));
+        $this->assertSame(0, $this->waitOf([$this->address]));
         $this->failOnce($this->address, LoginThrottle::ADDRESS_LIMIT);
-        $this->assertSame(30, $this->throttle->wait([$this->address]));
+        $this->assertSame(30, $this->waitOf([$this->address]));
     }
 
     public function testWaitIsTheLongestBlockAmongTheBuckets(): void
     {
         for ($i = 1; $i <= 6; $i++) {
-            $this->clock->advance($this->throttle->wait([$this->user]));
+            $this->clock->advance($this->waitOf([$this->user]));
             $this->failOnce($this->user);
         }
         for ($i = 1; $i <= 5; $i++) {
             $this->failOnce($this->address);
         }
-        $this->assertSame(60, $this->throttle->wait([$this->user, $this->address]));
-        $this->assertSame(30, $this->throttle->wait([$this->address]));
-        $this->assertSame(0, $this->throttle->wait([LoginThrottle::addressBucket($this->system, '198.51.100.7')]));
-        $this->assertSame(0, $this->throttle->wait([]));
+        $this->assertSame(60, $this->waitOf([$this->user, $this->address]));
+        $this->assertSame(30, $this->waitOf([$this->address]));
+        $this->assertSame(0, $this->waitOf([LoginThrottle::addressBucket($this->system, '198.51.100.7')]));
+        $this->assertSame(0, $this->waitOf([]));
     }
 
     public function testSetupBucket(): void
@@ -169,7 +176,7 @@ final class LoginThrottleTest extends TestCase
         for ($i = 1; $i <= LoginThrottle::SETUP_LIMIT; $i++) {
             $this->failOnce(LoginThrottle::SETUP_BUCKET, LoginThrottle::SETUP_LIMIT);
         }
-        $this->assertSame(30, $this->throttle->wait([LoginThrottle::SETUP_BUCKET]));
+        $this->assertSame(30, $this->waitOf([LoginThrottle::SETUP_BUCKET]));
     }
 
     public function testStaleRowsAreDeleted(): void
@@ -198,6 +205,68 @@ final class LoginThrottleTest extends TestCase
         );
     }
 
+    public function testTakeBackWithdrawsOneFailureAndLiftsABlockBelowTheLimit(): void
+    {
+        for ($i = 1; $i <= 5; $i++) {
+            $this->failOnce($this->user);
+        }
+        $this->assertSame(30, $this->waitOf([$this->user]));
+        $this->system->db()->write(fn () => $this->throttle->takeBack($this->user, LoginThrottle::USER_LIMIT));
+        $this->assertSame(0, $this->waitOf([$this->user]));
+        $this->assertSame(4, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
+
+        for ($i = 1; $i <= 2; $i++) {
+            $this->failOnce($this->user);
+        }
+        $this->system->db()->write(fn () => $this->throttle->takeBack($this->user, LoginThrottle::USER_LIMIT));
+        $this->assertSame(60, $this->waitOf([$this->user]), 'Still at the limit: the block stays.');
+
+        $this->system->db()->write(fn () => $this->throttle->takeBack($this->address, LoginThrottle::ADDRESS_LIMIT));
+        $this->assertSame(0, $this->waitOf([$this->address]), 'No row: nothing to take back.');
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function sameAddressBucket(): iterable
+    {
+        yield 'IPv6 written two ways' => ['2001:db8::1', '2001:DB8:0::1'];
+        yield 'IPv6 in one /64' => ['2001:db8::1', '2001:db8::ffff:abcd:1234:5678'];
+        yield 'IPv4-mapped IPv6 and IPv4' => ['::ffff:192.0.2.10', '192.0.2.10'];
+    }
+
+    #[DataProvider('sameAddressBucket')]
+    public function testCanonicalAddressesShareABucket(string $a, string $b): void
+    {
+        $this->assertSame(LoginThrottle::addressBucket($this->system, $a), LoginThrottle::addressBucket($this->system, $b));
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function differentAddressBucket(): iterable
+    {
+        yield 'IPv6 in another /64' => ['2001:db8::1', '2001:db8:0:1::1'];
+        yield 'IPv4 keeps the full address' => ['192.0.2.10', '192.0.2.11'];
+        yield 'unparsed text is used as given' => ['192.0.2.10', ' 192.0.2.10'];
+    }
+
+    #[DataProvider('differentAddressBucket')]
+    public function testOtherAddressesGetTheirOwnBucket(string $a, string $b): void
+    {
+        $this->assertNotSame(LoginThrottle::addressBucket($this->system, $a), LoginThrottle::addressBucket($this->system, $b));
+    }
+
+    public function testCanonicalAddress(): void
+    {
+        $this->assertSame('2001:db8::/64', LoginThrottle::canonicalAddress('2001:DB8:0::1'));
+        $this->assertSame('2001:db8:0:1::/64', LoginThrottle::canonicalAddress('2001:db8:0:1:ffff::1'));
+        $this->assertSame('192.0.2.10', LoginThrottle::canonicalAddress('192.0.2.10'));
+        $this->assertSame('192.0.2.10', LoginThrottle::canonicalAddress('::ffff:192.0.2.10'));
+        $this->assertSame('not an address', LoginThrottle::canonicalAddress('not an address'));
+        $this->assertSame('', LoginThrottle::canonicalAddress(''));
+        $this->assertSame(
+            'a:' . $this->system->hmac('throttle-address', '2001:db8::/64'),
+            LoginThrottle::addressBucket($this->system, '2001:db8::7'),
+        );
+    }
+
     public function testWaitForCapsWithoutOverflow(): void
     {
         $this->assertSame(0, LoginThrottle::waitFor(-1));
@@ -221,7 +290,20 @@ final class LoginThrottleTest extends TestCase
         } catch (LogicException) {
             $this->addToAssertionCount(1);
         }
+        try {
+            $this->throttle->takeBack($this->user, 5);
+            $this->fail('takeBack() ran outside a transaction.');
+        } catch (LogicException) {
+            $this->addToAssertionCount(1);
+        }
+        try {
+            // The check must share the transaction of the failure it leads to (F2).
+            $this->throttle->wait([$this->user]);
+            $this->fail('wait() ran outside a transaction.');
+        } catch (LogicException) {
+            $this->addToAssertionCount(1);
+        }
         $this->expectException(\InvalidArgumentException::class);
-        $this->throttle->wait(['u:examplemember']);
+        $this->waitOf(['u:examplemember']);
     }
 }

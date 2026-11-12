@@ -8,7 +8,6 @@ declare(strict_types=1);
 
 namespace TiffinDB\Core\Auth;
 
-use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditLog;
 use TiffinDB\Core\System\SystemDatabase;
@@ -16,23 +15,39 @@ use TiffinDB\Core\System\SystemDatabase;
 /**
  * Sign-in, resuming a session, and sign-out (M1 spec section 6.7).
  *
- * signIn() opens one write() around the throttle check, the password
- * check, and the throttle count or session it leads to (P51), so parallel
- * guesses are counted one after another. Audit entries are written after
- * that transaction commits. They carry the failure reason and, when the
- * username matched a person, that person's id and key; never the
- * attempted username, the password, the address, or a token.
+ * signIn() runs in three steps (P68, which amends P51 for sign-in only),
+ * so that the write lock is never held while a password is checked:
+ *
+ * (a) one short write(): the throttle check; when not blocked, a failure
+ *     is counted in advance on the user bucket and the address bucket.
+ *     Parallel guesses are therefore counted one after another, and none
+ *     can be verified once the earlier ones have reached the limit;
+ * (b) with no transaction open: one password verification, against the
+ *     person's hash or, for an unknown username, the dummy hash;
+ * (c) on success, a second short write(): the person is read again and
+ *     must still be active with the same password hash; then the user
+ *     bucket is cleared, the advance count on the address bucket taken
+ *     back, the hash replaced when it needs a rehash (the new hash is made
+ *     in step b), and the session started. On failure nothing more is
+ *     written: the failure was counted in step a.
+ *
+ * Audit entries are written after the transactions commit. They carry the
+ * failure reason and, when the username matched a person, that person's
+ * id and key; never the attempted username, the password, the address,
+ * or a token.
  *
  * Every failure reason (unknown username, wrong password, inactive
- * person) gives the caller the same result, and each costs one password
- * verification: an unknown username is checked against the hasher's dummy
- * hash. A throttled attempt checks no password.
+ * person) gives the caller the same result, and each costs exactly one
+ * password verification. A throttled attempt checks no password.
  *
  * A new session is started at every successful sign-in. Ending the
  * session the browser held before (rotation on sign-in) is the caller's
  * part, since only the caller has its cookie; ending all of a person's
  * sessions on a password, role, or active change is the operation's part
  * (Sessions::endAllFor).
+ *
+ * resume() reads first and opens write() only when the session must be
+ * touched or deleted (P69); signOut() writes its own auth.sign_out entry.
  */
 final class Authenticator
 {
@@ -51,69 +66,98 @@ final class Authenticator
         $userBucket = LoginThrottle::userBucket($this->s, Usernames::normalise($username));
         $addressBucket = LoginThrottle::addressBucket($this->s, $clientAddress);
 
-        /** @var array{0: SignInResult, 1: string, 2: ?UserRecord, 3: ?string} $outcome */
-        $outcome = $this->s->db()->write(function (Database $db) use ($username, $password, $userBucket, $addressBucket): array {
+        // (a) Check the throttle and count a failure in advance.
+        $wait = $this->s->db()->write(function () use ($userBucket, $addressBucket): int {
             $wait = $this->throttle->wait([$userBucket, $addressBucket]);
-            if ($wait > 0) {
-                $person = $this->users->byUsername($username);
-
-                return [new SignInResult(SignInOutcome::Throttled, null, $wait), AuditAction::SIGN_IN_FAILED, $person, AuditAction::REASON_THROTTLED];
-            }
-
-            $person = $this->users->byUsername($username);
-            if ($person === null) {
-                $this->hasher->verifyDummy($password);
-                $reason = AuditAction::REASON_UNKNOWN_USER;
-            } else {
-                $hash = $this->users->passwordHash($person->id);
-                $reason = null;
-                if (!$this->hasher->verify($password, $hash)) {
-                    $reason = AuditAction::REASON_BAD_PASSWORD;
-                } elseif (!$person->active) {
-                    $reason = AuditAction::REASON_INACTIVE;
-                }
-            }
-
-            if ($reason !== null) {
+            if ($wait === 0) {
                 $this->throttle->failure($userBucket, LoginThrottle::USER_LIMIT);
                 $this->throttle->failure($addressBucket, LoginThrottle::ADDRESS_LIMIT);
-
-                return [new SignInResult(SignInOutcome::Invalid), AuditAction::SIGN_IN_FAILED, $person, $reason];
             }
 
-            /** @var UserRecord $person */
-            $this->throttle->clear($userBucket);
-            if ($this->hasher->needsRehash($hash)) {
-                $this->users->replaceHash($person->id, $this->hasher->hash($password));
-            }
-            $this->users->markSignedIn($person->id);
-            $session = $this->sessions->start($person->id);
-
-            return [
-                new SignInResult(SignInOutcome::Success, $session, 0, $person->mustChangePassword),
-                AuditAction::SIGN_IN,
-                $person,
-                null,
-            ];
+            return $wait;
         });
+        if ($wait > 0) {
+            $person = $this->users->byUsername($username);
+            $this->recordFailure($person, AuditAction::REASON_THROTTLED);
 
-        [$result, $action, $person, $reason] = $outcome;
-        $this->audit->record(
-            $action,
-            $person?->id,
-            null,
-            $person === null ? null : 'user',
-            $person?->key,
-            $reason === null ? [] : ['reason' => $reason],
-        );
+            return new SignInResult(SignInOutcome::Throttled, null, $wait);
+        }
 
-        return $result;
+        // (b) Check the password with no transaction open.
+        $person = $this->users->byUsername($username);
+        $hash = null;
+        $newHash = null;
+        if ($person === null) {
+            $this->hasher->verifyDummy($password);
+            $reason = AuditAction::REASON_UNKNOWN_USER;
+        } else {
+            $hash = $this->users->passwordHash($person->id);
+            $reason = null;
+            if (!$this->hasher->verify($password, $hash)) {
+                $reason = AuditAction::REASON_BAD_PASSWORD;
+            } elseif (!$person->active) {
+                $reason = AuditAction::REASON_INACTIVE;
+            } elseif ($this->hasher->needsRehash($hash)) {
+                $newHash = $this->hasher->hash($password);
+            }
+        }
+        if ($person === null || $hash === null || $reason !== null) {
+            $this->recordFailure($person, $reason ?? AuditAction::REASON_UNKNOWN_USER);
+
+            return new SignInResult(SignInOutcome::Invalid);
+        }
+
+        // (c) Re-check and complete the sign-in.
+        $id = $person->id;
+        /** @var array{0: ?UserRecord, 1: ?IssuedSession, 2: string} $outcome */
+        $outcome = $this->s->db()->write(function () use ($id, $hash, $newHash, $userBucket, $addressBucket): array {
+            $current = $this->users->byId($id);
+            if ($current === null || !$current->active) {
+                return [$current, null, AuditAction::REASON_INACTIVE];
+            }
+            if (!hash_equals($hash, $this->users->passwordHash($id))) {
+                // The password was changed while it was being checked.
+                return [$current, null, AuditAction::REASON_BAD_PASSWORD];
+            }
+            $this->throttle->clear($userBucket);
+            $this->throttle->takeBack($addressBucket, LoginThrottle::ADDRESS_LIMIT);
+            if ($newHash !== null) {
+                $this->users->replaceHash($id, $newHash);
+            }
+            $this->users->markSignedIn($id);
+
+            return [$current, $this->sessions->start($id), ''];
+        });
+        [$current, $session, $lateReason] = $outcome;
+        if ($session === null) {
+            $this->recordFailure($current ?? $person, $lateReason);
+
+            return new SignInResult(SignInOutcome::Invalid);
+        }
+        /** @var UserRecord $current */
+        $this->audit->record(AuditAction::SIGN_IN, $current->id, null, 'user', $current->key);
+
+        return new SignInResult(SignInOutcome::Success, $session, 0, $current->mustChangePassword);
     }
 
-    /** The actor and session for a cookie token, or null. */
+    /**
+     * The actor and session for a cookie token, or null. A fresh, valid
+     * session is found with plain reads; write() is opened only when the
+     * session must be touched or deleted, and everything is checked again
+     * inside it.
+     */
     public function resume(#[\SensitiveParameter] string $token): ?SignedIn
     {
         if (!Sessions::wellFormed($token)) {
+            return null;
+        }
+        $lookup = $this->sessions->lookup($token);
+        if ($lookup->record !== null) {
+            $person = $this->users->byId($lookup->record->userId);
+            if ($person !== null && $person->active) {
+                return self::signedIn($person, $lookup->record);
+            }
+        } elseif (!$lookup->needsWrite) {
             return null;
         }
 
@@ -129,11 +173,7 @@ final class Authenticator
                 return null;
             }
 
-            return new SignedIn(
-                new Actor($person->id, $person->key, $person->role, $person->displayName),
-                $session,
-                $person->mustChangePassword,
-            );
+            return self::signedIn($person, $session);
         });
     }
 
@@ -159,5 +199,26 @@ final class Authenticator
         if ($person !== null) {
             $this->audit->record(AuditAction::SIGN_OUT, $person->id, null, 'user', $person->key);
         }
+    }
+
+    private static function signedIn(UserRecord $person, SessionRecord $session): SignedIn
+    {
+        return new SignedIn(
+            new Actor($person->id, $person->key, $person->role, $person->displayName),
+            $session,
+            $person->mustChangePassword,
+        );
+    }
+
+    private function recordFailure(?UserRecord $person, string $reason): void
+    {
+        $this->audit->record(
+            AuditAction::SIGN_IN_FAILED,
+            $person?->id,
+            null,
+            $person === null ? null : 'user',
+            $person?->key,
+            ['reason' => $reason],
+        );
     }
 }

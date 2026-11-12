@@ -63,13 +63,40 @@ final class DataDirectoryTest extends TestCase
         );
         self::assertSame(
             [['/srv/www/private/tiffin', 'the folder set in config/local.php', false]],
-            self::flat(DataDirectory::candidates('/srv/www/app', '../private/./tiffin')),
-            'A relative configured path is relative to the application folder.',
+            self::flat(DataDirectory::candidates('/srv/www/app', '/srv/www/app/../private/./tiffin')),
+            'Dot segments are removed lexically.',
         );
         self::assertSame(
             [['/srv/www/app/data', 'the folder set in config/local.php', true]],
-            self::flat(DataDirectory::candidates('/srv/www/app', 'data')),
+            self::flat(DataDirectory::candidates('/srv/www/app', '/srv/www/app/data')),
         );
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function refusedConfigured(): iterable
+    {
+        yield 'relative' => ['data'];
+        yield 'dot relative' => ['../private/tiffin'];
+        yield 'NUL byte' => ["/var/lib/tiffin\0db"];
+    }
+
+    #[DataProvider('refusedConfigured')]
+    public function testConfiguredPathMustBeAbsolute(string $configured): void
+    {
+        try {
+            DataDirectory::candidates('/srv/www/app', $configured);
+            self::fail('A configured data_dir that is not a plain absolute path must be refused.');
+        } catch (InvalidArgumentException $e) {
+            self::assertStringContainsString('absolute', $e->getMessage());
+        }
+        $this->expectException(InvalidArgumentException::class);
+        DataDirectory::locate('/srv/www/app', $configured);
+    }
+
+    public function testNulInTheApplicationRootIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        DataDirectory::candidates("/srv/www\0/app", null);
     }
 
     public function testLocateFindsTheFirstCandidateHoldingTheSystemDatabase(): void

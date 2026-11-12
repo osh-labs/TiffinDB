@@ -13,8 +13,18 @@ namespace TiffinDB\Core\Storage;
  * 4.3). Candidates, in search order: the configured `data_dir` (when set,
  * the only one), `<app>/../tiffindb-data`, `<app>/data`.
  *
- * Paths are made absolute and normalised lexically (`.` and `..` segments
- * removed, no trailing slash); symbolic links are not resolved here.
+ * Paths are normalised lexically: `.` and `..` segments are removed and no
+ * trailing slash is kept, without asking the file system. Symbolic links
+ * are not resolved here. So when the application folder is itself a
+ * symbolic link (for example `/srv/www/app` pointing to
+ * `/opt/releases/7`), the sibling candidate is `/srv/www/tiffindb-data`,
+ * beside the link, not `/opt/releases/tiffindb-data`, beside its target,
+ * which is where the operating system would resolve `app/..`. Callers that
+ * need the physical location (the installer's document-root check) resolve
+ * it with Fs::nearestExisting().
+ *
+ * A configured `data_dir` must be an absolute path (M1-screens), without
+ * NUL bytes; anything else is refused with \InvalidArgumentException.
  */
 final class DataDirectory
 {
@@ -51,8 +61,7 @@ final class DataDirectory
 
     /**
      * Candidates in search order. With $configured set (not null and not
-     * empty), only that one; a relative configured path is taken relative
-     * to the application folder.
+     * empty), only that one, which must be absolute.
      *
      * @return list<DataCandidate>
      */
@@ -61,7 +70,10 @@ final class DataDirectory
         $root = self::normalise($appRoot);
         $inTree = self::normalise($root . '/' . self::IN_TREE);
         if ($configured !== null && $configured !== '') {
-            $path = self::isAbsolute($configured) ? self::normalise($configured) : self::normalise($root . '/' . $configured);
+            if (str_contains($configured, "\0") || !self::isAbsolute($configured)) {
+                throw new \InvalidArgumentException('The data_dir set in config/local.php must be an absolute path.');
+            }
+            $path = self::normalise($configured);
 
             return [new DataCandidate($path, self::CONFIGURED_LABEL, $path === $inTree)];
         }
@@ -106,6 +118,9 @@ final class DataDirectory
 
     private static function normalise(string $path): string
     {
+        if (str_contains($path, "\0")) {
+            throw new \InvalidArgumentException('The path must not contain a NUL byte.');
+        }
         if (!self::isAbsolute($path)) {
             throw new \InvalidArgumentException('The path must be absolute.');
         }

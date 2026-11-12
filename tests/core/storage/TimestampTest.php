@@ -38,6 +38,29 @@ final class TimestampTest extends TestCase
         self::assertSame('2026-03-14T18:30:05Z', Timestamp::format($local));
     }
 
+    public function testFormatHoldsTheRoundTripAtTheYearLimits(): void
+    {
+        foreach (['0000-01-01T00:00:00Z', '9999-12-31T23:59:59Z'] as $text) {
+            self::assertSame($text, Timestamp::format(Timestamp::parse($text)));
+        }
+    }
+
+    /** @return iterable<string, array{DateTimeImmutable}> */
+    public static function yearsOutOfRange(): iterable
+    {
+        $utc = new DateTimeZone('UTC');
+        yield 'year 10000' => [(new DateTimeImmutable('2026-01-01T00:00:00', $utc))->setDate(10000, 1, 1)];
+        yield 'year -1' => [(new DateTimeImmutable('2026-01-01T00:00:00', $utc))->setDate(-1, 12, 31)];
+        yield 'year 9999 locally, 10000 in UTC' => [new DateTimeImmutable('9999-12-31T23:30:00-01:00')];
+    }
+
+    #[DataProvider('yearsOutOfRange')]
+    public function testFormatRefusesYearsTheStoredFormCannotHold(DateTimeImmutable $time): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Timestamp::format($time);
+    }
+
     /** @return iterable<string, array{string}> */
     public static function otherForms(): iterable
     {

@@ -18,10 +18,21 @@ final class Timestamp
     {
     }
 
-    /** The time in UTC, whole seconds (any fraction is dropped). */
+    /**
+     * The time in UTC, whole seconds (any fraction is dropped).
+     *
+     * @throws \InvalidArgumentException when the UTC year is outside 0000 to 9999,
+     *     which the stored form cannot hold (so parse(format($t)) always works)
+     */
     public static function format(\DateTimeImmutable $time): string
     {
-        return $time->setTimezone(new \DateTimeZone('UTC'))->format(self::FORMAT);
+        $utc = $time->setTimezone(new \DateTimeZone('UTC'));
+        $year = (int) $utc->format('Y');
+        if ($year < 0 || $year > 9999) {
+            throw new \InvalidArgumentException('The year must be from 0000 to 9999.');
+        }
+
+        return $utc->format(self::FORMAT);
     }
 
     /**

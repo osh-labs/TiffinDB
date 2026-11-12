@@ -190,6 +190,63 @@ final class SecurityTest extends TestCase
         self::assertNull($type->fromStorage($email, []));
     }
 
+    /**
+     * P67: addresses filter_var accepts but TiffinDB refuses: quoted local
+     * parts and local parts holding < > " ' ` \ ( ) , ; : [ ].
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function refusedLocalParts(): iterable
+    {
+        $emails = [
+            '"a<b>"@example.com',
+            '"user"@example.com',
+            '"a@b"@example.com',
+            '"a\\"b"@example.com',
+            '"<script>alert(1)</script>"@example.com',
+            '"a,b;c:d"@example.com',
+            '"(x)[y]"@example.com',
+            "o'brien@example.com",
+            "'@example.com",
+            '`whoami`@example.com',
+            'a`b@example.com',
+        ];
+        foreach ($emails as $i => $email) {
+            yield '#' . $i . ' ' . json_encode($email) => [$email];
+        }
+    }
+
+    #[DataProvider('refusedLocalParts')]
+    public function testEmailLocalPartsRefusedBeyondFilterVar(string $email): void
+    {
+        self::assertNotFalse(filter_var($email, FILTER_VALIDATE_EMAIL), 'filter_var alone accepts this address.');
+        $type = self::types()->get('email');
+        foreach ([false, true] as $lenient) {
+            $checked = $type->parse($email, [], $lenient);
+            self::assertFalse($checked->isOk(), 'Accepted ' . var_export($checked->isOk() ? $checked->value() : null, true));
+            self::assertSame('problem.email.invalid', $checked->problemKey());
+        }
+        self::assertFalse($type->check($email, [])->isOk());
+        self::assertNull($type->fromStorage($email, []));
+    }
+
+    /** P67: each refused character in an otherwise unquoted local part, whether or not filter_var accepts it. */
+    public function testEmailLocalPartCharacters(): void
+    {
+        $type = self::types()->get('email');
+        foreach (['<', '>', '"', "'", '`', '\\', '(', ')', ',', ';', ':', '[', ']'] as $character) {
+            foreach (['a' . $character . 'b@example.com', '"a' . $character . 'b"@example.com', '"x y"@example.com'] as $email) {
+                self::assertFalse($type->parse($email, [])->isOk(), $email);
+                self::assertFalse($type->parse($email, [], true)->isOk(), $email);
+                self::assertNull($type->fromStorage($email, []), $email);
+            }
+        }
+        foreach (['user@example.com', 'a.b+c_d-e@example.com', 'user@[192.0.2.1]', "!#$%&*+/=?^_{|}~-@example.com"] as $email) {
+            self::assertSame($email, $type->parse($email, [])->value(), $email);
+            self::assertSame($email, $type->fromStorage($email, []), $email);
+        }
+    }
+
     public function testEmailLengthLimit(): void
     {
         $type = self::types()->get('email');

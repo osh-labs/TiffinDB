@@ -13,7 +13,9 @@ use TiffinDB\Core\Error\Text;
 /**
  * An email address (M1 spec section 8.2): trimmed, at most 254 characters,
  * and accepted by filter_var(FILTER_VALIDATE_EMAIL) without the Unicode
- * flag, so only ASCII addresses pass. Security-relevant: the value is later
+ * flag, so only ASCII addresses pass. Quoted local parts, and local parts
+ * holding any of < > " ' ` \ ( ) , ; : [ ], are refused (P67); a domain
+ * literal such as `user@[192.0.2.1]` is still accepted. Security-relevant: the value is later
  * written into pages and links, so control characters (P61) and invalid
  * UTF-8 are refused first, the length is checked before the validator runs
  * (which bounds its work), and stored values are checked again when read.
@@ -22,6 +24,11 @@ use TiffinDB\Core\Error\Text;
 final class EmailType implements FieldType
 {
     public const MAX_LENGTH = 254;
+    /**
+     * Characters refused in the local part even where filter_var accepts
+     * them (P67). The double quote covers every quoted local part.
+     */
+    private const LOCAL_REFUSED = '<>"\'`\\(),;:[]';
 
     public function id(): string
     {
@@ -79,6 +86,7 @@ final class EmailType implements FieldType
         if (strlen($text) > self::MAX_LENGTH
             || Text::hasControl($text)
             || filter_var($text, FILTER_VALIDATE_EMAIL) === false
+            || strpbrk(substr($text, 0, (int) strrpos($text, '@')), self::LOCAL_REFUSED) !== false
         ) {
             return Checked::problem('problem.email.invalid');
         }

@@ -554,9 +554,11 @@ final class PasswordHasher
     public function verify(string $password, string $hash): bool;
     public function needsRehash(string $hash): bool;
     public function algorithm(): string;           // 'argon2id' | 'bcrypt'
-    public function verifyDummy(string $password): void;  // same cost as verify against a hash made once per instance
+    public function verifyDummy(string $password): void;  // one verify against a fixed dummy hash, no hashing
 }
 ```
+
+`verifyDummy` must cost one verification and nothing else, so that an unknown username takes as long as a known one. The dummy hashes are constants in `PasswordHasher` (`DUMMY_ARGON2ID`, `DUMMY_BCRYPT`: hashes of a fixed throwaway string made once, by the implementer, with the default parameters above); only when non-default options are passed (tests) is the dummy hash made in the constructor. Creating the dummy hash lazily on the first unknown-user sign-in would make that request cost a hash plus a verify, a timing difference that reveals whether a username exists.
 
 Passwords are never trimmed. Password problems use keys `problem.password.too_short` (`min` 10), `problem.password.too_long`, `problem.password.same_as_username`.
 
@@ -1515,7 +1517,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 | T-SYS-4 | `ProjectRegistry`: add, activate, `byKey`, `nameTaken` ignoring ASCII case, `all` and `forMember` order, `creating` projects excluded from both |
 | T-AUD-1 | `AuditLog`: `recent` newest first; detail decoded; failed sign-in rows older than 90 days pruned on the next failed sign-in, other actions kept; `record` on a closed database logs and does not throw |
 | T-AUTH-1 | `PasswordPolicy`: 9 characters fail, 10 pass; 72 bytes pass, 73 fail (also with multi-byte characters); equal to the username ignoring case fails; invalid UTF-8 fails |
-| T-AUTH-2 | `PasswordHasher`: hash and verify; `needsRehash` after a cost change; `algorithm()` matches what PHP provides |
+| T-AUTH-2 | `PasswordHasher`: hash and verify; `needsRehash` after a cost change; `algorithm()` matches what PHP provides; `DUMMY_ARGON2ID` and `DUMMY_BCRYPT` are valid hashes with exactly the default parameters (`password_get_info`), and `verifyDummy` with default options makes no new hash (checked through a test seam that counts `hash` calls) |
 | T-AUTH-3 | `Usernames`: valid and invalid cases table; normalisation |
 | T-AUTH-4 | `Users`: create inserts a default `user_settings` row; usernames unique ignoring case; `countActiveAdmins` |
 | T-AUTH-5 | `Sessions`: token 43 characters; the database holds the hash, never the token (search every column); touch at 299 seconds does nothing, at 301 seconds moves `idle_expires_at`; idle expiry after 7 days; absolute expiry after 30 days even when used daily; an inactive user's session resolves to null and is deleted; `endAllFor`; flash is read once |

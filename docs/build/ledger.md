@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1 implementation wave 1: WP0 merged and pushed; WP1 and WP8 in progress (worktrees, unpushed) |
+| Phase | M1: WP0, WP1 merged; WP8 review follow-ups in progress; wave 2 (WP2, WP3) in progress (worktrees, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP1, WP8: on report dispatch reviews (WP8 design tier; WP1 implementation tier, reviewed again with WP2). Then wave 2 (WP2, WP3) after WP1 merges. If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
+| Next action | WP8: on follow-up report have reviewer verify, then merge. WP2: on report dispatch design-tier security review (include WP1 storage as used by sessions). WP3: on report dispatch design-tier review (URL/email validation). Then wave 3 (WP4 after WP3; WP6 after WP2). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
 
 ## 2. Milestones
 
@@ -64,10 +64,10 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-R1 | M1 | design | fixes to the D1 files only | done, merged, pushed (`c543e46`) | merged | n/a | READY AFTER LISTED FIXES; 8 fixes made; 13 judgement calls ruled below |
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
-| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); round 2 fixes in progress | agent worktree | implementation tier | round 2 REQUEST CHANGES (comment bypass of transaction-control guard; untested VACUUM INTO cleanup); round 1 REQUEST CHANGES (blocking: `Fs::makeDir` accepted an existing directory; should-fix: `isInside` with `..`/NUL beyond existing ancestor, `writeNew` through dangling link, database file mode, T-REPO-9 alias bypass, control-character set) |
+| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | follow-up round in progress (worktree, unpushed) | agent worktree | design tier | APPROVE with follow-ups (show-password reset on submit; scanner gaps for meta refresh, iframe srcdoc, SVG animate; csrf() only in its partial; ENT_DISALLOWED; script element only in head; form-actions default; 44 px project-name link) |
-| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
-| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
+| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
@@ -132,6 +132,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T04:0xZ | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
 | 2026-11-12T04:3xZ | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
 | 2026-11-12T05:1xZ | M1-WP0 merged after two review rounds; suite 1079 tests OK |
+| 2026-11-12T07:0xZ | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

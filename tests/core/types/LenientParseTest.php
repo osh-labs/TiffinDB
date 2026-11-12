@@ -46,7 +46,7 @@ final class LenientParseTest extends TestCase
             ['number', self::NUMBER, '2.4', 2],
             ['number', self::NUMBER, '-0.4', 0],
             ['number', self::NUMBER, '2.4999999', 2],
-            ['number', self::NUMBER, '999999999999999.5', 1000000000000000],
+            ['number', self::NUMBER, '999999999999998.5', 999999999999999],
             ['number', self::NUMBER2, '1.005', 1.01],
             ['number', self::NUMBER2, '-1.005', -1.01],
             ['number', self::NUMBER2, '1.2345', 1.23],
@@ -75,7 +75,7 @@ final class LenientParseTest extends TestCase
             ['url', [], '192.0.2.1/x', 'https://192.0.2.1/x'],
             ['url', [], 'example.com:8080/x', 'https://example.com:8080/x'],
             ['url', [], 'sub.example.org', 'https://sub.example.org'],
-            ['url', [], '1example.net', 'https://1example.net'],
+            ['url', [], '1x.example.net', 'https://1x.example.net'],
 
             ['auto_number', ['start' => 1, 'next' => 1], '0', 0],
             ['auto_number', ['start' => 1, 'next' => 1], '42', 42],
@@ -104,6 +104,8 @@ final class LenientParseTest extends TestCase
             ['long_text', ['max_length' => 20], "a\x00b", 'problem.text.control'],
 
             ['number', self::NUMBER, '1000000000000000.5', 'problem.number.range'],
+            ['number', self::NUMBER, '999999999999999.5', 'problem.number.range'],
+            ['number', self::NUMBER2, '9999999999999.995', 'problem.number.range'],
             ['number', self::NUMBER, '1,5', 'problem.number.invalid'],
             ['number', self::NUMBER, '1e3', 'problem.number.invalid'],
             ['number', ['decimals' => 0, 'min' => 0, 'max' => 10], '10.5', 'problem.number.too_large'],

@@ -23,10 +23,17 @@ use TiffinDB\Core\Error\Text;
  *   them anyway, and the `intl` extension is not required;
  * - at most 2048 characters;
  * - no backslash (browsers read it as a slash, PHP's parser does not);
+ * - no `"`, `<`, `>`, or backtick anywhere (P72); `'` is allowed;
  * - scheme `http` or `https` in any case, stored lower-case, then `://`;
  * - passes filter_var(FILTER_VALIDATE_URL) and parse_url() finds a host;
  * - no user name or password before the host (`https://a@b` reads as a
- *   link to `b`, which misleads; refused, see the WP3 report).
+ *   link to `b`, which misleads);
+ * - the authority is a host of letters, digits, `.` and `-`, or a bracketed
+ *   IPv6 address, then optionally `:` and a port of 1 to 5 digits from 1 to
+ *   65535, then `/`, `?`, `#`, or the end;
+ * - no host that browsers read as an IPv4 address written another way: a
+ *   label starting with `0x`, a single integer, or all-digit labels other
+ *   than exactly four decimal labels of 0 to 255 without leading zeros.
  *
  * Lenient parsing first puts `https://` in front of a value that has no
  * scheme, starts with a letter or digit, and has a dot before any `/`. The
@@ -35,6 +42,8 @@ use TiffinDB\Core\Error\Text;
 final class UrlType implements FieldType
 {
     public const MAX_LENGTH = 2048;
+    /** Review S2: host name or bracketed IPv6, optional port, then a path, query, fragment, or the end. */
+    private const AUTHORITY = '~^https?://(?<host>[A-Za-z0-9.\-]+|\[[0-9A-Fa-f:.]+\])(?::(?<port>\d{1,5}))?(?=[/?#]|\z)~';
 
     public function id(): string
     {
@@ -118,7 +127,7 @@ final class UrlType implements FieldType
         if (preg_match('/^[\x21-\x7E]+\z/', $text) !== 1 || strlen($text) > self::MAX_LENGTH) {
             return null;
         }
-        if (str_contains($text, '\\')) {
+        if (strpbrk($text, '\\"<>`') !== false) {
             return null;
         }
         if (preg_match('~^(https?)://~i', $text, $m) !== 1) {
@@ -137,8 +146,34 @@ final class UrlType implements FieldType
         ) {
             return null;
         }
+        if (preg_match(self::AUTHORITY, $url, $a) !== 1) {
+            return null;
+        }
+        $port = $a['port'] ?? '';
+        if ($port !== '' && ((int) $port < 1 || (int) $port > 65535)) {
+            return null;
+        }
+        if (!str_starts_with($a['host'], '[') && self::looksLikeOtherIpv4($a['host'])) {
+            return null;
+        }
 
         return $url;
+    }
+
+    /** A host browsers would read as an IPv4 address in a form other than four plain decimal labels. */
+    private static function looksLikeOtherIpv4(string $host): bool
+    {
+        foreach (explode('.', $host) as $label) {
+            if (stripos($label, '0x') === 0) {
+                return true;
+            }
+        }
+        if (preg_match('/^[0-9.]+\z/', $host) !== 1) {
+            return false;
+        }
+        $octet = '(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)';
+
+        return preg_match('/^' . $octet . '(?:\.' . $octet . '){3}\z/', $host) !== 1;
     }
 
     /** True when the text starts with a letter or digit, has no scheme, and has a dot before any slash. */

@@ -14,14 +14,27 @@ use TiffinDB\Core\Error\Text;
  * A number (M1 spec section 8.2): an int when `decimals` is 0, otherwise a
  * float holding at most `decimals` fraction digits. Text follows pattern
  * NUMBER (optional sign, plain digits or comma groups of three, optional
- * point and digits); no exponent, no locale-specific forms. Magnitude at
- * most 1e15. Strict parsing refuses extra fraction digits; lenient parsing
- * rounds them half away from zero, on the decimal text itself.
+ * point and digits); no exponent, no locale-specific forms. Strict parsing
+ * refuses extra fraction digits; lenient parsing rounds them half away from
+ * zero, on the decimal text itself.
+ *
+ * Magnitude (P71, amends spec 8.2's 1e15): less than 10^(15 - decimals), so
+ * a value never needs more than 15 significant digits and every value has
+ * a float that prints back to exactly its decimal text. The same limit
+ * applies to parsing, check(), and the `min` and `max` options.
+ *
+ * Reading back (review B1): floats are bound to SQLite as decimal text, and
+ * SQLite's text-to-real conversion can be one bit off (27.318581 reads back
+ * as 27.318581000000002). fromStorage() snaps a float that lies within a
+ * few ulps of a value with `decimals` digits to that value; a float further
+ * away (a value stored before `decimals` was lowered) is kept as it is.
  */
 final class NumberType implements FieldType
 {
     public const DECIMALS_MAX = 6;
-    public const LIMIT = 1e15;
+    public const SIGNIFICANT_DIGITS = 15;
+    /** Largest magnitude converted from a whole float to an int when read. */
+    private const INT_SAFE = 1e15;
 
     public function id(): string
     {
@@ -38,12 +51,18 @@ final class NumberType implements FieldType
         return ['decimals' => 0, 'min' => null, 'max' => null];
     }
 
+    /** The exclusive magnitude limit for $decimals fraction digits: 10^(15 - decimals) (P71). */
+    public static function limit(int $decimals): int
+    {
+        return 10 ** (self::SIGNIFICANT_DIGITS - $decimals);
+    }
+
     public function normaliseOptions(array $options): array
     {
         $reader = new Options($options);
         $decimals = $reader->int('decimals', 0, 0, self::DECIMALS_MAX);
-        $min = $this->bound($reader, 'min');
-        $max = $this->bound($reader, 'max');
+        $min = $this->bound($reader, 'min', $decimals);
+        $max = $this->bound($reader, 'max', $decimals);
         if ($min !== null && $max !== null && !($min < $max)) {
             $reader->add('min', 'problem.options.min_max');
         }
@@ -53,25 +72,28 @@ final class NumberType implements FieldType
 
     public function fromStorage(mixed $stored, array $options): mixed
     {
+        $decimals = self::decimals($options);
         if (is_string($stored)) {
-            $parsed = $this->parse($stored, ['decimals' => self::DECIMALS_MAX], lenient: true);
-            $stored = $parsed->isOk() ? $parsed->value() : null;
+            $stored = self::fromText($stored);
         }
         if (is_int($stored)) {
-            return self::decimals($options) === 0 ? $stored : (float) $stored;
+            return $decimals === 0 ? $stored : (float) $stored;
         }
-        if (is_float($stored) && is_finite($stored)) {
-            if ($stored == 0.0) {
-                return self::decimals($options) === 0 ? 0 : 0.0;
-            }
-            if (self::decimals($options) === 0 && floor($stored) === $stored && abs($stored) <= self::LIMIT) {
-                return (int) $stored;
-            }
-
-            return $stored;
+        if (!is_float($stored) || !is_finite($stored)) {
+            return null;
+        }
+        if ($stored == 0.0) {
+            return $decimals === 0 ? 0 : 0.0;
+        }
+        if ($decimals === 0) {
+            return floor($stored) === $stored && abs($stored) <= self::INT_SAFE ? (int) $stored : $stored;
+        }
+        $snap = (float) Decimal::fixed($stored, $decimals);
+        if (abs($snap - $stored) <= 4 * PHP_FLOAT_EPSILON * max(1.0, abs($stored))) {
+            return $snap == 0.0 ? 0.0 : $snap;
         }
 
-        return null;
+        return $stored;
     }
 
     public function toStorage(mixed $value, array $options): string|int|float|null
@@ -95,7 +117,7 @@ final class NumberType implements FieldType
         if (!is_float($value) || !is_finite($value)) {
             return Checked::problem('problem.number.invalid');
         }
-        if (abs($value) > self::LIMIT) {
+        if (abs($value) >= self::limit($decimals)) {
             return Checked::problem('problem.number.range');
         }
         if ($decimals === 0) {
@@ -133,7 +155,7 @@ final class NumberType implements FieldType
                 : Checked::problem('problem.number.decimals', ['decimals' => $decimals]);
         }
         [$integer, $fraction] = Decimal::round($integer, $fraction, $decimals);
-        if (strlen($integer) > 16) {
+        if (strlen($integer) > self::SIGNIFICANT_DIGITS - $decimals) {
             return Checked::problem('problem.number.range');
         }
         if ($decimals === 0) {
@@ -188,10 +210,28 @@ final class NumberType implements FieldType
         return is_int($decimals) && $decimals >= 0 && $decimals <= self::DECIMALS_MAX ? $decimals : 0;
     }
 
+    /** A number from stored text (a NUMERIC column keeps text it cannot convert), without limits; null otherwise. */
+    private static function fromText(string $stored): int|float|null
+    {
+        $parts = Text::isUtf8($stored) ? Decimal::split(Text::trim($stored)) : null;
+        if ($parts === null || strlen($parts[1]) > 16) {
+            return null;
+        }
+        [$negative, $integer, $fraction] = $parts;
+        if ($fraction === '') {
+            $value = (int) $integer;
+
+            return $negative ? -$value : $value;
+        }
+        $value = (float) ($integer . '.' . $fraction);
+
+        return $negative && $value != 0.0 ? -$value : $value;
+    }
+
     /** @param array<string, mixed> $options */
     private function limits(int|float $value, array $options): Checked
     {
-        if (abs($value) > self::LIMIT) {
+        if (abs($value) >= self::limit(self::decimals($options))) {
             return Checked::problem('problem.number.range');
         }
         $min = $options['min'] ?? null;
@@ -206,26 +246,24 @@ final class NumberType implements FieldType
         return Checked::ok($value);
     }
 
-    /** Null, or a finite number within the magnitude limit: an int when whole, otherwise a float. */
-    private function bound(Options $reader, string $name): int|float|null
+    /** Null, or a finite number below the magnitude limit for $decimals: an int when whole, otherwise a float. */
+    private function bound(Options $reader, string $name, int $decimals): int|float|null
     {
         if (!$reader->has($name)) {
             return null;
         }
         $value = $reader->raw($name);
         if (is_string($value)) {
-            if (Text::trim($value) === '') {
+            if (Text::isUtf8($value) && Text::trim($value) === '') {
                 return null;
             }
-            $parts = Text::isUtf8($value) ? Decimal::split(Text::trim($value)) : null;
-            if ($parts !== null && strlen($parts[1]) <= 16) {
-                $value = (float) (($parts[0] ? '-' : '') . $parts[1] . '.' . ($parts[2] === '' ? '0' : $parts[2]));
-            }
+            $value = self::fromText($value) ?? $value;
         }
-        if (is_int($value) && abs($value) <= self::LIMIT) {
+        $limit = self::limit($decimals);
+        if (is_int($value) && abs($value) < $limit) {
             return $value;
         }
-        if (is_float($value) && is_finite($value) && abs($value) <= self::LIMIT) {
+        if (is_float($value) && is_finite($value) && abs($value) < $limit) {
             if ($value == 0.0) {
                 return 0;
             }

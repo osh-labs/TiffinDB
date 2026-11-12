@@ -76,7 +76,7 @@ final class SecurityTest extends TestCase
             'https://',
             'https:///path',
             'https://:443/',
-            'https://例え.jp/',
+            'https://例え.example/',
             'https://exämple.com/',
             'https://example.com/päth',
             'https://exa_mple.com/',
@@ -89,6 +89,37 @@ final class SecurityTest extends TestCase
             "https://example.com/\xC3",
             "https://example.com/\xED\xA0\x80",
             "https://example.com/\x7F",
+            // Review S2: the authority is a host and an optional port of 1 to 65535.
+            'https://a.com:1.x',
+            'https://a.com:1x/',
+            'https://a.com:+1',
+            'https://a.com:0',
+            'https://a.com:65536',
+            'https://a.com:000000/',
+            'https://a.com:/',
+            'javascript:1.x',
+            'x:1.y',
+            // Review S3: backslashes.
+            'https://a.com/x\\y',
+            'a.b\\x',
+            'https://example.com/?q=\\',
+            // Review S5, P72: no " < > or backtick anywhere.
+            'https://example.com/"onmouseover="x',
+            'https://example.com/<script>',
+            'https://example.com/a>b',
+            'https://example.com/?q=`x`',
+            'https://example.com/#"x"',
+            // Review N2: hosts that browsers read as IPv4 in other forms.
+            'https://0x7f.1/',
+            'https://0X7F000001/',
+            'https://a.0x1.example/',
+            'https://2130706433/',
+            'https://127.1/',
+            'https://127.0.1/',
+            'https://0177.0.0.1/',
+            'https://127.0.0.01/',
+            'https://256.0.0.1/',
+            'https://1.2.3.4.5/',
         ];
         foreach ($urls as $i => $url) {
             yield '#' . $i . ' ' . json_encode($url, JSON_INVALID_UTF8_SUBSTITUTE) => [$url];
@@ -106,6 +137,32 @@ final class SecurityTest extends TestCase
         }
         self::assertFalse($type->check($url, [])->isOk());
         self::assertNull($type->fromStorage($url, []), 'A stored bad address reads as empty.');
+    }
+
+    /** The authority, character, and IPv4 rules still let ordinary addresses through. */
+    public function testUrlAuthorityAcceptedForms(): void
+    {
+        $type = self::types()->get('url');
+        $accepted = [
+            'https://a.com:1/',
+            'https://example.com:65535',
+            'https://example.com:443?x=1',
+            'https://example.com:8080#top',
+            'https://192.0.2.1/',
+            'https://0.0.0.0/',
+            'https://255.255.255.255/',
+            'https://[::1]/',
+            'https://[2001:db8::1]:8443/x',
+            "https://example.com/it's",
+            'https://example.com/a%22b%3Cc%3E',
+            'https://10.example.com/',
+            'https://123.example/',
+        ];
+        foreach ($accepted as $url) {
+            self::assertSame($url, $type->parse($url, [])->value(), $url);
+            self::assertSame($url, $type->fromStorage($url, []), $url);
+        }
+        self::assertSame('https://a.com:1/x', $type->parse('a.com:1/x', [], true)->value());
     }
 
     public function testUrlAcceptedFormStoresTheSchemeLowerCase(): void
@@ -154,7 +211,7 @@ final class SecurityTest extends TestCase
             "user@exa\x00mple.com",
             "us\u{200B}er@example.com",
             "user@example.com\u{202E}",
-            'user@例え.jp',
+            'user@例え.example',
             'üser@example.com',
             '<script>@example.com',
             'user@example.com>',
@@ -208,6 +265,12 @@ final class SecurityTest extends TestCase
             '"a,b;c:d"@example.com',
             '"(x)[y]"@example.com',
             '`whoami`@example.com',
+            // P67 addendum (review S4).
+            'a?cc=x@example.com',
+            'a%40evil.com@example.com',
+            'a#b@example.com',
+            'a&b@example.com',
+            'a/b@example.com',
             'a`b@example.com',
         ];
         foreach ($emails as $i => $email) {
@@ -233,14 +296,14 @@ final class SecurityTest extends TestCase
     public function testEmailLocalPartCharacters(): void
     {
         $type = self::types()->get('email');
-        foreach (['<', '>', '"', '`', '\\', '(', ')', ',', ';', ':', '[', ']'] as $character) {
+        foreach (['<', '>', '"', '`', '\\', '(', ')', ',', ';', ':', '[', ']', '?', '#', '%', '&', '/'] as $character) {
             foreach (['a' . $character . 'b@example.com', '"a' . $character . 'b"@example.com', '"x y"@example.com'] as $email) {
                 self::assertFalse($type->parse($email, [])->isOk(), $email);
                 self::assertFalse($type->parse($email, [], true)->isOk(), $email);
                 self::assertNull($type->fromStorage($email, []), $email);
             }
         }
-        foreach (['user@example.com', "o'brien@example.com", "'@example.com", "a'b'c@example.com", 'a.b+c_d-e@example.com', 'user@[192.0.2.1]', "!#$%&*+/=?^_{|}~-@example.com"] as $email) {
+        foreach (['user@example.com', "o'brien@example.com", "'@example.com", "a'b'c@example.com", 'a.b+c_d-e@example.com', 'user@[192.0.2.1]', "!$*+=^_{|}~-@example.com"] as $email) {
             self::assertSame($email, $type->parse($email, [])->value(), $email);
             self::assertSame($email, $type->fromStorage($email, []), $email);
         }

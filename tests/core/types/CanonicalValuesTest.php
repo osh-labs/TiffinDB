@@ -222,9 +222,10 @@ final class CanonicalValuesTest extends TestCase
     private function number(int $decimals): int|float
     {
         if ($decimals === 0) {
-            return $this->int(-1000000000000000, 1000000000000000);
+            return $this->int(-999999999999999, 999999999999999);
         }
-        $integer = $this->int(0, 3) === 0 ? $this->int(0, 999999999999999) : $this->int(0, 99999);
+        // Below the P71 limit 10^(15 - decimals).
+        $integer = $this->int(0, 3) === 0 ? $this->int(0, 10 ** (15 - $decimals) - 1) : $this->int(0, 99999);
         $fraction = str_pad((string) $this->int(0, 10 ** $decimals - 1), $decimals, '0', STR_PAD_LEFT);
         $value = (float) ($integer . '.' . $fraction);
         $value = $this->int(0, 1) === 1 && $value != 0.0 ? -$value : $value;
@@ -286,7 +287,8 @@ final class CanonicalValuesTest extends TestCase
             $local .= $this->pick('.+_') . $this->label(1, 6);
         }
 
-        return $local . '@' . $this->label(1, 10) . '.example.' . $this->pick('co') . 'm';
+        // RFC 2606 names only: a subdomain of example.com, example.org, or example.net.
+        return $local . '@' . $this->label(1, 10) . '.example.' . ['com', 'org', 'net'][$this->int(0, 2)];
     }
 
     private function phone(): string

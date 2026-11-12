@@ -65,7 +65,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); round 1 fixes in progress | agent worktree | implementation tier | round 1 REQUEST CHANGES (blocking: `Fs::makeDir` accepted an existing directory; should-fix: `isInside` with `..`/NUL beyond existing ancestor, `writeNew` through dangling link, database file mode, T-REPO-9 alias bypass, control-character set) |
-| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | implemented (`79320f4`, worktree, unpushed); in review | agent worktree | design tier | pending |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
@@ -156,3 +156,13 @@ New carried-forward items (from M1-WP0):
 | Discovery tool: replace the `sqlite_` prefix exemption with an allowlist of real internal names (`sqlite_sequence`, `sqlite_stat1` to `4`, `sqlite_master`, `sqlite_schema`, `sqlite_temp_*`, autoindex via recursion); only hand-crafted files reach it | `tools/discovery/discover-structure.php` `IdentifierRedactor::internal()` |
 | Discovery tool: `NameRedactor::extension()` fallback prints input verbatim (unreachable today); make it fail closed | `tools/discovery/discover-structure.php` near line 154 |
 | Newline-in-file-name test assumes a POSIX filesystem (CI is Linux) | `tests/tools/DiscoverStructureTest.php` |
+
+Brief notes for later M1 packages (from M1-WP8):
+
+| For | Note |
+|---|---|
+| WP7, WP10, WP11 | The layout prints breadcrumb, flash notice and error summary (in that order) before the page; pages pass `breadcrumb`, `problems`, `errorTitle` and must not print those parts themselves |
+| WP7 | CSRF token and Format reach the view via `View::withCsrfToken()` and `View::withFormat()`; `Format` takes a `Closure(): DateTimeImmutable` (web may not name `Core\Storage`), so `CoreServices`/`Context` pass `$clock->now(...)` |
+| WP7 | Delete the temporary `home.preview.` entry in `RUNTIME_PREFIXES` with `templates/pages/home.php` and `strings/en/home.php`; `AppearanceTest` preview-link tests go through M0 `/` and need updating when `/` becomes a redirect |
+| WP12 | Error summary heading is an `h2` before the `h1`; change to `p` if strict heading order is enforced |
+

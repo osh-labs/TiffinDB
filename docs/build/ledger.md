@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1 design: M1-D1 merged and pushed; spec review M1-R1 in progress (worktree, unpushed) |
+| Phase | M1: spec review done (READY AFTER LISTED FIXES; fixes merged `c543e46`); author applying rulings J1 to J13 (M1-D2, worktree, unpushed); M1-WP0 in progress (worktree, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | On M1-R1 report: merge reviewer fixes, resolve judgement calls (record here), then dispatch wave 1 (M1-WP0, WP1, WP8). If resuming after a reclaim: rebuild PHPUnit install, redo M1-R1. |
+| Next action | On M1-D2 report: merge, push, record new P numbers, then dispatch M1-WP1 and M1-WP8 (wave 1, with WP0). On WP0 report: dispatch design-tier review (security-critical). If resuming after a reclaim: rebuild PHPUnit install; redo M1-D2 from the rulings below and redo WP0. |
 
 ## 2. Milestones
 
@@ -61,8 +61,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M0-WP6 | M0 | implementation | templates, strings, `app.css`, shell tests (security-critical) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: template rules test bypassable by dynamic calls; shipped output clean; four themes verified in a browser) |
 | M0-WP7 | M0 | implementation | design asset tests | done, merged, pushed (incl. follow-ups) | merged | implementation tier | APPROVE |
 | M1-D1 | M1 | design | `docs/specs/M1-*.md`, `docs/design/m1/*`, ADRs 0010 to 0012, `docs/formats/tiffin.md` | done, merged, pushed | merged | M1-R1 (design tier) | pending |
-| M1-R1 | M1 | design | fixes to the D1 files only | in progress (worktree, unpushed) | agent worktree | n/a |  |
-| M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | not started | | | |
+| M1-R1 | M1 | design | fixes to the D1 files only | done, merged, pushed (`c543e46`) | merged | n/a | READY AFTER LISTED FIXES; 8 fixes made; 13 judgement calls ruled below |
+| M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | in progress (worktree, unpushed) | agent worktree | orchestrator check | |
+| M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | design tier (pending) | |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | not started | | | |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | not started | | | |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
@@ -98,6 +99,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P16 to P47 | M1 design defaults (match criterion for undesigned screens, namespaces, 12-char base32 keys and generated SQL names, field storage, trash columns, snapshots via `VACUUM INTO` keeping 20 automatic, audit log in system DB, join-table relations, SHA-256 attachments, Admin-mediated password reset plus CLI, one-time setup code, Member permissions, sessions 7 d idle / 30 d absolute, throttling, password length, CSRF, URL shapes, data-directory search order, SQLite 3.35+, deactivate-not-delete people, split strings files, and others) | As listed with rationales in the spec | `docs/specs/M1-foundation.md` section 14 |
 | P48 | Installer data-directory exposure test makes one HTTP request from the server to itself | Accepted: plan 3.2 and ADR 0001 require an HTTP test; not a third-party call; skipped when data is outside the web root | `docs/specs/M1-foundation.md` section 16 |
 | P49 | Deferred from M1: snapshot restore, project deletion, audit-log screen, trash screen (M4), lone-Admin recovery without shell (M7) | Deferred | `docs/specs/M1-foundation.md` section 16 |
+| P50+ | Spec review rulings J1 to J13: WP8 ships a form-actions partial; last-Admin check and change in one system-DB write, repositories never open writes; shared text helper owned by WP1; `changeType` converts inside the transaction; SQLite floor raised to 3.35.5 (amends P38); setup code written before the system DB and regenerated if missing; ADR 0012 allows a web composition root; probe uses a local error handler; stale `creating` projects cleared after one hour; throttling trade-offs accepted; choice-conversion dedupe and truncation; confirmation re-post excludes `_csrf`; probe Host trust verified on the host check | Ruled by the orchestrator; P numbers assigned in the spec by M1-D2 | `docs/specs/M1-foundation.md` section 14 |
 
 ## 5. Blockers
 
@@ -123,6 +125,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T02:30Z | Window 2 start (new orchestrator session); M0 present on the assigned branch, which matches `main`; resume reminder armed for 07:46Z |
 | 2026-11-12T02:5xZ | Offline PHPUnit 12.5.43 rebuilt (6.4 GB before trim, 17 MB after); `composer lint` 69 files 0 failed; `composer test` OK 1075 tests. M1-D1 dispatched |
 | 2026-11-12T03:4xZ | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
+| 2026-11-12T04:0xZ | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

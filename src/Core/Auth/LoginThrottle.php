@@ -23,6 +23,11 @@ use TiffinDB\Core\System\SystemDatabase;
  * There is no permanent lockout: waits start at 30 seconds and double up
  * to 15 minutes.
  *
+ * Reset rule (P65, amending section 6.6): a bucket starts again from zero
+ * only when its last failure is more than WINDOW_SECONDS old and it is not
+ * blocked now. Someone who waits out each block therefore keeps doubling
+ * (30, 60, 120, 240, 480, 900, 900, ...), as ADR 0011 intends.
+ *
  * A repository (P51): failure() and clear() throw \LogicException outside
  * the caller's write() transaction, so that a wait() check and the
  * failure it leads to are one transaction and parallel guesses cannot all
@@ -37,7 +42,7 @@ final class LoginThrottle
     public const FIRST_WAIT = 30;
     public const MAX_WAIT = 900;
     public const SETUP_BUCKET = 's:setup';
-    /** Unblocked rows whose window started longer ago than this are deleted. */
+    /** Unblocked rows whose last failure is older than this are deleted. */
     public const STALE_SECONDS = 86400;
 
     public function __construct(private readonly SystemDatabase $system, private readonly Clock $clock)
@@ -80,7 +85,7 @@ final class LoginThrottle
         return max(0, Timestamp::parse($latest)->getTimestamp() - $now->getTimestamp());
     }
 
-    /** Counts one failure; at $limit failures or more within the window, starts or lengthens a block. */
+    /** Counts one failure; at $limit failures or more since the last reset, starts or lengthens a block. */
     public function failure(string $bucket, int $limit): void
     {
         $this->system->requireTransaction();
@@ -93,17 +98,17 @@ final class LoginThrottle
         $nowText = Timestamp::format($now);
         $stale = Timestamp::format($now->modify('-' . self::STALE_SECONDS . ' seconds'));
         $db->run(
-            'DELETE FROM login_throttle WHERE window_started_at < ? AND (blocked_until IS NULL OR blocked_until <= ?)',
+            'DELETE FROM login_throttle WHERE last_failure_at < ? AND (blocked_until IS NULL OR blocked_until <= ?)',
             [$stale, $nowText],
         );
 
-        $row = $db->one('SELECT failures, window_started_at, blocked_until FROM login_throttle WHERE bucket = ?', [$bucket]);
+        $row = $db->one('SELECT failures, window_started_at, last_failure_at, blocked_until FROM login_throttle WHERE bucket = ?', [$bucket]);
         $failures = 0;
         $windowStart = $nowText;
         if ($row !== null) {
             $blockedNow = $row['blocked_until'] !== null && strcmp((string) $row['blocked_until'], $nowText) > 0;
-            $windowAge = $now->getTimestamp() - Timestamp::parse((string) $row['window_started_at'])->getTimestamp();
-            if ($blockedNow || $windowAge <= self::WINDOW_SECONDS) {
+            $quietFor = $now->getTimestamp() - Timestamp::parse((string) $row['last_failure_at'])->getTimestamp();
+            if ($blockedNow || $quietFor <= self::WINDOW_SECONDS) {
                 $failures = (int) $row['failures'];
                 $windowStart = (string) $row['window_started_at'];
             }
@@ -114,10 +119,10 @@ final class LoginThrottle
             $blockedUntil = Timestamp::format($now->modify('+' . self::waitFor($failures - $limit) . ' seconds'));
         }
         $db->run(
-            'INSERT INTO login_throttle (bucket, failures, window_started_at, blocked_until) VALUES (?, ?, ?, ?)
-             ON CONFLICT (bucket) DO UPDATE SET failures = excluded.failures,
-                 window_started_at = excluded.window_started_at, blocked_until = excluded.blocked_until',
-            [$bucket, $failures, $windowStart, $blockedUntil],
+            'INSERT INTO login_throttle (bucket, failures, window_started_at, last_failure_at, blocked_until) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (bucket) DO UPDATE SET failures = excluded.failures, window_started_at = excluded.window_started_at,
+                 last_failure_at = excluded.last_failure_at, blocked_until = excluded.blocked_until',
+            [$bucket, $failures, $windowStart, $nowText, $blockedUntil],
         );
     }
 

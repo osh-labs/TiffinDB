@@ -27,6 +27,9 @@ use TiffinDB\Core\Storage\SystemClock;
  * with VACUUM INTO to `system-before-v<N>-<YYYYMMDDTHHMMSSZ>.sqlite` beside
  * it.
  *
+ * Amended from the M1 spec section 5.1 DDL by P65: login_throttle has a
+ * last_failure_at column (the reset rule is measured from it).
+ *
  * Enumerated values are validated in code, not with CHECK constraints
  * (ADR 0011 decision 2, P44).
  */
@@ -80,6 +83,7 @@ final class SystemSchema
     bucket            TEXT PRIMARY KEY,
     failures          INTEGER NOT NULL,
     window_started_at TEXT NOT NULL,
+    last_failure_at   TEXT NOT NULL,
     blocked_until     TEXT
 ) WITHOUT ROWID',
             "CREATE TABLE projects (

@@ -94,7 +94,7 @@ final class SystemDatabaseTest extends TestCase
             ['token_hash', 'user_id', 'csrf_token', 'flash', 'created_at', 'last_seen_at', 'idle_expires_at', 'absolute_expires_at'],
             $columns('sessions'),
         );
-        $this->assertSame(['bucket', 'failures', 'window_started_at', 'blocked_until'], $columns('login_throttle'));
+        $this->assertSame(['bucket', 'failures', 'window_started_at', 'last_failure_at', 'blocked_until'], $columns('login_throttle'));
         $this->assertSame(['id', 'key', 'name', 'state', 'created_at', 'created_by'], $columns('projects'));
         $this->assertSame(['project_id', 'user_id', 'level', 'granted_at', 'granted_by'], $columns('project_grants'));
         $this->assertSame(

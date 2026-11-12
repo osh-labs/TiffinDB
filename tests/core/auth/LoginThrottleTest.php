@@ -74,36 +74,48 @@ final class LoginThrottleTest extends TestCase
         }
     }
 
-    public function testWaitingOutEachBlockDoublesUntilTheWindowHasPassed(): void
+    public function testWaitingOutEachBlockKeepsDoublingToTheCap(): void
     {
-        // Section 6.6 resets a bucket whose window started more than 900 s ago once it is no longer blocked.
-        // Waiting out 30 + 60 + 120 + 240 s keeps the window open; the 480 s block ends 930 s after the first
-        // failure, so the next failure starts a new window instead of reaching the 900 s cap.
+        // P65: the reset is measured from the last failure, so waiting out each block never resets the bucket.
         for ($i = 1; $i <= 5; $i++) {
             $this->failOnce($this->user);
         }
-        foreach ([60, 120, 240, 480] as $wait) {
+        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        foreach ([60, 120, 240, 480, 900, 900] as $wait) {
             $this->clock->advance($this->throttle->wait([$this->user]));
             $this->assertSame(0, $this->throttle->wait([$this->user]));
             $this->failOnce($this->user);
             $this->assertSame($wait, $this->throttle->wait([$this->user]));
         }
-        $this->clock->advance($this->throttle->wait([$this->user]));
-        $this->failOnce($this->user);
-        $this->assertSame(0, $this->throttle->wait([$this->user]));
-        $this->assertSame(1, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
+        $this->assertSame(11, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
     }
 
-    public function testTheWindowResetsAfterFifteenMinutesWhenNotBlocked(): void
+    public function testABucketWithNoFailureForMoreThanFifteenMinutesResets(): void
     {
         for ($i = 1; $i <= 4; $i++) {
             $this->failOnce($this->user);
         }
+        $this->clock->advance(LoginThrottle::WINDOW_SECONDS);
+        $this->failOnce($this->user);
+        $this->assertSame(30, $this->throttle->wait([$this->user]), 'Exactly 900 s after the last failure still counts.');
+
         $this->clock->advance(LoginThrottle::WINDOW_SECONDS + 1);
         $this->failOnce($this->user);
         $this->assertSame(0, $this->throttle->wait([$this->user]));
-        $this->assertSame(1, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$this->user]));
-        $this->assertSame('2026-06-01T12:15:01Z', $this->system->db()->value('SELECT window_started_at FROM login_throttle WHERE bucket = ?', [$this->user]));
+        $row = $this->system->db()->one('SELECT failures, window_started_at, last_failure_at FROM login_throttle WHERE bucket = ?', [$this->user]);
+        $this->assertSame(['failures' => 1, 'window_started_at' => '2026-06-01T12:30:01Z', 'last_failure_at' => '2026-06-01T12:30:01Z'], $row);
+    }
+
+    public function testFailuresSpreadOutButEachWithinFifteenMinutesAccumulate(): void
+    {
+        // The window start is more than 900 s old, but no gap between failures is.
+        for ($i = 1; $i <= 4; $i++) {
+            $this->failOnce($this->user);
+            $this->clock->advance(800);
+        }
+        $this->failOnce($this->user);
+        $this->assertSame(30, $this->throttle->wait([$this->user]));
+        $this->assertSame('2026-06-01T12:00:00Z', $this->system->db()->value('SELECT window_started_at FROM login_throttle WHERE bucket = ?', [$this->user]));
     }
 
     public function testWithinTheWindowFailuresAccumulate(): void

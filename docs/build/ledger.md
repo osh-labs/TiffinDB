@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M1: pausing on maintainer instruction once in-flight agents finish (WP2 round 3 fix, WP4 implementation); no new dispatches |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | none (deleted for the maintainer's pause; the maintainer resumes the build) |
-| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix, then merge; (2) WP4: dispatch the design-tier review (SQL identifier generation), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first). |
+| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix, then merge; (2) WP4: dispatch the design-tier review (SQL identifier generation), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
 
@@ -66,9 +66,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
-| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 3 fix in progress (worktree, unpushed) | agent worktree | design tier | round 2 REQUEST CHANGES for one regression: takeback not net-zero at the address limit, so each success re-blocked the address; all other follow-ups verified (parallel guesses counted, no lock during verify, read-first resume, migration race, token exposure, IPv6); round 1 APPROVE with should-fix |
+| M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 3 fix done (`f9030b5`); awaiting reviewer verification; preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp2` (not merged) | wip-wp2 | design tier | round 2 REQUEST CHANGES for one regression: takeback not net-zero at the address limit (fixed in `f9030b5`, unverified); round 1 APPROVE with should-fix |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
-| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | in progress (worktree); to be preserved on `claude/magical-hamilton-isy74q-wip-wp4` when it reports | agent worktree | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
@@ -145,6 +145,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:1xZ | M1-WP3 merged; WP4 dispatched |
 | 2026-11-12T05:1xZ | Maintainer instruction: stop at the end of M1 (after the exit audit and checkpoint); do not start M2 until instructed |
 | 2026-11-12T05:2xZ | Maintainer instructions: apply review-economy options 1 and 2; pause once WP4 is done and wait for the maintainer to resume. Resume reminder deleted |
+| 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

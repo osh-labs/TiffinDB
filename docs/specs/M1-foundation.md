@@ -868,7 +868,7 @@ final class Schema
 }
 ```
 
-`Schema` validates what it reads: keys must match the pattern, `type` must be known to `FieldTypes`, options must decode to a JSON object. A file that fails is `Unavailable('not-project')`. Keys arriving from a URL are checked with `Keys::isValid` before any lookup and give `NotFound` when invalid.
+`Schema` validates what it reads: keys must match the pattern, `type` must be known to `FieldTypes`, options must decode to a JSON object. Writers therefore encode options as `json_encode((object) $options, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)`: plain `json_encode([])` gives `[]`, which a type with no options would otherwise store and `Schema` would then refuse. A file that fails is `Unavailable('not-project')`. Keys arriving from a URL are checked with `Keys::isValid` before any lookup and give `NotFound` when invalid.
 
 ### 7.4 `SchemaEditor`
 

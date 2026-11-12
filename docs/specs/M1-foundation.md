@@ -1772,7 +1772,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 |---|---|
 | Tier | implementation |
 | Depends on | WP5, WP7, WP8 |
-| Security-critical | No (every change goes through `Core\App`; reviewed by the implementation tier) |
+| Security-critical | Yes (templates that emit HTML, orchestration guide section 2 rule 4; authorization itself stays in `Core\App`) |
 | Owned files | Part 2 section 10, WP11 row |
 | Scope | `docs/design/m1/sign-in-and-projects.md` (project list), `new-project.md`, `schema-editor.md` |
 | Acceptance | Part 2 section 10, WP11 row |
@@ -1803,7 +1803,7 @@ Ledger section 7 items: the discovery-tool digit run, the `@symlink` in `HostChe
 | M1-WP8 | View layer, shell, components, shared strings | implementation | none | Yes |
 | M1-WP9 | Installer screens | implementation | WP6, WP7, WP8 | Yes |
 | M1-WP10 | Sign-in, password, people, sharing screens | implementation | WP5, WP7, WP8 | Yes |
-| M1-WP11 | Projects and schema editor screens | implementation | WP5, WP7, WP8 | No |
+| M1-WP11 | Projects and schema editor screens | implementation | WP5, WP7, WP8 | Yes |
 | M1-WP12 | End-to-end tests and visual check | implementation | WP9, WP10, WP11 | No |
 
 No package is mechanical: every one has judgement in it. The strings files are written from exact tables, but they belong to the packages whose templates use them, so that the unused-key test passes in each.

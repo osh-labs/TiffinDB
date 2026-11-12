@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M0 closed; M1 not started |
-| Phase | stopped on maintainer instruction after M0 |
+| Phase | M0 closed; branch prepared for a pull request to `main`; orchestration handed over to a new session |
 | Window start | 2026-11-11T22:29Z |
 | Resume reminder | none (deleted at stop) |
-| Next action | None until the maintainer sends `RESUME` or an equivalent instruction. On resume: record a new window start, arm a resume reminder, rebuild the offline PHPUnit install if the container was replaced (see usage log note), run `composer test`, then start M1 with the design step (`docs/specs/M1-*.md`, including designs for the installer, people and sharing, new project, and schema editor screens) and schedule the carried-forward items in section 7. |
+| Next action | New orchestrator session: read `docs/build/orchestration.md`, this ledger, and `docs/build/context-brief.md`. Work on the branch assigned to that session (it should start from `main` after the M0 pull request is merged; if M0 is not yet in `main`, stop and tell the maintainer). Record a new window start, arm a resume reminder, rebuild the offline PHPUnit install (orchestration guide section 9), run `composer test`, then start M1 with the design step (`docs/specs/M1-*.md`, including designs for the installer, people and sharing, new project, and schema editor screens) and schedule the carried-forward items in section 7. |
 
 ## 2. Milestones
 
@@ -101,6 +101,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-11T22:29Z | Build started; window 1 start; resume reminder armed for 03:45Z |
 | 2026-11-11 | Environment note: Composer dist downloads are refused by the network proxy and fall back to full git clones (several GB). Workaround: a trimmed PHPUnit install kept in the session scratchpad is copied into each worktree's git-ignored `vendor/` followed by `composer dump-autoload`. After a container restart this must be rebuilt (`composer require --dev phpunit/phpunit:<pinned>` in a scratch dir, delete `.git` dirs and the Composer vcs cache). Not a blocker. |
 | 2026-11-11T23:5xZ | M0 closed. Maintainer instruction: stop after M0. Resume reminder deleted; no further action until instructed. |
+| 2026-11-12 | Handover: standing rules written to `docs/build/orchestration.md`; branch verified ahead of `main` by 75+ commits, not behind, suite green. | Maintainer instruction: from M1 the design tier and the implementation tier use the same model; reviews and audits must still be done by a separate agent instance.
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

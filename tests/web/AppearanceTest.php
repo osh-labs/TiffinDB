@@ -17,7 +17,7 @@ use TiffinDB\Web\Kernel;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
-/** T-WEB-7: the appearance allowlist and root classes. */
+/** T-WEB-7 and T-WEB-18: the appearance allowlist, stored settings, and root classes. */
 #[CoversClass(Appearance::class)]
 #[CoversClass(Kernel::class)]
 final class AppearanceTest extends TestCase
@@ -134,6 +134,100 @@ final class AppearanceTest extends TestCase
     {
         self::assertSame(['a-indigo'], Appearance::fromQuery(['accent' => 'indigo'])->rootClasses());
         self::assertSame(['t-dark', 'a-graphite'], Appearance::fromQuery(['theme' => 'dark', 'accent' => 'graphite'])->rootClasses());
+    }
+
+    // T-WEB-18: stored settings (M1 spec part 1 section 5.5; part 2 section 2.7).
+
+    /** @return array<string, array{string, string|int, list<string>}> */
+    public static function storedValues(): array
+    {
+        $cases = [];
+        foreach (
+            [
+                ['theme', 'light', []], ['theme', 'dark', ['t-dark']], ['theme', 'hc-light', ['t-hcl']], ['theme', 'hc-dark', ['t-hcd']],
+                ['accent', 'teal', []], ['accent', 'indigo', ['a-indigo']], ['accent', 'plum', ['a-plum']],
+                ['accent', 'graphite', ['a-graphite']],
+                ['typeface', 'inter', []], ['typeface', 'atkinson', ['f-atk']], ['typeface', 'lexend', ['f-lexend']],
+                ['typeface', 'source-serif', ['f-serif4']], ['typeface', 'device-sans', ['f-sans']],
+                ['typeface', 'device-serif', ['f-serif']],
+                ['text_size', 'standard', []], ['text_size', 'small', ['s-small']], ['text_size', 'large', ['s-large']],
+                ['text_size', 'larger', ['s-larger']], ['text_size', 'largest', ['s-largest']],
+                ['line_spacing', 'standard', []], ['line_spacing', 'roomy', ['l-roomy']],
+                ['line_spacing', 'very-roomy', ['l-very-roomy']],
+                ['reduce_motion', 0, []], ['reduce_motion', 1, ['m-reduce']], ['reduce_motion', '1', ['m-reduce']],
+            ] as [$column, $value, $classes]
+        ) {
+            $cases["{$column}={$value}"] = [$column, $value, $classes];
+        }
+
+        return $cases;
+    }
+
+    /** @param list<string> $classes */
+    #[DataProvider('storedValues')]
+    public function testEveryStoredValueMapsToItsClass(string $column, string|int $value, array $classes): void
+    {
+        self::assertSame($classes, Appearance::fromSettings([$column => $value])->rootClasses());
+    }
+
+    public function testAFullRowGivesEveryClassInOrder(): void
+    {
+        $row = [
+            'user_key' => 'abcdefghjkmn',
+            'theme' => 'dark',
+            'accent' => 'plum',
+            'typeface' => 'lexend',
+            'text_size' => 'largest',
+            'line_spacing' => 'very-roomy',
+            'reduce_motion' => 1,
+        ];
+
+        self::assertSame(['t-dark', 'a-plum', 'f-lexend', 's-largest', 'l-very-roomy', 'm-reduce'], Appearance::fromSettings($row)->rootClasses());
+        self::assertSame('dark', Appearance::fromSettings($row)->theme());
+    }
+
+    public function testTheDefaultRowAndAnEmptyRowGiveNoClass(): void
+    {
+        $defaults = ['theme' => 'light', 'accent' => 'teal', 'typeface' => 'inter', 'text_size' => 'standard', 'line_spacing' => 'standard', 'reduce_motion' => 0];
+
+        self::assertSame([], Appearance::fromSettings($defaults)->rootClasses());
+        self::assertSame([], Appearance::fromSettings([])->rootClasses());
+        self::assertSame('light', Appearance::fromSettings([])->theme());
+    }
+
+    public function testStoredAccentIsOmittedUnderHighContrast(): void
+    {
+        self::assertSame(['t-hcl', 'f-atk'], Appearance::fromSettings(['theme' => 'hc-light', 'accent' => 'indigo', 'typeface' => 'atkinson'])->rootClasses());
+    }
+
+    /** @return iterable<string, array{string, mixed}> */
+    public static function invalidStoredValues(): iterable
+    {
+        foreach (['theme', 'accent', 'typeface', 'text_size', 'line_spacing'] as $column) {
+            yield "{$column} empty" => [$column, ''];
+            yield "{$column} unknown" => [$column, 'purple'];
+            yield "{$column} upper case" => [$column, 'DARK'];
+            yield "{$column} padded" => [$column, ' dark'];
+            yield "{$column} class name" => [$column, 't-dark'];
+            yield "{$column} injection" => [$column, '"><script>alert(1)</script>'];
+            yield "{$column} array" => [$column, ['dark']];
+            yield "{$column} integer" => [$column, 1];
+            yield "{$column} null" => [$column, null];
+        }
+        // Query-parameter spellings are not column values.
+        yield 'typeface spelled as the query font' => ['font', 'lexend'];
+        yield 'text size spelled as the query size' => ['size', 'large'];
+        yield 'reduce_motion 2' => ['reduce_motion', 2];
+        yield 'reduce_motion true' => ['reduce_motion', true];
+        yield 'reduce_motion reduce' => ['reduce_motion', 'reduce'];
+        yield 'reduce_motion 1.0' => ['reduce_motion', 1.0];
+        yield 'reduce_motion " 1"' => ['reduce_motion', ' 1'];
+    }
+
+    #[DataProvider('invalidStoredValues')]
+    public function testInvalidStoredValuesGiveDefaults(string $column, mixed $value): void
+    {
+        self::assertSame([], Appearance::fromSettings([$column => $value])->rootClasses());
     }
 
     public function testKernelWritesClassesOnTheRootElement(): void

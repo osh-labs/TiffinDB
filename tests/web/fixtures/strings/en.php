@@ -35,4 +35,6 @@ return [
     'test.greeting' => 'Hello, {name} & welcome',
     'test.two' => '{a} and {b}',
     'test.markup' => '<b>{x}</b>',
+    'count.test.one' => 'One <thing>',
+    'count.test.many' => '{count} <things>',
 ];

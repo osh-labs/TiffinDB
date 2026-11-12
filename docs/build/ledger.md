@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1: WP0, WP1, WP8 merged (wave 1 closed); wave 2 (WP2, WP3) in progress (worktrees, unpushed) |
+| Phase | M1: WP0, WP1, WP3, WP8 merged; WP2 re-review in progress; WP4 in progress (worktrees, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP2: on report dispatch design-tier security review. WP3: on report dispatch design-tier review (URL/email validation). Then wave 3 (WP4 after WP3; WP6 after WP2). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
+| Next action | WP2: on re-review APPROVE merge, then dispatch WP6. WP4: on report dispatch design-tier review (SQL identifier generation). Then WP5 and WP7 (wave 4). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
 
 ## 2. Milestones
 
@@ -67,8 +67,8 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | follow-up round in progress (worktree, unpushed) | agent worktree | design tier | APPROVE with should-fix (migration race; parallel-guess test gap; write lock held during password verify; write lock on every resume; token exposed via serialize; IPv6 bucket variants) |
-| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 1 fixes in progress (worktree, unpushed) | agent worktree | design tier | round 1 REQUEST CHANGES (blocking: decimal numbers read back one bit off from SQLite and fail validation; should-fix: precision limit, malformed URL ports, untested backslash rule, email local-part mailto tricks, quote/angle characters in URLs) |
-| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
+| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
@@ -142,6 +142,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12, 02:50Z to 04:25Z | M1-WP0 merged after two review rounds; suite 1079 tests OK |
 | 2026-11-12, 02:50Z to 04:25Z | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
 | 2026-11-12T04:4xZ | M1-WP8 merged; wave 1 closed |
+| 2026-11-12T05:2xZ | M1-WP3 merged; WP4 dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -189,4 +190,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP4 | `RatingType::fromStorage` does not check `max`; `updateField` must clear values above a lowered max (T-SCH-9) | M1-WP3 review N3 |
 | M2 | Build `mailto:` hrefs with the local part `rawurlencode`d; escape every attribute with ENT_QUOTES | M1-WP3 review |
 | WP6, WP7 | Call `LoginThrottle::wait()` inside `write()`; read session tokens via `IssuedSession::token()` (property no longer public) | M1-WP2 follow-up |
+| URL rule refuses any host label starting `0x` (e.g. `0xford.example`); apply the hex test to the last label only and require hex digits | `src/Core/Schema/Type/UrlType.php` `looksLikeOtherIpv4` |
 

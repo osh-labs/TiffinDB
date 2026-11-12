@@ -64,7 +64,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-R1 | M1 | design | fixes to the D1 files only | done, merged, pushed (`c543e46`) | merged | n/a | READY AFTER LISTED FIXES; 8 fixes made; 13 judgement calls ruled below |
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
-| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); in review | agent worktree | implementation tier | pending |
+| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); round 1 fixes in progress | agent worktree | implementation tier | round 1 REQUEST CHANGES (blocking: `Fs::makeDir` accepted an existing directory; should-fix: `isInside` with `..`/NUL beyond existing ancestor, `writeNew` through dangling link, database file mode, T-REPO-9 alias bypass, control-character set) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
@@ -100,6 +100,8 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P48 | Installer data-directory exposure test makes one HTTP request from the server to itself | Accepted: plan 3.2 and ADR 0001 require an HTTP test; not a third-party call; skipped when data is outside the web root | `docs/specs/M1-foundation.md` section 16 |
 | P49 | Deferred from M1: snapshot restore, project deletion, audit-log screen, trash screen (M4), lone-Admin recovery without shell (M7) | Deferred | `docs/specs/M1-foundation.md` section 16 |
 | P50 to P60 | Spec review rulings J1 to J13 (P38 amended to SQLite 3.35.5): WP8 ships a form-actions partial; last-Admin check and change in one system-DB write, repositories never open writes; shared text helper owned by WP1; `changeType` converts inside the transaction; SQLite floor raised to 3.35.5 (amends P38); setup code written before the system DB and regenerated if missing; ADR 0012 allows a web composition root; probe uses a local error handler; stale `creating` projects cleared after one hour; throttling trade-offs accepted; choice-conversion dedupe and truncation; confirmation re-post excludes `_csrf`; probe Host trust verified on the host check | Ruled by the orchestrator; applied by M1-D2 | `docs/specs/M1-foundation.md` section 14 |
+| P61 | Control characters in names and text (`Core\Error\Text`) | Unicode categories Cc, Zl, Zp, Cf, except U+200C and U+200D | M1-WP1 review ruling; spec section 3.4 to be amended in as-built notes |
+| P62 | Path-containment check beyond the nearest existing ancestor | `Fs::isInside` refuses NUL and `.`/`..` segments in the non-existent part (stricter than spec 4.3 algorithm) | M1-WP1 review ruling; spec as-built notes |
 
 ## 5. Blockers
 

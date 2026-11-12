@@ -17,6 +17,7 @@ How to read them:
 - Each screen lists its elements in reading order, with every string as a key and its English text, its states, keyboard and screen-reader behaviour, behaviour without JavaScript, and the 390 px layout.
 - The web-layer rules they rely on (shells, partials, form conventions, string files, the visual check) are in `docs/specs/M1-screens.md`; the core behaviour behind each action is in `docs/specs/M1-foundation.md`.
 - What "matches" means for screens with and without a mock-up is defined in `docs/specs/M1-screens.md` section 8.
+- Wherever a design says a form ends with a submit button and "`form.cancel`" Cancel link, or a label carries the "`form.optional`" marker, the template uses the shared `form-actions` and `field-label` partials from WP8 (`docs/specs/M1-screens.md` section 4.4, P50) rather than printing those strings itself.
 
 No static wireframes are included: the element lists are precise enough to build from, and HTML wireframes would need either inline styles or a copy of the application stylesheet that could drift.
 

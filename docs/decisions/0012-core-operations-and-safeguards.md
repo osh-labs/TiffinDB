@@ -21,7 +21,7 @@ Plan section 8 and ADR 0005 require, from M1: every operation callable through t
 | `TiffinDB\Core\Install` | Requirement check, data-folder setup and exposure test, first Admin | Auth, System, Storage, Error |
 | `TiffinDB\Core\App` | **The core operations**: one entry point per action, each taking the acting user, checking permission, taking snapshots, writing the audit log | every Core namespace except Install |
 
-The web layer calls `Core\App` (and `Core\Install` during setup) only; it never touches Storage, Schema, or the databases directly. The post-v1 MCP adapter will call the same `Core\App` operations. A repository test enforces these dependencies.
+The web layer calls `Core\App` (and `Core\Install` during setup) only; it never touches Storage, Schema, or the databases directly. Amended at spec review (M1 provisional decision P58), the allowances are exactly these: one web-layer composition root, `TiffinDB\Web\CoreServices`, may construct core objects from any Core namespace (clock, randomness, hasher, data directory, system database, `Operations`, `Installer`, the HTTP probe) and implement the kernel's session methods over `Core\Auth`; and any web class may use value types and enums from `Core\Auth` (for example `Actor`, `SignedIn`, `IssuedSession`, `Permission`, `Role`), `Core\Install` (for example `InstallState`, `ProbeTarget`, `DataFolderResult`), `Core\Error` (exceptions and `Problem`), and the result objects returned by `Core\App`. Nothing else in `src/Web/` may name a class in `Core\Storage`, `Core\System`, `Core\Schema`, or `Core\Query`, or call a repository. The post-v1 MCP adapter will call the same `Core\App` operations. A repository test enforces these dependencies.
 
 ### 2. Authorization in the core
 

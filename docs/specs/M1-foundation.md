@@ -133,7 +133,30 @@ Rules:
 
 ### 3.4 Input strings
 
-Every string accepted by a core operation is checked to be valid UTF-8 (`preg_match('//u', $s) === 1`) and is trimmed of leading and trailing white space (`\s` in Unicode mode) unless the field type says otherwise. Character counts are Unicode code points, counted with `preg_match_all('/./su', $s)`; the `mbstring` extension is not required.
+Every string accepted by a core operation is checked to be valid UTF-8 and is trimmed of leading and trailing white space unless the field type says otherwise. Character counts are Unicode code points; the `mbstring` extension is not required.
+
+These rules live in one place, `TiffinDB\Core\Error\Text` (owned by WP1; `Core\Error` may be used by every core area, section 2.1), and every core class that checks a name or a piece of text calls it instead of repeating the rules (P52):
+
+```php
+final class Text
+{
+    public static function isUtf8(string $s): bool;                  // preg_match('//u', $s) === 1
+    public static function trim(string $s): string;                  // leading and trailing \s in Unicode mode
+    public static function length(string $s): int;                   // code points, preg_match_all('/./su', $s)
+    /** True when $s holds a control character other than those allowed (tab and \n are opt-in). */
+    public static function hasControl(string $s, bool $allowTab = false, bool $allowNewline = false): bool;
+    /**
+     * Problems for a required one-line name after trimming: empty (problem.name.empty), longer than $max
+     * (problem.name.too_long, max), control characters or invalid UTF-8 (problem.text.control).
+     * @return list<Problem>
+     */
+    public static function nameProblems(string $value, string $field, int $max): array;
+    /** The same for optional text: empty is allowed. */
+    public static function optionalTextProblems(string $value, string $field, int $max): array;
+}
+```
+
+Display names (`Core\Auth\DisplayNames`), table, item, field, and project names (`SchemaEditor`, `ProjectOperations`), help texts, and choice labels all go through `Text`. Field types use `Text::isUtf8`, `trim`, `length`, and `hasControl` for their own value rules (section 8.2).
 
 ## 4. Storage (`TiffinDB\Core\Storage`)
 
@@ -142,7 +165,7 @@ Every string accepted by a core operation is checked to be valid UTF-8 (`preg_ma
 ```php
 final class Sqlite
 {
-    public const MIN_VERSION = '3.35.0';
+    public const MIN_VERSION = '3.35.5';
     public const BUSY_TIMEOUT_MS = 5000;
 
     /** Opens an existing file. Throws Unavailable('missing') when it does not exist. */
@@ -535,7 +558,7 @@ final class UserRecord
 
 `Usernames::normalise(string): string` lower-cases ASCII letters. `Usernames::problems(string $username): list<Problem>`: after trimming, 3 to 32 characters, each in `A-Z a-z 0-9 . _ -` (key `problem.username.invalid`, field `username`).
 
-Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`). `DisplayNames::problems(string $name, string $field = 'display_name'): list<Problem>` applies these rules; `Installer::createFirstAdmin` and `PeopleOperations` both call it.
+Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`). `DisplayNames::problems(string $name, string $field = 'display_name'): list<Problem>` is `Text::nameProblems($name, $field, 60)` (section 3.4), so there is one implementation of the rules; `Installer::createFirstAdmin` and `PeopleOperations` both call it.
 
 ```php
 final class PasswordPolicy
@@ -972,11 +995,13 @@ For relation fields, the options `updateField` accepts are `{"links": "one"|"man
 
 **`changeType`**: allowed only when `FieldTypes::canConvert(from, to)` (`type`: `problem.type.not_convertible`). Steps:
 
-1. Refuse tables with more than 50,000 records (null: `problem.table.too_large_to_convert`, `max`). Read every row's `id` and value (live and trashed). Convert each non-empty value: `to->parse(from->toText(value, fromOptions), toOptions, lenient: true)`. Count failures. For a `choice` target whose `choices` option is empty, first fill it with the distinct non-empty source texts, sorted, at most 200 (more: `options.choices`: `problem.options.choices_too_many`).
-2. If failures > 0 and not `$confirmLoss`: throw `ConfirmationRequired(records with a cleared value, failures)`.
-3. Snapshot `field-type-change`.
-4. One transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1 that is not null (values that failed or are empty are not written, so the new column keeps its default: null, or 0 for a `checkbox` target, whose column is `NOT NULL`); update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
-5. Return `Impact(records with a cleared value, values cleared)`.
+1. Refuse tables with more than 50,000 records (null: `problem.table.too_large_to_convert`, `max`). Without `$confirmLoss`, run the dry run of step 3 (outside any transaction, as `previewTypeChange` does); if it finds failures, throw `ConfirmationRequired(records with a cleared value, failures)` and change nothing.
+2. Snapshot `field-type-change`.
+3. Open one `Database::write()` (`BEGIN IMMEDIATE`). Inside it, read every row's `id` and value (live and trashed) and convert each non-empty value: `to->parse(from->toText(value, fromOptions), toOptions, lenient: true)`; count failures. Reading inside the transaction means a record changed between the confirmation and the change is converted in its current state (P53). For a `choice` target whose `choices` option is empty, derive the choices first as described below. If, inside the transaction, there are failures and `$confirmLoss` is false (a record changed after the dry run), roll back and throw `ConfirmationRequired` with the new counts; the snapshot stays and is harmless.
+4. Still in the same transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1 that is not null (values that failed or are empty are not written, so the new column keeps its default: null, or 0 for a `checkbox` target, whose column is `NOT NULL`); update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
+5. Commit. Return `Impact(records with a cleared value, values cleared)`.
+
+Deriving choices for a `choice` target (P54): take the non-empty source texts in record `id` order; trim each; drop exact duplicates and texts equal to an earlier one ignoring ASCII case (the first seen is kept, and later values matching it in any case convert to it); cut each label longer than 100 characters to its first 99 characters followed by `…` (U+2026), and drop a cut label that then equals an earlier one ignoring case (its values convert to that earlier label); sort the result with `strcmp` on the ASCII-lower-cased label. More than 200 distinct labels after this: the change is refused (`options.choices`: `problem.options.choices_too_many`). A source value whose (trimmed, cut) text matches no derived label cannot occur; any value that still fails lenient parsing counts as a failure. If the derived options still fail `normaliseOptions` (for example a label that is only control characters after trimming), the change is refused with `options.choices`: `problem.options.choices_unconvertible` and nothing is changed.
 
 **`moveField`**: swap `position` with the neighbour in the direction given; renumber to 1..n.
 
@@ -1129,6 +1154,8 @@ final class Operations
 }
 ```
 
+**Transactions (P51).** Repository classes (`Users`, `Grants`, `Sessions`, `LoginThrottle`, `ProjectRegistry`, and any later repository) run plain statements and never open `Database::write()` themselves; calling one inside a transaction is the normal case. The caller that performs a business operation (a `Core\App` operation, `Authenticator`, `Installer`, `SchemaEditor`, `Trash`) opens exactly one `write()` around the check and the change it guards, so that a check and the change it permits cannot be separated by another request. Where section 5 or 6 says a repository method "writes in its own transaction" (for example `AuditLog::record`, which must not fail the operation), that class is an explicitly named exception, not a repository. A repository method called outside any transaction runs in SQLite's autocommit mode, which is allowed only for single-statement reads and the named exceptions.
+
 `Operations` builds the shared objects once (`Users`, `Grants`, `Sessions`, `LoginThrottle`, `Authenticator`, `ProjectRegistry`, `AuditLog`, `Authorizer`, `Keys`, `Snapshots`, `FieldTypes::standard($keys)`) and passes them to the per-area classes. Project databases are opened through one internal `ProjectOpener`, which looks the key up in the registry, opens `ProjectFile::open`, and caches the `Database` by key for the life of the `Operations` instance (one request).
 
 Every method whose first parameter is `Actor $actor` starts with `Authorizer::require`. Inputs that fail validation throw `ValidationFailed` with every problem found. Audit entries are written after the change commits.
@@ -1147,7 +1174,7 @@ Every method whose first parameter is `Actor $actor` starts with `Authorizer::re
 
 ### 9.3 `PeopleOperations`
 
-All require `people.manage`.
+All require `people.manage`. `update` and `deactivate` (and any other method guarded by the last-active-Admin rule) run the `Users::countActiveAdmins()` check and the change inside one system-database `write()` (`BEGIN IMMEDIATE`), so that two Admins demoting each other at the same moment cannot leave no active Admin (P51). Ending the person's sessions happens in the same transaction.
 
 | Method | Behaviour | Audit |
 |---|---|---|
@@ -1190,6 +1217,7 @@ final class ProjectSummary
 
 #### 9.4.1 Creating a project
 
+0. Clean up abandoned creations (P57): for each registry row in state `creating` whose `created_at` is more than one hour before now, remove the row and, when its project folder exists and holds nothing but what step 3 and step 4 create (`attachments/` and `snapshots/` both empty, `project.tiffin` and its `-wal`/`-shm` files), delete the folder; a folder holding anything else is left in place and its registry row is still removed (a line goes to the server error log naming the project key). This runs before the name check, so a name held by an abandoned creation becomes free again. Rows younger than one hour are left alone (another request may still be creating them).
 1. `project.create`. Name: 1 to 80 characters, no control characters, unique among projects ignoring ASCII case (`name`: `problem.name.empty`, `problem.name.too_long`, `problem.text.control`, `problem.project_name.taken`). A first table name that is not empty after trimming follows section 7.4 (field `first_table`). Both validated before anything is written.
 2. A key unique in the registry; `ProjectRegistry::add` with state `creating`.
 3. `Fs::makeDir` for `projects/` (when missing), the project folder, `attachments/`, `snapshots/`. An existing project folder is an error.
@@ -1272,6 +1300,7 @@ final class Installer
     public function requirements(bool $secure, ?string $documentRoot): RequirementReport;
     public function prepareDataFolder(?string $documentRoot, ?ProbeTarget $target, HttpProbe $probe): DataFolderResult;
     public function setupCodeLocation(): string;        // for messages, e.g. '../tiffindb-data/setup-code.txt'
+    public function ensureSetupCode(): void;            // section 10.3; NeedsAdmin only
     /** Creates the first Admin and signs them in. */
     public function createFirstAdmin(string $setupCode, string $displayName, string $username,
                                      string $password, string $clientAddress): IssuedSession;
@@ -1290,7 +1319,7 @@ final class Installer
 | Id | Check | ok | warning | failed |
 |---|---|---|---|---|
 | `php` | `PHP_VERSION_ID >= 80300` | `setup.check.php.ok` (`version`) | | `setup.check.php.failed` (`version`) |
-| `sqlite` | `pdo_sqlite` loaded and library at least 3.35.0 | `setup.check.sqlite.ok` (`version`) | | `setup.check.sqlite.missing`, or `setup.check.sqlite.old` (`version`) |
+| `sqlite` | `pdo_sqlite` loaded and library at least 3.35.5 (`Sqlite::MIN_VERSION`) | `setup.check.sqlite.ok` (`version`) | | `setup.check.sqlite.missing`, or `setup.check.sqlite.old` (`version`) |
 | `zip` | `extension_loaded('zip')` | `setup.check.zip.ok` | | `setup.check.zip.failed` |
 | `xmlreader` | `extension_loaded('xmlreader')` | `setup.check.xmlreader.ok` | | `setup.check.xmlreader.failed` |
 | `random` | `random_bytes(16)` succeeds | `setup.check.random.ok` | | `setup.check.random.failed` |
@@ -1312,7 +1341,7 @@ Choosing (`DataFolder::choose(string $appRoot, ?string $configured, ?string $doc
 
 `prepareDataFolder`:
 
-1. Choose; none gives outcome `failed` with `setup.data.no-place`. Create the directory unless it exists; an existing directory that holds anything other than a `.htaccess` written by TiffinDB, a `projects/` folder, and stale `probe-*.txt` files is refused (`failed`, `setup.data.not-empty`).
+1. Choose; none gives outcome `failed` with `setup.data.no-place`. Create the directory unless it exists; an existing directory that holds anything other than a `.htaccess` written by TiffinDB, a `projects/` folder, a `setup-code.txt` (left by an attempt that failed after writing it; it is replaced with a new code), and stale `probe-*.txt` files is refused (`failed`, `setup.data.not-empty`).
 2. Write `<data>/.htaccess` with exactly these two lines and a final newline (overwriting a copy TiffinDB wrote before):
 
    ```
@@ -1322,7 +1351,9 @@ Choosing (`DataFolder::choose(string $appRoot, ?string $configured, ?string $doc
 
 3. Outside a known document root: outcome `safe` without a probe.
 4. Otherwise run the exposure probe (10.4). `exposed` or `inconclusive` stops here and leaves the folder in place (it holds nothing sensitive yet) so a later attempt reuses it.
-5. `safe`: create `projects/`, `SystemDatabase::create`, write `<data>/setup-code.txt` (content: the code and a newline). Return `safe`.
+5. `safe`: write `<data>/setup-code.txt` (content: the code and a newline) **first**, then create `projects/`, then `SystemDatabase::create`. Because the state becomes `NeedsAdmin` only when `system.sqlite` exists, the code file always exists before step 3 can be shown (P55). Return `safe`.
+
+`Installer::ensureSetupCode(): void` (state `NeedsAdmin` only): when `<data>/setup-code.txt` is missing (for example deleted by hand), writes a new code with `Fs::writeNew`. `SetupController::show` calls it before rendering step 3, so `GET /setup` always leads to a readable code. An existing file is never replaced.
 
 ```php
 final class DataFolderResult
@@ -1384,6 +1415,7 @@ The web layer passes a null `$target` when `HTTP_HOST`, `SERVER_ADDR`, or `SERVE
 - Connects to `SERVER_ADDR:SERVER_PORT` (an IPv6 address in brackets) with `stream_socket_client`, `tcp://`, or `tls://` when the target is secure, with `ssl` context options `verify_peer` true, `verify_peer_name` true, `allow_self_signed` false, `peer_name` the host without its port, `SNI_enabled` true. Connection and read timeouts 5 seconds each.
 - Sends exactly `GET <path> HTTP/1.0\r\nHost: <host>\r\nUser-Agent: TiffinDB-setup-check\r\nConnection: close\r\n\r\n`.
 - Reads at most 65,536 bytes; parses the status line `HTTP/1.x NNN`; the body is everything after the first `\r\n\r\n`. Anything unparseable, a timeout, or a TLS failure gives null.
+- Connection, TLS, write, and read calls run under a local error handler installed with `set_error_handler` and restored in `finally`, as `Fs` does (section 4.3): a PHP warning from `stream_socket_client` (refused connection, unknown address, certificate failure) is caught and gives null, so the verdict is `inconclusive` and never a 500 page (P56). The suppression operator is not used.
 - Never follows redirects, sends no cookies or credentials, and never uses the `Host` value to decide where to connect.
 - Test seam: the constructor takes an optional `\Closure(string $uri, array $contextOptions, float $timeout): mixed` returning a stream or false. Tests return one end of `stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP)` whose other end already holds a canned response, then read what the probe wrote; no network and no server are involved (T-INS-8). The default closure calls `stream_socket_client`.
 
@@ -1449,6 +1481,7 @@ Core problems carry these keys (section 3.1). Their English text lives in `strin
 | `problem.options.choices_too_many` | Use at most {max} choices. |
 | `problem.options.choice_too_long` | Each choice can have at most {max} characters. |
 | `problem.options.choices_duplicate` | The choice "{label}" is listed twice. |
+| `problem.options.choices_unconvertible` | The existing values cannot be turned into a list of choices. Make it a text field instead, or tidy the values first. |
 | `problem.options.minor_digits_fixed` | The number of digits after the point cannot be changed once the field exists. |
 | `problem.options.start_fixed` | The starting number cannot be changed once the field exists. |
 | `problem.number.invalid` | Enter a number, for example 12 or 3.5. |
@@ -1498,7 +1531,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 
 | ID | Asserts |
 |---|---|
-| T-STO-1 | `create` on a temp file: journal mode `wal`, `foreign_keys` 1, `busy_timeout` 5000; `create` refuses an existing path; `open` of a missing path throws `Unavailable('missing')` |
+| T-STO-1 | `Sqlite::MIN_VERSION` is `3.35.5`; `create` on a temp file: journal mode `wal`, `foreign_keys` 1, `busy_timeout` 5000; `create` refuses an existing path; `open` of a missing path throws `Unavailable('missing')` |
 | T-STO-2 | `write` commits; rolls back on an exception and rethrows; nested `write` throws `\LogicException` |
 | T-STO-3 | With two connections (`busyTimeoutMs` 50), the second `write` while the first holds `BEGIN IMMEDIATE` throws `Busy` |
 | T-STO-4 | `Keys`: pattern; the same seed gives the same keys; `generateUnique` retries on a taken key and fails after 10 |
@@ -1540,7 +1573,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 | T-SCH-7 | `addField` for each type with a column: the declared column type from `PRAGMA table_xinfo` equals section 8.2; `checkbox` is `NOT NULL DEFAULT 0`; `auto_number` numbers three existing records 1, 2, 3 and has the unique index |
 | T-SCH-8 | `addRelation`: join table DDL, the indexes for each of the four cardinality pairs, both field rows, a self-relation, reverse-name conflicts; deleting a record row removes its join rows (cascade) |
 | T-SCH-9 | `updateField`: a choice label rename rewrites rows without confirmation; removing a used choice needs confirmation, then clears, with a `field-options` snapshot; rating `max` lowered; relation `many` to `one` refused with the count, then accepted after removing extra links; currency `minor_digits` and auto-number `start` refused |
-| T-SCH-10 | `changeType`: text to number with two unconvertible values throws `ConfirmationRequired(2, 2)` and changes nothing (file bytes and snapshots unchanged); with confirmation converts the rest, clears the two, takes one snapshot; text to choice derives sorted choices; title field cleared when the new type cannot be a title; refused pairs from section 8.4 |
+| T-SCH-10 | `changeType`: text to number with two unconvertible values throws `ConfirmationRequired(2, 2)` and changes nothing (file bytes and snapshots unchanged); with confirmation converts the rest, clears the two, takes one snapshot; text to choice derives sorted choices; values that differ only in case become one choice (the first seen kept, the others converted to it); a value of 150 characters becomes a 99-character label plus `…`, and two long values that cut to the same label become one choice; more than 200 distinct values refused with `problem.options.choices_too_many`; derived options that fail validation refused with `problem.options.choices_unconvertible` and nothing changed; a record edited between the dry run and the change (simulated by a second connection) is converted from its current value, and a newly failing value without confirmation gives `ConfirmationRequired` and no change; title field cleared when the new type cannot be a title; refused pairs from section 8.4 |
 | T-SCH-11 | `deleteField` for a column field, both sides of a relation, an attachment field (links removed); `deleteTable` removes relations into it from other tables; snapshots taken; positions renumbered |
 | T-SCH-12 | `moveField` up, down, and at both ends |
 | T-SCH-13 | `Schema` refuses a file with an unknown type or a malformed key (`Unavailable('not-project')`) |
@@ -1561,14 +1594,14 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 
 | ID | Asserts |
 |---|---|
-| T-APP-10 | Admin creates a project: registry state `active`, folder with `project.tiffin`, `attachments/`, `snapshots/`, file opens, meta `project_name`, audit `project.created`; with a first table, the table and its Name field exist; duplicate name (other case) gives `problem.project_name.taken` and creates nothing; a failure in `ProjectFile::create` (folder pre-created with the key `SeededRandom` will produce) leaves no registry row and no new files |
+| T-APP-10 | Admin creates a project: registry state `active`, folder with `project.tiffin`, `attachments/`, `snapshots/`, file opens, meta `project_name`, audit `project.created`; with a first table, the table and its Name field exist; duplicate name (other case) gives `problem.project_name.taken` and creates nothing; a failure in `ProjectFile::create` (folder pre-created with the key `SeededRandom` will produce) leaves no registry row and no new files; a `creating` row older than one hour (with `FixedClock`) and its folder holding only `project.tiffin`, empty `attachments/` and `snapshots/` are removed by the next `create`, and its name becomes usable; a `creating` row younger than one hour is kept; an old row whose folder holds another file loses its row but keeps the folder |
 | T-APP-11 | A Member cannot create a project (`AccessDenied`) |
 | T-APP-12 | `listFor`: Admin sees all, Member sees granted only; summary values (tables, live record count, last change and name, member count); a missing file gives `available` false |
 | T-APP-13 | `rename` updates file meta and registry; `sharing` and `setSharing` add and remove grants, ignore Admin keys, keep inactive Members' grants; an ungranted Member gets `NotFound` from `get` |
 | T-APP-20 | Admin creates a table and adds one field of each of the 17 types (relation through `addRelationField`), then reads `design`; a granted Member can call `tables` and `design` |
 | T-APP-21 | Every changing `SchemaOperations` method throws `AccessDenied` for a granted Member and `NotFound` for an ungranted one (data provider over all methods) |
 | T-APP-22 | A field key from another table, a table key from another project, and keys that are not valid keys all give `NotFound` |
-| T-APP-30 | People: create (validation all at once, uniqueness ignoring case); demoting or deactivating the last active Admin refused; deactivating oneself refused; deactivate ends sessions; `setTemporaryPassword` sets must-change and ends sessions; every method refuses a Member |
+| T-APP-30 | People: create (validation all at once, uniqueness ignoring case); demoting or deactivating the last active Admin refused; with two active Admins, two `Operations` instances on separate connections each demoting the other, interleaved at the count (test seam: a callback between check and change), leave at least one active Admin and one call refused or `Busy`; no repository method opens a transaction (a spy `Database` records `write()` calls); deactivating oneself refused; deactivate ends sessions; `setTemporaryPassword` sets must-change and ends sessions; every method refuses a Member |
 | T-APP-31 | `changeOwnPassword`: wrong current password refused and counted; after 5 wrong attempts throttled; success ends the other sessions and returns a new one; must-change flag cleared |
 | T-APP-40 | Trash: a granted Member moves to trash and restores; a Member cannot empty; empty takes an `empty-trash` snapshot and writes `trash.emptied` |
 | T-APP-50 | Manual snapshot is Admin-only; deleting a field writes `snapshot.taken` before `schema.field_deleted` |
@@ -1582,14 +1615,14 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 
 | ID | Asserts |
 |---|---|
-| T-INS-1 | `requirements()` with a fake environment: each row's status and key for passing and failing inputs; `canContinue` |
+| T-INS-1 | `requirements()` with a fake environment: each row's status and key for passing and failing inputs; SQLite 3.35.4 gives `setup.check.sqlite.old`, 3.35.5 passes; `canContinue` |
 | T-INS-2 | `DataFolder::choose` matrix: document root equal to the application folder (sibling chosen, outside); document root above the application folder (sibling inside, so `data` chosen); document root unknown (`data` chosen); configured path; nothing writable (none) |
-| T-INS-3 | Outside the document root: `safe` without calling the probe (spy); `system.sqlite`, `setup-code.txt` (code pattern), and `.htaccess` (exact text) exist |
+| T-INS-3 | Outside the document root: `safe` without calling the probe (spy); `system.sqlite`, `setup-code.txt` (code pattern), and `.htaccess` (exact text) exist; when `SystemDatabase::create` fails (injected), the code file exists and a second attempt succeeds, replacing it; `ensureSetupCode` writes a code when the file is missing and leaves an existing one unchanged |
 | T-INS-4 | Inside, with a fake `HttpProbe`: a served nonce gives `exposed`, no `system.sqlite`, no setup code; 404 gives `safe`; 403 gives `safe`; 200 without the nonce gives `safe`; 302, 500, and null give `inconclusive`; one served among refused gives `exposed`; the probe file is deleted in every case, including when the fake throws |
 | T-INS-5 | Probe paths: inside a known document root with a space in a folder name (encoded); base path `/x/public` gives both `/x/public/data/...` and `/x/data/...`; no paths gives `inconclusive` |
 | T-INS-6 | An existing non-empty data folder with unknown files is refused; one holding only TiffinDB's `.htaccess` is reused |
 | T-INS-7 | `createFirstAdmin`: wrong code gives the problem and, after five, `problem.throttled`; code typed in lower case with spaces is accepted; all field problems together; success sets `installed_at`, deletes the setup code, returns a session that `resume` accepts, audits `setup.complete`; state then `Installed` |
-| T-INS-8 | `LoopbackHttpProbe` with a socket pair: the request bytes are exactly as section 10.4; status and body parsed; more than 65,536 bytes truncated; a non-HTTP answer gives null; a secure target gives a `tls://` URI and the `ssl` options with `peer_name` without the port; an IPv6 address is bracketed |
+| T-INS-8 | `LoopbackHttpProbe` with a socket pair: the request bytes are exactly as section 10.4; status and body parsed; more than 65,536 bytes truncated; a non-HTTP answer gives null; a secure target gives a `tls://` URI and the `ssl` options with `peer_name` without the port; an IPv6 address is bracketed; a connector that raises a PHP warning and returns false (as `stream_socket_client` does for a refused connection) gives null with no warning escaping and the error handler restored; through `ExposureProbe` that answer gives `inconclusive` |
 | T-INS-9 | After installation every installer method other than `state()` throws `\LogicException` |
 
 ## 14. Provisional decisions (for the ledger, from P16)
@@ -1620,7 +1653,7 @@ Each was chosen as the option cheapest to reverse. "Brief" is the context brief 
 | P35 | M1 URLs (23); ledger item "make `/files` project-scoped" | ADR 0012 decision 5; attachments at `/projects/{project}/files/{attachment}` | Bookmarkable shapes fixed early |
 | P36 | System database upgrades (23) | `meta.schema_version`, forward-only steps, a copy before each | Same pattern as project files |
 | P37 | Data directory location | ADR 0011 decision 1; optional git-ignored `config/local.php` with `data_dir`, `timezone`, `secure_cookies` | Works on shared hosts without typing paths |
-| P38 | Platform minimums | SQLite 3.35 or later required; `mbstring` not required | `DROP COLUMN`; fewer host requirements |
+| P38 | Platform minimums (amended at spec review) | SQLite 3.35.5 or later required (`Sqlite::MIN_VERSION`, the installer check, ADR 0010); `mbstring` not required | 3.35.5 is the chosen floor for `DROP COLUMN`; fewer host requirements |
 | P39 | Removing people | Deactivate only, never delete; at least one active Admin always | Keeps attribution; avoids lock-out |
 | P40 | Strings file | `strings/en.php` combines area files `strings/en/*.php` (amends ADR 0008 decision 5: still one language entry point, now in parts); duplicate keys are an error | Lets work packages own disjoint files |
 | P41 | M1 top bar | No Display link (settings screen is M2) and no Plugins tab (M3); the user chip links to the password page | No links to screens that do not exist |
@@ -1630,6 +1663,17 @@ Each was chosen as the option cheapest to reverse. "Brief" is the context brief 
 | P45 | New-table "Name" field | Created by core with the English name "Name" as ordinary data | Matches the mock-ups; renameable |
 | P46 | "Show password" | A same-origin script, `public/assets/js/show-password.js`; the checkbox is hidden without JavaScript | Keeps the mock-up control without inline script |
 | P47 | Project names | Unique ignoring ASCII case | Avoids two identical cards |
+| P50 | Shared form partials (spec review J1) | WP8 ships the `form-actions` and `field-label` partials (`M1-screens.md` section 4.4), which print `form.cancel` and `form.optional`; WP10 and WP11 use them | Keeps the shared strings used where WP8's tests can see them |
+| P51 | Transaction ownership (J2) | Repositories never open `write()`; the business operation opens one `write()` around a check and the change it guards (last-active-Admin rule included), section 9.1 | Checks cannot be separated from their changes |
+| P52 | One text helper (J3) | `Core\Error\Text` holds UTF-8, trimming, length, control-character, and name rules; `DisplayNames` and every name check use it | One place for the rules |
+| P53 | Type change reads inside the transaction (J4) | After the snapshot, values are read and converted inside the `BEGIN IMMEDIATE` transaction; the earlier dry run only decides whether to ask | A record edited meanwhile is converted from its current value |
+| P54 | Deriving choices on conversion (J11) | Case-insensitive duplicates merged (first seen kept); labels over 100 characters cut to 99 plus an ellipsis; still invalid gives a plain refusal | Conversions do not fail on ordinary messy data |
+| P55 | Setup code ordering (J6) | The code file is written before `system.sqlite`; `GET /setup` in `NeedsAdmin` regenerates a missing code | The first-Admin step can never be stranded without a code |
+| P56 | Probe errors (J8) | `LoopbackHttpProbe` converts connection warnings to a null answer under a local error handler, giving `inconclusive` | No 500 page from a refused self-request |
+| P57 | Abandoned project creations (J9) | `create` removes `creating` rows older than one hour, and their folders when they hold only what create made, before the name check | A crash cannot hold a project name forever |
+| P58 | Web composition root (J7) | ADR 0012 decision 1 amended: `Web\CoreServices` may construct core objects, and the web layer may use `Core\Auth` and `Core\Install` value types; everything else goes through `Core\App`; enforced by T-WEB-23 | The kernel needs a place to build things without bypassing the boundary |
+| P59 | Confirmation re-post (J12) | The clearing-values confirmation page re-posts every submitted field except `_csrf` (and `confirm`), with the current token | No stale or duplicated tokens |
+| P60 | Throttling trade-offs (J10) | Accepted as described in section 16 item 11 | Household scale; no lockout |
 
 ## 15. Work packages
 
@@ -1813,8 +1857,8 @@ No package is mechanical: every one has judgement in it. The strings files are w
 
 ## 16. Assumptions and open points
 
-1. Apache 2.4 with `mod_rewrite` and `.htaccess` overrides (M0 spec section 17). The data-folder deny rule and the probe's verdicts on a real Apache server are unverified until the maintainer runs the host check.
-2. The hosting PHP has `pdo_sqlite` with SQLite 3.35 or later, `zip`, and `xmlreader` (plan Q2, unverified). The installer refuses to continue otherwise.
+1. Apache 2.4 with `mod_rewrite` and `.htaccess` overrides (M0 spec section 17). The data-folder deny rule and the probe's verdicts on a real Apache server are unverified until the maintainer runs the host check. The host-check procedure for the reference host must include running the installer's exposure probe there (a data folder inside the document root, deny rule present, expected verdict `safe`; with the rule removed, expected `exposed`) and recording the result.
+2. The hosting PHP has `pdo_sqlite` with SQLite 3.35.5 or later, `zip`, and `xmlreader` (plan Q2, unverified). The installer refuses to continue otherwise.
 3. Argon2id is configured with 19 MiB of memory, 2 passes, 1 thread (section 6.2), well below PHP's 64 MiB default, so that hashing fits shared-host memory limits. These are commonly recommended minimum parameters, not measured on the reference host; the host check should confirm a hash completes within the host's limits.
 4. Snapshot restore, project deletion, the audit-log screen, and the trash screen are not in M1. Snapshot restore needs its own design (open connections, WAL files); recorded for M4 or M7.
 5. A lone Admin without shell access cannot recover a forgotten password (P27); M7 documentation must recommend a second Admin, and M7 may add a file-based recovery.
@@ -1823,3 +1867,4 @@ No package is mechanical: every one has judgement in it. The strings files are w
 8. The exposure probe makes one HTTP request from the server to itself during setup. It is not a call to a third party, but it is network code; the maintainer may wish to confirm it is acceptable under the "no network calls" rule. The alternative is to require the data folder outside the document root, which some shared hosts cannot offer.
 9. `projects.name` uniqueness uses SQLite's `NOCASE`, which folds only ASCII letters; "Über" and "über" are distinct names.
 10. Record ids in URLs are sequential integers (P20); they reveal how many records were ever created in a table. Acceptable for a household application; revisit if records are ever shared outside the installation.
+11. Throttling trade-offs, accepted (P60): (a) the address bucket counts every visitor behind one shared address (a household router, a carrier proxy) together, so 20 failures from one person can make everyone behind that address wait up to 15 minutes; (b) anyone can make a known username wait by guessing wrongly five times; the wait is at most 15 minutes and never a lockout, and the right password is still refused only during the wait; (c) `s:setup` is one bucket for the whole installation, so before setup is finished a stranger can delay the real host's first-Admin step by up to 15 minutes at a time, though never take it over without the setup code. All three are judged acceptable at household scale.

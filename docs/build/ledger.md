@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1 implementation wave 1: WP0 under design-tier review; WP1 and WP8 in progress (all in worktrees, unpushed) |
+| Phase | M1 implementation wave 1: WP0 merged and pushed; WP1 and WP8 in progress (worktrees, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP0: on review APPROVE merge and push; on changes resume the author. WP1, WP8: on report dispatch reviews (WP8 design tier; WP1 implementation tier, reviewed again with WP2). Then wave 2 (WP2, WP3) after WP1 merges. If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
+| Next action | WP1, WP8: on report dispatch reviews (WP8 design tier; WP1 implementation tier, reviewed again with WP2). Then wave 2 (WP2, WP3) after WP1 merges. If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
 
 ## 2. Milestones
 
@@ -63,8 +63,8 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-D1 | M1 | design | `docs/specs/M1-*.md`, `docs/design/m1/*`, ADRs 0010 to 0012, `docs/formats/tiffin.md` | done, merged, pushed | merged | M1-R1 (design tier) | pending |
 | M1-R1 | M1 | design | fixes to the D1 files only | done, merged, pushed (`c543e46`) | merged | n/a | READY AFTER LISTED FIXES; 8 fixes made; 13 judgement calls ruled below |
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
-| M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | implemented (`c7b1269`, worktree, unpushed); in review | agent worktree | design tier | pending |
-| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
+| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); round 1 fixes in progress | agent worktree | implementation tier | round 1 REQUEST CHANGES (blocking: `Fs::makeDir` accepted an existing directory; should-fix: `isInside` with `..`/NUL beyond existing ancestor, `writeNew` through dangling link, database file mode, T-REPO-9 alias bypass, control-character set) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
@@ -100,6 +100,8 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P48 | Installer data-directory exposure test makes one HTTP request from the server to itself | Accepted: plan 3.2 and ADR 0001 require an HTTP test; not a third-party call; skipped when data is outside the web root | `docs/specs/M1-foundation.md` section 16 |
 | P49 | Deferred from M1: snapshot restore, project deletion, audit-log screen, trash screen (M4), lone-Admin recovery without shell (M7) | Deferred | `docs/specs/M1-foundation.md` section 16 |
 | P50 to P60 | Spec review rulings J1 to J13 (P38 amended to SQLite 3.35.5): WP8 ships a form-actions partial; last-Admin check and change in one system-DB write, repositories never open writes; shared text helper owned by WP1; `changeType` converts inside the transaction; SQLite floor raised to 3.35.5 (amends P38); setup code written before the system DB and regenerated if missing; ADR 0012 allows a web composition root; probe uses a local error handler; stale `creating` projects cleared after one hour; throttling trade-offs accepted; choice-conversion dedupe and truncation; confirmation re-post excludes `_csrf`; probe Host trust verified on the host check | Ruled by the orchestrator; applied by M1-D2 | `docs/specs/M1-foundation.md` section 14 |
+| P61 | Control characters in names and text (`Core\Error\Text`) | Unicode categories Cc, Zl, Zp, Cf, except U+200C and U+200D | M1-WP1 review ruling; spec section 3.4 to be amended in as-built notes |
+| P62 | Path-containment check beyond the nearest existing ancestor | `Fs::isInside` refuses NUL and `.`/`..` segments in the non-existent part (stricter than spec 4.3 algorithm) | M1-WP1 review ruling; spec as-built notes |
 
 ## 5. Blockers
 
@@ -127,6 +129,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T03:4xZ | M1-D1 merged (`54b24fc`), suite green; M1-R1 spec review dispatched |
 | 2026-11-12T04:0xZ | M1-R1 merged (`c543e46`); rulings sent to the spec author (M1-D2); M1-WP0 dispatched |
 | 2026-11-12T04:3xZ | M1-D2 merged (`a1714b8`); WP1 and WP8 dispatched; WP0 in review |
+| 2026-11-12T05:1xZ | M1-WP0 merged after two review rounds; suite 1079 tests OK |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -150,3 +153,6 @@ New carried-forward items (from M1-WP0):
 |---|---|
 | `@` suppression operator still used in maintainer tools (about 13 and 20 uses) | `tools/discovery/discover-structure.php`, `tools/host-check/host-check.php` |
 | README describes the digit-run rule less precisely than the code (four-digit cap on type-like names) | `tools/discovery/README.md` |
+| Discovery tool: replace the `sqlite_` prefix exemption with an allowlist of real internal names (`sqlite_sequence`, `sqlite_stat1` to `4`, `sqlite_master`, `sqlite_schema`, `sqlite_temp_*`, autoindex via recursion); only hand-crafted files reach it | `tools/discovery/discover-structure.php` `IdentifierRedactor::internal()` |
+| Discovery tool: `NameRedactor::extension()` fallback prints input verbatim (unreachable today); make it fail closed | `tools/discovery/discover-structure.php` near line 154 |
+| Newline-in-file-name test assumes a POSIX filesystem (CI is Linux) | `tests/tools/DiscoverStructureTest.php` |

@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M1: WP0, WP1, WP3, WP8 merged; WP2 re-review in progress; WP4 in progress (worktrees, unpushed) |
 | Window start | 2026-11-12T02:30Z (window 2) |
 | Resume reminder | `trig_01XZhcfKrDfgCzJQyY7oRt6r`, fires 2026-11-12T07:46Z |
-| Next action | WP2: on re-review APPROVE merge, then dispatch WP6. WP4: on report dispatch design-tier review (SQL identifier generation). Then WP5 and WP7 (wave 4). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. |
+| Next action | WP2: on re-review APPROVE merge, then dispatch WP6. WP4: on report dispatch design-tier review (SQL identifier generation). Then WP5 and WP7 (wave 4). If resuming after a reclaim: rebuild PHPUnit install and redo every unpushed package. Maintainer instruction: stop when M1 closes (exit audit recorded, checkpoint pushed, resume reminder deleted); do not start M2. |
 
 ## 2. Milestones
 
@@ -143,6 +143,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12, 02:50Z to 04:25Z | M1-WP1 merged; wave 2 (WP2, WP3) dispatched |
 | 2026-11-12T04:4xZ | M1-WP8 merged; wave 1 closed |
 | 2026-11-12T05:1xZ | M1-WP3 merged; WP4 dispatched |
+| 2026-11-12T05:1xZ | Maintainer instruction: stop at the end of M1 (after the exit audit and checkpoint); do not start M2 until instructed |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

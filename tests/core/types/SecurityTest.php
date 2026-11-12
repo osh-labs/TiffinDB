@@ -192,7 +192,8 @@ final class SecurityTest extends TestCase
 
     /**
      * P67: addresses filter_var accepts but TiffinDB refuses: quoted local
-     * parts and local parts holding < > " ' ` \ ( ) , ; : [ ].
+     * parts and local parts holding < > " ` \ ( ) , ; : [ ] (the apostrophe
+     * is allowed).
      *
      * @return iterable<string, array{string}>
      */
@@ -206,8 +207,6 @@ final class SecurityTest extends TestCase
             '"<script>alert(1)</script>"@example.com',
             '"a,b;c:d"@example.com',
             '"(x)[y]"@example.com',
-            "o'brien@example.com",
-            "'@example.com",
             '`whoami`@example.com',
             'a`b@example.com',
         ];
@@ -234,14 +233,14 @@ final class SecurityTest extends TestCase
     public function testEmailLocalPartCharacters(): void
     {
         $type = self::types()->get('email');
-        foreach (['<', '>', '"', "'", '`', '\\', '(', ')', ',', ';', ':', '[', ']'] as $character) {
+        foreach (['<', '>', '"', '`', '\\', '(', ')', ',', ';', ':', '[', ']'] as $character) {
             foreach (['a' . $character . 'b@example.com', '"a' . $character . 'b"@example.com', '"x y"@example.com'] as $email) {
                 self::assertFalse($type->parse($email, [])->isOk(), $email);
                 self::assertFalse($type->parse($email, [], true)->isOk(), $email);
                 self::assertNull($type->fromStorage($email, []), $email);
             }
         }
-        foreach (['user@example.com', 'a.b+c_d-e@example.com', 'user@[192.0.2.1]', "!#$%&*+/=?^_{|}~-@example.com"] as $email) {
+        foreach (['user@example.com', "o'brien@example.com", "'@example.com", "a'b'c@example.com", 'a.b+c_d-e@example.com', 'user@[192.0.2.1]', "!#$%&*+/=?^_{|}~-@example.com"] as $email) {
             self::assertSame($email, $type->parse($email, [])->value(), $email);
             self::assertSame($email, $type->fromStorage($email, []), $email);
         }

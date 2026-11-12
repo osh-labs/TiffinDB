@@ -109,7 +109,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and `< > " ` \ ( ) , ; : [ ]` in the local part refused; apostrophe allowed (amended); addendum: `? # % & /` also refused in local parts | M1-WP3 rulings; spec section 8 as-built notes |
 | P68 | Sign-in transaction shape (amends P51 for sign-in) | Three steps: short write that checks the throttle and pre-counts a failure; password verify with no transaction; short write that settles success or failure | M1-WP2 review ruling; spec section 6 as-built notes |
 | P69 | Session resume | Plain read first; write transaction only to touch (over 300 s) or delete, re-checked inside | M1-WP2 review ruling |
-| P70 | Throttle address buckets | Canonicalised with `inet_pton`/`inet_ntop`; IPv6 keyed by /64; unparseable addresses used as given | M1-WP2 review ruling; amends spec 6.6 |
+| P70 | Throttle address buckets | Canonicalised with `inet_pton`/`inet_ntop`; IPv6 keyed by /64; IPv4-mapped IPv6 treated as IPv4; unparseable addresses used as given | M1-WP2 review ruling; amends spec 6.6 |
 | P71 | Number magnitude | Limit is `10^(15 - decimals)` exclusive (at most 15 significant digits); applies to parse, check and min/max options; `fromStorage` snaps a float to `decimals` when within 4 ulp | M1-WP3 review ruling; amends spec 8 |
 | P72 | URL characters and hosts | Refuse `" < > `` ` `` anywhere; authority must be host or bracketed IPv6 with port 1 to 65535; refuse hex, single-integer and short-dotted numeric hosts | M1-WP3 review ruling; amends spec 8 |
 
@@ -188,4 +188,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP7 | End any previous session token when signing someone in | M1-WP2 review F9 |
 | WP4 | `RatingType::fromStorage` does not check `max`; `updateField` must clear values above a lowered max (T-SCH-9) | M1-WP3 review N3 |
 | M2 | Build `mailto:` hrefs with the local part `rawurlencode`d; escape every attribute with ENT_QUOTES | M1-WP3 review |
+| WP6, WP7 | Call `LoginThrottle::wait()` inside `write()`; read session tokens via `IssuedSession::token()` (property no longer public) | M1-WP2 follow-up |
 

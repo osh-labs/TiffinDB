@@ -141,7 +141,7 @@ final class NameRedactor
     /** @return array{0:string,1:string} stem and extension (with its dot, or '') */
     public function split(string $name): array
     {
-        if (preg_match('/^(.+)(\.[A-Za-z0-9]{1,12}(?:-(?:wal|shm|journal))?)$/s', $name, $m) === 1
+        if (preg_match('/^(.+)(\.[A-Za-z0-9]{1,12}(?:-(?:wal|shm|journal))?)$/sD', $name, $m) === 1
             && preg_match('/[A-Za-z]/', $m[2]) === 1) {
             return [$m[1], $m[2]];
         }
@@ -151,7 +151,7 @@ final class NameRedactor
     /** Shows a known extension; replaces any other by a stable placeholder. */
     public function extension(string $ext): string
     {
-        if ($this->showNames || preg_match('/^\.([A-Za-z0-9]+)(-(?:wal|shm|journal))?$/', $ext, $m) !== 1) {
+        if ($this->showNames || preg_match('/^\.([A-Za-z0-9]+)(-(?:wal|shm|journal))?$/D', $ext, $m) !== 1) {
             return printable($ext);
         }
         $suffix = $m[2] ?? '';
@@ -166,11 +166,11 @@ final class NameRedactor
         if (isset($this->structural[strtolower($stem)])) {
             return $stem;
         }
-        if (preg_match('/^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/i', $stem) === 1) {
+        if (preg_match('/^\{?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}?$/iD', $stem) === 1) {
             $class = 'uuid';
-        } elseif (preg_match('/^\d+$/', $stem) === 1) {
+        } elseif (preg_match('/^\d+$/D', $stem) === 1) {
             $class = 'num';
-        } elseif (preg_match('/^[0-9a-f]{8,}$/i', $stem) === 1) {
+        } elseif (preg_match('/^[0-9a-f]{8,}$/iD', $stem) === 1) {
             $class = 'hex';
         } else {
             $class = 'name';
@@ -244,10 +244,19 @@ final class IdentifierRedactor
         return $flagged;
     }
 
+    /**
+     * SQLite's own objects (sqlite_sequence, sqlite_stat1, ...). Only a plain
+     * identifier qualifies, so a crafted name cannot use the prefix to be shown.
+     */
+    public static function internal(string $name): bool
+    {
+        return stripos($name, 'sqlite_') === 0 && preg_match('/^[A-Za-z0-9_]{1,63}$/D', $name) === 1;
+    }
+
     /** @return list<string> */
     public static function flags(string $name): array
     {
-        if (stripos($name, 'sqlite_') === 0) {
+        if (self::internal($name)) {
             return [];
         }
         $reasons = [];
@@ -266,7 +275,7 @@ final class IdentifierRedactor
     /** Identifier as it should appear in the report. */
     public function ident(string $name): string
     {
-        if (preg_match('/^(sqlite_autoindex_)(.+)(_\d+)$/is', $name, $m) === 1) {
+        if (preg_match('/^(sqlite_autoindex_)(.+)(_\d+)$/isD', $name, $m) === 1) {
             return $m[1] . $this->ident($m[2]) . $m[3];
         }
         $reasons = self::flags($name);
@@ -274,7 +283,7 @@ final class IdentifierRedactor
         if ($this->mode === 'flagged') {
             $hide = $reasons !== [];
         } elseif ($this->mode === 'all') {
-            $hide = !isset($this->keep[strtolower($name)]) && stripos($name, 'sqlite_') !== 0;
+            $hide = !isset($this->keep[strtolower($name)]) && !self::internal($name);
         }
         $shown = $hide
             ? 'id_' . substr(hash_hmac('sha256', strtolower($name), $this->key), 0, 10)
@@ -300,7 +309,7 @@ final class IdentifierRedactor
         if ($normal === '') {
             return '';
         }
-        if (preg_match('/^([A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*) ?(?:\( ?\d{1,5} ?(?:, ?\d{1,5} ?)?\))?$/', $normal, $m) === 1) {
+        if (preg_match('/^([A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*) ?(?:\( ?\d{1,5} ?(?:, ?\d{1,5} ?)?\))?$/D', $normal, $m) === 1) {
             $standard = true;
             foreach (explode(' ', $m[1]) as $word) {
                 $standard = $standard && isset($this->typeWords[strtolower($word)]);
@@ -627,7 +636,7 @@ function detect_kind(string $head, int $size): string
     if (str_starts_with($head, "\x37\x7f\x06\x82") || str_starts_with($head, "\x37\x7f\x06\x83")) {
         return 'sqlite-wal';
     }
-    if (preg_match('/^[\x09\x0a\x0d\x20-\x7e\x80-\xff]*$/', $head) === 1
+    if (preg_match('/^[\x09\x0a\x0d\x20-\x7e\x80-\xff]*$/D', $head) === 1
         && (preg_match('//u', $head) === 1 || preg_match('//u', substr($head, 0, -3)) === 1)) {
         return 'text';
     }
@@ -712,7 +721,7 @@ function process_file(Run $run, string $abs, string $shownPath, ?int $size, int 
     $size ??= 0;
     $kind = detect_kind($head, $size);
     $row = ['path' => $shownPath, 'type' => 'file', 'size' => $size, 'kind' => $kind];
-    if ($kind !== 'sqlite' && preg_match('/\.(?:sqlite3?|db3?|sqlitedb|database)$/i', $abs) === 1 && $onDisk) {
+    if ($kind !== 'sqlite' && preg_match('/\.(?:sqlite3?|db3?|sqlitedb|database)$/iD', $abs) === 1 && $onDisk) {
         $row['note'] = 'database-like extension but no SQLite header (encrypted or another format?)';
     }
     $run->layout[] = $row;
@@ -1006,7 +1015,7 @@ function read_schema(Run $run, PDO $pdo, int $databaseNumber): array
  */
 function split_shape_target(string $target): array
 {
-    if (preg_match('/^(\d+):(.+)$/s', $target, $m) === 1) {
+    if (preg_match('/^(\d+):(.+)$/sD', $target, $m) === 1) {
         return [(int) $m[1], $m[2]];
     }
     return [null, $target];
@@ -1023,9 +1032,9 @@ function describe_default(mixed $default): array
         return ['present' => false, 'kind' => null];
     }
     $text = trim((string) $default);
-    if (preg_match('/^[+-]?(?:\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|0[xX][0-9a-fA-F]+)$/', $text) === 1) {
+    if (preg_match('/^[+-]?(?:\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?|0[xX][0-9a-fA-F]+)$/D', $text) === 1) {
         $kind = 'numeric';
-    } elseif (preg_match('/^(?:NULL|TRUE|FALSE|CURRENT_TIME|CURRENT_DATE|CURRENT_TIMESTAMP)$/i', $text) === 1) {
+    } elseif (preg_match('/^(?:NULL|TRUE|FALSE|CURRENT_TIME|CURRENT_DATE|CURRENT_TIMESTAMP)$/iD', $text) === 1) {
         $kind = 'keyword';
     } elseif (preg_match('/^(?:[xX]?\'|")/', $text) === 1) {
         $kind = 'text-or-blob';
@@ -1143,16 +1152,16 @@ function shape_mask(string $value, bool $truncated = false): string
     $cut = $m[0] ?? '';
     $mask = (string) preg_replace_callback('/./us', static function (array $c): string {
         $ch = $c[0];
-        if (preg_match('/^[\p{Lu}\p{Lt}]$/u', $ch) === 1) {
+        if (preg_match('/^[\p{Lu}\p{Lt}]$/uD', $ch) === 1) {
             return 'A';
         }
-        if (preg_match('/^\p{L}$/u', $ch) === 1) {
+        if (preg_match('/^\p{L}$/uD', $ch) === 1) {
             return 'a';
         }
-        if (preg_match('/^\p{N}$/u', $ch) === 1) {
+        if (preg_match('/^\p{N}$/uD', $ch) === 1) {
             return '9';
         }
-        return preg_match('/^[\x20-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]$/', $ch) === 1 ? $ch : '?';
+        return preg_match('/^[\x20-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]$/D', $ch) === 1 ? $ch : '?';
     }, $cut);
     return $truncated || strlen($cut) < strlen($value) ? $mask . '...' : $mask;
 }

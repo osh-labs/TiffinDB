@@ -342,6 +342,53 @@ final class DiscoverStructureTest extends TestCase
         self::assertMatchesRegularExpression('/^\s+id_[0-9a-f]{10}  \[not-a-plain-identifier, digit-run\]$/m', $out);
     }
 
+    public function testFileNameEndingInANewlineGetsTheGenericPlaceholder(): void
+    {
+        $package = $this->dir . '/newline-files';
+        mkdir($package, 0700);
+        foreach (["123\n", "Info.plist\n", "notes.txt\n"] as $name) {
+            file_put_contents($package . '/' . $name, 'x');
+        }
+
+        [$code, $out] = $this->discover([$package]);
+        self::assertSame(0, $code);
+
+        // Neither the structural name, the known extensions nor the number class
+        // may survive: each whole name, newline included, is one placeholder.
+        self::assertStringNotContainsString('Info', $out);
+        self::assertStringNotContainsString('.plist', $out);
+        self::assertStringNotContainsString('.txt', $out);
+        self::assertStringNotContainsString('<num-', $out);
+        self::assertSame(3, preg_match_all('/^text\s+1\s+<name-\d+>$/m', $out));
+    }
+
+    public function testSqlitePrefixAndAutoindexExemptionsNeedPlainNames(): void
+    {
+        // SQLite refuses to open a schema holding such names, so the redactor
+        // is exercised directly, in a child process that loads the script.
+        $code = 'require $argv[1];'
+            . '$r = new IdentifierRedactor("flagged", "synthetic-key");'
+            . 'echo json_encode(['
+            . 'IdentifierRedactor::flags("sqlite_Example\n"),'
+            . 'IdentifierRedactor::flags("sqlite_stat1"),'
+            . '$r->ident("sqlite_autoindex_Example Person_1\n"),'
+            . '$r->ident("sqlite_autoindex_things_1"),'
+            . ']);';
+        $process = proc_open([PHP_BINARY, '-r', $code, self::SCRIPT], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        $stdout = (string) stream_get_contents($pipes[1]);
+        $stderr = (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        self::assertSame(0, proc_close($process), $stderr);
+
+        $result = json_decode($stdout, true, 4, JSON_THROW_ON_ERROR);
+        self::assertSame(['not-a-plain-identifier'], $result[0]);
+        self::assertSame([], $result[1]);
+        self::assertMatchesRegularExpression('/^id_[0-9a-f]{10}$/D', $result[2]);
+        self::assertSame('sqlite_autoindex_things_1', $result[3]);
+    }
+
     public function testFileNamesAndUnknownExtensionsAreRedactedByDefault(): void
     {
         [, $out] = $this->discover([$this->package]);

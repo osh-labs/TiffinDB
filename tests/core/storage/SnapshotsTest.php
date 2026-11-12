@@ -148,6 +148,41 @@ final class SnapshotsTest extends TestCase
         }
     }
 
+    public function testAFailedCopyLeavesNoSnapshotBehind(): void
+    {
+        // A synthetic database of 400 rows of 200 bytes, page size 4096, closed before it is damaged.
+        $path = $this->folder . '/project.tiffin';
+        $setup = Sqlite::create($path);
+        $setup->run('PRAGMA journal_mode = DELETE');
+        $setup->run('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+        $setup->write(function (Database $tx): void {
+            for ($i = 0; $i < 400; $i++) {
+                $tx->run('INSERT INTO items (name) VALUES (?)', [str_repeat(chr(65 + $i % 26), 200)]);
+            }
+        });
+        self::assertSame(4096, $setup->value('PRAGMA page_size'));
+        $setup->close();
+
+        // Overwrite 2000 bytes inside page 6 so that VACUUM INTO fails after creating its output file.
+        $handle = fopen($path, 'r+');
+        self::assertIsResource($handle);
+        fseek($handle, 4096 * 5 + 8);
+        fwrite($handle, str_repeat("\xff", 2000));
+        fclose($handle);
+
+        $this->db = Sqlite::open($path);
+        try {
+            $this->snapshots->take($this->db, $this->folder, SnapshotReason::Manual);
+            self::fail('A snapshot of a damaged database must fail.');
+        } catch (\PDOException $e) {
+            self::assertStringContainsString('malformed', $e->getMessage());
+        }
+
+        self::assertDirectoryExists($this->folder . '/snapshots');
+        self::assertSame([], glob($this->folder . '/snapshots/*.tiffin'), 'The partial output file is removed.');
+        self::assertSame([], $this->snapshots->list($this->folder));
+    }
+
     public function testRefusedInsideATransaction(): void
     {
         $db = $this->project();

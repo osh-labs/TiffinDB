@@ -31,6 +31,13 @@ final class Snapshots
     /**
      * VACUUM INTO <folder>/snapshots/<name>; creates snapshots/ if missing;
      * prunes afterwards. Refused (\LogicException) inside a transaction.
+     *
+     * When VACUUM INTO, chmod, or reading the size fails, the output file is
+     * removed, so a partial copy is never listed. Known narrow race: the
+     * free-name check and VACUUM INTO are separate steps, so a file another
+     * process creates at the same name in between makes VACUUM INTO fail and
+     * is then removed by that cleanup. Names carry a time and 4 random
+     * characters and the folder belongs to TiffinDB, so this is accepted.
      */
     public function take(Database $db, string $projectFolder, SnapshotReason $reason): SnapshotInfo
     {

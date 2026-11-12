@@ -819,6 +819,13 @@ textarea.input {
   line-height: 1.25;
 }
 
+/* The project name link: a full touch target, same look */
+.project-name a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
 .facts {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

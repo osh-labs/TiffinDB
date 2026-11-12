@@ -36,12 +36,14 @@ final class ComposerManifestTest extends TestCase
         self::assertSame('AGPL-3.0-or-later', $manifest['license'] ?? null);
     }
 
-    public function testRuntimeRequiresOnlyPhp(): void
+    public function testRuntimeRequiresOnlyPhpAndPdoSqlite(): void
     {
         $require = self::manifest()['require'] ?? null;
 
         self::assertIsArray($require);
-        self::assertSame(['php'], array_keys($require));
+        self::assertSame(['php', 'ext-pdo_sqlite'], array_keys($require));
+        // M1 spec section 4.1: the core stores everything in SQLite through PDO.
+        self::assertSame('*', $require['ext-pdo_sqlite']);
     }
 
     public function testDevelopmentRequiresOnlyPhpunit(): void

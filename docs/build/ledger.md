@@ -67,7 +67,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | done, merged, pushed | merged | implementation tier | APPROVE after 3 rounds (round 1: `makeDir` accepted existing dirs, path checks, links, modes, layer-test bypasses; round 2: comment bypass of transaction guard, untested snapshot cleanup) |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`6813e81` incl. P65, worktree, unpushed); in review | agent worktree | design tier | pending |
-| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`f763f7e`, worktree, unpushed); P67 change in progress | agent worktree | design tier (next) | |
+| M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | implemented (`96b3d9c` incl. P67, worktree, unpushed); in review | agent worktree | design tier | pending |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | not started | | | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
@@ -106,7 +106,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P64 | Folder removal | `Fs::removeDir` removes an empty directory only, never follows links; no recursive removal; callers remove known files first | M1-WP1 review ruling; spec as-built notes |
 | P65 | Login throttle reset | A bucket resets only when its last failure (not its window start) is over 900 s old and it is not blocked, so waiting out each block still doubles to the 15-minute cap; `login_throttle` gains `last_failure_at` (system schema v1); stale rows deleted when last failure is over a day old and not blocked | M1-WP2 ruling; spec section 6.6 as-built notes |
 | P66 | WP2 additions accepted | Repositories refuse row changes outside `write()` (`SystemDatabase::requireTransaction()`); `Authenticator::signOut` writes its own audit entry (WP5 must not repeat it); failed sign-ins record the matched person; usernames trimmed before normalising; NUL refused in passwords | M1-WP2 report; spec as-built notes |
-| P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and HTML/quote/punctuation characters in the local part refused | M1-WP3 rulings; spec section 8 as-built notes |
+| P67 | Field-type validation strictness | URLs: userinfo refused, printable ASCII only (IDN as `xn--`), http/https only; emails: quoted local parts and `< > " ` \ ( ) , ; : [ ]` in the local part refused; apostrophe allowed (amended) | M1-WP3 rulings; spec section 8 as-built notes |
 
 ## 5. Blockers
 

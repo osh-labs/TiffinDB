@@ -42,7 +42,7 @@ src/Core/Error/       shared exceptions and Problem
 src/Core/Storage/     Database, Sqlite, Clock, Random, Keys, Timestamp, DataDirectory, Fs, Snapshots
 src/Core/System/      SystemDatabase, SystemSchema, ProjectRegistry, AuditLog
 src/Core/Auth/        Role, GrantLevel, Permission, Actor, PasswordHasher, PasswordPolicy, Usernames,
-                      Users, Grants, Sessions, LoginThrottle, Authenticator, Csrf, Authorizer
+                      DisplayNames, Users, Grants, Sessions, LoginThrottle, Authenticator, Csrf, Authorizer
 src/Core/Schema/      Identifier, ProjectFile, FormatMigrations, Schema, TableDef, FieldDef,
                       RelationDef, Cardinality, SchemaEditor, FieldTypes
 src/Core/Schema/Type/ FieldType, Checked, and one class per field type
@@ -535,7 +535,7 @@ final class UserRecord
 
 `Usernames::normalise(string): string` lower-cases ASCII letters. `Usernames::problems(string $username): list<Problem>`: after trimming, 3 to 32 characters, each in `A-Z a-z 0-9 . _ -` (key `problem.username.invalid`, field `username`).
 
-Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`).
+Display names: 1 to 60 characters after trimming, no control characters (keys `problem.name.empty`, `problem.name.too_long` with `max` 60, `problem.text.control`; field `display_name`). `DisplayNames::problems(string $name, string $field = 'display_name'): list<Problem>` applies these rules; `Installer::createFirstAdmin` and `PeopleOperations` both call it.
 
 ```php
 final class PasswordPolicy
@@ -973,12 +973,12 @@ For relation fields, the options `updateField` accepts are `{"links": "one"|"man
 1. Refuse tables with more than 50,000 records (null: `problem.table.too_large_to_convert`, `max`). Read every row's `id` and value (live and trashed). Convert each non-empty value: `to->parse(from->toText(value, fromOptions), toOptions, lenient: true)`. Count failures. For a `choice` target whose `choices` option is empty, first fill it with the distinct non-empty source texts, sorted, at most 200 (more: `options.choices`: `problem.options.choices_too_many`).
 2. If failures > 0 and not `$confirmLoss`: throw `ConfirmationRequired(records with a cleared value, failures)`.
 3. Snapshot `field-type-change`.
-4. One transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1; update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
+4. One transaction: drop the field's own indexes (`"x_f_<key>_u"` if present); `ALTER TABLE <t> DROP COLUMN <f>`; `ALTER TABLE <t> ADD COLUMN <f> <new definition>`; `UPDATE <t> SET <f> = ? WHERE "id" = ?` for each converted value read in step 1 that is not null (values that failed or are empty are not written, so the new column keeps its default: null, or 0 for a `checkbox` target, whose column is `NOT NULL`); update the field row's `type`, `options`, `updated_at`; when the field was the title field and the new type cannot be a title, clear `title_field`.
 5. Return `Impact(records with a cleared value, values cleared)`.
 
 **`moveField`**: swap `position` with the neighbour in the direction given; renumber to 1..n.
 
-**`deleteField`**: snapshot `field-delete`. One transaction: for a relation field, `DROP TABLE` the join table (its indexes go with it) and delete both field rows and the relation row; for an attachment field, delete its `_tiffin_attachment_links` rows and its field row; for a field with a column, drop its own indexes, `ALTER TABLE <t> DROP COLUMN <f>`, and delete the field row; clear `title_field` where it named a deleted field; renumber positions in each affected table.
+**`deleteField`**: snapshot `field-delete`. One transaction: for a relation field, `DROP TABLE` the join table (its indexes go with it), delete the relation row, then both field rows (in that order: `_tiffin_relations` references both fields without `ON DELETE`, so deleting a field row first fails the foreign-key check); for an attachment field, delete its `_tiffin_attachment_links` rows and its field row; for a field with a column, drop its own indexes, `ALTER TABLE <t> DROP COLUMN <f>`, and delete the field row; clear `title_field` where it named a deleted field; renumber positions in each affected table.
 
 ### 7.5 `FieldTypes`
 
@@ -1532,7 +1532,7 @@ All tests are PHPUnit tests under `tests/` (ADR 0008 decision 7), run by `compos
 | T-SCH-2 | `open` refuses a plain SQLite file (`not-project`), a newer version, a different project key, a missing file |
 | T-SCH-3 | An injected format step: `format-upgrade` snapshot taken first, version and meta updated; a failing step rolls back |
 | T-SCH-4 | `Identifier`: outputs for valid keys; rejects upper case, wrong length, quotes, spaces, non-ASCII, `x"; DROP TABLE t; --`; `system()` rejects other names; `index()` rejects other purposes |
-| T-SCH-5 | Names from people never become identifiers: tables and fields named `"; DROP TABLE x; --`, `Name"`, `Ünïcödé`, and 60 characters of `x` are created; afterwards every name in `sqlite_master` matches `^(_tiffin_\w+|sqlite_\w+|[tfjx]_[a-z2-7]{12}(_\w+)?)$`, and the display names are stored unchanged |
+| T-SCH-5 | Names from people never become identifiers: tables and fields named `"; DROP TABLE x; --`, `Name"`, `Ünïcödé`, and 60 characters of `x` are created; afterwards every name in `sqlite_master` matches `^(_tiffin_\w+|sqlite_\w+|[tfj]_[a-z2-7]{12}|x_[tfj]_[a-z2-7]{12}_(trash|u|r|l1|r1))$`, and the display names are stored unchanged |
 | T-SCH-6 | `createTable` with and without the Name field; positions; title field; every validation problem of section 7.4, all reported together |
 | T-SCH-7 | `addField` for each type with a column: the declared column type from `PRAGMA table_xinfo` equals section 8.2; `checkbox` is `NOT NULL DEFAULT 0`; `auto_number` numbers three existing records 1, 2, 3 and has the unique index |
 | T-SCH-8 | `addRelation`: join table DDL, the indexes for each of the four cardinality pairs, both field rows, a self-relation, reverse-name conflicts; deleting a record row removes its join rows (cascade) |

@@ -45,6 +45,10 @@ final class PasswordPolicyTest extends TestCase
         yield 'not trimmed' => ['  exampleperson', 'exampleperson', []];
         yield 'invalid UTF-8' => ["abcdefghij\xff", 'admin', ['problem.text.control']];
         yield 'NUL byte' => ["abcdefghij\0", 'admin', ['problem.text.control']];
+        yield 'short with a NUL byte' => ["abc\0", 'admin', ['problem.password.too_short', 'problem.text.control']];
+        yield 'long invalid UTF-8' => [str_repeat("\xff", 73), 'admin', ['problem.password.too_long', 'problem.text.control']];
+        yield 'short invalid UTF-8: length in characters cannot be measured' => ["ab\xff", 'admin', ['problem.text.control']];
+        yield 'long with a NUL byte' => [str_repeat('a', 72) . "\0", 'admin', ['problem.password.too_long', 'problem.text.control']];
     }
 
     /** @param list<string> $expected */

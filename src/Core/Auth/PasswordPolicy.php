@@ -30,14 +30,18 @@ final class PasswordPolicy
     {
     }
 
-    /** @return list<Problem> */
-    public static function problems(string $password, string $username, string $field = 'password'): array
+    /**
+     * Every problem found, in this order: too short (counted in code points,
+     * so only when the password is valid UTF-8), too long (bytes), same as
+     * the username, special characters (invalid UTF-8 or a NUL byte).
+     *
+     * @return list<Problem>
+     */
+    public static function problems(#[\SensitiveParameter] string $password, string $username, string $field = 'password'): array
     {
-        if (!Text::isUtf8($password) || str_contains($password, "\0")) {
-            return [new Problem($field, 'problem.text.control')];
-        }
+        $utf8 = Text::isUtf8($password);
         $problems = [];
-        if (Text::length($password) < self::MIN_CHARACTERS) {
+        if ($utf8 && Text::length($password) < self::MIN_CHARACTERS) {
             $problems[] = new Problem($field, 'problem.password.too_short', ['min' => self::MIN_CHARACTERS]);
         }
         if (strlen($password) > self::MAX_BYTES) {
@@ -46,6 +50,9 @@ final class PasswordPolicy
         $name = Usernames::normalise($username);
         if ($name !== '' && strtolower($password) === $name) {
             $problems[] = new Problem($field, 'problem.password.same_as_username');
+        }
+        if (!$utf8 || str_contains($password, "\0")) {
+            $problems[] = new Problem($field, 'problem.text.control');
         }
 
         return $problems;

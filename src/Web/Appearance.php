@@ -35,6 +35,19 @@ final class Appearance
         'motion' => ['reduce' => 'm-reduce'],
     ];
 
+    /**
+     * Query parameter => `user_settings` column holding the same values
+     * (reduce_motion, an integer, is mapped separately). The stored defaults
+     * (`light`, `teal`, `inter`, `standard`) are not in MAP and give no class.
+     */
+    private const SETTING_COLUMNS = [
+        'theme' => 'theme',
+        'accent' => 'accent',
+        'font' => 'typeface',
+        'size' => 'text_size',
+        'spacing' => 'line_spacing',
+    ];
+
     /** Theme names for the four themes, by root class ('' is the default light theme). */
     private const THEME_NAMES = ['' => 'light', 't-dark' => 'dark', 't-hcl' => 'hc-light', 't-hcd' => 'hc-dark'];
 
@@ -58,6 +71,29 @@ final class Appearance
             $value = $query[$parameter] ?? null;
             $classes[$parameter] = is_string($value) && array_key_exists($value, $values) ? $values[$value] : '';
         }
+
+        return new self($classes);
+    }
+
+    /**
+     * The appearance stored for a signed-in person: a `user_settings` row
+     * (M1 spec part 1 section 5.5; part 2 section 2.7). Each column is
+     * mapped through the same allowlist as the query parameters; a value
+     * outside the lists, a missing column, or a value of the wrong type
+     * gives that setting's default. `reduce_motion` 1 gives `m-reduce`.
+     *
+     * @param array<array-key, mixed> $row
+     */
+    public static function fromSettings(array $row): self
+    {
+        $classes = [];
+        foreach (self::SETTING_COLUMNS as $parameter => $column) {
+            $value = $row[$column] ?? null;
+            $values = self::MAP[$parameter];
+            $classes[$parameter] = is_string($value) && array_key_exists($value, $values) ? $values[$value] : '';
+        }
+        $motion = $row['reduce_motion'] ?? null;
+        $classes['motion'] = $motion === 1 || $motion === '1' ? self::MAP['motion']['reduce'] : '';
 
         return new self($classes);
     }

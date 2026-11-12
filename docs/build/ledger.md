@@ -64,7 +64,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-R1 | M1 | design | fixes to the D1 files only | done, merged, pushed (`c543e46`) | merged | n/a | READY AFTER LISTED FIXES; 8 fixes made; 13 judgement calls ruled below |
 | M1-D2 | M1 | design (D1 author resumed) | apply rulings J1 to J13 to the M1 spec files | done, merged, pushed (`a1714b8`) | merged | orchestrator check | accepted, including P58's extra allowed value types |
 | M1-WP0 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE; follow-up round fixed trailing-newline acceptance in all 19 anchored patterns of the discovery tool (pre-existing), re-reviewed APPROVE |
-| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | in progress (worktree, unpushed) | agent worktree | | |
+| M1-WP1 | M1 | implementation | per spec (depends on none; security-critical: no) | implemented (`0b6dfa1`, worktree, unpushed; 1346 tests OK per author); in review | agent worktree | implementation tier | pending |
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | in progress (worktree, unpushed) | agent worktree | | |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | not started | | | |

@@ -70,7 +70,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 3 rounds (round 1: scanner bypasses, vacuous WAL bytes check, trash meta, vacuous auto-number test, untested retry; round 2: remaining dynamic-call bypasses, root-cause redesign to default-deny scanner; round 3 APPROVE). Nit follow-ups (P77, computed array callables except as bound parameters, return values or destructuring, Reflection, include) verified by orchestrator |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: forged Host made an exposed folder `safe`, fixed by positive control P75; T-REPO-10 bypasses; setup-code removal order; read deadline; configured-folder keys). Test nits (distinct control nonce, public cleanup guards, redundant deadline check removed) verified by orchestrator |
-| M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
+| M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | implemented (`a37418f` on local branch `worktree-agent-a8b0bf45714de8a6c`, unpushed; 3587 tests OK, verified by orchestrator); design-tier security review in progress | worktree | design tier | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
 | M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | not started | | | |
 | M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | not started | | | |
@@ -166,6 +166,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17T08:3xZ | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
 | 2026-11-17T08:5xZ | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
 | 2026-11-17T09:0xZ | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
+| 2026-11-17T09:3xZ | M1-WP5 implemented (unpushed); orchestrator re-ran suite 3587 OK, lint 257 OK; design-tier security review dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -220,3 +221,4 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP9 must not trust `SERVER_PORT` (follows the client's Host port under Apache `UseCanonicalName Off`); the P75 control covers the `safe` case, but the probe can still be aimed at other ports on the server's own address (port-scan oracle through the verdict). Consider refusing a port other than the scheme default unless the operator configured it; also confirm Apache BOM and line-continuation handling on the host check | M1-WP6 review F2, F3 |
 | WP9 needs strings `setup.check.data.configured-in-tree`, `-outside`, `-failed`, `setup.code_location` (`{path}`), `setup.code_location.configured` (`{file}`, outside the `setup.check.` runtime prefix); `setupCodeLocation()` returns `InstallMessage`; `DataFolderResult::$label` still carries `DataDirectory`'s English label for a configured folder | M1-WP6 round 1 report |
 | `Installer::state()` is not read-only: it removes a leftover setup code once per instance when installed; spec 10 as-built notes. Residual: a second virtual host whose document root is `public/` with the same base path passes the control (within the 10.4 limits) | M1-WP6 round 2 review |
+| Add `Fs::entries()` (and stat helpers) and `ProjectRegistry::abandoned(string $before)`; `SchemaEditor::updateField` could return the values-cleared count for the `schema.field_changed` audit entry | M1-WP5 report (files outside WP5 ownership) |

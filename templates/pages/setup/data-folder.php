@@ -39,21 +39,15 @@ declare(strict_types=1);
 </li>
 <?php endforeach; ?>
 </ol>
-<div class="notice notice-warn" role="alert">
 <?php if ($data['outcome'] === 'exposed') : ?>
-<h2 class="notice-title"><?= $this->t('setup.data.exposed.title') ?></h2>
-<p><?= $this->t('setup.data.exposed.body', ['label' => $data['label']]) ?></p>
+<?= $this->partial('notice', ['tone' => 'warn', 'heading' => 2, 'title' => 'setup.data.exposed.title', 'key' => 'setup.data.exposed.body', 'params' => ['label' => $data['label']]]) ?>
 <?php elseif ($data['outcome'] === 'inconclusive') : ?>
-<h2 class="notice-title"><?= $this->t('setup.data.unclear.title') ?></h2>
-<p><?= $this->t('setup.data.unclear.body', ['label' => $data['label']]) ?></p>
+<?= $this->partial('notice', ['tone' => 'warn', 'heading' => 2, 'title' => 'setup.data.unclear.title', 'key' => 'setup.data.unclear.body', 'params' => ['label' => $data['label']]]) ?>
 <?php elseif ($data['failureKey'] === 'setup.data.not-empty') : ?>
-<h2 class="notice-title"><?= $this->t('setup.data.failed.title') ?></h2>
-<p><?= $this->t('setup.data.not-empty', ['label' => $data['label']]) ?></p>
+<?= $this->partial('notice', ['tone' => 'warn', 'heading' => 2, 'title' => 'setup.data.failed.title', 'key' => 'setup.data.not-empty', 'params' => ['label' => $data['label']]]) ?>
 <?php else : ?>
-<h2 class="notice-title"><?= $this->t('setup.data.failed.title') ?></h2>
-<p><?= $this->t('setup.data.no-place') ?></p>
+<?= $this->partial('notice', ['tone' => 'warn', 'heading' => 2, 'title' => 'setup.data.failed.title', 'key' => 'setup.data.no-place']) ?>
 <?php endif; ?>
-</div>
 <?php if ($data['outcome'] === 'exposed' || $data['outcome'] === 'inconclusive') : ?>
 <section class="section" aria-labelledby="setup-fix-title">
 <h2 id="setup-fix-title" class="section-title"><?= $this->t('setup.fix.title') ?></h2>
@@ -65,9 +59,7 @@ declare(strict_types=1);
 </section>
 <form class="form" method="post" action="<?= $this->url('/setup/data-folder') ?>">
 <?= $this->partial('csrf') ?>
-<div class="form-actions">
-<button class="button button-large button-primary" type="submit"><?= $this->t('setup.data.test_again') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'setup.data.test_again']) ?>
 </form>
 <?php else : ?>
 <div class="form-actions">

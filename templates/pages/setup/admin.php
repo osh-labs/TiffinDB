@@ -43,15 +43,13 @@ declare(strict_types=1);
 </li>
 <?php endforeach; ?>
 </ol>
-<div class="notice" role="status">
-<p><?= $this->t('setup.data.ready') ?></p>
-</div>
+<?= $this->partial('notice', ['tone' => 'info', 'key' => 'setup.data.ready']) ?>
 <form class="form form-card form-wide" method="post" action="<?= $this->url('/setup/admin') ?>">
 <?= $this->partial('csrf') ?>
 <h2 class="section-title"><?= $this->t('setup.admin.title') ?></h2>
 <p><?= $this->t('setup.admin.intro') ?></p>
 <div class="field">
-<label class="label" for="setup-code"><?= $this->t('setup.admin.code') ?></label>
+<label class="label" for="setup-code"><?= $this->partial('field-label', ['key' => 'setup.admin.code']) ?></label>
 <?php if ($data['codeConfigured'] === true) : ?>
 <p class="help" id="setup-code-help"><?= $this->t('setup.code_location.configured', ['file' => $data['codeLocation']]) ?></p>
 <?php else : ?>
@@ -65,7 +63,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="setup-name"><?= $this->t('setup.admin.name') ?></label>
+<label class="label" for="setup-name"><?= $this->partial('field-label', ['key' => 'setup.admin.name']) ?></label>
 <p class="help" id="setup-name-help"><?= $this->t('setup.admin.name_help') ?></p>
 <?php if (is_string($data['errors']['setup-name'] ?? null)) : ?>
 <p class="error-text" id="setup-name-error"><?= $this->partial('field-error', ['text' => $data['errors']['setup-name']]) ?></p>
@@ -75,7 +73,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="setup-username"><?= $this->t('setup.admin.username') ?></label>
+<label class="label" for="setup-username"><?= $this->partial('field-label', ['key' => 'setup.admin.username']) ?></label>
 <p class="help" id="setup-username-help"><?= $this->t('setup.admin.username_help') ?></p>
 <?php if (is_string($data['errors']['setup-username'] ?? null)) : ?>
 <p class="error-text" id="setup-username-error"><?= $this->partial('field-error', ['text' => $data['errors']['setup-username']]) ?></p>
@@ -85,7 +83,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="setup-password"><?= $this->t('setup.admin.password') ?></label>
+<label class="label" for="setup-password"><?= $this->partial('field-label', ['key' => 'setup.admin.password']) ?></label>
 <p class="help" id="setup-password-help"><?= $this->t('setup.admin.password_help') ?></p>
 <?php if (is_string($data['errors']['setup-password'] ?? null)) : ?>
 <p class="error-text" id="setup-password-error"><?= $this->partial('field-error', ['text' => $data['errors']['setup-password']]) ?></p>
@@ -95,7 +93,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="setup-repeat"><?= $this->t('setup.admin.repeat') ?></label>
+<label class="label" for="setup-repeat"><?= $this->partial('field-label', ['key' => 'setup.admin.repeat']) ?></label>
 <?php if ($data['mismatch'] === true) : ?>
 <p class="error-text" id="setup-repeat-error"><?= $this->t('setup.admin.mismatch') ?></p>
 <input class="input" id="setup-repeat" type="password" name="repeat" autocomplete="new-password" required="required" aria-describedby="setup-repeat-error" aria-invalid="true" />
@@ -104,7 +102,5 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <?= $this->partial('password-toggle', ['plural' => true]) ?>
-<div class="form-actions">
-<button class="button button-large button-primary" type="submit"><?= $this->t('setup.admin.submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'setup.admin.submit']) ?>
 </form>

@@ -76,14 +76,10 @@ declare(strict_types=1);
 <form class="form" method="post" action="<?= $this->url('/setup/data-folder') ?>">
 <?= $this->partial('csrf') ?>
 <p><?= $this->t('setup.check.next') ?></p>
-<div class="form-actions">
-<button class="button button-large button-primary" type="submit"><?= $this->t('setup.check.continue') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'setup.check.continue']) ?>
 </form>
 <?php else : ?>
-<div class="notice notice-warn" role="alert">
-<p><?= $this->t('setup.check.fix') ?></p>
-</div>
+<?= $this->partial('notice', ['tone' => 'warn', 'key' => 'setup.check.fix']) ?>
 <div class="form-actions">
 <a class="button button-primary" href="<?= $this->url('/setup') ?>"><?= $this->t('setup.check.again') ?></a>
 </div>

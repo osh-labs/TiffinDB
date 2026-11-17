@@ -76,7 +76,7 @@ return [
     'setup.data.unclear.body' => 'TiffinDB asked this web server for a test file in {label}, to make sure the folder cannot be opened from the web, but did not get a clear answer. To be safe, setup stops here.',
     'setup.data.failed.title' => 'TiffinDB could not make its data folder',
     'setup.data.no-place' => 'There is no folder TiffinDB can write to. Let the web server write to the folder that holds the TiffinDB folder, or set data_dir in config/local.php.',
-    'setup.data.not-empty' => 'The folder {label} already exists and has files in it that TiffinDB did not put there. Empty it, or set data_dir in config/local.php to another folder.',
+    'setup.data.not-empty' => 'TiffinDB found files that it did not put there in {label}. Empty that folder, or set data_dir in config/local.php to another folder.',
     'setup.data.test_again' => 'Test again',
     'setup.fix.title' => 'How to fix it',
     'setup.fix.root' => 'Best: make the public folder inside the TiffinDB folder the root of your web site, so that the data folder is outside it. Hosting control panels call this the document root or web directory.',

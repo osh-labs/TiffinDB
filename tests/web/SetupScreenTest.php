@@ -28,9 +28,11 @@ use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Context;
+use TiffinDB\Web\CoreServices;
 use TiffinDB\Web\Controller\SetupController;
 use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Request;
+use TiffinDB\Web\Services;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\Strings;
 use TiffinDB\Web\UrlGenerator;
@@ -121,13 +123,14 @@ final class SetupScreenTest extends TestCase
      * @param array<string, string> $server
      */
     private static function send(
-        FakeServices $services,
+        Services $services,
         string $method,
         string $path,
         array $post = [],
         array $server = [],
         string $base = '',
         bool $withCsrf = true,
+        array $cookies = [],
     ): Response {
         if ($method === 'POST' && $withCsrf) {
             $post = ['_csrf' => self::ANON] + $post;
@@ -136,7 +139,7 @@ final class SetupScreenTest extends TestCase
             ['REQUEST_METHOD' => $method, 'REQUEST_URI' => $base . $path, 'SCRIPT_NAME' => $base . '/index.php'] + $server,
             [],
             $post,
-            ['tdb_csrf' => self::ANON],
+            $cookies + ['tdb_csrf' => self::ANON],
         );
         $kernel = new Kernel(Fixtures::config(false), Fixtures::appRoot(), Fixtures::applicationRoutes(), $services);
 
@@ -833,6 +836,88 @@ final class SetupScreenTest extends TestCase
         self::assertSame(303, $response->status);
         self::assertSame('/setup', $response->header('Location'));
         self::assertNull($response->cookie(Context::SESSION_COOKIE));
+    }
+
+    /**
+     * Review F1: the whole first-Admin path on the real CoreServices. The
+     * data folder is outside the document root, so no probe (and no
+     * socket) is used. The flash is written to the new session in the
+     * request that finished the installation, and shown by the next GET.
+     */
+    public function testTheFirstAdminPathWorksOnTheRealServices(): void
+    {
+        $services = new CoreServices(Fixtures::config(false), $this->app(), new FixedClock(), new SeededRandom('tiffindb-setup-core-seed-1'), new PasswordHasher(['bcrypt' => 4]));
+        $server = self::server($this->publicRoot());
+
+        $folder = self::send($services, 'POST', '/setup/data-folder', [], $server);
+        self::assertSame([303, '/setup'], [$folder->status, $folder->header('Location')]);
+        self::assertSame(200, self::send($services, 'GET', '/setup', [], $server)->status);
+
+        $response = self::send($services, 'POST', '/setup/admin', [
+            'setup_code' => $this->setupCode(),
+            'display_name' => 'Example Admin',
+            'username' => 'admin',
+            'password' => self::PASSWORD,
+            'repeat' => self::PASSWORD,
+        ], $server);
+        self::assertSame(303, $response->status, $response->body);
+        self::assertSame('/projects', $response->header('Location'));
+        $session = $response->cookie(Context::SESSION_COOKIE);
+        self::assertNotNull($session);
+        self::assertSame(Context::SESSION_MAX_AGE, $session->maxAge);
+        $csrf = $response->cookie(Context::CSRF_COOKIE);
+        self::assertNotNull($csrf);
+        self::assertSame(0, $csrf->maxAge);
+
+        $cookies = [Context::SESSION_COOKIE => $session->value];
+        $next = self::send($services, 'GET', '/account/password', [], $server, '', true, $cookies);
+        self::assertSame(200, $next->status, $next->body);
+        self::assertSame(
+            ['TiffinDB is ready. Select New project to make your first project.'],
+            self::texts($next->body, '//main/div[@class="notice"][@role="status"]/p'),
+        );
+        $again = self::send($services, 'GET', '/account/password', [], $server, '', true, $cookies);
+        self::assertSame([], self::texts($again->body, '//main/div[@class="notice"][@role="status"]/p'), 'The flash is shown once.');
+        self::assertSame(404, self::send($services, 'GET', '/setup', [], $server)->status);
+    }
+
+    /** Review F2: the controller's own state checks, without the kernel gate in front. */
+    public function testTheControllerChecksTheStateItself(): void
+    {
+        $cases = [
+            [InstallState::Installed, 'dataFolder'],
+            [InstallState::Installed, 'admin'],
+            [InstallState::NeedsAdmin, 'dataFolder'],
+            [InstallState::NeedsDataFolder, 'admin'],
+        ];
+        foreach ($cases as [$state, $action]) {
+            // No installer: any installer call would throw.
+            $services = new FakeServices($state);
+            $response = (new SetupController(self::context($services)))->$action(self::directRequest());
+            self::assertSame([303, '/setup'], [$response->status, $response->header('Location')], "{$state->name} {$action}");
+        }
+        $response = (new SetupController(self::context(new FakeServices(InstallState::Installed))))->show(self::directRequest());
+        self::assertSame(404, $response->status);
+    }
+
+    private static function directRequest(): Request
+    {
+        return Request::fromGlobals(['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/setup', 'SCRIPT_NAME' => '/index.php'], [], ['_csrf' => self::ANON], []);
+    }
+
+    private static function context(Services $services): Context
+    {
+        $urls = new UrlGenerator('', Fixtures::VERSION);
+        $view = (new View(Fixtures::appRoot() . '/templates', new Strings(Fixtures::appRoot() . '/strings/en.php'), $urls, Appearance::default(), Fixtures::config(false)))
+            ->withCsrfToken(self::ANON);
+
+        return new Context(self::directRequest(), $view, $services, null, $urls, self::ANON, false, null);
+    }
+
+    public function testFakeServicesRefuseAFlashBeforeInstallation(): void
+    {
+        $this->expectException(\LogicException::class);
+        (new FakeServices(InstallState::NeedsAdmin))->setFlash(FakeServices::TOKEN, 'notice.setup.done');
     }
 
     // ------------------------------------------------------------ gate

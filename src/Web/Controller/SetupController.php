@@ -41,8 +41,14 @@ use TiffinDB\Web\Response;
  * is `inconclusive`) when the Host, SERVER_ADDR, or SERVER_PORT value is
  * missing or invalid, and also when SERVER_PORT is not the default port of
  * the request's scheme (80, or 443 when secure) and does not equal the port
- * written in the Host header (M1-WP6 review F2). The probe's positive
- * control (P75) already keeps a forged port from giving `safe`.
+ * written in the Host header (M1-WP6 review F2).
+ *
+ * This port rule gives no protection under Apache `UseCanonicalName Off`:
+ * there SERVER_PORT follows the client's Host port, so a client that names
+ * a port in Host gets it accepted. Its only effect is to fail closed when
+ * SERVER_PORT is not the default and the Host header names no port. The
+ * probe's positive control (P75) keeps a forged port from giving `safe`;
+ * an operator-configured probe port is planned for M7 (P80).
  */
 final class SetupController
 {

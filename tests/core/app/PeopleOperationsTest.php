@@ -155,7 +155,7 @@ final class PeopleOperationsTest extends AppTestCase
         self::assertSame(1, $this->fx->users->countActiveAdmins());
     }
 
-    public function testDeactivatingTheLastOtherAdminIsRefused(): void
+    public function testADeactivatedAdminsStaleActorCannotDeactivateAnother(): void
     {
         $other = $this->ops->people()->create($this->admin, 'example.owner', 'Example Owner', Role::Admin, self::TEMPORARY, []);
         // The acting Admin is deactivated behind the session's back: their actor can no longer act.

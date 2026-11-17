@@ -10,6 +10,7 @@ namespace TiffinDB\Tests\Core\App;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use TiffinDB\Core\App\AuthOperations;
+use TiffinDB\Core\Auth\Actor;
 use TiffinDB\Core\Auth\LoginThrottle;
 use TiffinDB\Core\Auth\Permission;
 use TiffinDB\Core\Auth\Role;
@@ -98,6 +99,21 @@ final class AuthOperationsTest extends AppTestCase
         $this->fx->system->db()->write(fn () => $this->fx->users->setActive($this->member->userId, false));
         $this->assertThrows(AccessDenied::class, fn () => $auth->changeOwnPassword($this->member, $mine->token(), CoreFixture::PASSWORD, self::NEW));
         self::assertSame(0, $this->failures('member'));
+    }
+
+    public function testADeactivatedPersonWithALiveSessionIsRefused(): void
+    {
+        $session = $this->fx->signIn($this->ops, 'member');
+        // Deactivated without ending the session, as if a session survived the change.
+        $db = $this->fx->system->db();
+        $id = $this->member->userId;
+        $db->write(static fn () => $db->run('UPDATE users SET active = 0 WHERE id = ?', [$id]));
+        $actor = new Actor($this->member->userId, $this->member->userKey, Role::Member, $this->member->displayName);
+        $before = $this->fx->systemRows();
+
+        $this->assertThrows(AccessDenied::class, fn () => $this->ops->auth()->changeOwnPassword($actor, $session->token(), CoreFixture::PASSWORD, self::NEW));
+
+        self::assertSame($before, $this->fx->systemRows());
     }
 
     public function testSignOutIsRecordedOnce(): void

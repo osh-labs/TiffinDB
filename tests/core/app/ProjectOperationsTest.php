@@ -9,6 +9,9 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Core\App;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use TiffinDB\Core\App\Operations;
+use TiffinDB\Core\Auth\Actor;
 use TiffinDB\Core\App\ProjectOperations;
 use TiffinDB\Core\App\ProjectSummary;
 use TiffinDB\Core\App\SharingRow;
@@ -206,6 +209,36 @@ final class ProjectOperationsTest extends AppTestCase
         self::assertSame(1, $this->ops->projects()->listFor($this->admin)[1]->memberCount);
     }
 
+    /** @return iterable<string, array{\Closure(Operations, Actor, string): mixed}> */
+    public static function adminOnlyMethods(): iterable
+    {
+        yield 'projects create' => [static fn (Operations $o, Actor $a, string $p) => $o->projects()->create($a, 'Example Books', null)];
+        yield 'projects rename' => [static fn (Operations $o, Actor $a, string $p) => $o->projects()->rename($a, $p, 'Example Other')];
+        yield 'projects sharing' => [static fn (Operations $o, Actor $a, string $p) => $o->projects()->sharing($a, $p)];
+        yield 'projects setSharing' => [static fn (Operations $o, Actor $a, string $p) => $o->projects()->setSharing($a, $p, [])];
+        yield 'trash empty one table' => [static fn (Operations $o, Actor $a, string $p) => $o->trash()->empty($a, $p, $o->schema()->tables($a, $p)[0]->table->key)];
+        yield 'trash empty all' => [static fn (Operations $o, Actor $a, string $p) => $o->trash()->empty($a, $p, null)];
+        yield 'snapshots take' => [static fn (Operations $o, Actor $a, string $p) => $o->snapshots()->take($a, $p)];
+        yield 'snapshots list' => [static fn (Operations $o, Actor $a, string $p) => $o->snapshots()->list($a, $p)];
+        yield 'audit recent' => [static fn (Operations $o, Actor $a, string $p) => $o->audit()->recent($a)];
+    }
+
+    /** A granted Member gets AccessDenied, and nothing changes, for every Admin-only method. */
+    #[DataProvider('adminOnlyMethods')]
+    public function testAGrantedMemberIsRefusedAdminOnlyMethods(\Closure $call): void
+    {
+        $project = $this->ops->projects()->create($this->admin, 'Example Garden', 'Plants');
+        $this->ops->projects()->setSharing($this->admin, $project->key, [$this->member->userKey]);
+        $table = $this->ops->schema()->tables($this->admin, $project->key)[0]->table->key;
+        $this->fx->insertRecord($project->key, $table, [], true);
+        $before = $this->state($project->key);
+
+        $this->assertThrows(AccessDenied::class, fn () => $call($this->ops, $this->member, $project->key));
+
+        self::assertSame($before, $this->state($project->key));
+        $call($this->ops, $this->admin, $project->key);
+    }
+
     public function testRenameUpdatesTheFileAndTheRegistry(): void
     {
         $project = $this->ops->projects()->create($this->admin, 'Example Garden', null);
@@ -268,6 +301,19 @@ final class ProjectOperationsTest extends AppTestCase
         $this->assertThrows(NotFound::class, fn () => $projects->get($this->admin, '../../etc'));
         $projects->setSharing($this->admin, $project->key, [$this->member->userKey]);
         self::assertSame($project->key, $projects->get($this->member, $project->key)->key);
+    }
+
+    /** @return array<string, mixed> system rows, project meta, trash, and snapshot files */
+    private function state(string $projectKey): array
+    {
+        $db = $this->fx->projectDb($projectKey);
+
+        return [
+            $this->fx->systemRows(),
+            $db->all('SELECT * FROM "_tiffin_meta" ORDER BY "key"'),
+            $db->all('SELECT * FROM "_tiffin_tables" ORDER BY "key"'),
+            glob($this->fx->projectFolder($projectKey) . '/snapshots/*') ?: [],
+        ];
     }
 
     private function grantedMemberRenames(string $projectKey): void

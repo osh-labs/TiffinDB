@@ -196,6 +196,7 @@ final class PeopleOperations
             if (!$person->active) {
                 return false;
             }
+            // Defence in depth: unreachable while the actor is an active Admin other than the target.
             if ($person->role === Role::Admin && $this->c->users->countActiveAdmins() <= 1) {
                 throw new ValidationFailed([new Problem(null, 'problem.people.last_admin')]);
             }

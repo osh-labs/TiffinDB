@@ -764,8 +764,9 @@ final class FieldController
             'breadcrumb' => $this->crumbs($project, $table, $crumbs),
             'one' => $one,
             'values' => $values,
-            // schema.confirm.body already says "records" after {records}, so
-            // the plain number goes in, not count.records (spec mismatch).
+            // The body says "values" and "records" itself, so plain numbers
+            // go in, with a singular body for one value in one record.
+            'bodyKey' => $one && $needed->records === 1 ? 'schema.confirm.body_one' : 'schema.confirm.body',
             'records' => $format->number($needed->records),
             'hidden' => $hidden,
             'action' => $action,

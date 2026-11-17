@@ -703,8 +703,11 @@ final class SchemaScreensTest extends TestCase
         self::assertSame(409, $response->status);
         self::assertSame('Clear 1 value?', HtmlAssertions::text($response->body, '//h1'));
         self::assertSame(['Clear 1 value and save'], $this->texts($this->xpath($response->body), '//main//button'));
-        // The body string has no singular form (reported as a spec mismatch).
-        self::assertStringContainsString('1 values in 1 records', HtmlAssertions::text($response->body, '//main/p'));
+        self::assertSame(
+            'With this change, 1 value in 1 record no longer fits and will be cleared. TiffinDB saves a copy of the project first.',
+            HtmlAssertions::text($response->body, '//main/p'),
+        );
+        self::assertSame('Go back without saving', HtmlAssertions::text($response->body, '//div[@class="form-actions"]/a'));
     }
 
     public function testChangingAFieldIsForAdminsOnly(): void

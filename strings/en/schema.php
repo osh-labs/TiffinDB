@@ -39,6 +39,7 @@ return [
 
     'schema.confirm.back' => 'Go back without saving',
     'schema.confirm.body' => 'With this change, {values} values in {records} records no longer fit and will be cleared. TiffinDB saves a copy of the project first.',
+    'schema.confirm.body_one' => 'With this change, 1 value in 1 record no longer fits and will be cleared. TiffinDB saves a copy of the project first.',
     'schema.confirm.submit_one' => 'Clear 1 value and save',
     'schema.confirm.submit' => 'Clear {values} values and save',
     'schema.confirm.title_one' => 'Clear 1 value?',

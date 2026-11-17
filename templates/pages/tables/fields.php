@@ -125,9 +125,7 @@ declare(strict_types=1);
 <?php endforeach; ?>
 </select>
 </div>
-<div class="form-actions">
-<button class="button" type="submit"><?= $this->t('schema.table.settings_submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'schema.table.settings_submit', 'secondary' => true, 'size' => 'normal', 'cancel' => null]) ?>
 </fieldset>
 </form>
 <section class="fieldset-card" aria-labelledby="delete-table-title">

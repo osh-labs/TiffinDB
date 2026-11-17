@@ -335,6 +335,106 @@ final class GateTest extends TestCase
         self::assertNull($response->cookie('tdb_csrf'));
     }
 
+    // ------------------------------------------------ the real route table
+
+    /** @return array<string, array{string, string}> Every route of routes.php with this access level. */
+    private static function realRoutes(string $access): array
+    {
+        $cases = [];
+        foreach (Fixtures::applicationRoutes() as [$method, $pattern, , $level]) {
+            if ($level === $access) {
+                $cases["{$method} {$pattern}"] = [$method, (string) preg_replace('/\{[a-z]+\}/', 'ABCDEFGHJKMN', $pattern)];
+            }
+        }
+
+        return $cases;
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function realUserRoutes(): array
+    {
+        return self::realRoutes('user');
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function realGuestRoutes(): array
+    {
+        return self::realRoutes('guest');
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function realSetupRoutes(): array
+    {
+        return self::realRoutes('setup');
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function realNonSetupRoutes(): array
+    {
+        return self::realRoutes('user') + self::realRoutes('guest');
+    }
+
+    /**
+     * @param array<array-key, mixed> $post
+     * @param array<array-key, mixed> $cookies
+     * @return array{0: Response, 1: string}
+     */
+    private static function sendReal(FakeServices $services, string $method, string $uri, array $post = [], array $cookies = []): array
+    {
+        $kernel = new Kernel(Fixtures::config(false), Fixtures::appRoot(), Fixtures::applicationRoutes(), $services);
+
+        return Fixtures::handle($kernel, Fixtures::fullRequest($method, $uri, $post, $cookies));
+    }
+
+    #[DataProvider('realUserRoutes')]
+    public function testEveryRealUserRouteSendsAnonymousVisitorsToSignIn(string $method, string $uri): void
+    {
+        foreach ([[], ['_csrf' => self::ANON]] as $post) {
+            [$response] = self::sendReal(new FakeServices(), $method, $uri, $post, ['tdb_csrf' => self::ANON]);
+            self::assertRedirect($response, '/sign-in');
+        }
+        [$response] = self::sendReal(new FakeServices(), $method, $uri, [], ['tdb_session' => self::UNKNOWN_TOKEN]);
+        self::assertRedirect($response, '/sign-in');
+    }
+
+    #[DataProvider('realGuestRoutes')]
+    public function testEveryRealGuestRouteSendsSignedInPeopleToProjects(string $method, string $uri): void
+    {
+        foreach ([false, true] as $admin) {
+            $services = (new FakeServices())->withSession(FakeServices::signedIn($admin));
+            [$response] = self::sendReal($services, $method, $uri, ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie());
+            self::assertRedirect($response, '/projects');
+        }
+    }
+
+    #[DataProvider('realSetupRoutes')]
+    public function testEveryRealSetupRouteIsNotFoundOnceInstalled(string $method, string $uri): void
+    {
+        [$response] = self::sendReal(self::member(), $method, $uri, ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie());
+
+        self::assertSame(404, $response->status);
+    }
+
+    #[DataProvider('realNonSetupRoutes')]
+    public function testEveryRealRouteButSetupRedirectsToSetupBeforeInstallation(string $method, string $uri): void
+    {
+        [$response] = self::sendReal(new FakeServices(InstallState::NeedsAdmin), $method, $uri);
+
+        self::assertRedirect($response, '/setup');
+    }
+
+    #[DataProvider('realUserRoutes')]
+    public function testEveryRealUserRouteNeedsTheSessionTokenForPosts(string $method, string $uri): void
+    {
+        if ($method !== 'POST') {
+            self::assertSame('GET', $method);
+
+            return;
+        }
+        [$response] = self::sendReal(self::member(), $method, $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON] + self::sessionCookie());
+        self::assertCsrfRefused($response);
+    }
+
     // ------------------------------------------------ step 8
 
     public function testMustChangeRedirectsEveryOtherUserRoute(): void

@@ -53,7 +53,7 @@ final class SchemaEditor
 
     private readonly \Closure $onSnapshot;
 
-    /** @param callable(SnapshotInfo): void $onSnapshot */
+    /** @param \Closure(SnapshotInfo): void $onSnapshot */
     public function __construct(
         private readonly Database $db,
         private readonly string $projectFolder,
@@ -62,12 +62,12 @@ final class SchemaEditor
         private readonly Clock $clock,
         private readonly Snapshots $snapshots,
         private readonly string $userKey,
-        callable $onSnapshot,
+        \Closure $onSnapshot,
     ) {
         if (!Keys::isValid($userKey)) {
             throw new \InvalidArgumentException('The person key must be a valid key.');
         }
-        $this->onSnapshot = $onSnapshot(...);
+        $this->onSnapshot = $onSnapshot;
     }
 
     // ------------------------------------------------------------------ tables
@@ -254,8 +254,8 @@ final class SchemaEditor
             assert($target !== null);
 
             $relationKey = $this->newKey();
-            $leftKey = $this->newKey([$relationKey]);
-            $rightKey = $this->newKey([$relationKey, $leftKey]);
+            $leftKey = $this->newKey($relationKey);
+            $rightKey = $this->newKey($relationKey, $leftKey);
             $joinName = Identifier::joinName($relationKey);
 
             $this->db->run('CREATE TABLE ' . Identifier::joinTable($relationKey) . ' (
@@ -908,9 +908,9 @@ final class SchemaEditor
      * A key not used by any table, field, or relation of this project (one
      * scope, ADR 0010 decision 1), nor by any SQL object, nor in $also.
      *
-     * @param list<string> $also
+     * @param string ...$also
      */
-    private function newKey(array $also = []): string
+    private function newKey(string ...$also): string
     {
         return $this->keys->generateUnique(function (string $key) use ($also): bool {
             if (in_array($key, $also, true)) {

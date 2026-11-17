@@ -1016,10 +1016,10 @@ final class SchemaEditor
      * records the change in the project meta.
      *
      * @template T
-     * @param callable(Schema): T $work
+     * @param \Closure(Schema): T $work
      * @return T
      */
-    private function change(callable $work): mixed
+    private function change(\Closure $work): mixed
     {
         return $this->db->write(function () use ($work): mixed {
             $result = $work($this->schema());
@@ -1037,7 +1037,8 @@ final class SchemaEditor
     private function snapshot(SnapshotReason $reason): void
     {
         $info = $this->snapshots->take($this->db, $this->projectFolder, $reason);
-        ($this->onSnapshot)($info);
+        $notify = $this->onSnapshot;
+        $notify($info);
     }
 
     private function now(): string

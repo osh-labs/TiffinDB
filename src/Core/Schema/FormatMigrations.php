@@ -87,15 +87,19 @@ final class FormatMigrations
         $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
         for ($version = $from + 1; $version <= ProjectFile::VERSION; $version++) {
             $step = $this->steps[$version];
-            $db->write(static function (Database $db) use ($step, $version): void {
-                $step($db);
-                foreach (self::VERSION_PRAGMAS as $target => $pragma) {
-                    if ($target === $version) {
-                        $db->run($pragma);
-                    }
-                }
-                $db->run('UPDATE "_tiffin_meta" SET "value" = ? WHERE "key" = \'format_version\'', [(string) $version]);
-            });
+            $db->write(static fn (Database $db) => self::apply($db, $step, $version));
         }
+    }
+
+    /** One step, then the version's pragma and meta `format_version`, inside the caller's transaction. */
+    private static function apply(Database $db, \Closure $step, int $version): void
+    {
+        $step($db);
+        foreach (self::VERSION_PRAGMAS as $target => $pragma) {
+            if ($target === $version) {
+                $db->run($pragma);
+            }
+        }
+        $db->run('UPDATE "_tiffin_meta" SET "value" = ? WHERE "key" = \'format_version\'', [(string) $version]);
     }
 }

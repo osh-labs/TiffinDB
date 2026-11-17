@@ -70,11 +70,29 @@ final class SharingController
         $actor = $this->context->actor();
         $projects = $this->projects();
         $key = $params['project'] ?? '';
+        if (!self::isStringList($request->post['members'] ?? [])) {
+            return $this->context->errorPage(400, 'error.400.title', 'error.400.body');
+        }
         $projects->setSharing($actor, $key, $request->inputList('members'));
         $project = $projects->get($actor, $key);
         $this->context->flash('notice.sharing_saved', ['project' => $project->name]);
 
         return $this->context->redirect('/projects');
+    }
+
+    /** Whether the checkbox-list field is a list of strings (absent arrives as []). */
+    private static function isStringList(mixed $value): bool
+    {
+        if (!is_array($value) || !array_is_list($value)) {
+            return false;
+        }
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function projects(): ProjectOperations

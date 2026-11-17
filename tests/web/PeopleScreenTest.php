@@ -535,6 +535,29 @@ final class PeopleScreenTest extends TestCase
         self::assertSame([$garden => false, $recipes => true], $granted);
     }
 
+    public function testMalformedProjectListsAreRefused(): void
+    {
+        $garden = $this->project('Garden Log');
+        $key = $this->key('member');
+        $this->ops->people()->setProjectAccess($this->core->actor('admin'), $key, [$garden]);
+        $before = $this->core->systemRows();
+        foreach (['notalist', [[$garden]], ['a' => $garden], [$garden, 7]] as $bad) {
+            $response = $this->send('POST', "/admin/people/{$key}/projects", ['projects' => $bad]);
+            self::assertSame(400, $response->status, json_encode($bad));
+            $create = $this->send('POST', '/admin/people', [
+                'display_name' => 'Example Newcomer', 'username' => 'newcomer', 'role' => 'member',
+                'temporary_password' => self::TEMPORARY, 'projects' => $bad,
+            ]);
+            self::assertSame(400, $create->status, json_encode($bad));
+        }
+        self::assertSame($before, $this->core->systemRows(), 'Nothing changed.');
+        self::assertNull($this->core->users->byUsername('newcomer'));
+
+        // An absent field still means none ticked.
+        self::assertSame(303, $this->send('POST', "/admin/people/{$key}/projects")->status);
+        self::assertFalse($this->ops->people()->projectAccess($this->core->actor('admin'), $key)[0]->granted);
+    }
+
     public function testSaveProjectsForAnAdminGoesToTheSummary(): void
     {
         $this->project('Garden Log');

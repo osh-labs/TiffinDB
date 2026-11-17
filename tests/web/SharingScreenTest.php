@@ -189,6 +189,15 @@ final class SharingScreenTest extends TestCase
         self::assertSame(['member2' => false, 'member' => false], $this->grants());
     }
 
+    public function testMalformedMemberListsAreRefused(): void
+    {
+        $this->ops->projects()->setSharing($this->core->actor('admin'), $this->project, [$this->core->person('member')->key]);
+        foreach (['notalist', [['x']], ['a' => 'b']] as $bad) {
+            self::assertSame(400, $this->send('POST', $this->uri(), ['members' => $bad])->status);
+        }
+        self::assertSame(['member2' => false, 'member' => true], $this->grants());
+    }
+
     public function testMembersAreRefusedByTheCore(): void
     {
         $member = $this->signInAs('member');

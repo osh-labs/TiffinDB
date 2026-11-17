@@ -95,6 +95,9 @@ final class PeopleController
     {
         $actor = $this->context->actor();
         $this->context->services()->operations()->auth()->require($actor, Permission::ManagePeople);
+        if (!self::isStringList($request->post['projects'] ?? [])) {
+            return $this->context->errorPage(400, 'error.400.title', 'error.400.body');
+        }
         $values = [
             'name' => $request->input('display_name'),
             'username' => $request->input('username'),
@@ -175,6 +178,9 @@ final class PeopleController
     {
         $actor = $this->context->actor();
         $person = $this->person($params);
+        if (!self::isStringList($request->post['projects'] ?? [])) {
+            return $this->context->errorPage(400, 'error.400.title', 'error.400.body');
+        }
         $keys = $request->inputList('projects');
         try {
             $this->people()->setProjectAccess($actor, $person->key, $keys);
@@ -392,6 +398,25 @@ final class PeopleController
     private function text(string $key, array $params = []): string
     {
         return $this->context->view()->text($key, $params);
+    }
+
+    /**
+     * Whether a checkbox-list field is a list of strings. A hand-made
+     * scalar or nested value is refused rather than read as "none ticked";
+     * an absent field (nothing ticked) arrives here as [].
+     */
+    private static function isStringList(mixed $value): bool
+    {
+        if (!is_array($value) || !array_is_list($value)) {
+            return false;
+        }
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static function personPath(UserRecord $person): string

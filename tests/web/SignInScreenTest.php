@@ -210,6 +210,36 @@ final class SignInScreenTest extends TestCase
         $normal = str_replace('value="member"', 'value="X"', $known->body);
         self::assertSame($normal, str_replace('value="nobody"', 'value="X"', $unknown->body));
         self::assertSame($normal, str_replace('value="member2"', 'value="X"', $stopped->body));
+        foreach ([$unknown, $stopped] as $other) {
+            self::assertSame(self::headersWithoutDate($known), self::headersWithoutDate($other));
+            self::assertSame(self::cookieShapes($known), self::cookieShapes($other));
+        }
+    }
+
+    /** @return array<string, string> */
+    private static function headersWithoutDate(Response $response): array
+    {
+        $headers = [];
+        foreach ($response->headers as $name => $value) {
+            if (strtolower((string) $name) !== 'date') {
+                $headers[(string) $name] = (string) $value;
+            }
+        }
+        ksort($headers);
+
+        return $headers;
+    }
+
+    /** Each cookie's attributes with its value left out. @return array<string, string> */
+    private static function cookieShapes(Response $response): array
+    {
+        $shapes = [];
+        foreach ($response->cookies as $cookie) {
+            $shapes[$cookie->name] = str_replace($cookie->name . '=' . $cookie->value, $cookie->name . '=', $cookie->header());
+        }
+        ksort($shapes);
+
+        return $shapes;
     }
 
     private function deactivated(string $username): string

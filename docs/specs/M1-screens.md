@@ -543,3 +543,18 @@ For each: 1360 px and 390 px in the light theme with the measurements of 8.1; on
 | WP12 | `tests/web/EndToEndTest.php`, `tests/web/ScreenStructureTest.php` | T-SCR-1, T-E2E-1 to T-E2E-4 pass; the visual procedure of 8.4 run and reported |
 
 WP9, WP10, and WP11 must not change `app.css`, shared partials, or another package's strings; a missing class or partial is reported to the orchestrator, who routes it to a follow-up on WP8's files.
+
+## 11. As-built notes
+
+Recorded at the M1 exit audit. Where the merged code differs from the text above, the code and the provisional decisions in `docs/build/ledger.md` section 4 govern.
+
+| Section | As built | Decision |
+|---|---|---|
+| 2.4 step 4, 2.5 | Unsafe-method requests with `Sec-Fetch-Site: same-site` are refused (403) like `cross-site` (`Kernel::REFUSED_FETCH_SITES`). Cookie names keep `^[a-z_]{1,32}$`, with no `__Host-` prefix. `takeFlash` reads first and writes only when a flash exists | P79 |
+| 3.2 | The probe target is null, which gives `inconclusive`, unless `SERVER_PORT` is the scheme default or equals the Host header's port (`SetupController::portAcceptable`). On the PHP built-in server `SERVER_ADDR` is not set, so step 2 can only produce `inconclusive` there | P80, P83 |
+| 4.4 `form-actions` | Besides `submit`, `danger`, and `cancel`, the partial takes `submitParams`, `secondary` (plain button style; `danger` wins), `size` (`large` by default, or `normal`), `block` (adds `button-block`), and `cancelLabel` with `cancelParams` (another link text, such as "Go back without saving"). Each class list is a literal alternative. With only the three original keys, the output is unchanged | WP10, WP11 merges |
+| 5, schema strings | The confirmation for a lossy schema change uses plain numbers, plus singular strings for exactly one value in one record (`schema.confirm.title_one`, `body_one`, `submit_one`). Other counts still read "{values} values in {records} records" (ledger section 7). Confirmation is a yes/no flag and is not bound to the count shown | P82 |
+| 6 | The show-password script also resets any switched input to `password` and unticks the box when the form is submitted | P63 |
+| 3, people | The project list on the add-person page comes from `people()->projectAccess($actor, $actor->userKey)` and is for display only | P81 |
+| 8.3 | Further deviations accepted, in addition to the table in 8.3: project-name links and footer links keep a 44 px minimum height, so cards are 14 px and the footer 20 px taller than in the mock-up; project cards are sorted by name (`sign-in-and-projects.md` 3.1), not in the mock-up's order; the sign-in content sits at the top (`components.md` section 1), not centred vertically; the sign-in wordmark uses Atkinson Hyperlegible (brand README), not Inter. Installer step 2 "exposed" cannot be produced on the PHP built-in server without forging `SERVER_ADDR`; it is verified on the Apache host check | P83 |
+| 8.4 | Signed-out screens (sign-in, installer) always render in the default appearance, because there is no person to read settings from. Their passes in the other themes and at Largest were made by setting the root class in the browser | exit audit |

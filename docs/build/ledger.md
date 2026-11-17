@@ -17,7 +17,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
-| M1 | design | |
+| M1 | exit audit done (CLOSES WITH LISTED FIXES); F-1 and F-3 fixes in progress | See M1 exit results below |
 | M2 | not started | |
 | M3 | not started | |
 | M4 | not started | |
@@ -44,6 +44,27 @@ Final suite: `composer test` OK (1075 tests, 11110 assertions, none skipped); `c
 | Deferred maintainer-side tools present | PASS | `tools/discovery/`, `tools/host-check/` with README procedures |
 
 Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed in the build environment; covered later by the host check); manual screen-reader pass; host-check parse compatibility on PHP 7.4.
+
+### M1 exit results
+
+Independent design-tier exit audit on the integration branch (all M1 work packages merged). Suite: `composer test` OK (4777 tests, 1 skipped: no comma-decimal locale installed); `composer lint` 348 files, 0 failed. Full table with evidence kept in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above |
+| Live end-to-end (built-in server, data folder outside `public/`) | PASS | Setup (wrong code 422, nothing echoed, `/setup` 404 after install); Admin creates "Home Inventory" with Items, Rooms and a relation field; Member forced password change, sees only the shared project, schema/people/sharing POSTs 403, other project 404; sign-out CSRF and cross-site/same-site refusals; old cookie dead; 6th sign-in try 429 with `Retry-After: 30`, then success after the wait |
+| Visual V-1, V-2, V-4 to V-8 | PASS | 150 pages: 1360 and 390 px light, three other themes at 1360 px, 320 px Largest; every M1-screens 8.1 measurement within 1 px; colours equal the tokens; only 8.3 and P83 differences; no horizontal scroll; local fonts only; no off-host requests |
+| Visual V-3 installer | PASS; step 1 failing state DEFERRED to `SetupScreenTest` | Step 1, step 2 inconclusive and exposed (produced live with a multi-worker router), step 3 with errors |
+| Repository rules | PASS | SPDX on every source file; no personal data or legacy-product material in application code; the only socket call is the loopback probe; no `@` in application code; no inline script or style; `.gitignore` complete; dependencies match `docs/dependencies.md` |
+| Security baseline (plan section 7, M1 scope) | PASS | Argon2id; only session-token hashes stored; planted cookie deleted; deactivation ends sessions; security headers on 2xx/3xx/4xx; authorization in core; escaping, traversal, Host and 2 MB password spot checks held |
+| Probe positive control (P75) | PASS | Exposed verdict produced live; control and probe files removed afterwards |
+| Data portability | PASS | Project file has the documented `application_id`, `user_version`, meta rows, names per `docs/formats/tiffin.md` section 3; `integrity_check` and `foreign_key_check` pass; a snapshot opens on its own. Opened read-only with the plain SQLite library (the `sqlite3` CLI is not installed) |
+| Tests not vacuous | PASS | 10 of 10 mutations caught (core and web) |
+| Plan section 8 and spec 1.3 exit criteria | PASS | Headless core tests; Admin can create a project and a table; screens match the mock-ups; trash, snapshots and audit log working |
+
+Findings: F-1 (should-fix) `tests/web/FrontControllerTest.php` not hermetic when a data folder exists next to the checkout; F-2 (nit) no `Origin` check when `Sec-Fetch-Site` is absent (carried forward); F-3 (nit) duplicate `check` class in `password-toggle.php`. As-built notes appended to both M1 specs; `docs/formats/tiffin.md` section 11 corrected (one transaction per upgrade step).
+
+Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.
 
 ## 3. Work packages
 
@@ -193,6 +214,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17, window 4 | M1-WP9 merged; suite 4765 tests OK (1 skipped), lint 346 files 0 failed; wave 5 closed; WP12 dispatched |
 | 2026-11-17, window 4 | M1-WP12 implemented; D1 fix (WP8d) and WP12 review dispatched; P83 accepts D2 to D6 |
 | 2026-11-17, window 4 | WP8d and WP12 merged; suite 4777 tests OK (1 skipped), lint 348 files 0 failed; M1 exit audit dispatched |
+| 2026-11-17, window 4 | M1 exit audit: CLOSES WITH LISTED FIXES; as-built notes and format-doc correction merged; F-1 and F-3 fixes dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -241,7 +263,6 @@ Brief notes for later M1 packages (from M1-WP8):
 | M2 | Build `mailto:` hrefs with the local part `rawurlencode`d; escape every attribute with ENT_QUOTES | M1-WP3 review |
 | WP6, WP7 | Call `LoginThrottle::wait()` inside `write()`; read session tokens via `IssuedSession::token()` (property no longer public) | M1-WP2 follow-up |
 | URL rule refuses any host label starting `0x` (e.g. `0xford.example`); apply the hex test to the last label only and require hex digits | `src/Core/Schema/Type/UrlType.php` `looksLikeOtherIpv4` |
-| `docs/formats/tiffin.md` section 11 says format upgrades run in one transaction; spec 7.2 (implemented) runs each step in its own transaction; correct the format doc | `docs/formats/tiffin.md` |
 | Sign-in success clears the user bucket outright, erasing failures counted on it during password verification (about one extra burst of 5 guesses per overlapped real sign-in; address bucket still limits). Harden: clear only if the row is unchanged since step (a), else decrement | `src/Core/Auth/Authenticator.php` near line 128 (M1-WP2 round 3 review nit) |
 | Takeback decrement path can remove a failure counted after a window reset if password verification stalls over 900 s (at most one lost failure) | `src/Core/Auth/LoginThrottle.php` near line 216 (M1-WP2 round 3 review nit) |
 | WP9 must not trust `SERVER_PORT` (follows the client's Host port under Apache `UseCanonicalName Off`); the P75 control covers the `safe` case, but the probe can still be aimed at other ports on the server's own address (port-scan oracle through the verdict). Consider refusing a port other than the scheme default unless the operator configured it; also confirm Apache BOM and line-continuation handling on the host check | M1-WP6 review F2, F3 |
@@ -258,3 +279,4 @@ Brief notes for later M1 packages (from M1-WP8):
 | Adding a link field with a tampered cardinality reports only that problem; a core validate-only call for `addRelationField` would allow all problems at once | `src/Web/Controller/FieldController.php` near line 109 (M1-WP11 review nit 2) |
 | A losing concurrent first-Admin POST gets 500 (core `LogicException` "The first Admin already exists") instead of a 303 to `/setup` or `/sign-in` | `src/Core/Install/Installer.php` near line 302, `SetupController` (M1-WP9 round 2 review) |
 | "Temporary" breaks mid-word on the add-person page at 320 px, Largest text | `public/assets/css/app.css`, `templates/pages/people/new.php` (M1-WP8d report) |
+| When a request has no `Sec-Fetch-Site` header, a POST with a foreign `Origin` and a valid `_csrf` is accepted; checking `Origin` against the request host would add defence in depth (care needed behind proxies) | `src/Web/Kernel.php` near lines 73 and 207 (M1 exit audit F-2) |

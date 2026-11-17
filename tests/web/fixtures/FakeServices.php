@@ -49,6 +49,7 @@ final class FakeServices implements Services
     public array $calls = [];
 
     public ?Throwable $installStateThrows = null;
+    public ?Throwable $closeThrows = null;
     public ?Operations $operations = null;
     public ?Installer $installer = null;
     public ?HttpProbe $probe = null;
@@ -149,5 +150,8 @@ final class FakeServices implements Services
     {
         $this->calls[] = 'close';
         $this->closed++;
+        if ($this->closeThrows !== null) {
+            throw $this->closeThrows;
+        }
     }
 }

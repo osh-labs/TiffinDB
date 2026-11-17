@@ -172,13 +172,76 @@ final class WebLayerRulesTest extends TestCase
      */
     public static function problems(string $relative, string $source): array
     {
-        if ($relative === self::COMPOSITION_ROOT) {
-            return [];
+        $found = self::namespaceProblems($relative, $source);
+        foreach (self::bareRootNames($source) as $name) {
+            $found[] = $name;
         }
-        $found = [];
+        if ($relative === self::COMPOSITION_ROOT) {
+            return $found;
+        }
         foreach (self::coreNames($source) as $name) {
             if (!self::allowed($name)) {
                 $found[] = $name;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Every PHP file under src/Web declares only namespaces under
+     * TiffinDB\Web (at least one); a template declares none. Otherwise a
+     * relative name such as `Core\System\AuditLog` in `namespace TiffinDB;`
+     * would reach the core without being written in full.
+     *
+     * @return list<string>
+     */
+    public static function namespaceProblems(string $relative, string $source): array
+    {
+        $declared = [];
+        $tokens = array_values(array_filter(
+            token_get_all($source),
+            static fn ($t): bool => !(is_array($t) && in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)),
+        ));
+        foreach ($tokens as $i => $token) {
+            if (is_array($token) && $token[0] === T_NAMESPACE) {
+                $next = $tokens[$i + 1] ?? null;
+                if (is_array($next) && $next[0] === T_NS_SEPARATOR) {
+                    continue; // `namespace\Foo`: a relative name, not a declaration
+                }
+                $declared[] = is_array($next) && in_array($next[0], [T_STRING, T_NAME_QUALIFIED], true) ? $next[1] : '';
+            }
+        }
+        if (str_starts_with($relative, 'src/Web/')) {
+            if ($declared === []) {
+                return ['namespace: none declared'];
+            }
+            $found = [];
+            foreach ($declared as $name) {
+                if (preg_match('/^TiffinDB\\\\Web(\\\\[A-Za-z0-9_]+)*\z/i', $name) !== 1) {
+                    $found[] = "namespace: {$name}";
+                }
+            }
+
+            return $found;
+        }
+
+        return $declared === [] ? [] : ['namespace: declared in a template'];
+    }
+
+    /**
+     * Names in code equal to `TiffinDB` (any case), such as the target of
+     * `use TiffinDB as R;`, which would let `R\Core\...` reach the core.
+     *
+     * @return list<string>
+     */
+    public static function bareRootNames(string $source): array
+    {
+        $found = [];
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token) && in_array($token[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true)
+                && strcasecmp(ltrim($token[1], '\\'), 'TiffinDB') === 0) {
+                $found[] = 'alias of TiffinDB';
             }
         }
 
@@ -272,6 +335,13 @@ final class WebLayerRulesTest extends TestCase
             'Auth deeper name' => [$php . "use TiffinDB\\Core\\Auth\\Actor\\Thing;\n"],
             'Snapshots service' => [$php . "use TiffinDB\\Core\\Storage\\Snapshots;\n"],
             'Schema read model' => [$php . "use TiffinDB\\Core\\Schema\\Schema;\n"],
+            'alias of the root' => [$php . "use TiffinDB as R;\nnew R\\Core\\Storage\\SystemClock();\n"],
+            'alias of the root, lower case' => [$php . "use tiffindb as R;\nnew R\\Core\\Storage\\SystemClock();\n"],
+            'alias of the root, leading backslash' => [$php . "use \\TiffinDB as R;\n"],
+            'group alias of Core' => [$php . "use TiffinDB\\{Core as C};\nnew C\\Storage\\Fs();\n"],
+            'root namespace' => ["<?php\nnamespace TiffinDB;\nnew Core\\System\\AuditLog(\$s, \$c);\n"],
+            'braced root namespace' => ["<?php\nnamespace TiffinDB {\nnew Core\\System\\AuditLog(\$s, \$c);\n}\n"],
+            'second namespace' => [$php . "namespace TiffinDB\\Core\\Auth;\nnew Users(\$s);\n"],
         ];
     }
 
@@ -308,9 +378,18 @@ final class WebLayerRulesTest extends TestCase
         self::assertSame([], self::problems('src/Web/Example.php', $source));
     }
 
+    public function testTheRealWebFilesDeclareWebNamespaces(): void
+    {
+        foreach (['src/Web/routes.php', 'src/Web/Kernel.php', 'src/Web/Controller/HomeController.php'] as $file) {
+            self::assertSame([], self::namespaceProblems($file, RepoFiles::read($file)), $file);
+        }
+        self::assertSame(['namespace: none declared'], self::namespaceProblems('src/Web/x.php', "<?php\nreturn 1;\n"));
+        self::assertSame([], self::namespaceProblems('templates/x.php', "<?php\necho namespace\\f();\n"));
+    }
+
     public function testOnlyTheCompositionRootMayNameEverything(): void
     {
-        $source = "<?php\nuse TiffinDB\\Core\\Storage\\Clock;\nuse TiffinDB\\Core\\System\\SystemDatabase;\n";
+        $source = "<?php\nnamespace TiffinDB\\Web;\nuse TiffinDB\\Core\\Storage\\Clock;\nuse TiffinDB\\Core\\System\\SystemDatabase;\n";
 
         self::assertSame([], self::problems(self::COMPOSITION_ROOT, $source));
         self::assertNotSame([], self::problems('src/Web/Controller/CoreServices.php', $source));
@@ -323,15 +402,20 @@ final class WebLayerRulesTest extends TestCase
         $root = $this->temp->path();
         mkdir($root . '/src/Web/Controller', 0700, true);
         mkdir($root . '/templates/pages', 0700, true);
-        file_put_contents($root . '/src/Web/Controller/Bad.php', "<?php\nuse TiffinDB\\Core\\Auth\\Users;\n");
-        file_put_contents($root . '/src/Web/Good.php', "<?php\nuse TiffinDB\\Core\\Auth\\Actor;\n");
-        file_put_contents($root . '/src/Web/CoreServices.php', "<?php\nuse TiffinDB\\Core\\Storage\\Fs;\n");
+        file_put_contents($root . '/src/Web/Controller/Bad.php', "<?php\nnamespace TiffinDB\\Web\\Controller;\nuse TiffinDB\\Core\\Auth\\Users;\n");
+        file_put_contents($root . '/src/Web/Good.php', "<?php\nnamespace TiffinDB\\Web;\nuse TiffinDB\\Core\\Auth\\Actor;\n");
+        file_put_contents($root . '/src/Web/CoreServices.php', "<?php\nnamespace TiffinDB\\Web;\nuse TiffinDB\\Core\\Storage\\Fs;\n");
+        file_put_contents($root . '/src/Web/Root.php', "<?php\nnamespace TiffinDB;\nnew Core\\System\\AuditLog(\$s, \$c);\n");
+        file_put_contents($root . '/src/Web/NoNamespace.php', "<?php\nreturn [];\n");
         file_put_contents($root . '/templates/pages/bad.php', "<?php\n\\TiffinDB\\Core\\Storage\\Fs::remove('x');\n");
         file_put_contents($root . '/templates/pages/notes.txt', "TiffinDB\\Core\\Storage\\Fs\n");
 
         self::assertSame(
             [
                 'src/Web/Controller/Bad.php: TiffinDB\\Core\\Auth\\Users',
+                'src/Web/NoNamespace.php: namespace: none declared',
+                'src/Web/Root.php: alias of TiffinDB',
+                'src/Web/Root.php: namespace: TiffinDB',
                 'templates/pages/bad.php: TiffinDB\\Core\\Storage\\Fs',
             ],
             self::violations($root),

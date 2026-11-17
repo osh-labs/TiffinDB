@@ -11,6 +11,8 @@
 
 declare(strict_types=1);
 
+namespace TiffinDB\Web;
+
 use TiffinDB\Web\Controller\AccountController;
 use TiffinDB\Web\Controller\FieldController;
 use TiffinDB\Web\Controller\HomeController;

@@ -140,8 +140,19 @@ final class CoreServices implements Services
             return null;
         }
         $sessions = $this->sessions();
+        $db = $this->system()->db();
+        // P69 style (P79): a plain read first, so that a signed-in page with
+        // no notice takes no write lock; Sessions::takeFlash checks again
+        // inside the write.
+        $pending = $db->value(
+            'SELECT 1 FROM sessions WHERE token_hash = ? AND flash IS NOT NULL',
+            [Sessions::hashToken($token)],
+        );
+        if ($pending === null) {
+            return null;
+        }
 
-        return $this->system()->db()->write(static fn (): ?array => $sessions->takeFlash($token));
+        return $db->write(static fn (): ?array => $sessions->takeFlash($token));
     }
 
     public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void

@@ -469,6 +469,36 @@ final class KernelTest extends TestCase
         $services->close();
     }
 
+    /**
+     * P79 (P69 style): with no notice stored, takeFlash() opens no write
+     * transaction. Another connection holds the write lock; a write would
+     * wait for the busy timeout and fail, a plain read does not.
+     */
+    public function testTakeFlashWithoutANoticeTakesNoWriteLock(): void
+    {
+        $config = $this->dataConfig();
+        [$session] = $this->install($config);
+        $token = $session->token();
+        $services = self::services($config);
+        self::assertNotNull($services->resume($token));
+
+        $other = new \PDO('sqlite:' . $config['data_dir'] . '/' . DataDirectory::SYSTEM_DATABASE);
+        $other->exec('BEGIN IMMEDIATE');
+        try {
+            $started = microtime(true);
+            self::assertNull($services->takeFlash($token));
+            self::assertLessThan(2.0, microtime(true) - $started, 'No wait for the write lock.');
+        } finally {
+            $other->exec('ROLLBACK');
+        }
+
+        // With a notice, the write happens (and clears it), re-checked inside.
+        $services->setFlash($token, 'notice.password_changed');
+        self::assertSame('notice.password_changed', $services->takeFlash($token)['key'] ?? null);
+        self::assertNull($services->takeFlash($token));
+        $services->close();
+    }
+
     public function testCoreServicesForgetEverythingOnClose(): void
     {
         $config = $this->dataConfig();

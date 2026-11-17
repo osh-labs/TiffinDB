@@ -33,6 +33,13 @@ require_once __DIR__ . '/EndToEndTest.php';
  * assertions and assertForm, and has the expected title and `h1` text.
  * States reached only by a POST (validation errors, step 2 of the
  * installer) are covered by each screen package's own tests.
+ *
+ * Installer step 1 with a failing check (installer.md section 6) is reached
+ * through the real services too: the RequirementEnvironment seam of
+ * Installer::requirements() is not reachable through CoreServices (the
+ * controller passes none), so the test configures data_dir under a folder
+ * that does not exist, which fails the real "A place for the data folder"
+ * check while every other check runs against this server.
  * Synthetic data only.
  */
 #[CoversNothing]
@@ -86,6 +93,31 @@ final class ScreenStructureTest extends TestCase
     protected function tearDown(): void
     {
         $this->temp->remove();
+    }
+
+    public function testInstallerStepOneWithAFailingCheck(): void
+    {
+        $missing = $this->temp->path('missing/data');
+        $config = Fixtures::config(false) + ['data_dir' => $missing];
+        $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices(
+            $config,
+            Fixtures::appRoot(),
+            new FixedClock('2026-11-03T10:00:00Z'),
+            new SeededRandom('tiffindb-screen-structure-seed'),
+            new PasswordHasher(['bcrypt' => 4]),
+        ));
+        $client = new EndToEndClient($kernel);
+
+        $this->screen($client, '/setup', 'Set up TiffinDB', 'Set up TiffinDB');
+        $html = $client->page();
+        self::assertSame(
+            'Needs fixing',
+            HtmlAssertions::text($html, '//main//tbody/tr[th[normalize-space(.)="A place for the data folder"]]/td[1]'),
+        );
+        self::assertSame(0, $client->xpath()->query('//form[@action="/setup/data-folder"]')->length, 'No way on while a check fails.');
+        self::assertSame(['Check again'], $client->texts('//main//a[@href="/setup"]'));
+        self::assertStringStartsWith('Fix the checks marked Needs fixing', HtmlAssertions::text($html, '//main//*[@role="alert"]'));
+        self::assertDirectoryDoesNotExist($this->temp->path('missing'), 'The check writes nothing.');
     }
 
     public function testEveryScreenInEveryState(): void

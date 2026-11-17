@@ -1043,13 +1043,15 @@ final class TemplateRulesTest extends TestCase
         self::assertSame([], self::violations(self::HEADER . $body, self::PAGE));
     }
 
-    public function testTheComponentFixtureFollowsTheRules(): void
+    public function testTheComponentFixturesFollowTheRules(): void
     {
-        $file = 'tests/web/fixtures/templates/pages/components.php';
-        self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
         $strings = self::strings();
-        foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
-            self::assertArrayHasKey($key, $strings, $file);
+        foreach (['components', 'notices'] as $name) {
+            $file = "tests/web/fixtures/templates/pages/{$name}.php";
+            self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
+            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
+                self::assertArrayHasKey($key, $strings, $file);
+            }
         }
     }
 

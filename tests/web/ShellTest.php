@@ -34,9 +34,10 @@ use TiffinDB\Web\View;
  * T-WEB-21 (and T-WEB-22's self-checks): both shells rendered through View
  * with the real layout, partials, strings, stylesheet, and configuration.
  *
- * Pages: the real error page, and a fixture page that uses every shared
+ * Pages: the real error page, a fixture page that uses every shared
  * partial and form convention (tests/web/fixtures/templates/pages/
- * components.php), copied next to the real templates in a temporary
+ * components.php), and a notice fixture (notices.php), copied next to the
+ * real templates in a temporary
  * directory. Nothing here goes through the kernel, so these tests do not
  * depend on the request pipeline.
  */
@@ -66,8 +67,10 @@ final class ShellTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-shell-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        if (!copy(__DIR__ . '/fixtures/templates/pages/components.php', $dir . '/pages/components.php')) {
-            throw new RuntimeException('Cannot copy the component fixture.');
+        foreach (['components', 'notices'] as $fixture) {
+            if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
+                throw new RuntimeException("Cannot copy the {$fixture} fixture.");
+            }
         }
         self::$templates = $dir;
     }
@@ -546,6 +549,67 @@ final class ShellTest extends TestCase
             $other = self::render('components', self::componentData($shell, ['script' => 'other']));
             self::assertStringNotContainsString('<script', $other);
         }
+    }
+
+    /** The notice title's markup for a heading value, from the notices fixture. */
+    private static function noticeMain(string $tone, mixed $heading): string
+    {
+        $html = self::render('notices', ['title' => 'Notices', 'shell' => self::shell(), 'tone' => $tone, 'heading' => $heading]);
+        $start = strpos($html, '<main');
+        $end = strpos($html, '</main>');
+        self::assertNotFalse($start);
+        self::assertNotFalse($end);
+
+        return substr($html, $start, $end - $start);
+    }
+
+    public function testNoticeTitleIsAParagraphByDefault(): void
+    {
+        foreach (['info' => '<div class="notice" role="status">', 'warn' => '<div class="notice notice-warn" role="alert">'] as $tone => $open) {
+            $main = self::noticeMain($tone, null);
+            $expected = $open . "\n" . '<p class="notice-title">' . self::string('error.busy.title') . "</p>\n"
+                . '<p>' . self::string('notice.password_changed') . "</p>\n</div>";
+            self::assertStringContainsString($expected, $main, $tone);
+            self::assertStringNotContainsString('<h2', $main);
+            self::assertStringNotContainsString('<h3', $main);
+        }
+    }
+
+    /** @return array<string, array{int, string}> */
+    public static function noticeHeadings(): array
+    {
+        return ['h2' => [2, 'h2'], 'h3' => [3, 'h3']];
+    }
+
+    #[DataProvider('noticeHeadings')]
+    public function testNoticeTitleCanBeAHeading(int $heading, string $element): void
+    {
+        foreach (['info', 'warn'] as $tone) {
+            $default = self::noticeMain($tone, null);
+            $main = self::noticeMain($tone, $heading);
+            // Only the title element changes.
+            $title = self::string('error.busy.title');
+            self::assertSame(
+                str_replace("<p class=\"notice-title\">{$title}</p>", "<{$element} class=\"notice-title\">{$title}</{$element}>", $default),
+                $main,
+                $tone,
+            );
+            $xpath = self::xpath(self::render('notices', ['title' => 'Notices', 'shell' => self::shell(), 'tone' => $tone, 'heading' => $heading]));
+            self::assertSame($title, self::text(self::element($xpath, "//main/div/{$element}[@class=\"notice-title\"]")));
+            self::assertSame(0, $xpath->query('//main/div/p[@class="notice-title"]')->length);
+        }
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function otherNoticeHeadings(): array
+    {
+        return ['1' => [1], '4' => [4], 'string 2' => ['2'], 'true' => [true]];
+    }
+
+    #[DataProvider('otherNoticeHeadings')]
+    public function testOtherNoticeHeadingValuesKeepTheParagraph(mixed $heading): void
+    {
+        self::assertSame(self::noticeMain('info', null), self::noticeMain('info', $heading));
     }
 
     public function testComponentPartials(): void

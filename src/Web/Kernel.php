@@ -10,7 +10,6 @@ namespace TiffinDB\Web;
 
 use DateTimeZone;
 use ErrorException;
-use Exception;
 use LogicException;
 use Throwable;
 use TiffinDB\Core\Auth\Csrf;
@@ -487,9 +486,12 @@ final class Kernel
             if (!is_string($timezone) || $timezone === '') {
                 throw new UnexpectedValueException('Configuration: timezone must be a time zone identifier.');
             }
+            // Throwable, not Exception: older Xdebug releases turn PHP 8.3's
+            // DateInvalidTimeZoneException into an Error when they try to add
+            // their message property, and a bad zone must still be refused.
             try {
                 new DateTimeZone($timezone);
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
                 throw new UnexpectedValueException('Configuration: timezone must be a time zone identifier.', 0, $e);
             }
         }

@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 in design |
-| Phase | M1 paused by the maintainer; no agents running. Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
-| Window start | 2026-11-12T02:30Z (window 2) |
-| Resume reminder | none (deleted for the maintainer's pause; the maintainer resumes the build) |
-| Next action | Paused. On the maintainer's resume: (1) WP2: have the design-tier reviewer verify the round 3 takeback fix (`f9030b5`), then merge; (2) WP4: dispatch the design-tier review of `Identifier`, every SQL string and the nine author choices in its report (help-text key, checkbox and rating conversions, removed-choice rewrite, untested `updateField` retry, `valueCount`, `Trash::list` arrays, trash not touching project meta), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
+| Phase | M1 resumed by the maintainer (window 3). Integration branch for this session: `claude/exciting-maxwell-l2yieq` (fast-forwarded from `claude/magical-hamilton-isy74q` at `30b072b`). Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
+| Window start | 2026-11-17T05:50Z (window 3) |
+| Resume reminder | `trig_01C1zDDQ81GbWBRxzVqTBV95`, fires 2026-11-17T11:06Z |
+| Next action | (1) WP2: have the design-tier reviewer verify the round 3 takeback fix (`f9030b5`), then merge; (2) WP4: dispatch the design-tier review of `Identifier`, every SQL string and the nine author choices in its report (help-text key, checkbox and rating conversions, removed-choice rewrite, untested `updateField` retry, `valueCount`, `Trash::list` arrays, trash not touching project meta), then merge; (3) dispatch WP6 after WP2 merges, then WP5 and WP7. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
 
@@ -147,6 +147,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:2xZ | Maintainer instructions: apply review-economy options 1 and 2; pause once WP4 is done and wait for the maintainer to resume. Resume reminder deleted |
 | 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
 | 2026-11-12T05:3xZ | WP4 implemented and pushed to `-wip-wp4`; build paused, no agents running |
+| 2026-11-17T05:50Z | Window 3 start (maintainer resume); integration branch now `claude/exciting-maxwell-l2yieq`; offline PHPUnit rebuild started; resume reminder armed for 11:06Z |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -196,4 +197,3 @@ Brief notes for later M1 packages (from M1-WP8):
 | WP6, WP7 | Call `LoginThrottle::wait()` inside `write()`; read session tokens via `IssuedSession::token()` (property no longer public) | M1-WP2 follow-up |
 | URL rule refuses any host label starting `0x` (e.g. `0xford.example`); apply the hex test to the last label only and require hex digits | `src/Core/Schema/Type/UrlType.php` `looksLikeOtherIpv4` |
 | `docs/formats/tiffin.md` section 11 says format upgrades run in one transaction; spec 7.2 (implemented) runs each step in its own transaction; correct the format doc | `docs/formats/tiffin.md` |
-

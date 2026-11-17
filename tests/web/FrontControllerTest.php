@@ -15,9 +15,11 @@ use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\RepoFiles;
 
 /**
- * T-WEB-12: runs public/index.php itself in a child PHP process, offline
- * and with no server. Status and headers cannot be read from a
- * command-line run; T-WEB-3 and T-WEB-5 cover them in process.
+ * T-WEB-12, T-WEB-17: runs public/index.php itself in a child PHP process,
+ * offline and with no server, against the real configuration and the real
+ * CoreServices (no data folder exists, so nothing is written). Status and
+ * headers cannot be read from a command-line run; the kernel tests cover
+ * them in process.
  */
 #[CoversNothing]
 final class FrontControllerTest extends TestCase
@@ -75,17 +77,25 @@ final class FrontControllerTest extends TestCase
         return $strings[$key];
     }
 
-    public function testStartPage(): void
+    public function testStartPageRedirectsWithAnEmptyBody(): void
     {
+        // No data folder exists beside or inside the checkout, so `/` is a
+        // redirect to setup (status and headers are not observable here).
         [$out, $err, $exit] = self::runFrontController('/');
 
         self::assertSame('', $err);
         self::assertSame(0, $exit);
-        self::assertStringStartsWith('<!DOCTYPE html>', $out);
-        HtmlAssertions::assertShell($out, self::sourceUrl(), self::string('shell.footer.licence'), self::string('shell.footer.source'));
-        HtmlAssertions::assertNoInlineCode($out, self::sourceUrl());
-        self::assertStringContainsString('>' . self::string('shell.footer.source') . '</a>', $out);
-        self::assertNull(HtmlAssertions::rootClass($out));
+        self::assertSame('', $out);
+    }
+
+    public function testGuestRouteBeforeInstallationRedirectsWithAnEmptyBody(): void
+    {
+        foreach (['/sign-in', '/projects', '/admin/people'] as $uri) {
+            [$out, $err] = self::runFrontController($uri);
+
+            self::assertSame('', $err, $uri);
+            self::assertSame('', $out, $uri);
+        }
     }
 
     public function testNotFound(): void
@@ -97,19 +107,37 @@ final class FrontControllerTest extends TestCase
         HtmlAssertions::assertShell($out, self::sourceUrl(), self::string('shell.footer.licence'), self::string('shell.footer.source'));
     }
 
-    public function testDarkTheme(): void
+    public function testAppearanceQueryIsIgnored(): void
     {
-        [$out, $err] = self::runFrontController('/?theme=dark');
+        // appearance_preview is false from M1 (spec part 2 section 2.7).
+        [$out, $err] = self::runFrontController('/nope?theme=dark');
 
         self::assertSame('', $err);
-        self::assertSame('t-dark', HtmlAssertions::rootClass($out));
+        self::assertSame(self::string('error.404.title'), HtmlAssertions::text($out, '//h1'));
+        HtmlAssertions::assertNoInlineCode($out, self::sourceUrl());
+        self::assertNull(HtmlAssertions::rootClass($out));
     }
 
     public function testHeadSendsNoBody(): void
     {
-        [$out, $err] = self::runFrontController('/', 'HEAD');
+        foreach (['/', '/nope'] as $uri) {
+            [$out, $err] = self::runFrontController($uri, 'HEAD');
 
+            self::assertSame('', $err, $uri);
+            self::assertSame('', $out, $uri);
+        }
+    }
+
+    public function testPostsBeforeInstallation(): void
+    {
+        // A POST to a user route before installation is sent to setup
+        // (empty body); a POST to `/` is not allowed (405 page).
+        [$out, $err] = self::runFrontController('/sign-out', 'POST');
         self::assertSame('', $err);
         self::assertSame('', $out);
+
+        [$out, $err] = self::runFrontController('/', 'POST');
+        self::assertSame('', $err);
+        self::assertSame(self::string('error.405.title'), HtmlAssertions::text($out, '//h1'));
     }
 }

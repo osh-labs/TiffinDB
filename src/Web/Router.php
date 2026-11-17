@@ -12,7 +12,9 @@ use InvalidArgumentException;
 
 /**
  * Matches a method and path against the static route table (ADR 0008
- * decision 2). Patterns are literal paths with optional `{name}` segments;
+ * decision 2; M1 spec part 2 section 2.3). Each route is
+ * `[method, pattern, [ControllerClass, 'method'], access]`, where access
+ * is an AccessLevel value (`setup`, `guest`, `user`, `any`). Patterns are literal paths with optional `{name}` segments;
  * a placeholder matches one segment of `[A-Za-z0-9_-]+`. Matching is exact
  * and case-sensitive, and the first match wins. HEAD matches GET routes.
  */
@@ -27,7 +29,7 @@ final class Router
     private const IDENTIFIER = '/^[A-Za-z_][A-Za-z0-9_]*\z/';
 
     /**
-     * @var list<array{method: string, segments: list<array{0: bool, 1: string}>|null, handler: array{0: class-string, 1: string}}>
+     * @var list<array{method: string, segments: list<array{0: bool, 1: string}>|null, handler: array{0: class-string, 1: string}, access: AccessLevel}>
      *      Each segment is [isPlaceholder, literal text or parameter name];
      *      `segments` is null for the root pattern `/`.
      */
@@ -43,10 +45,10 @@ final class Router
         $routes = [];
         $seen = [];
         foreach ($table as $index => $route) {
-            if (!is_array($route) || !array_is_list($route) || count($route) !== 3) {
-                throw new InvalidArgumentException("Route {$index}: expected [method, pattern, handler].");
+            if (!is_array($route) || !array_is_list($route) || count($route) !== 4) {
+                throw new InvalidArgumentException("Route {$index}: expected [method, pattern, handler, access].");
             }
-            [$method, $pattern, $handler] = $route;
+            [$method, $pattern, $handler, $accessName] = $route;
 
             if (!is_string($method) || !in_array($method, self::METHODS, true)) {
                 throw new InvalidArgumentException("Route {$index}: unknown method.");
@@ -65,6 +67,11 @@ final class Router
                 throw new InvalidArgumentException("Route {$index}: the handler must be [ControllerClass, 'method'].");
             }
 
+            $access = is_string($accessName) ? AccessLevel::tryFrom($accessName) : null;
+            if ($access === null) {
+                throw new InvalidArgumentException("Route {$index}: unknown access level.");
+            }
+
             $key = $method . ' ' . $pattern;
             if (isset($seen[$key])) {
                 throw new InvalidArgumentException("Route {$index}: duplicate method and pattern.");
@@ -72,7 +79,7 @@ final class Router
             $seen[$key] = true;
 
             /** @var array{0: class-string, 1: string} $handler */
-            $routes[] = ['method' => $method, 'segments' => $segments, 'handler' => $handler];
+            $routes[] = ['method' => $method, 'segments' => $segments, 'handler' => $handler, 'access' => $access];
         }
 
         $this->routes = $routes;
@@ -100,7 +107,7 @@ final class Router
                 continue;
             }
             if ($route['method'] === $lookup) {
-                return RouteMatch::found($route['handler'], $params);
+                return RouteMatch::found($route['handler'], $params, $route['access']);
             }
             $allowed[$route['method']] = true;
         }

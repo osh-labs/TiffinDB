@@ -630,11 +630,8 @@ final class SchemaScreensTest extends TestCase
         [$appliance, $tool] = array_column($this->field('Kind')->options['choices'], 'key');
         $id = $this->core->insertRecord($this->project, $this->items, [$kind => 'Tool']);
         $html = $this->request(self::ADMIN, 'GET', $this->t('/fields/' . $kind))->body;
-        // Not assertForm(): the repeated choice boxes are named by aria-label
-        // as the design says, while assertForm() asks every text box for an
-        // id and a label (reported as a mismatch).
-        HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
-        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        // The repeated choice boxes are named by aria-label (rule 4.5 item 6).
+        $this->assertScreen($html);
         $x = $this->xpath($html);
 
         self::assertSame('Choices', HtmlAssertions::text($html, '//fieldset[@class="field"]/legend'));

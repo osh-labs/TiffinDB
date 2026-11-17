@@ -23,11 +23,11 @@ declare(strict_types=1);
 <ol class="steps" aria-label="<?= $this->t('setup.steps.label') ?>">
 <?php foreach ($data['steps'] as $step) : ?>
 <?php if ($step['state'] === 'now') : ?>
-<li class="step" aria-current="step"><?= $this->t('setup.step.now', ['number' => $step['number']]) ?>
+<li class="step" aria-current="step"><span><?= $this->t('setup.step.now', ['number' => $step['number']]) ?></span>
 <?php elseif ($step['state'] === 'done') : ?>
-<li class="step"><?= $this->t('setup.step.done', ['number' => $step['number']]) ?>
+<li class="step"><span><?= $this->t('setup.step.done', ['number' => $step['number']]) ?></span>
 <?php else : ?>
-<li class="step"><?= $this->t('setup.step.number', ['number' => $step['number']]) ?>
+<li class="step"><span><?= $this->t('setup.step.number', ['number' => $step['number']]) ?></span>
 <?php endif; ?>
 <?php if ($step['number'] === 1) : ?>
 <span class="step-name"><?= $this->t('setup.step.1') ?></span>

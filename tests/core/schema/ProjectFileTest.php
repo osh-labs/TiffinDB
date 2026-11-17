@@ -278,4 +278,23 @@ final class ProjectFileTest extends TestCase
             }
         }
     }
+
+    public function testOnlyTestsGiveFormatMigrationsSteps(): void
+    {
+        // The constructor's steps argument is a test seam: code under src/ never passes it.
+        $plain = 0;
+        foreach (RepoFiles::withExtension(['php'], 'src') as $file) {
+            $tokens = array_values(array_filter(token_get_all(RepoFiles::read($file)), static fn ($t): bool => !is_array($t) || !in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)));
+            foreach ($tokens as $k => $token) {
+                $name = $tokens[$k + 1] ?? null;
+                if (!is_array($token) || $token[0] !== T_NEW || !is_array($name) || !str_ends_with(strtolower('\\' . $name[1]), '\\formatmigrations')) {
+                    continue;
+                }
+                self::assertSame('(', $tokens[$k + 2] ?? null, $file);
+                self::assertSame(')', $tokens[$k + 3] ?? null, $file . ' passes steps to FormatMigrations');
+                $plain++;
+            }
+        }
+        self::assertGreaterThan(0, $plain, 'ProjectFile::open should construct FormatMigrations.');
+    }
 }

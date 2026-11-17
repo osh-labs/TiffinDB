@@ -20,6 +20,16 @@ use TiffinDB\Tests\Support\RepoFiles;
  * hold in every PHP file under src/Core/Schema/ (except the field types,
  * which build no SQL) and in src/Core/Query/Trash.php:
  *
+ * 0. Default deny: nothing whose call target or variable cannot be
+ *    resolved from the tokens: `->`, `?->`, or `::` followed by `$` or
+ *    `{`; `$$` or `${`; extract, parse_str, compact, call_user_func,
+ *    call_user_func_array, ::fromCallable; a string naming a query or PDO
+ *    method or one of those functions as an array value or call argument;
+ *    a first-class callable of a query method; eval; `new` with a class
+ *    name that is not written out; and a call of a variable not shown to
+ *    hold a Closure, or of any other expression. ALLOWED_CONSTRUCTS lists
+ *    the exceptions real code needs. Method, function, and class names
+ *    are compared ignoring case throughout.
  * 1. No interpolated strings, heredocs, or nowdocs at all.
  * 2. No `.=`, and no sprintf, vsprintf, printf, implode, join, str_repeat,
  *    strtr, or str_replace: SQL is never assembled by string functions.
@@ -54,6 +64,23 @@ final class SqlStringsTest extends TestCase
         'src/Core/Schema/ProjectFile.php' => ['$statement'],                 // foreach (self::DDL as $statement)
         'src/Core/Schema/FormatMigrations.php' => ['$statement', '$pragma'], // STEPS and VERSION_PRAGMAS
     ];
+
+    /**
+     * File => constructs the forbidden-construct rule lets through, as
+     * written. SchemaEditor's constructor takes `callable $onSnapshot`
+     * (M1 spec section 7.4) and turns it into the Closure it stores; the
+     * call through it is then Closure-typed.
+     */
+    public const ALLOWED_CONSTRUCTS = [
+        'src/Core/Schema/SchemaEditor.php' => ['$onSnapshot(...)'],
+    ];
+
+    /** Functions that rewrite variables or call a callable given as data. */
+    private const FORBIDDEN_FUNCTIONS = [
+        'scope-rewriting' => ['extract', 'parse_str', 'compact'],
+        'callable-invokers' => ['call_user_func', 'call_user_func_array', 'fromcallable'],
+    ];
+    private const CONTROL_HEADERS = [T_IF, T_ELSEIF, T_WHILE, T_FOR, T_FOREACH, T_SWITCH, T_CATCH, T_MATCH, T_FUNCTION, T_FN, T_USE, T_DECLARE];
 
     private const SQL_WORD = '/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|VACUUM|FROM|WHERE|INTO|VALUES|INDEX|TABLE|COLUMN|JOIN|ORDER|LIMIT|SET|IN|AND|OR|ON|NULL)\b/i';
     private const STRING_BUILDERS = ['sprintf', 'vsprintf', 'printf', 'implode', 'join', 'str_repeat', 'strtr', 'str_replace'];
@@ -112,19 +139,19 @@ final class SqlStringsTest extends TestCase
     #[DataProvider('files')]
     public function testSqlIsBuiltOnlyFromLiteralsAndIdentifiers(string $file): void
     {
-        self::assertSame([], self::violations(RepoFiles::read($file), self::ALLOWED_VARIABLES[$file] ?? []));
+        self::assertSame([], self::violations(RepoFiles::read($file), self::ALLOWED_VARIABLES[$file] ?? [], self::ALLOWED_CONSTRUCTS[$file] ?? []));
     }
 
     public function testOnlyTheDefinitionClassesHaveSqlMethods(): void
     {
         foreach (self::scannedFiles() as $file) {
             $source = RepoFiles::read($file);
-            $has = preg_match('/function sql\(\): string\s*\{(.*?)\n    \}/s', $source, $match) === 1;
+            $has = preg_match('/function sql\(\): string\s*\{(.*?)\n    \}/si', $source, $match) === 1;
             if (in_array(basename($file), self::SQL_DEFS, true)) {
                 self::assertTrue($has, $file);
                 self::assertMatchesRegularExpression('/^\s*(?:if \(!\$this->hasColumn\) \{\s*throw new \\\\LogicException\([^)]*\);\s*\}\s*)?return Identifier::(table|column|joinTable)\(\$this->key\);\s*$/', $match[1], $file);
             } else {
-                self::assertStringNotContainsString('function sql(', $source, $file);
+                self::assertStringNotContainsStringIgnoringCase('function sql(', $source, $file);
             }
         }
     }
@@ -203,6 +230,106 @@ final class SqlStringsTest extends TestCase
         yield 'allowed name rebound by an inner loop' => ['foreach (self::DDL as $statement) { foreach ($x as $statement) { $db->run($statement); } }', 'variable'];
         yield 'allowed name in a nested function' => ['foreach (self::DDL as $statement) { $g = fn () => $db->run($statement); }', 'variable'];
         yield 'other name over a constant' => ['foreach (self::DDL as $sql) { $db->run($sql); }', 'variable'];
+        // Method names in any letter case.
+        yield 'query method in capitals' => ['$db->RUN($x);', 'variable'];
+        yield 'query method in mixed case' => ['$db->Value($x);', 'variable'];
+        yield 'query method in capitals with a concatenation' => ['$db->All(\' \' . $x);', 'operand'];
+        yield 'PDO method in capitals' => ['$pdo->EXEC(\'DROP TABLE x\');', 'PDO'];
+        // Calls the scan cannot resolve (rule 0).
+        yield 'method named by a variable' => ['$m = \'run\'; $db->$m($x);', 'dynamic-member'];
+        yield 'method named by an expression' => ['$db->{\'run\'}($x);', 'dynamic-member'];
+        yield 'array callable to array_map' => ['array_map([$db, \'run\'], $x);', 'callable-literal'];
+        yield 'array callable to call_user_func' => ['call_user_func([$db, \'run\'], $x);', 'callable-invokers'];
+        yield 'array callable to Closure::fromCallable' => ['\\Closure::fromCallable([$db, \'run\']);', 'callable-invokers'];
+        // Variable rewriting that could retype a trusted parameter.
+        yield 'extract' => ['function f(TableDef $t, array $a): void { extract($a); $db->run(\'DROP TABLE \' . $t->sql()); }', 'scope-rewriting'];
+        yield 'parse_str' => ['function f(TableDef $t, string $q): void { parse_str($q); $db->run(\'DROP TABLE \' . $t->sql()); }', 'scope-rewriting'];
+        yield 'variable variable' => ['function f(TableDef $t, string $n, $x): void { $$n = $x; $db->run(\'DROP TABLE \' . $t->sql()); }', 'variable-variable'];
+        yield 'braced variable variable' => ['function f(TableDef $t, string $k, $x): void { ${$k} = $x; $db->run(\'DROP TABLE \' . $t->sql()); }', 'variable-variable'];
+    }
+
+    /** @return iterable<string, array{string, string}> code that holds no SQL, and the rule 0 id that refuses it */
+    public static function forbiddenSources(): iterable
+    {
+        yield '->$name' => ['$o->$m();', 'dynamic-member'];
+        yield '?->$name' => ['$o?->$p;', 'dynamic-member'];
+        yield '->{...}' => ['$o->{\'x\'}();', 'dynamic-member'];
+        yield '::$name()' => ['Foo::$m();', 'dynamic-member'];
+        yield '::{...}' => ['Foo::{\'m\'}();', 'dynamic-member'];
+        yield '$$name' => ['$$n = 1;', 'variable-variable'];
+        yield '${...}' => ['${\'n\'} = 1;', 'variable-variable'];
+        yield 'extract' => ['extract($a);', 'scope-rewriting'];
+        yield 'extract, qualified' => ['\\extract($a);', 'scope-rewriting'];
+        yield 'parse_str' => ['parse_str($q, $r);', 'scope-rewriting'];
+        yield 'compact' => ['$v = compact(\'a\');', 'scope-rewriting'];
+        yield 'call_user_func' => ['call_user_func($f);', 'callable-invokers'];
+        yield 'call_user_func_array' => ['CALL_USER_FUNC_ARRAY($f, []);', 'callable-invokers'];
+        yield 'Closure::fromCallable' => ['\\Closure::fromCallable($f);', 'callable-invokers'];
+        yield 'imported Closure::fromCallable' => ['Closure::FromCallable($f);', 'callable-invokers'];
+        yield 'array callable' => ['$c = [$db, \'run\'];', 'callable-literal'];
+        yield 'array callable in capitals' => ['$c = [$db, \'Query\'];', 'callable-literal'];
+        yield 'long array callable' => ['$c = array($db, \'exec\');', 'callable-literal'];
+        yield 'string callable argument' => ['array_map(\'extract\', $x);', 'callable-literal'];
+        yield 'first-class callable of a query method' => ['$c = $db->run(...);', 'callable-literal'];
+        yield 'eval' => ['eval(\'1;\');', 'eval'];
+        yield 'new $class' => ['$o = new $class();', 'variable-new'];
+        yield 'new (expression)' => ['$o = new ($name)();', 'variable-new'];
+        yield 'untyped variable call' => ['$f($x);', 'variable-call'];
+        yield 'first-class callable of a variable' => ['$g = $f(...);', 'variable-call'];
+        yield 'call of a parenthesised property' => ['($this->f)($x);', 'variable-call'];
+        yield 'call of an array element' => ['$a[0]($x);', 'variable-call'];
+        yield 'call of a string' => ['\'strlen\'(\'x\');', 'variable-call'];
+        yield 'call of a callable parameter' => ['function f(callable $f): void { $f(1); }', 'variable-call'];
+    }
+
+    #[DataProvider('forbiddenSources')]
+    public function testTheFileRuleAloneRefuses(string $code, string $rule): void
+    {
+        $source = self::SYNTHETIC_HEADER . $code . "\n";
+        $all = self::violations($source, []);
+        self::assertNotSame([], $all, $code);
+        self::assertStringContainsString('(' . $rule . ')', implode("\n", $all));
+        // Nothing but rule 0 refuses it: without that rule the code passes.
+        $others = array_values(array_filter($all, static fn (string $v): bool => !str_contains($v, '(' . $rule . ')')));
+        self::assertSame($others, self::violations($source, [], [], [$rule]), $code);
+    }
+
+    /** @return iterable<string, array{string, string}> rule 0 id => a bypass that only that rule stops */
+    public static function bypassesStoppedOnlyByOneRule(): iterable
+    {
+        yield 'dynamic-member' => ['dynamic-member', '$m = \'run\'; $db->$m($x);'];
+        yield 'variable-variable' => ['variable-variable', 'function f(TableDef $t, string $n, $x): void { $$n = $x; $db->run(\'DROP TABLE \' . $t->sql()); }'];
+        yield 'scope-rewriting' => ['scope-rewriting', 'function f(TableDef $t, array $a): void { extract($a); $db->run(\'DROP TABLE \' . $t->sql()); }'];
+        yield 'callable-invokers' => ['callable-invokers', 'function f($cb, $sql): void { $run = \\Closure::fromCallable($cb); $run($sql); }'];
+        yield 'callable-literal' => ['callable-literal', 'array_map([$db, \'run\'], $statements);'];
+        yield 'eval' => ['eval', 'eval($code);'];
+        yield 'variable-new' => ['variable-new', '$runner = new $class($db); $runner->go($sql);'];
+        yield 'variable-call' => ['variable-call', 'function f($fn, $sql): void { $fn($sql); }'];
+    }
+
+    #[DataProvider('bypassesStoppedOnlyByOneRule')]
+    public function testEachForbiddenRuleIsNeeded(string $rule, string $code): void
+    {
+        $source = self::SYNTHETIC_HEADER . $code . "\n";
+        self::assertNotSame([], self::violations($source, ['$statement', '$pragma']), $code);
+        self::assertSame([], self::violations($source, ['$statement', '$pragma'], [], [$rule]), 'Without ' . $rule . ' the bypass passes.');
+    }
+
+    public function testAnAllowedConstructAllowsOnlyItsExactForm(): void
+    {
+        $allowed = ['$onSnapshot(...)'];
+        self::assertSame([], self::violations(self::SYNTHETIC_HEADER . 'function f(callable $onSnapshot): void { $g = $onSnapshot(...); }' . "\n", [], $allowed));
+        self::assertNotSame([], self::violations(self::SYNTHETIC_HEADER . 'function f(callable $onSnapshot): void { $onSnapshot(1); }' . "\n", [], $allowed));
+        self::assertNotSame([], self::violations(self::SYNTHETIC_HEADER . 'function f(callable $other): void { $g = $other(...); }' . "\n", [], $allowed));
+    }
+
+    public function testEveryAllowedConstructIsUsed(): void
+    {
+        foreach (self::ALLOWED_CONSTRUCTS as $file => $constructs) {
+            foreach ($constructs as $construct) {
+                self::assertNotSame([], self::violations(RepoFiles::read($file), self::ALLOWED_VARIABLES[$file] ?? []), $file . ' no longer needs ' . $construct);
+            }
+        }
     }
 
     #[DataProvider('badSources')]
@@ -230,6 +357,11 @@ final class SqlStringsTest extends TestCase
         yield 'zero-argument value' => ['$x = $checked->value();'];
         yield 'allowed loop variable' => ['foreach (self::DDL as $statement) { $db->run($statement); }'];
         yield 'allowed loop variable with a key' => ['function f(int $version): void { foreach (self::VERSION_PRAGMAS as $target => $pragma) { if ($target === $version) { $db->run($pragma); } } }'];
+        yield 'Closure-typed parameter call' => ['function f(\\Closure $work): void { $work(1); }'];
+        yield 'Closure-typed capture call' => ['function f(\\Closure $work): void { $g = function () use ($work): void { $work(1); }; }'];
+        yield 'Closure-typed property call' => ['final class SchemaEditor { public function g(): void { $notify = $this->onSnapshot; $notify(1); } }'];
+        yield 'index of a column named like a method' => ['$v = $row[\'value\'];'];
+        yield 'enum case value like a method' => ['enum Cardinality: string { case One = \'one\'; }'];
         yield 'allowed loop variable over a constant entry' => ['$f = static function (Database $db) use ($version): void { foreach (self::STEPS[$version] as $statement) { $db->run($statement); } };'];
     }
 
@@ -257,13 +389,15 @@ final class SqlStringsTest extends TestCase
 
     /**
      * @param list<string> $allowedVariables
+     * @param list<string> $allowedConstructs see ALLOWED_CONSTRUCTS
+     * @param list<string> $disabledRules forbidden-construct rules to leave out (for the test that each is needed)
      * @return list<string> one line per violation
      */
-    public static function violations(string $source, array $allowedVariables): array
+    public static function violations(string $source, array $allowedVariables, array $allowedConstructs = [], array $disabledRules = []): array
     {
         $c = self::context($source);
         $tokens = $c['tokens'];
-        $violations = [];
+        $violations = self::forbiddenConstructs($c, $allowedConstructs, $disabledRules);
         $line = static fn (int $i): int => self::lineOf($tokens, $i);
 
         foreach ($tokens as $i => $token) {
@@ -281,7 +415,7 @@ final class SqlStringsTest extends TestCase
                 $violations[] = 'line ' . $line($i) . ': string builder ' . strtolower($token[1]) . '()';
             }
             if (self::isToken($token, T_STRING) && self::isMethodCall($tokens, $i)) {
-                $method = $token[1];
+                $method = strtolower($token[1]);
                 if (in_array($method, self::PDO_METHODS, true)) {
                     $violations[] = 'line ' . $line($i) . ': direct PDO call ->' . $method . '()';
                 }
@@ -338,6 +472,121 @@ final class SqlStringsTest extends TestCase
         }
 
         return array_values(array_unique($violations));
+    }
+
+    /**
+     * Rule 0, default deny: constructs whose call target or variable the
+     * scan cannot resolve, refused wherever they appear, so that rules 3
+     * and 4 never have to reason about them. Each rule has an id so that
+     * testEachForbiddenRuleIsNeeded can leave it out.
+     *
+     * @param array<string, mixed> $c
+     * @param list<string> $allowedConstructs
+     * @param list<string> $disabled rule ids to leave out
+     * @return list<string>
+     */
+    private static function forbiddenConstructs(array $c, array $allowedConstructs, array $disabled): array
+    {
+        $tokens = $c['tokens'];
+        $found = [];
+        $add = static function (string $rule, int $k, string $what) use (&$found, $disabled, $tokens): void {
+            if (!in_array($rule, $disabled, true)) {
+                $found[] = 'line ' . self::lineOf($tokens, $k) . ': forbidden construct (' . $rule . '): ' . $what;
+            }
+        };
+        $callableNames = [...self::QUERY_METHODS, ...self::PDO_METHODS, ...array_merge(...array_values(self::FORBIDDEN_FUNCTIONS))];
+
+        foreach ($tokens as $k => $t) {
+            $next = $tokens[$k + 1] ?? null;
+            $prev = $tokens[$k - 1] ?? null;
+
+            // ->$name, ->{...}, ::$name, ::{...}, ?->$name
+            if (self::isToken($t, T_OBJECT_OPERATOR) || self::isToken($t, T_NULLSAFE_OBJECT_OPERATOR) || self::isToken($t, T_DOUBLE_COLON)) {
+                if (self::isToken($next, T_VARIABLE) || $next === '{' || $next === '$') {
+                    $add('dynamic-member', $k, 'member named by an expression');
+                }
+            }
+            // $$name, ${...}
+            if ($t === '$' || self::isToken($t, T_DOLLAR_OPEN_CURLY_BRACES)) {
+                $add('variable-variable', $k, 'variable variable');
+            }
+            // extract(), parse_str(), compact(), call_user_func(), call_user_func_array(), X::fromCallable()
+            if (self::isName($t)) {
+                $name = strtolower(ltrim($t[1], '\\'));
+                $isMember = self::isToken($prev, T_OBJECT_OPERATOR) || self::isToken($prev, T_NULLSAFE_OBJECT_OPERATOR) || self::isToken($prev, T_FUNCTION);
+                foreach (self::FORBIDDEN_FUNCTIONS as $rule => $names) {
+                    if (in_array($name, $names, true) && !$isMember && ($name !== 'fromcallable' || self::isToken($prev, T_DOUBLE_COLON))) {
+                        $add($rule, $k, $name);
+                    }
+                }
+            }
+            if (self::isToken($t, T_EVAL)) {
+                $add('eval', $k, 'eval');
+            }
+            // new $class, new ($expression)
+            if (self::isToken($t, T_NEW) && (self::isToken($next, T_VARIABLE) || $next === '(' || $next === '$')) {
+                $add('variable-new', $k, 'new with a class name that is not written out');
+            }
+            // A string naming a query method or a forbidden function, as an array value or a call argument.
+            if (self::isToken($t, T_CONSTANT_ENCAPSED_STRING) && in_array(strtolower(substr($t[1], 1, -1)), $callableNames, true)
+                && self::isCallableLiteralPosition($c, $k)) {
+                $add('callable-literal', $k, 'callable named by a string ' . $t[1]);
+            }
+            // First-class callable of a query method: ->run(...)
+            if (self::isToken($t, T_STRING) && self::isMethodCall($tokens, $k) && in_array(strtolower($t[1]), [...self::QUERY_METHODS, ...self::PDO_METHODS], true)
+                && self::isToken($tokens[$k + 2] ?? null, T_ELLIPSIS) && ($tokens[$k + 3] ?? null) === ')') {
+                $add('callable-literal', $k, 'first-class callable of ->' . strtolower($t[1]) . '()');
+            }
+            // $var(...) unless $var is shown to hold a Closure; (expr)(...), $a[0](...), 'name'(...)
+            if ($next === '(') {
+                $isNamedElsewhere = false; // ->$m(), ::$m(), new $c(): dynamic-member and variable-new
+                foreach ([T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON, T_NEW] as $id) {
+                    $isNamedElsewhere = $isNamedElsewhere || self::isToken($prev, $id);
+                }
+                if (self::isToken($t, T_VARIABLE) && !$isNamedElsewhere) {
+                    $written = $t[1] . (self::isToken($tokens[$k + 2] ?? null, T_ELLIPSIS) && ($tokens[$k + 3] ?? null) === ')' ? '(...)' : '(');
+                    $isClosure = strtolower((string) self::typeOfVariable($c, $t[1], $k, 0)) === 'closure';
+                    if (!$isClosure && !in_array($written, $allowedConstructs, true)) {
+                        $add('variable-call', $k, 'call of ' . $t[1] . ', which is not shown to hold a Closure');
+                    }
+                } elseif ($t === ']' || $t === '}' || self::isToken($t, T_CONSTANT_ENCAPSED_STRING)) {
+                    $add('variable-call', $k, 'call of an expression');
+                } elseif ($t === ')') {
+                    $before = $tokens[self::matchClose($c, $k) - 1] ?? null;
+                    $isHeader = false;
+                    foreach (self::CONTROL_HEADERS as $id) {
+                        $isHeader = $isHeader || self::isToken($before, $id);
+                    }
+                    if (!$isHeader) {
+                        $add('variable-call', $k, 'call of an expression');
+                    }
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Whether the literal at $k is a value in an array literal or a direct
+     * call argument, where it could serve as a callable.
+     *
+     * @param array<string, mixed> $c
+     */
+    private static function isCallableLiteralPosition(array $c, int $k): bool
+    {
+        $tokens = $c['tokens'];
+        $p = $c['parent'][$k];
+        if ($p === null || !in_array($tokens[$k - 1] ?? null, ['(', '[', ','], true) || !in_array($tokens[$k + 1] ?? null, [')', ']', ','], true)) {
+            return false;
+        }
+        $before = $tokens[$p - 1] ?? null;
+        if ($tokens[$p] === '[') {
+            // An array literal, not an index: `$a['run']`, `f()['run']`.
+            return !(self::isToken($before, T_VARIABLE) || in_array($before, [']', ')', '}'], true) || self::isName($before));
+        }
+
+        return $tokens[$p] === '(';
     }
 
     /**
@@ -417,9 +666,9 @@ final class SqlStringsTest extends TestCase
         $tokens = $c['tokens'];
 
         return self::isToken($tokens[$s] ?? null, T_VARIABLE) && self::isToken($tokens[$s + 1] ?? null, T_OBJECT_OPERATOR)
-            && self::isToken($tokens[$s + 2] ?? null, T_STRING) && $tokens[$s + 2][1] === 'sql'
+            && self::isToken($tokens[$s + 2] ?? null, T_STRING) && strtolower($tokens[$s + 2][1]) === 'sql'
             && ($tokens[$s + 3] ?? null) === '(' && ($tokens[$s + 4] ?? null) === ')'
-            && in_array(self::typeOfVariable($c, $tokens[$s][1], $s, 0), self::DEF_CLASSES, true);
+            && in_array(strtolower((string) self::typeOfVariable($c, $tokens[$s][1], $s, 0)), array_map('strtolower', self::DEF_CLASSES), true);
     }
 
     /**
@@ -951,11 +1200,12 @@ final class SqlStringsTest extends TestCase
     /** @param array<string, mixed> $c */
     private static function allowedStatic(array $c, string $class, string $method, int $at): bool
     {
-        $resolved = self::resolveClass($c, $class, $at);
+        $resolved = strtolower((string) self::resolveClass($c, $class, $at));
+        $method = strtolower($method);
 
-        return $resolved === 'TiffinDB\Core\Schema\Identifier'
-            || ($resolved === 'TiffinDB\Core\Storage\Database' && $method === 'placeholders')
-            || ($resolved === 'TiffinDB\Core\Schema\ColumnDefinition' && $method === 'of');
+        return $resolved === 'tiffindb\core\schema\identifier'
+            || ($resolved === 'tiffindb\core\storage\database' && $method === 'placeholders')
+            || ($resolved === 'tiffindb\core\schema\columndefinition' && $method === 'of');
     }
 
     /**

@@ -234,16 +234,13 @@ final class SetupScreenTest extends TestCase
         return $texts;
     }
 
-    private static function assertPage(Response $response, int $status, bool $secure = true, string $base = ''): string
+    private static function assertPage(Response $response, int $status, string $base = ''): string
     {
         self::assertSame($status, $response->status, $response->body);
         self::assertSame('text/html; charset=utf-8', $response->header('Content-Type'));
         $html = $response->body;
         HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code', $base);
-        if ($secure) {
-            // The HTTPS warning names "https://", which the external-URL rule counts.
-            HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
-        }
+        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
         HtmlAssertions::assertForm($html);
 
         // Plain shell, wide main; the shared top of every step.
@@ -342,7 +339,7 @@ final class SetupScreenTest extends TestCase
         // The application folder's parent is missing, so no data folder can be made.
         $missing = $this->temp->path('missing/app');
         $services = $this->services(InstallState::NeedsDataFolder, null, $missing);
-        $html = self::assertPage(self::send($services, 'GET', '/setup', [], self::server($this->publicRoot())), 200, false);
+        $html = self::assertPage(self::send($services, 'GET', '/setup', [], self::server($this->publicRoot())), 200);
 
         $rows = self::texts($html, '//tbody/tr');
         self::assertSame('A place for the data folder Needs fixing TiffinDB cannot make its data folder at ../tiffindb-data. Let the web server write to the folder that holds the TiffinDB folder, or set data_dir in config/local.php.', $rows[7]);
@@ -482,7 +479,7 @@ final class SetupScreenTest extends TestCase
     {
         $services = $this->services(InstallState::NeedsDataFolder, self::webServer($this->www(), 'serve'));
         $response = self::send($services, 'POST', '/setup/data-folder', [], self::server($this->www()), '/app/public');
-        $html = self::assertPage($response, 409, true, '/app/public');
+        $html = self::assertPage($response, 409, '/app/public');
 
         self::assertSteps($html, ['Step 1, done Check this server', 'Step 2, now Make the data folder safe', 'Step 3 Create the first Admin'], 2);
         self::assertSame(['div', 'ol.steps', 'div.notice.notice-warn', 'section.section', 'form.form'], self::mainOutline($html));
@@ -498,7 +495,7 @@ final class SetupScreenTest extends TestCase
     public function testAnUnclearAnswerStopsSetupWith409(): void
     {
         $services = $this->services(InstallState::NeedsDataFolder, self::webServer($this->www(), 'silent'));
-        $html = self::assertPage(self::send($services, 'POST', '/setup/data-folder', [], self::server($this->www()), '/app/public'), 409, true, '/app/public');
+        $html = self::assertPage(self::send($services, 'POST', '/setup/data-folder', [], self::server($this->www()), '/app/public'), 409, '/app/public');
 
         $this->assertInconclusive($html);
     }
@@ -526,7 +523,7 @@ final class SetupScreenTest extends TestCase
         $probe = self::spy();
         $services = $this->services(InstallState::NeedsDataFolder, $probe);
         $server = $override + self::server($this->www());
-        $html = self::assertPage(self::send($services, 'POST', '/setup/data-folder', [], $server, '/app/public'), 409, true, '/app/public');
+        $html = self::assertPage(self::send($services, 'POST', '/setup/data-folder', [], $server, '/app/public'), 409, '/app/public');
 
         $this->assertInconclusive($html);
         self::assertSame(0, $probe->calls);
@@ -565,12 +562,25 @@ final class SetupScreenTest extends TestCase
         self::assertSame(['div', 'ol.steps', 'div.notice.notice-warn', 'div.form-actions'], self::mainOutline($html));
         self::assertSame(['TiffinDB could not make its data folder'], self::texts($html, '//div[@role="alert"]/h2[@class="notice-title"]'));
         self::assertSame(
-            ['The folder ../tiffindb-data already exists and has files in it that TiffinDB did not put there. Empty it, or set data_dir in config/local.php to another folder.'],
+            ['TiffinDB found files that it did not put there in ../tiffindb-data. Empty that folder, or set data_dir in config/local.php to another folder.'],
             self::texts($html, '//div[@role="alert"]/p'),
         );
         self::assertSame(0, self::xpath($html)->query('//form')->length);
         self::assertSame(0, self::xpath($html)->query('//section')->length);
         self::assertSame(['Check again'], self::texts($html, '//div[@class="form-actions"]/a[@href="/setup"]'));
+    }
+
+    public function testAConfiguredFolderWithForeignFilesReadsNaturally(): void
+    {
+        $this->configured = $this->www() . '/configured-data';
+        mkdir($this->configured);
+        file_put_contents($this->configured . '/notes.txt', 'synthetic');
+        $html = self::assertPage(self::send($this->services(InstallState::NeedsDataFolder), 'POST', '/setup/data-folder', [], self::server($this->publicRoot())), 409);
+
+        self::assertSame(
+            ['TiffinDB found files that it did not put there in the folder set in config/local.php. Empty that folder, or set data_dir in config/local.php to another folder.'],
+            self::texts($html, '//div[@role="alert"]/p'),
+        );
     }
 
     public function testNoWritableFolderCannotBeUsed(): void

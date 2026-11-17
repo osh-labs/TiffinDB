@@ -839,6 +839,11 @@ final class ShellTest extends TestCase
         yield 'backslash-relative link' => [$page('<a href="\\\\example.org/">x</a>')];
         yield 'slash-backslash link' => [$page('<a href="/\\example.org/">x</a>')];
         yield 'character reference javascript url' => [$page('<a href="&#106;avascript:a()">x</a>')];
+        yield 'external image in srcset' => [$page('<img src="/a.png" srcset="/a.png 1x, https://example.org/b.png 2x" />')];
+        yield 'protocol-relative srcset' => [$page('<img src="/a.png" srcset="//example.org/b.png 2x" />')];
+        yield 'external css url in an attribute' => [$page('<svg><rect fill="url(https://example.org/x.svg#g)" /></svg>')];
+        yield 'external form action' => [$page('<form method="get" action="https://example.org/x"></form>')];
+        yield 'external meta refresh' => [$page('', '<meta http-equiv="refresh" content="0; url=https://example.org/" />')];
         yield 'not well-formed' => [$page('<p>x')];
         yield 'no doctype' => ['<html lang="en"><head><title>x</title></head><body></body></html>'];
     }
@@ -853,6 +858,20 @@ final class ShellTest extends TestCase
     public function testInlineCodeAssertionAcceptsTheScript(): void
     {
         $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/show-password.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
+        HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
+        $this->addToAssertionCount(1);
+    }
+
+    /** Body text and non-address attributes may name a scheme; only markup that loads or links is checked. */
+    public function testInlineCodeAssertionIgnoresText(): void
+    {
+        $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title></head><body>"
+            . '<p class="help">The address must have https:// at the start, as in https://example.org/.</p>'
+            . '<p>Never paste javascript: or //example.org addresses.</p>'
+            . '<input class="input" type="url" placeholder="https://" aria-label="Address" />'
+            . '<a href="https://example.com/source">Source code</a>'
+            . '<svg><rect fill="url(#g)" /></svg>'
+            . '</body></html>';
         HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
         $this->addToAssertionCount(1);
     }

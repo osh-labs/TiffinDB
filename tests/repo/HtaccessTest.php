@@ -8,14 +8,25 @@ declare(strict_types=1);
 
 namespace TiffinDB\Tests\Repo;
 
+use FilesystemIterator;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
+use TiffinDB\Core\Install\DataFolder;
 use TiffinDB\Tests\Support\RepoFiles;
+use TiffinDB\Tests\Support\TempDir;
 
 /**
  * T-REPO-3: static checks of the two Apache .htaccess files and of the web
  * root's PHP entry points. Real-server behaviour is verified by the host
  * check and the M1 installer, not here.
+ *
+ * T-REPO-10 (M1): the data folder's .htaccess, written by the installer, is
+ * a deny rule and nothing else; and no nested .htaccess with a mod_rewrite
+ * directive is shipped, including under vendor/, which is part of a
+ * release.
  */
 #[CoversNothing]
 final class HtaccessTest extends TestCase
@@ -23,7 +34,13 @@ final class HtaccessTest extends TestCase
     /** @return list<string> Lines without comments and blank lines, trimmed. */
     private static function directives(string $relative): array
     {
-        $lines = preg_split('/\r\n|\n|\r/', RepoFiles::read($relative));
+        return self::directivesOf(RepoFiles::read($relative));
+    }
+
+    /** @return list<string> */
+    private static function directivesOf(string $contents): array
+    {
+        $lines = preg_split('/\r\n|\n|\r/', $contents);
         self::assertIsArray($lines);
 
         $directives = [];
@@ -132,5 +149,74 @@ final class HtaccessTest extends TestCase
         ));
 
         self::assertSame(['.htaccess', 'public/.htaccess'], $found);
+    }
+
+    public function testDataFolderHtaccessIsOnlyADenyRule(): void
+    {
+        self::assertSame(
+            "# TiffinDB data folder. Nothing here may be served over the web.\nRequire all denied\n",
+            DataFolder::HTACCESS,
+        );
+        $directives = self::directivesOf(DataFolder::HTACCESS);
+        self::assertSame(['Require all denied'], $directives);
+        foreach (['Rewrite', 'Options', 'Header', 'Allow'] as $forbidden) {
+            self::assertSame(0, self::countMatching($directives, '/^' . $forbidden . '/i'), $forbidden);
+            self::assertStringNotContainsStringIgnoringCase($forbidden, DataFolder::HTACCESS);
+        }
+    }
+
+    public function testNoNestedRewriteHtaccessUnderVendor(): void
+    {
+        // vendor/ is git-ignored (so not seen by testNoOtherHtaccessFiles) but
+        // ships in a release. A nested .htaccess with a mod_rewrite directive
+        // would replace the root guard's rules for its subtree.
+        self::assertSame([], self::rewriteHtaccessFiles(RepoFiles::path('vendor')));
+    }
+
+    public function testRewriteHtaccessDetection(): void
+    {
+        $temp = TempDir::create();
+        try {
+            mkdir($temp->path('pkg/a/b'), 0755, true);
+            mkdir($temp->path('pkg/c'), 0755, true);
+            file_put_contents($temp->path('pkg/a/b/.htaccess'), "# note\n  rewriteengine on\n");
+            file_put_contents($temp->path('pkg/c/.htaccess'), "Require all denied\n# RewriteRule in a comment only\n");
+            file_put_contents($temp->path('pkg/.htaccess'), "<IfModule mod_rewrite.c>\nRewriteOptions Inherit\n</IfModule>\n");
+            file_put_contents($temp->path('pkg/c/htaccess.txt'), "RewriteEngine On\n");
+
+            self::assertSame(['pkg/.htaccess', 'pkg/a/b/.htaccess'], self::rewriteHtaccessFiles($temp->path()));
+            self::assertSame([], self::rewriteHtaccessFiles($temp->path('missing')));
+        } finally {
+            $temp->remove();
+        }
+    }
+
+    /**
+     * Relative paths of the .htaccess files below $dir that hold a
+     * mod_rewrite directive (outside comments); empty when $dir is absent.
+     *
+     * @return list<string>
+     */
+    private static function rewriteHtaccessFiles(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $found = [];
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($files as $file) {
+            /** @var SplFileInfo $file */
+            if ($file->getFilename() !== '.htaccess' || !$file->isFile()) {
+                continue;
+            }
+            $contents = (string) file_get_contents($file->getPathname());
+            $directives = self::directivesOf($contents);
+            if (preg_grep('/^Rewrite/i', $directives) !== []) {
+                $found[] = str_replace('\\', '/', substr($file->getPathname(), strlen($dir) + 1));
+            }
+        }
+        sort($found, SORT_STRING);
+
+        return $found;
     }
 }

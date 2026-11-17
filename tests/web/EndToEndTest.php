@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace TiffinDB\Tests\Web;
 
+use DateTimeImmutable;
 use DOMElement;
 use DOMXPath;
 use FilesystemIterator;
@@ -18,7 +19,14 @@ use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
 use TiffinDB\Core\Auth\LoginThrottle;
+use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\Auth\PasswordHasher;
+use TiffinDB\Core\Auth\SignedIn;
+use TiffinDB\Core\Install\HttpProbe;
+use TiffinDB\Core\Install\Installer;
+use TiffinDB\Core\Install\InstallState;
+use TiffinDB\Core\Install\ProbeResponse;
+use TiffinDB\Core\Install\ProbeTarget;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\SeededRandom;
@@ -29,6 +37,7 @@ use TiffinDB\Web\CoreServices;
 use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
+use TiffinDB\Web\Services;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
@@ -38,9 +47,14 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
  * real CoreServices (a FixedClock, a SeededRandom, and a bcrypt cost 4
  * PasswordHasher) over an empty temporary data folder. DOCUMENT_ROOT is the
  * repository's public/ folder, so the data folder is outside it and no
- * exposure probe runs: nothing here opens a socket. Forms are read from the
- * served pages and submitted with their own fields, as a browser would.
- * Synthetic data only.
+ * exposure probe runs: the kernel gets the CoreServices through
+ * NoProbeServices, which delegates every call but hands out a probe that
+ * only counts its requests, and each test asserts that the count stays 0,
+ * so no socket is opened. Forms are read from the served pages
+ * and submitted with their own fields, as a browser would. After each test,
+ * every file of the repository (except vendor/, .git, .claude/, and
+ * .phpunit.cache/) has the same size, modification time, and hash as
+ * before. Synthetic data only.
  */
 #[CoversNothing]
 final class EndToEndTest extends TestCase
@@ -52,8 +66,9 @@ final class EndToEndTest extends TestCase
     private TempDir $temp;
     private FixedClock $clock;
     private Kernel $kernel;
+    private NoProbeServices $services;
 
-    /** @var array<string, string> Relative path => size and modification time, under public/ and the repository root. */
+    /** @var array<string, string> Relative path => size, modification time, and hash of every repository file. */
     private array $treeBefore;
 
     protected function setUp(): void
@@ -69,12 +84,14 @@ final class EndToEndTest extends TestCase
             new SeededRandom('tiffindb-end-to-end-seed'),
             new PasswordHasher(['bcrypt' => 4]),
         );
-        $this->kernel = new Kernel($config, Fixtures::appRoot(), null, $services);
+        $this->services = new NoProbeServices($services);
+        $this->kernel = new Kernel($config, Fixtures::appRoot(), null, $this->services);
     }
 
     protected function tearDown(): void
     {
         $this->temp->remove();
+        self::assertSame(0, $this->services->probeRequests, 'The exposure probe is never asked for a file.');
         self::assertSame($this->treeBefore, self::tree(), 'Nothing is written outside the temporary folder.');
     }
 
@@ -262,9 +279,17 @@ final class EndToEndTest extends TestCase
         self::assertStringNotContainsString('/sharing', $tables->body);
         self::assertStringNotContainsString('/settings', $tables->body);
 
-        // The fields editor refuses the Member.
-        $refused = $member->post($itemsPath, ['type' => 'text', 'name' => 'Colour']);
+        // The fields editor refuses the Member: a POST that passes the CSRF
+        // check (the Member's own session token, read from the page) reaches
+        // the controller, and the core refuses it.
+        $token = (string) $member->xpath()->query('//form[@action="/sign-out"]/input[@name="_csrf"]/@value')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}\z/', $token, 'The Member\'s CSRF token is on the page.');
+        $refused = $member->post($itemsPath, ['_csrf' => $token, 'type' => 'text', 'name' => 'Colour']);
         self::assertSame(403, $refused->status);
+        self::assertSame('You cannot do that here - TiffinDB', HtmlAssertions::text($refused->body, '//title'), 'The authorization 403, not the CSRF one.');
+        $noCsrf = $member->post($itemsPath, ['type' => 'text', 'name' => 'Colour']);
+        self::assertSame(403, $noCsrf->status, 'A POST without _csrf is refused too.');
+        self::assertSame('This form has expired - TiffinDB', HtmlAssertions::text($noCsrf->body, '//title'), 'The CSRF 403.');
         self::assertSame(['Name', 'Room'], $this->fieldNames($admin, $itemsPath), 'Nothing was added.');
         self::assertSame(403, $member->get($itemsPath)->status);
         self::assertSame(403, $member->get('/admin/people')->status, 'People is not open to Members.');
@@ -420,10 +445,13 @@ final class EndToEndTest extends TestCase
         HtmlAssertions::assertForm($html);
     }
 
+    /** Top-level entries the tree check skips: dependencies, git metadata, agent files, PHPUnit's cache. */
+    private const TREE_EXCLUDED = ['vendor', '.git', '.claude', '.phpunit.cache'];
+
     /**
-     * Size and modification time of every file under public/ and of each
-     * entry at the repository root, to show that a run writes nothing
-     * there.
+     * Size, modification time, and SHA-256 of every file and directory in
+     * the repository except TREE_EXCLUDED, to show that a run writes
+     * nothing there.
      *
      * @return array<string, string>
      */
@@ -431,19 +459,113 @@ final class EndToEndTest extends TestCase
     {
         $root = Fixtures::appRoot();
         $entries = [];
-        foreach ((array) scandir($root) as $name) {
-            if ($name !== '.' && $name !== '..' && $name !== '.phpunit.cache') {
-                $entries[(string) $name] = 'present';
-            }
-        }
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root . '/public', FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $file) {
+        $directory = new \RecursiveCallbackFilterIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+            static fn (SplFileInfo $file, string $path, RecursiveDirectoryIterator $iterator): bool
+                => $iterator->getSubPath() !== '' || !in_array($file->getFilename(), self::TREE_EXCLUDED, true),
+        );
+        foreach (new RecursiveIteratorIterator($directory, RecursiveIteratorIterator::SELF_FIRST) as $file) {
             /** @var SplFileInfo $file */
-            $entries['public/' . substr($file->getPathname(), strlen($root . '/public/'))] = $file->getSize() . ' ' . $file->getMTime();
+            $relative = substr($file->getPathname(), strlen($root) + 1);
+            $entries[$relative] = $file->isDir()
+                ? 'directory'
+                : $file->getSize() . ' ' . $file->getMTime() . ' ' . hash_file('sha256', $file->getPathname());
         }
         ksort($entries);
 
         return $entries;
+    }
+}
+
+/**
+ * The real CoreServices behind the Services interface, with every call
+ * delegated, except probe(): the setup controller asks for a probe on every
+ * data-folder POST, so this one is handed out, and it only counts the
+ * requests it is asked to make (and answers none) instead of opening a
+ * socket. The end-to-end tests assert that the count stays 0.
+ */
+final class NoProbeServices implements Services
+{
+    public int $probeRequests = 0;
+
+    public function __construct(private readonly CoreServices $inner)
+    {
+    }
+
+    public function installState(): InstallState
+    {
+        return $this->inner->installState();
+    }
+
+    public function installer(): Installer
+    {
+        return $this->inner->installer();
+    }
+
+    public function operations(): Operations
+    {
+        return $this->inner->operations();
+    }
+
+    public function probe(): HttpProbe
+    {
+        $count = function (): void {
+            $this->probeRequests++;
+        };
+
+        return new class ($count) implements HttpProbe {
+            /** @param \Closure(): void $count */
+            public function __construct(private readonly \Closure $count)
+            {
+            }
+
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                ($this->count)();
+
+                return null;
+            }
+        };
+    }
+
+    public function resume(#[\SensitiveParameter] string $token): ?SignedIn
+    {
+        return $this->inner->resume($token);
+    }
+
+    public function endSession(#[\SensitiveParameter] string $token): void
+    {
+        $this->inner->endSession($token);
+    }
+
+    public function takeFlash(#[\SensitiveParameter] string $token): ?array
+    {
+        return $this->inner->takeFlash($token);
+    }
+
+    public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void
+    {
+        $this->inner->setFlash($token, $key, $params);
+    }
+
+    public function userSettings(int $userId): array
+    {
+        return $this->inner->userSettings($userId);
+    }
+
+    public function newCsrfToken(): string
+    {
+        return $this->inner->newCsrfToken();
+    }
+
+    public function now(): DateTimeImmutable
+    {
+        return $this->inner->now();
+    }
+
+    public function close(): void
+    {
+        $this->inner->close();
     }
 }
 

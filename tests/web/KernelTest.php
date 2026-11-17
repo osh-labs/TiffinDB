@@ -11,20 +11,38 @@ namespace TiffinDB\Tests\Web;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Auth\IssuedSession;
+use TiffinDB\Core\Auth\PasswordHasher;
+use TiffinDB\Core\Auth\Role;
+use TiffinDB\Core\Auth\Sessions;
+use TiffinDB\Core\Auth\Users;
+use TiffinDB\Core\Install\InstallState;
+use TiffinDB\Core\Storage\DataDirectory;
+use TiffinDB\Core\Storage\Keys;
+use TiffinDB\Core\System\SystemDatabase;
+use TiffinDB\Tests\Support\FixedClock;
+use TiffinDB\Tests\Support\SeededRandom;
+use TiffinDB\Tests\Support\TempDir;
+use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\FixtureController;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\Controller\HomeController;
+use TiffinDB\Web\CoreServices;
+use TiffinDB\Web\Fallback;
 use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Response;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
 /**
- * The kernel driven end to end against the fixture project root: status
- * codes, error pages, and what error responses must never reveal.
+ * T-WEB-17: the kernel driven end to end against the fixture project root
+ * (status codes, error pages, and what error responses must never
+ * reveal), the real `/` redirect, and the real CoreServices over a
+ * temporary data folder. Synthetic data only.
  */
 #[CoversClass(Kernel::class)]
 #[CoversClass(HomeController::class)]
+#[CoversClass(CoreServices::class)]
 #[CoversClass(Response::class)]
 final class KernelTest extends TestCase
 {
@@ -110,6 +128,7 @@ final class KernelTest extends TestCase
             'invalid UTF-8' => ['GET', '/%C3%28', 400, 'That address is not valid'],
             'overlong' => ['GET', '/' . str_repeat('x', 5000), 400, 'That address is not valid'],
             'POST' => ['POST', '/', 405, 'That action is not available here'],
+            'PUT' => ['PUT', '/', 405, 'That action is not available here'],
             'DELETE unknown path' => ['DELETE', '/nope', 405, 'That action is not available here'],
             'bad method token' => ["GE T", '/', 405, 'That action is not available here'],
             'route method' => ['GET', '/post-only', 405, 'That action is not available here'],
@@ -200,15 +219,33 @@ final class KernelTest extends TestCase
         self::assertSame($before, $after);
     }
 
+    public function testAllowHeaderForUnknownMethods(): void
+    {
+        [$response] = self::get('/', 'DELETE');
+
+        self::assertSame('GET, HEAD, POST', $response->header('Allow'));
+    }
+
     public function testFallbackWhenTheErrorPageCannotRender(): void
     {
-        $kernel = new Kernel(Fixtures::config(), sys_get_temp_dir() . '/tiffindb-no-such-root');
+        $kernel = new Kernel(Fixtures::config(), sys_get_temp_dir() . '/tiffindb-no-such-root', null, new FakeServices());
         [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/'));
 
         self::assertSame(500, $response->status);
         self::assertSame('text/plain; charset=utf-8', $response->header('Content-Type'));
         self::assertStringNotContainsString('tiffindb-no-such-root', $response->body);
         self::assertNoLeak($response);
+    }
+
+    public function testMissingApplicationFilesGiveTheFallbackEvenForRedirects(): void
+    {
+        // The real `/` would only redirect, but an installation without its
+        // templates and strings is broken and fails closed.
+        $kernel = new Kernel(Fixtures::config(), sys_get_temp_dir() . '/tiffindb-no-such-root', null, new FakeServices());
+        [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/'));
+
+        self::assertSame(500, $response->status);
+        self::assertSame(Fallback::BODY, $response->body);
     }
 
     /** @return array<string, array{array<string, mixed>}> */
@@ -223,6 +260,11 @@ final class KernelTest extends TestCase
             'source with quote' => [['source_url' => 'https://example.com/"x'] + $good],
             'source with trailing newline' => [['source_url' => "https://example.com/x\n"] + $good],
             'preview not bool' => [['appearance_preview' => 'yes'] + $good],
+            'relative data_dir' => [['data_dir' => 'data'] + $good],
+            'data_dir not a string' => [['data_dir' => ['x']] + $good],
+            'unknown time zone' => [['timezone' => 'Nowhere/Example'] + $good],
+            'time zone not a string' => [['timezone' => 1] + $good],
+            'secure_cookies not a bool' => [['secure_cookies' => 1] + $good],
         ];
     }
 
@@ -236,5 +278,280 @@ final class KernelTest extends TestCase
         self::assertSame('text/plain; charset=utf-8', $response->header('Content-Type'));
         self::assertStringNotContainsString('alert', $response->body);
         self::assertNoLeak($response);
+    }
+
+    // ------------------------------------------------ local configuration
+
+    public function testLocalConfigurationIsMergedAfterChecking(): void
+    {
+        $merged = Kernel::withLocalConfig(Fixtures::config(), ['timezone' => 'Europe/Berlin', 'secure_cookies' => true, 'data_dir' => '/srv/example-data']);
+
+        self::assertSame('Europe/Berlin', $merged['timezone']);
+        self::assertTrue($merged['secure_cookies']);
+        self::assertSame('/srv/example-data', $merged['data_dir']);
+        self::assertSame(Fixtures::VERSION, $merged['version']);
+        self::assertSame(Fixtures::config(), Kernel::withLocalConfig(Fixtures::config(), []));
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function badLocalConfigs(): array
+    {
+        return [
+            'not an array' => ['x'],
+            'unknown key' => [['version' => '1']],
+            'list' => [['/srv/data']],
+            'relative data_dir' => [['data_dir' => 'data']],
+            'NUL in data_dir' => [["data_dir" => "/srv/\0x"]],
+            'time zone' => [['timezone' => 'Mars/Base']],
+            'secure_cookies' => [['secure_cookies' => 'true']],
+        ];
+    }
+
+    #[DataProvider('badLocalConfigs')]
+    public function testBadLocalConfigurationIsRefused(mixed $local): void
+    {
+        $this->expectException(\UnexpectedValueException::class);
+        Kernel::withLocalConfig(Fixtures::config(), $local);
+    }
+
+    // ------------------------------------------------ the real `/`
+
+    public function testStartPageRedirectsByInstallStateAndSession(): void
+    {
+        $routes = Fixtures::applicationRoutes();
+        foreach (
+            [
+                [new FakeServices(InstallState::NeedsDataFolder), [], '/setup'],
+                [new FakeServices(InstallState::NeedsAdmin), [], '/setup'],
+                [new FakeServices(), [], '/sign-in'],
+                [(new FakeServices())->withSession(FakeServices::signedIn(true)), ['tdb_session' => FakeServices::TOKEN], '/projects'],
+            ] as [$services, $cookies, $location]
+        ) {
+            [$response] = Fixtures::handle(
+                Fixtures::kernel(Fixtures::config(false), $routes, $services),
+                Fixtures::fullRequest('GET', '/', [], $cookies),
+            );
+            self::assertSame(303, $response->status);
+            self::assertSame($location, $response->header('Location'));
+            self::assertSame('', $response->body);
+        }
+    }
+
+    public function testHeadOfTheStartPageRedirectsToo(): void
+    {
+        [$response] = Fixtures::handle(
+            Fixtures::kernel(Fixtures::config(false), Fixtures::applicationRoutes()),
+            Fixtures::request('HEAD', '/'),
+        );
+
+        self::assertSame(303, $response->status);
+        self::assertSame('/sign-in', $response->header('Location'));
+    }
+
+    // ------------------------------------------------ CoreServices
+
+    private ?TempDir $temp = null;
+
+    protected function tearDown(): void
+    {
+        $this->temp?->remove();
+        $this->temp = null;
+    }
+
+    /** @return array<string, mixed> */
+    private function dataConfig(): array
+    {
+        $this->temp ??= TempDir::create();
+
+        return Fixtures::config(false) + ['data_dir' => $this->temp->path()];
+    }
+
+    private static function services(array $config, ?FixedClock $clock = null): CoreServices
+    {
+        return new CoreServices(
+            $config,
+            Fixtures::appRoot(),
+            $clock ?? new FixedClock('2026-11-03T10:00:00Z'),
+            new SeededRandom('tiffindb-kernel-test-seed-1'),
+            new PasswordHasher(['bcrypt' => 4]),
+        );
+    }
+
+    /**
+     * An installed system database with one Member; returns their session.
+     *
+     * @return array{0: IssuedSession, 1: int}
+     */
+    private function install(array $config, bool $installed = true): array
+    {
+        $clock = new FixedClock('2026-11-03T10:00:00Z');
+        $random = new SeededRandom('tiffindb-kernel-install-seed');
+        $system = SystemDatabase::create(new DataDirectory((string) $config['data_dir'], 'data'), $clock, $random);
+        $users = new Users($system, new Keys($random), $clock);
+        $sessions = new Sessions($system, $clock, $random);
+        try {
+            return $system->db()->write(static function () use ($system, $users, $sessions, $installed): array {
+                if ($installed) {
+                    $system->setMeta(SystemDatabase::META_INSTALLED_AT, '2026-11-03T10:00:00Z');
+                }
+                $person = $users->create('member', 'Example Member', Role::Member, 'x', false);
+
+                return [$sessions->start($person->id), $person->id];
+            });
+        } finally {
+            $system->db()->close();
+        }
+    }
+
+    public function testCoreServicesBeforeInstallation(): void
+    {
+        $config = $this->dataConfig();
+        $services = self::services($config);
+
+        self::assertSame(InstallState::NeedsDataFolder, $services->installState());
+        self::assertNull($services->resume(str_repeat('a', 43)));
+        self::assertNull($services->takeFlash(str_repeat('a', 43)));
+        $services->endSession(str_repeat('a', 43));
+        self::assertNotNull($services->installer());
+        try {
+            $services->operations();
+            self::fail('operations() before installation');
+        } catch (\LogicException) {
+            self::assertTrue(true);
+        }
+        self::assertMatchesRegularExpression('/^[0-9a-f]{64}\z/', $services->newCsrfToken());
+        self::assertSame('2026-11-03T10:00:00+00:00', $services->now()->format('c'));
+        $services->close();
+        self::assertSame([], array_values(array_diff((array) scandir((string) $config['data_dir']), ['.', '..'])), 'Nothing written.');
+    }
+
+    public function testCoreServicesWhileTheFirstAdminIsMissing(): void
+    {
+        $config = $this->dataConfig();
+        [$session] = $this->install($config, false);
+        $services = self::services($config);
+
+        self::assertSame(InstallState::NeedsAdmin, $services->installState());
+        self::assertNull($services->resume($session->token()), 'No sessions before installation.');
+        $services->close();
+    }
+
+    public function testCoreServicesResumeFlashSettingsAndEndSession(): void
+    {
+        $config = $this->dataConfig();
+        [$session, $userId] = $this->install($config);
+        $services = self::services($config);
+        $token = $session->token();
+
+        self::assertSame(InstallState::Installed, $services->installState());
+        $signedIn = $services->resume($token);
+        self::assertNotNull($signedIn);
+        self::assertSame('Example Member', $signedIn->actor->displayName);
+        self::assertSame($session->record->csrfToken, $signedIn->session->csrfToken);
+        self::assertNull($services->resume(str_repeat('b', 43)));
+        self::assertNull($services->resume('not a token'));
+
+        $services->setFlash($token, 'notice.password_changed', ['n' => 1]);
+        self::assertSame(['key' => 'notice.password_changed', 'params' => ['n' => 1]], $services->takeFlash($token));
+        self::assertNull($services->takeFlash($token));
+
+        self::assertSame('light', $services->userSettings($userId)['theme']);
+
+        try {
+            $services->installer();
+            self::fail('installer() once installed');
+        } catch (\LogicException) {
+            self::assertTrue(true);
+        }
+
+        $services->endSession($token);
+        self::assertNull($services->resume($token));
+        $services->close();
+    }
+
+    /**
+     * P79 (P69 style): with no notice stored, takeFlash() opens no write
+     * transaction. Another connection holds the write lock; a write would
+     * wait for the busy timeout and fail, a plain read does not.
+     */
+    public function testTakeFlashWithoutANoticeTakesNoWriteLock(): void
+    {
+        $config = $this->dataConfig();
+        [$session] = $this->install($config);
+        $token = $session->token();
+        $services = self::services($config);
+        self::assertNotNull($services->resume($token));
+
+        $other = new \PDO('sqlite:' . $config['data_dir'] . '/' . DataDirectory::SYSTEM_DATABASE);
+        $other->exec('BEGIN IMMEDIATE');
+        try {
+            $started = microtime(true);
+            self::assertNull($services->takeFlash($token));
+            self::assertLessThan(2.0, microtime(true) - $started, 'No wait for the write lock.');
+        } finally {
+            $other->exec('ROLLBACK');
+        }
+
+        // With a notice, the write happens (and clears it), re-checked inside.
+        $services->setFlash($token, 'notice.password_changed');
+        self::assertSame('notice.password_changed', $services->takeFlash($token)['key'] ?? null);
+        self::assertNull($services->takeFlash($token));
+        $services->close();
+    }
+
+    public function testCoreServicesForgetEverythingOnClose(): void
+    {
+        $config = $this->dataConfig();
+        $services = self::services($config);
+        self::assertSame(InstallState::NeedsDataFolder, $services->installState());
+        $services->close();
+
+        [$session] = $this->install($config);
+        self::assertSame(InstallState::Installed, $services->installState(), 'State is computed again after close().');
+        self::assertNotNull($services->resume($session->token()));
+        $services->close();
+        $services->close();
+    }
+
+    public function testKernelWithRealCoreServices(): void
+    {
+        $config = $this->dataConfig();
+        [$session] = $this->install($config);
+        $routes = [
+            ['GET', '/', [HomeController::class, 'show'], 'any'],
+            ['GET', '/projects', [FixtureController::class, 'show'], 'user'],
+            ['POST', '/projects', [FixtureController::class, 'show'], 'user'],
+        ];
+        $kernel = new Kernel($config, Fixtures::appRoot(), $routes, self::services($config));
+        $cookies = ['tdb_session' => $session->token()];
+
+        [$response] = Fixtures::handle($kernel, Fixtures::fullRequest('GET', '/', [], $cookies));
+        self::assertSame('/projects', $response->header('Location'));
+
+        [$response] = Fixtures::handle($kernel, Fixtures::fullRequest('GET', '/projects', [], $cookies));
+        self::assertSame(200, $response->status, $response->body);
+        self::assertStringContainsString('csrf=' . $session->record->csrfToken, $response->body);
+
+        [$response] = Fixtures::handle($kernel, Fixtures::fullRequest('POST', '/projects', ['_csrf' => str_repeat('0', 64)], $cookies));
+        self::assertSame(403, $response->status);
+
+        [$response] = Fixtures::handle($kernel, Fixtures::fullRequest('POST', '/projects', ['_csrf' => $session->record->csrfToken], $cookies));
+        self::assertSame(200, $response->status);
+
+        [$response] = Fixtures::handle($kernel, Fixtures::fullRequest('GET', '/projects', [], ['tdb_session' => str_repeat('c', 43)]));
+        self::assertSame('/sign-in', $response->header('Location'));
+        self::assertSame(0, $response->cookie('tdb_session')?->maxAge);
+    }
+
+    public function testKernelWithRealCoreServicesBeforeInstallation(): void
+    {
+        $kernel = new Kernel($this->dataConfig(), Fixtures::appRoot());
+
+        [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/'));
+        self::assertSame(303, $response->status);
+        self::assertSame('/setup', $response->header('Location'));
+
+        [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/projects'));
+        self::assertSame('/setup', $response->header('Location'));
     }
 }

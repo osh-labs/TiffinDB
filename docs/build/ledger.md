@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M1 resumed by the maintainer (window 3). Integration branch for this session: `claude/exciting-maxwell-l2yieq` (fast-forwarded from `claude/magical-hamilton-isy74q` at `30b072b`). Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
 | Window start | 2026-11-17T05:50Z (window 3) |
 | Resume reminder | `trig_01C1zDDQ81GbWBRxzVqTBV95`, fires 2026-11-17T11:06Z |
-| Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 dispatched (unpushed worktree; redo if the container is reclaimed); WP5 dispatched after the WP4 merge; WP7 after WP6 merges. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
+| Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 merged; WP5 in progress (unpushed worktree; redo if reclaimed); WP7 dispatched after the WP6 merge. Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
 
@@ -69,9 +69,9 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 3 rounds (round 2: takeback not net-zero at the address limit; round 3 fix `f9030b5` verified at every boundary and under interleaving, tests fail when the fix is reverted); two nits carried forward |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 3 rounds (round 1: scanner bypasses, vacuous WAL bytes check, trash meta, vacuous auto-number test, untested retry; round 2: remaining dynamic-call bypasses, root-cause redesign to default-deny scanner; round 3 APPROVE). Nit follow-ups (P77, computed array callables except as bound parameters, return values or destructuring, Reflection, include) verified by orchestrator |
-| M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | APPROVED at `c37234d` (round 2); three test nits in progress, orchestrator verifies, then merge | worktree | design tier | round 1 REQUEST CHANGES: F1 blocker (spec gap) forged Host on name-based virtual hosting makes an exposed folder probe `safe`, leading to setup-code takeover; F3 T-REPO-10 bypasses (BOM, line continuation, symlinked folders); F4 warning-with-stream untested; F5 setup-code removal order; F6 no overall read deadline; E9 wrong message key for configured in-tree folder. 17 of 19 mutations caught |
+| M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: forged Host made an exposed folder `safe`, fixed by positive control P75; T-REPO-10 bypasses; setup-code removal order; read deadline; configured-folder keys). Test nits (distinct control nonce, public cleanup guards, redundant deadline check removed) verified by orchestrator |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
-| M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
+| M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
 | M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | not started | | | |
 | M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | not started | | | |
 | M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: no) | not started | | | |
@@ -165,6 +165,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17T08:1xZ | M1-WP4 APPROVED (default-deny scanner: 17 old and 28 new bypasses caught); nit follow-ups sent to the fix agent; ruling P77 |
 | 2026-11-17T08:3xZ | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
 | 2026-11-17T08:5xZ | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
+| 2026-11-17T09:0xZ | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

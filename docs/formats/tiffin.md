@@ -309,7 +309,7 @@ The 20 newest snapshots other than `manual` ones are kept; older ones are delete
 ## 11. Versions and upgrades
 
 - `PRAGMA user_version` and `_tiffin_meta.format_version` always hold the same number.
-- Each new format version is described in a new section of this document, with the exact SQL of its upgrade step. Upgrades only go forward and run inside one transaction, after a `format-upgrade` snapshot.
+- Each new format version is described in a new section of this document, with the exact SQL of its upgrade step. Upgrades only go forward. After a `format-upgrade` snapshot, each version step runs in its own transaction, which also sets `PRAGMA user_version` and `format_version` to that step's version, so an interrupted upgrade leaves the file at the last completed version.
 - Version history:
 
 | Version | Introduced in | Changes |

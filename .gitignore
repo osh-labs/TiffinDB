@@ -5,6 +5,8 @@
 .env*
 /local/
 /data/
+# Installer exposure-probe control files written at runtime (spec 10.4, P75)
+/public/probe-*.txt
 
 # Legacy source files used for import discovery must never be committed
 *.bentodb

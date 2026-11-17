@@ -54,6 +54,7 @@ final class FakeServices implements Services
     public ?Installer $installer = null;
     public ?HttpProbe $probe = null;
     public int $closed = 0;
+    private bool $stateRechecked = false;
 
     public function __construct(public InstallState $state = InstallState::Installed)
     {
@@ -117,6 +118,9 @@ final class FakeServices implements Services
     public function takeFlash(#[\SensitiveParameter] string $token): ?array
     {
         $this->calls[] = 'takeFlash';
+        if ($this->state !== InstallState::Installed) {
+            return null;
+        }
         $flash = $this->flash[$token] ?? null;
         unset($this->flash[$token]);
 
@@ -126,6 +130,16 @@ final class FakeServices implements Services
     public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void
     {
         $this->calls[] = 'setFlash:' . $key;
+        // As CoreServices: no sessions before installation. A request that
+        // finished the installation is seen through the supplied installer,
+        // checked again once.
+        if ($this->state !== InstallState::Installed && $this->installer !== null && !$this->stateRechecked) {
+            $this->stateRechecked = true;
+            $this->state = $this->installer->state();
+        }
+        if ($this->state !== InstallState::Installed) {
+            throw new LogicException('There are no sessions before installation.');
+        }
         $this->flash[$token] = ['key' => $key, 'params' => $params];
     }
 

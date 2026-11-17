@@ -155,26 +155,26 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
 | 2026-11-12T05:3xZ | WP4 implemented and pushed to `-wip-wp4`; build paused, no agents running |
 | 2026-11-17T05:50Z | Window 3 start (maintainer resume); integration branch now `claude/exciting-maxwell-l2yieq`; offline PHPUnit rebuild started; resume reminder armed for 11:06Z |
-| 2026-11-17T06:1xZ | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
-| 2026-11-17T06:2xZ | M1-WP2 merged (APPROVE); suite 2960 tests OK (1 skipped), lint 201 files 0 failed; WP6 dispatched |
-| 2026-11-17T06:3xZ | M1-WP4 review: REQUEST CHANGES (no blockers); rulings P73, P74; fix agent dispatched |
-| 2026-11-17T06:4xZ | M1-WP6 implemented (unpushed); orchestrator re-ran suite 3145 OK, lint 222 files OK; design-tier security review dispatched |
-| 2026-11-17T07:0xZ | M1-WP4 round 1 fixes done (unpushed); orchestrator re-ran suite 2879 OK, lint OK; sent back to the WP4 reviewer for verification |
-| 2026-11-17T07:1xZ | M1-WP6 review: REQUEST CHANGES (F1 blocker, spec gap); rulings P75, P76; author resumed with fixes |
-| 2026-11-17T07:3xZ | M1-WP4 round 2: REQUEST CHANGES (scanner only); root-cause redesign to a default-deny scanner sent to the fix agent |
-| 2026-11-17T07:5xZ | M1-WP4 default-deny scanner done (unpushed); orchestrator re-ran suite 2937 OK, lint OK; sent to the reviewer |
-| 2026-11-17T08:0xZ | M1-WP6 round 1 fixes done (unpushed); orchestrator re-ran suite 3168 OK, lint 223 OK; sent to the reviewer. On merge: add `/public/probe-*.txt` to `.gitignore` |
-| 2026-11-17T08:1xZ | M1-WP4 APPROVED (default-deny scanner: 17 old and 28 new bypasses caught); nit follow-ups sent to the fix agent; ruling P77 |
-| 2026-11-17T08:3xZ | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
-| 2026-11-17T08:5xZ | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
-| 2026-11-17T09:0xZ | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
-| 2026-11-17T09:3xZ | M1-WP5 implemented (unpushed); orchestrator re-ran suite 3587 OK, lint 257 OK; design-tier security review dispatched |
-| 2026-11-17T09:5xZ | M1-WP5 APPROVED; follow-ups (Member refusal provider, reset script clears throttle and warns on inactive person) sent to author; ruling P78 |
-| 2026-11-17T10:1xZ | M1-WP5 merged; suite 3810 tests OK (1 skipped), lint 279 files 0 failed |
-| 2026-11-17T10:4xZ | M1-WP7 implemented (unpushed); test-merged with integration (clean, 4142 OK, lint 286 OK); design-tier security review dispatched |
-| 2026-11-17T11:0xZ | M1-WP7 review: REQUEST CHANGES (test-only); ruling P79; author resumed |
-| 2026-11-17T11:2xZ | M1-WP7 round 1 fixes done (unpushed); orchestrator re-ran suite 4295 OK, lint 288 OK; sent to the reviewer |
-| 2026-11-17T11:4xZ | M1-WP7 merged; suite 4308 tests OK (1 skipped), lint 288 files 0 failed; wave 5 (WP9, WP10, WP11) dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP2 merged (APPROVE); suite 2960 tests OK (1 skipped), lint 201 files 0 failed; WP6 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 review: REQUEST CHANGES (no blockers); rulings P73, P74; fix agent dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 implemented (unpushed); orchestrator re-ran suite 3145 OK, lint 222 files OK; design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 round 1 fixes done (unpushed); orchestrator re-ran suite 2879 OK, lint OK; sent back to the WP4 reviewer for verification |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 review: REQUEST CHANGES (F1 blocker, spec gap); rulings P75, P76; author resumed with fixes |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 round 2: REQUEST CHANGES (scanner only); root-cause redesign to a default-deny scanner sent to the fix agent |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 default-deny scanner done (unpushed); orchestrator re-ran suite 2937 OK, lint OK; sent to the reviewer |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 round 1 fixes done (unpushed); orchestrator re-ran suite 3168 OK, lint 223 OK; sent to the reviewer. On merge: add `/public/probe-*.txt` to `.gitignore` |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 APPROVED (default-deny scanner: 17 old and 28 new bypasses caught); nit follow-ups sent to the fix agent; ruling P77 |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 implemented (unpushed); orchestrator re-ran suite 3587 OK, lint 257 OK; design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 APPROVED; follow-ups (Member refusal provider, reset script clears throttle and warns on inactive person) sent to author; ruling P78 |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 merged; suite 3810 tests OK (1 skipped), lint 279 files 0 failed |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 implemented (unpushed); test-merged with integration (clean, 4142 OK, lint 286 OK); design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 review: REQUEST CHANGES (test-only); ruling P79; author resumed |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 round 1 fixes done (unpushed); orchestrator re-ran suite 4295 OK, lint 288 OK; sent to the reviewer |
+| 2026-11-17T07:4xZ | M1-WP7 merged; suite 4308 tests OK (1 skipped), lint 288 files 0 failed; wave 5 (WP9, WP10, WP11) dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

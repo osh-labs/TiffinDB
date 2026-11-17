@@ -44,8 +44,8 @@ final class FieldController
         'links' => ['attachment', 'relation'],
     ];
 
-    /** Type id => options partial (`templates/partials/field-options/<kind>.php`). */
-    private const KINDS = [
+    /** Type id => options partial (`templates/partials/field-options/<kind>.php`), for every type id. */
+    public const KINDS = [
         'text' => 'text',
         'long_text' => 'text',
         'number' => 'number',
@@ -707,7 +707,7 @@ final class FieldController
     {
         $view = $this->context->view();
         $field = $design->field;
-        [$list, $errors] = ProjectController::problems($this->context, $problems, ['type' => 'type-choice']);
+        [$list, $errors] = ProjectController::problems($this->context, $problems, ['type' => 'type-choice', 'options.choices' => 'type-choice']);
         $path = $table['path'] . '/' . $field->key;
 
         return $this->context->page('fields/type', [

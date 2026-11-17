@@ -28,8 +28,12 @@ declare(strict_types=1);
 <div class="radio-grid">
 <?php foreach ($group['types'] as $type) : ?>
 <label class="radio-card">
-<?php if ($type['id'] === 'text') : ?>
+<?php if ($type['id'] === 'text' && $data['error'] === true) : ?>
+<input id="field-type" type="radio" name="type" value="<?= $this->e($type['id']) ?>" aria-describedby="field-type-error" aria-invalid="true" />
+<?php elseif ($type['id'] === 'text') : ?>
 <input id="field-type" type="radio" name="type" value="<?= $this->e($type['id']) ?>" />
+<?php elseif ($data['error'] === true) : ?>
+<input type="radio" name="type" value="<?= $this->e($type['id']) ?>" aria-describedby="field-type-error" aria-invalid="true" />
 <?php else : ?>
 <input type="radio" name="type" value="<?= $this->e($type['id']) ?>" />
 <?php endif; ?>

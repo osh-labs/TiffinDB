@@ -48,16 +48,24 @@ declare(strict_types=1);
 <p class="error-text" id="opt-this-max-error"><?= $this->partial('field-error', ['text' => $data['errors']['opt-this-max']]) ?></p>
 <?php endif; ?>
 <label class="check">
-<?php if ($data['values']['opt_this_max'] === 'one') : ?>
+<?php if ($data['values']['opt_this_max'] === 'one' && is_string($data['errors']['opt-this-max'] ?? null)) : ?>
+<input id="opt-this-max" type="radio" name="opt_this_max" value="one" checked="checked" aria-describedby="opt-this-max-error" aria-invalid="true" />
+<?php elseif ($data['values']['opt_this_max'] === 'one') : ?>
 <input id="opt-this-max" type="radio" name="opt_this_max" value="one" checked="checked" />
+<?php elseif (is_string($data['errors']['opt-this-max'] ?? null)) : ?>
+<input id="opt-this-max" type="radio" name="opt_this_max" value="one" aria-describedby="opt-this-max-error" aria-invalid="true" />
 <?php else : ?>
 <input id="opt-this-max" type="radio" name="opt_this_max" value="one" />
 <?php endif; ?>
 <span><?= $this->t('schema.opt.max.one') ?></span>
 </label>
 <label class="check">
-<?php if ($data['values']['opt_this_max'] === 'many') : ?>
+<?php if ($data['values']['opt_this_max'] === 'many' && is_string($data['errors']['opt-this-max'] ?? null)) : ?>
+<input type="radio" name="opt_this_max" value="many" checked="checked" aria-describedby="opt-this-max-error" aria-invalid="true" />
+<?php elseif ($data['values']['opt_this_max'] === 'many') : ?>
 <input type="radio" name="opt_this_max" value="many" checked="checked" />
+<?php elseif (is_string($data['errors']['opt-this-max'] ?? null)) : ?>
+<input type="radio" name="opt_this_max" value="many" aria-describedby="opt-this-max-error" aria-invalid="true" />
 <?php else : ?>
 <input type="radio" name="opt_this_max" value="many" />
 <?php endif; ?>
@@ -71,16 +79,24 @@ declare(strict_types=1);
 <p class="error-text" id="opt-other-max-error"><?= $this->partial('field-error', ['text' => $data['errors']['opt-other-max']]) ?></p>
 <?php endif; ?>
 <label class="check">
-<?php if ($data['values']['opt_other_max'] === 'one') : ?>
+<?php if ($data['values']['opt_other_max'] === 'one' && is_string($data['errors']['opt-other-max'] ?? null)) : ?>
+<input id="opt-other-max" type="radio" name="opt_other_max" value="one" checked="checked" aria-describedby="opt-other-max-error" aria-invalid="true" />
+<?php elseif ($data['values']['opt_other_max'] === 'one') : ?>
 <input id="opt-other-max" type="radio" name="opt_other_max" value="one" checked="checked" />
+<?php elseif (is_string($data['errors']['opt-other-max'] ?? null)) : ?>
+<input id="opt-other-max" type="radio" name="opt_other_max" value="one" aria-describedby="opt-other-max-error" aria-invalid="true" />
 <?php else : ?>
 <input id="opt-other-max" type="radio" name="opt_other_max" value="one" />
 <?php endif; ?>
 <span><?= $this->t('schema.opt.other.one', ['item' => $data['itemName']]) ?></span>
 </label>
 <label class="check">
-<?php if ($data['values']['opt_other_max'] === 'many') : ?>
+<?php if ($data['values']['opt_other_max'] === 'many' && is_string($data['errors']['opt-other-max'] ?? null)) : ?>
+<input type="radio" name="opt_other_max" value="many" checked="checked" aria-describedby="opt-other-max-error" aria-invalid="true" />
+<?php elseif ($data['values']['opt_other_max'] === 'many') : ?>
 <input type="radio" name="opt_other_max" value="many" checked="checked" />
+<?php elseif (is_string($data['errors']['opt-other-max'] ?? null)) : ?>
+<input type="radio" name="opt_other_max" value="many" aria-describedby="opt-other-max-error" aria-invalid="true" />
 <?php else : ?>
 <input type="radio" name="opt_other_max" value="many" />
 <?php endif; ?>

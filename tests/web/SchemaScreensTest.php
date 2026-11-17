@@ -16,6 +16,7 @@ use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\Auth\SessionRecord;
 use TiffinDB\Core\Auth\SignedIn;
 use TiffinDB\Core\Schema\Cardinality;
+use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\Identifier;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
@@ -389,7 +390,9 @@ final class SchemaScreensTest extends TestCase
         $this->assertScreen($response->body);
 
         self::assertSame('Choose what the field will hold.', HtmlAssertions::text($response->body, '//fieldset[@class="fieldset-card"]/p[@id="field-type-error"]'));
-        self::assertSame(['#field-type'], $this->texts($this->xpath($response->body), '//div[@class="error-summary"]//a/@href'));
+        $x = $this->xpath($response->body);
+        self::assertSame(['#field-type'], $this->texts($x, '//div[@class="error-summary"]//a/@href'));
+        self::assertSame(17, $x->query('//input[@name="type"][@aria-invalid="true"][@aria-describedby="field-type-error"]')->length);
     }
 
     /** @return iterable<string, array{string, string, list<string>}> type, title, option element ids */
@@ -526,7 +529,22 @@ final class SchemaScreensTest extends TestCase
         ]);
         self::assertSame(422, $response->status);
         $this->assertScreen($response->body);
-        self::assertSame(['#opt-this-max'], $this->texts($this->xpath($response->body), '//div[@class="error-summary"]//a/@href'));
+        $x = $this->xpath($response->body);
+        self::assertSame(['#opt-this-max'], $this->texts($x, '//div[@class="error-summary"]//a/@href'));
+        self::assertSame(2, $x->query('//input[@name="opt_this_max"][@aria-invalid="true"][@aria-describedby="opt-this-max-error"]')->length);
+        self::assertSame(0, $x->query('//input[@name="opt_other_max"][@aria-invalid]')->length);
+    }
+
+    public function testTableNamesInTheLinkOptionsAreEscaped(): void
+    {
+        $this->ops->schema()->createTable($this->admin(), $this->project, '<b>Rooms & "more"</b>', 'room', true);
+        $this->ops->schema()->updateTable($this->admin(), $this->project, $this->items, '<i>Items</i>', 'item', null);
+        $html = $this->page(self::ADMIN, $this->t('/fields/new?type=relation'));
+
+        self::assertStringNotContainsString('<b>Rooms', $html);
+        self::assertStringNotContainsString('<i>Items', $html);
+        self::assertSame(['<i>Items</i> (this table)', '<b>Rooms & "more"</b>'], $this->texts($this->xpath($html), '//select[@id="opt-target"]/option'));
+        self::assertSame('<i>Items</i>', $this->xpath($html)->query('//input[@id="opt-reverse-name"]/@value')->item(0)?->nodeValue);
     }
 
     public function testPostingAnUnknownTypeShowsTheTypePicker(): void
@@ -792,6 +810,23 @@ final class SchemaScreensTest extends TestCase
 
         self::assertSame(['#type-choice'], $this->texts($this->xpath($response->body), '//div[@class="error-summary"]//a/@href'));
         self::assertSame('Choose a type.', HtmlAssertions::text($response->body, '//p[@id="type-choice-error"]'));
+        $x = $this->xpath($response->body);
+        self::assertSame(13, $x->query('//input[@name="type"][@aria-invalid="true"][@aria-describedby="type-choice-error"]')->length);
+        self::assertSame(0, $x->query('//input[@name="type"][not(@aria-invalid)]')->length);
+    }
+
+    public function testATypeChangeChoicesProblemLinksToTheChoice(): void
+    {
+        $name = $this->field('Name')->key;
+        for ($n = 1; $n <= 201; $n++) {
+            $this->core->insertRecord($this->project, $this->items, [$name => 'Item ' . $n]);
+        }
+        $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $name . '/type'), ['type' => 'choice']);
+        self::assertSame(422, $response->status);
+        $this->assertScreen($response->body);
+
+        self::assertSame(['#type-choice'], $this->texts($this->xpath($response->body), '//div[@class="error-summary"]//a/@href'));
+        self::assertSame('Use at most 200 choices.', HtmlAssertions::text($response->body, '//p[@id="type-choice-error"]'));
     }
 
     public function testChangingTheTypeIsForAdminsOnly(): void
@@ -858,6 +893,23 @@ final class SchemaScreensTest extends TestCase
     {
         self::assertSame(404, $this->request(self::ADMIN, 'GET', $this->p('/tables/NOSUCHTABLE1/fields'))->status);
         self::assertSame(404, $this->request(self::ADMIN, 'GET', $this->t('/fields/NOSUCHFIELD1'))->status);
+    }
+
+    // The web layer's type lists against the core (M1 spec part 1 section 8.2).
+
+    public function testTheWebTypeListsMatchTheCore(): void
+    {
+        $types = FieldTypes::standard();
+        $ids = $types->ids();
+        $titles = array_values(array_filter($ids, static fn (string $id): bool => $types->get($id)->canBeTitle()));
+
+        self::assertSame($titles, TableController::TITLE_TYPES, 'TITLE_TYPES are the types that can be a title.');
+        $grouped = array_merge(...array_values(FieldController::GROUPS));
+        sort($grouped);
+        $sorted = $ids;
+        sort($sorted);
+        self::assertSame($sorted, $grouped, 'The type picker groups hold every type once.');
+        self::assertSame($ids, array_keys(FieldController::KINDS), 'Every type has an options partial, in core order.');
     }
 
     // Helpers.

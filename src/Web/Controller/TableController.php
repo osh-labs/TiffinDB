@@ -33,7 +33,7 @@ final class TableController
      * refuses any other choice.
      */
     public const TITLE_TYPES = [
-        'text', 'long_text', 'number', 'currency', 'date', 'time', 'date_time', 'choice', 'email', 'phone', 'url', 'auto_number',
+        'text', 'long_text', 'number', 'currency', 'date', 'time', 'date_time', 'choice', 'url', 'email', 'phone', 'auto_number',
     ];
 
     private const NEW_FIELDS = ['name' => 'table-name', 'item_name' => 'table-item'];

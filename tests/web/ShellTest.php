@@ -34,9 +34,11 @@ use TiffinDB\Web\View;
  * T-WEB-21 (and T-WEB-22's self-checks): both shells rendered through View
  * with the real layout, partials, strings, stylesheet, and configuration.
  *
- * Pages: the real error page, and a fixture page that uses every shared
+ * Pages: the real error page, a fixture page that uses every shared
  * partial and form convention (tests/web/fixtures/templates/pages/
- * components.php), copied next to the real templates in a temporary
+ * components.php), and the notices.php and form-actions.php fixtures,
+ * copied next to the
+ * real templates in a temporary
  * directory. Nothing here goes through the kernel, so these tests do not
  * depend on the request pipeline.
  */
@@ -66,8 +68,10 @@ final class ShellTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-shell-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        if (!copy(__DIR__ . '/fixtures/templates/pages/components.php', $dir . '/pages/components.php')) {
-            throw new RuntimeException('Cannot copy the component fixture.');
+        foreach (['components', 'notices', 'form-actions'] as $fixture) {
+            if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
+                throw new RuntimeException("Cannot copy the {$fixture} fixture.");
+            }
         }
         self::$templates = $dir;
     }
@@ -108,6 +112,12 @@ final class ShellTest extends TestCase
         self::assertArrayHasKey($key, $strings);
 
         return $strings[$key];
+    }
+
+    /** @param array<string, string|int> $params */
+    private static function formatted(string $key, array $params): string
+    {
+        return (new Strings(RepoFiles::path('strings/en.php')))->get($key, $params);
     }
 
     private static function view(string $theme = 'light', string $basePath = ''): View
@@ -548,6 +558,169 @@ final class ShellTest extends TestCase
         }
     }
 
+    /** The notice title's markup for a heading value, from the notices fixture. */
+    private static function noticeMain(string $tone, mixed $heading): string
+    {
+        $html = self::render('notices', ['title' => 'Notices', 'shell' => self::shell(), 'tone' => $tone, 'heading' => $heading]);
+        $start = strpos($html, '<main');
+        $end = strpos($html, '</main>');
+        self::assertNotFalse($start);
+        self::assertNotFalse($end);
+
+        return substr($html, $start, $end - $start);
+    }
+
+    public function testNoticeTitleIsAParagraphByDefault(): void
+    {
+        foreach (['info' => '<div class="notice" role="status">', 'warn' => '<div class="notice notice-warn" role="alert">'] as $tone => $open) {
+            $main = self::noticeMain($tone, null);
+            $expected = $open . "\n" . '<p class="notice-title">' . self::string('error.busy.title') . "</p>\n"
+                . '<p>' . self::string('notice.password_changed') . "</p>\n</div>";
+            self::assertStringContainsString($expected, $main, $tone);
+            self::assertStringNotContainsString('<h2', $main);
+            self::assertStringNotContainsString('<h3', $main);
+        }
+    }
+
+    /** @return array<string, array{int, string}> */
+    public static function noticeHeadings(): array
+    {
+        return ['h2' => [2, 'h2'], 'h3' => [3, 'h3']];
+    }
+
+    #[DataProvider('noticeHeadings')]
+    public function testNoticeTitleCanBeAHeading(int $heading, string $element): void
+    {
+        foreach (['info', 'warn'] as $tone) {
+            $default = self::noticeMain($tone, null);
+            $main = self::noticeMain($tone, $heading);
+            // Only the title element changes.
+            $title = self::string('error.busy.title');
+            self::assertSame(
+                str_replace("<p class=\"notice-title\">{$title}</p>", "<{$element} class=\"notice-title\">{$title}</{$element}>", $default),
+                $main,
+                $tone,
+            );
+            $xpath = self::xpath(self::render('notices', ['title' => 'Notices', 'shell' => self::shell(), 'tone' => $tone, 'heading' => $heading]));
+            self::assertSame($title, self::text(self::element($xpath, "//main/div/{$element}[@class=\"notice-title\"]")));
+            self::assertSame(0, $xpath->query('//main/div/p[@class="notice-title"]')->length);
+        }
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function otherNoticeHeadings(): array
+    {
+        return ['1' => [1], '4' => [4], 'string 2' => ['2'], 'true' => [true]];
+    }
+
+    #[DataProvider('otherNoticeHeadings')]
+    public function testOtherNoticeHeadingValuesKeepTheParagraph(mixed $heading): void
+    {
+        self::assertSame(self::noticeMain('info', null), self::noticeMain('info', $heading));
+    }
+
+    /**
+     * The form-actions row from the form-actions fixture, as markup.
+     *
+     * @param array<string, mixed> $actions
+     */
+    private static function formActions(array $actions): string
+    {
+        $html = self::render('form-actions', ['title' => 'Actions', 'shell' => self::shell(), 'actions' => $actions]);
+        HtmlAssertions::assertForm($html);
+        self::assertSame(1, preg_match('#<div class="form-actions">.*?</div>#s', $html, $m));
+
+        return $m[0];
+    }
+
+    public function testFormActionsDefaultOutputIsUnchanged(): void
+    {
+        $submit = self::string('shell.sign_out');
+        self::assertSame(
+            "<div class=\"form-actions\">\n<button class=\"button button-large button-primary\" type=\"submit\">{$submit}</button>\n"
+            . '<a class="form-cancel" href="/projects">' . self::string('form.cancel') . "</a>\n</div>",
+            self::formActions(['submit' => 'shell.sign_out', 'danger' => false, 'cancel' => '/projects']),
+        );
+        self::assertSame(
+            "<div class=\"form-actions\">\n<button class=\"button button-large button-danger\" type=\"submit\">{$submit}</button>\n</div>",
+            self::formActions(['submit' => 'shell.sign_out', 'danger' => true, 'cancel' => null]),
+        );
+        // Leaving out the optional data, or giving the defaults, changes nothing.
+        $plain = self::formActions(['submit' => 'shell.sign_out', 'danger' => false, 'cancel' => '/projects']);
+        self::assertSame($plain, self::formActions(['submit' => 'shell.sign_out', 'cancel' => '/projects']));
+        self::assertSame($plain, self::formActions([
+            'submit' => 'shell.sign_out', 'submitParams' => [], 'danger' => false, 'secondary' => false,
+            'size' => 'large', 'block' => false, 'cancel' => '/projects', 'cancelLabel' => null,
+        ]));
+    }
+
+    public function testFormActionsSubmitParams(): void
+    {
+        $html = self::formActions(['submit' => 'shell.account.label', 'submitParams' => ['name' => self::HOSTILE], 'danger' => true, 'cancel' => null]);
+        $button = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//button');
+        self::assertSame('button button-large button-danger', $button->getAttribute('class'));
+        self::assertSame(self::formatted('shell.account.label', ['name' => self::HOSTILE]), self::text($button));
+        self::assertStringNotContainsString('<script>', $html);
+    }
+
+    /** @return array<string, array{array<string, mixed>, string}> */
+    public static function formActionClasses(): array
+    {
+        return [
+            'primary normal' => [['size' => 'normal'], 'button button-primary'],
+            'primary block' => [['block' => true], 'button button-large button-primary button-block'],
+            'primary normal block' => [['size' => 'normal', 'block' => true], 'button button-primary button-block'],
+            'danger normal' => [['danger' => true, 'size' => 'normal'], 'button button-danger'],
+            'danger block' => [['danger' => true, 'block' => true], 'button button-large button-danger button-block'],
+            'danger normal block' => [['danger' => true, 'size' => 'normal', 'block' => true], 'button button-danger button-block'],
+            'danger wins over secondary' => [['danger' => true, 'secondary' => true], 'button button-large button-danger'],
+            'secondary' => [['secondary' => true], 'button button-large'],
+            'secondary normal' => [['secondary' => true, 'size' => 'normal'], 'button'],
+            'secondary block' => [['secondary' => true, 'block' => true], 'button button-large button-block'],
+            'secondary normal block' => [['secondary' => true, 'size' => 'normal', 'block' => true], 'button button-block'],
+            'unknown size is large' => [['size' => 'small'], 'button button-large button-primary'],
+            'block must be true' => [['block' => 'yes'], 'button button-large button-primary'],
+            'secondary must be true' => [['secondary' => 1], 'button button-large button-primary'],
+        ];
+    }
+
+    /** @param array<string, mixed> $options */
+    #[DataProvider('formActionClasses')]
+    public function testFormActionsButtonOptions(array $options, string $class): void
+    {
+        $html = self::formActions(['submit' => 'shell.sign_out', 'cancel' => null, ...$options]);
+        $button = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//button');
+        self::assertSame($class, $button->getAttribute('class'));
+        self::assertSame('submit', $button->getAttribute('type'));
+        self::assertSame(self::string('shell.sign_out'), self::text($button));
+        $css = RepoFiles::read('public/assets/css/app.css');
+        foreach (explode(' ', $class) as $name) {
+            self::assertMatchesRegularExpression('/^\\.' . preg_quote($name, '/') . '[ ,]/m', $css, "{$name} is styled in app.css.");
+        }
+    }
+
+    /** A plain fieldset with legend.legend-plain (people-and-sharing.md, schema-editor.md) shows no default border. */
+    public function testPlainFieldsetHasNoDefaultBorder(): void
+    {
+        $css = RepoFiles::read('public/assets/css/app.css');
+        self::assertSame(1, preg_match('/^fieldset\.field \{([^}]*)\}/m', $css, $m), 'app.css styles fieldset.field.');
+        foreach (['border: 0;', 'margin: 0;', 'padding: 0;', 'min-width: 0;'] as $declaration) {
+            self::assertStringContainsString($declaration, $m[1]);
+        }
+    }
+
+    public function testFormActionsCancelLabel(): void
+    {
+        $html = self::formActions(['submit' => 'shell.sign_out', 'cancel' => '/projects', 'cancelLabel' => 'shell.account.label', 'cancelParams' => ['name' => self::NAME]]);
+        $link = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//a');
+        self::assertSame('/projects', $link->getAttribute('href'));
+        self::assertSame('form-cancel', $link->getAttribute('class'));
+        self::assertSame(self::formatted('shell.account.label', ['name' => self::NAME]), self::text($link));
+        self::assertStringNotContainsString(self::string('form.cancel'), $html);
+        // A label without a path shows no link.
+        self::assertStringNotContainsString('<a', self::formActions(['submit' => 'shell.sign_out', 'cancel' => null, 'cancelLabel' => 'shell.account.label']));
+    }
+
     public function testComponentPartials(): void
     {
         $xpath = self::xpath(self::render('components', self::componentData(self::shell(), ['name' => self::HOSTILE, 'nameError' => 'Enter a name.'])));
@@ -839,6 +1012,11 @@ final class ShellTest extends TestCase
         yield 'backslash-relative link' => [$page('<a href="\\\\example.org/">x</a>')];
         yield 'slash-backslash link' => [$page('<a href="/\\example.org/">x</a>')];
         yield 'character reference javascript url' => [$page('<a href="&#106;avascript:a()">x</a>')];
+        yield 'external image in srcset' => [$page('<img src="/a.png" srcset="/a.png 1x, https://example.org/b.png 2x" />')];
+        yield 'protocol-relative srcset' => [$page('<img src="/a.png" srcset="//example.org/b.png 2x" />')];
+        yield 'external css url in an attribute' => [$page('<svg><rect fill="url(https://example.org/x.svg#g)" /></svg>')];
+        yield 'external form action' => [$page('<form method="get" action="https://example.org/x"></form>')];
+        yield 'external meta refresh' => [$page('', '<meta http-equiv="refresh" content="0; url=https://example.org/" />')];
         yield 'not well-formed' => [$page('<p>x')];
         yield 'no doctype' => ['<html lang="en"><head><title>x</title></head><body></body></html>'];
     }
@@ -853,6 +1031,20 @@ final class ShellTest extends TestCase
     public function testInlineCodeAssertionAcceptsTheScript(): void
     {
         $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/show-password.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
+        HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
+        $this->addToAssertionCount(1);
+    }
+
+    /** Body text and non-address attributes may name a scheme; only markup that loads or links is checked. */
+    public function testInlineCodeAssertionIgnoresText(): void
+    {
+        $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title></head><body>"
+            . '<p class="help">The address must have https:// at the start, as in https://example.org/.</p>'
+            . '<p>Never paste javascript: or //example.org addresses.</p>'
+            . '<input class="input" type="url" placeholder="https://" aria-label="Address" />'
+            . '<a href="https://example.com/source">Source code</a>'
+            . '<svg><rect fill="url(#g)" /></svg>'
+            . '</body></html>';
         HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
         $this->addToAssertionCount(1);
     }

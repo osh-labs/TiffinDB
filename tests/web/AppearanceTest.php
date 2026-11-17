@@ -11,6 +11,7 @@ namespace TiffinDB\Tests\Web;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Kernel;
@@ -245,12 +246,23 @@ final class AppearanceTest extends TestCase
         self::assertStringContainsString('<html lang="en">', $response->body);
     }
 
+    /**
+     * The development preview flag (appearance_preview) decides whether
+     * the query sets the appearance: the same query draws the fixture
+     * start page with every class when the flag is on, and with none when
+     * it is off.
+     */
     public function testPreviewFlagOffIgnoresParameters(): void
     {
-        $query = ['theme' => 'dark', 'accent' => 'plum', 'motion' => 'reduce'];
-        [$response] = Fixtures::handle(Fixtures::kernel(Fixtures::config(false)), Fixtures::request('GET', '/', $query));
+        $query = ['theme' => 'dark', 'accent' => 'plum', 'font' => 'lexend', 'size' => 'large', 'spacing' => 'roomy', 'motion' => 'reduce'];
 
+        [$on] = Fixtures::handle(Fixtures::kernel(Fixtures::config(true)), Fixtures::request('GET', '/', $query));
+        self::assertSame(200, $on->status);
+        self::assertSame('t-dark a-plum f-lexend s-large l-roomy m-reduce', HtmlAssertions::rootClass($on->body));
+
+        [$response] = Fixtures::handle(Fixtures::kernel(Fixtures::config(false)), Fixtures::request('GET', '/', $query));
         self::assertSame(200, $response->status);
+        self::assertNull(HtmlAssertions::rootClass($response->body));
         self::assertStringContainsString('<html lang="en">', $response->body);
         self::assertStringNotContainsString('t-dark', $response->body);
         // The preview links are not offered either.
@@ -281,13 +293,39 @@ final class AppearanceTest extends TestCase
         }
     }
 
-    public function testCurrentThemeIsMarkedInPreviewLinks(): void
+    /** @return array<string, array{array<string, string>, ?string, string}> */
+    public static function previewThemes(): array
     {
-        [$response] = Fixtures::handle(Fixtures::kernel(), Fixtures::request('GET', '/', ['theme' => 'hc-dark']));
+        return [
+            'no theme' => [[], null, 'light'],
+            'light' => [['theme' => 'light'], null, 'light'],
+            'dark' => [['theme' => 'dark'], 't-dark', 'dark'],
+            'hc-light' => [['theme' => 'hc-light'], 't-hcl', 'hc-light'],
+            'hc-dark' => [['theme' => 'hc-dark'], 't-hcd', 'hc-dark'],
+            'unlisted theme' => [['theme' => 'purple'], null, 'light'],
+            'class name as theme' => [['theme' => 't-dark'], null, 'light'],
+        ];
+    }
 
-        self::assertStringContainsString('<a href="/?theme=hc-dark" aria-current="true">', $response->body);
+    /**
+     * With the preview on, the theme the query selects reaches the page
+     * through the view: the root element carries its class, and the
+     * fixture start page, which marks the preview link of the theme the
+     * view's appearance reports, marks that theme and only that one.
+     *
+     * @param array<string, string> $query
+     */
+    #[DataProvider('previewThemes')]
+    public function testCurrentThemeIsMarkedInPreviewLinks(array $query, ?string $class, string $theme): void
+    {
+        [$response] = Fixtures::handle(Fixtures::kernel(), Fixtures::request('GET', '/', $query));
+
+        self::assertSame(200, $response->status);
+        self::assertSame($class, HtmlAssertions::rootClass($response->body));
+        $href = $theme === 'light' ? '/' : '/?theme=' . $theme;
+        self::assertStringContainsString('<a href="' . $href . '" aria-current="true">', $response->body);
         self::assertSame(1, substr_count($response->body, 'aria-current'));
-        foreach (['href="/"', 'href="/?theme=dark"', 'href="/?theme=hc-light"'] as $link) {
+        foreach (['href="/"', 'href="/?theme=dark"', 'href="/?theme=hc-light"', 'href="/?theme=hc-dark"'] as $link) {
             self::assertStringContainsString($link, $response->body);
         }
     }

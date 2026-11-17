@@ -149,7 +149,7 @@ final class TrashTest extends TestCase
         $this->attach($photos, $trashedRoom, 1);
         $this->attach($photos, $liveRoom, 1);
 
-        self::assertSame(2, $this->trash->empty([$this->items, $this->rooms], [$this->items->key => [$files], $this->rooms->key => [$photos]]));
+        self::assertSame(2, $this->trash->empty([$this->items, $this->rooms], [$this->items->key => [$files], $this->rooms->key => [$photos]], self::USER_KEY));
 
         self::assertSame([$liveItem], array_column($this->db->all('SELECT "id" FROM ' . Identifier::table($this->items->key)), 'id'));
         self::assertSame([$liveRoom], array_column($this->db->all('SELECT "id" FROM ' . Identifier::table($this->rooms->key)), 'id'));
@@ -160,14 +160,14 @@ final class TrashTest extends TestCase
         sort($actual);
         self::assertSame($expected, $actual);
         self::assertSame(1, $this->db->value('SELECT COUNT(*) FROM "_tiffin_attachments"'));
-        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], []));
+        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::USER_KEY));
     }
 
     public function testEmptyOnlyTouchesTheGivenTables(): void
     {
         $this->insert($this->items->key, [], true);
         $this->insert($this->rooms->key, [], true);
-        self::assertSame(1, $this->trash->empty([$this->rooms], []));
+        self::assertSame(1, $this->trash->empty([$this->rooms], [], self::USER_KEY));
         self::assertSame(1, $this->trash->count($this->items));
         self::assertSame(0, $this->trash->count($this->rooms));
     }
@@ -177,10 +177,112 @@ final class TrashTest extends TestCase
         $this->insert($this->items->key, [], true);
         $this->expectException(InvalidArgumentException::class);
         try {
-            $this->trash->empty([$this->items], [$this->items->key => [$this->name]]);
+            $this->trash->empty([$this->items], [$this->items->key => [$this->name]], self::USER_KEY);
         } finally {
             self::assertSame(1, $this->trash->count($this->items));
         }
+    }
+
+    public function testEmptyRefusesEntriesThatAreNotTables(): void
+    {
+        $this->insert($this->items->key, [], true);
+        foreach ([[$this->items->key], [$this->items, $this->name], [null]] as $tables) {
+            try {
+                $this->trash->empty($tables, [], self::USER_KEY);
+                self::fail('A table list with a non-table entry was accepted.');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame(1, $this->trash->count($this->items));
+    }
+
+    public function testEmptyRefusesABadPersonKey(): void
+    {
+        $this->insert($this->items->key, [], true);
+        $this->expectException(InvalidArgumentException::class);
+        try {
+            $this->trash->empty([$this->items], [], 'Example Person');
+        } finally {
+            self::assertSame(1, $this->trash->count($this->items));
+        }
+    }
+
+    // ------------------------------------------------------------ project meta (format section 4.1)
+
+    /** @return array{string, string} meta updated_at and updated_by */
+    private function meta(): array
+    {
+        return [
+            (string) $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'updated_at\''),
+            (string) $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'updated_by\''),
+        ];
+    }
+
+    public function testEachTrashChangeUpdatesTheProjectMeta(): void
+    {
+        $id = $this->insert($this->items->key);
+        $before = $this->meta();
+        self::assertSame([self::START, self::USER_KEY], $before);
+
+        $this->clock->advance(60);
+        self::assertSame(1, $this->trash->moveToTrash($this->items, [$id], self::OTHER_USER_KEY));
+        self::assertSame(['2026-11-12T03:16:00Z', self::OTHER_USER_KEY], $this->meta());
+
+        $this->clock->advance(60);
+        self::assertSame(1, $this->trash->restore($this->items, [$id], self::USER_KEY));
+        self::assertSame(['2026-11-12T03:17:00Z', self::USER_KEY], $this->meta());
+
+        $this->trash->moveToTrash($this->items, [$id], self::USER_KEY);
+        $this->clock->advance(60);
+        self::assertSame(1, $this->trash->empty([$this->items], [], self::OTHER_USER_KEY));
+        self::assertSame(['2026-11-12T03:18:00Z', self::OTHER_USER_KEY], $this->meta());
+    }
+
+    public function testTrashCallsThatChangeNothingLeaveTheMeta(): void
+    {
+        $id = $this->insert($this->items->key);
+        $before = $this->meta();
+        $this->clock->advance(60);
+        self::assertSame(0, $this->trash->restore($this->items, [$id], self::OTHER_USER_KEY));
+        self::assertSame(0, $this->trash->moveToTrash($this->items, [999], self::OTHER_USER_KEY));
+        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::OTHER_USER_KEY));
+        self::assertSame($before, $this->meta());
+    }
+
+    /**
+     * A failure inside touch, after the record statement and after
+     * `updated_at` was set, rolls back the records and the whole touch: they
+     * are one transaction.
+     */
+    public function testAFailedTouchRollsBackTheTrashChangeAndTheTouch(): void
+    {
+        $live = $this->insert($this->items->key, [$this->name->key => 'Lamp']);
+        $trashed = $this->insert($this->items->key, [$this->name->key => 'Kettle'], true);
+        $this->clock->advance(60);
+        $this->db->run('CREATE TEMP TRIGGER "fail_touch" AFTER UPDATE ON "_tiffin_meta" WHEN NEW."key" = \'updated_by\''
+            . ' BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END');
+        $before = $this->dump();
+
+        $operations = [
+            'moveToTrash' => fn () => $this->trash->moveToTrash($this->items, [$live], self::OTHER_USER_KEY),
+            'restore' => fn () => $this->trash->restore($this->items, [$trashed], self::OTHER_USER_KEY),
+            'empty' => fn () => $this->trash->empty([$this->items], [], self::OTHER_USER_KEY),
+        ];
+        foreach ($operations as $name => $operation) {
+            try {
+                $operation();
+                self::fail($name . ' did not fail.');
+            } catch (\PDOException $e) {
+                self::assertStringContainsString('synthetic failure', $e->getMessage(), $name);
+            }
+            self::assertFalse($this->db->inTransaction(), $name);
+            self::assertSame($before, $this->dump(), $name);
+        }
+
+        $this->db->run('DROP TRIGGER "temp"."fail_touch"');
+        self::assertSame(1, $this->trash->moveToTrash($this->items, [$live], self::OTHER_USER_KEY));
+        self::assertSame(['2026-11-12T03:16:00Z', self::OTHER_USER_KEY], $this->meta());
     }
 
     // ------------------------------------------------------------ T-TRASH-3

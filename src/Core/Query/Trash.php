@@ -10,6 +10,7 @@ namespace TiffinDB\Core\Query;
 
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\ProjectFile;
 use TiffinDB\Core\Schema\TableDef;
 use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\Database;
@@ -20,8 +21,10 @@ use TiffinDB\Core\Storage\Timestamp;
  * Record trash (M1 spec section 9.7, ADR 0010 decision 4): a record is in
  * the trash while `_trashed_at` is set. Nothing is copied; links in join
  * tables are kept while a record is in the trash and go by ON DELETE
- * CASCADE when the trash is emptied. Each change runs in one write().
- * Permission checks and the empty-trash snapshot belong to Core\App.
+ * CASCADE when the trash is emptied. Each change runs in one write(),
+ * which also records the change in project meta `updated_at` and
+ * `updated_by` (ProjectFile::touch) when any record changed. Permission
+ * checks and the empty-trash snapshot belong to Core\App.
  */
 final class Trash
 {
@@ -43,11 +46,16 @@ final class Trash
         self::person($userKey);
         $now = Timestamp::format($this->clock->now());
 
-        return $this->db->write(fn (Database $db): int => $db->run(
-            'UPDATE ' . $table->sql() . ' SET "_trashed_at" = ?, "_trashed_by" = ?, "_updated_at" = ?, "_updated_by" = ?'
-            . ' WHERE "id" IN (' . Database::placeholders(count($ids)) . ') AND "_trashed_at" IS NULL',
-            [$now, $userKey, $now, $userKey, ...$ids],
-        ));
+        return $this->db->write(function (Database $db) use ($table, $ids, $userKey, $now): int {
+            $moved = $db->run(
+                'UPDATE ' . $table->sql() . ' SET "_trashed_at" = ?, "_trashed_by" = ?, "_updated_at" = ?, "_updated_by" = ?'
+                . ' WHERE "id" IN (' . Database::placeholders(count($ids)) . ') AND "_trashed_at" IS NULL',
+                [$now, $userKey, $now, $userKey, ...$ids],
+            );
+            $this->touch($db, $moved, $userKey);
+
+            return $moved;
+        });
     }
 
     /**
@@ -61,11 +69,16 @@ final class Trash
         self::person($userKey);
         $now = Timestamp::format($this->clock->now());
 
-        return $this->db->write(fn (Database $db): int => $db->run(
-            'UPDATE ' . $table->sql() . ' SET "_trashed_at" = NULL, "_trashed_by" = NULL, "_updated_at" = ?, "_updated_by" = ?'
-            . ' WHERE "id" IN (' . Database::placeholders(count($ids)) . ') AND "_trashed_at" IS NOT NULL',
-            [$now, $userKey, ...$ids],
-        ));
+        return $this->db->write(function (Database $db) use ($table, $ids, $userKey, $now): int {
+            $restored = $db->run(
+                'UPDATE ' . $table->sql() . ' SET "_trashed_at" = NULL, "_trashed_by" = NULL, "_updated_at" = ?, "_updated_by" = ?'
+                . ' WHERE "id" IN (' . Database::placeholders(count($ids)) . ') AND "_trashed_at" IS NOT NULL',
+                [$now, $userKey, ...$ids],
+            );
+            $this->touch($db, $restored, $userKey);
+
+            return $restored;
+        });
     }
 
     /** Records of the table in the trash. */
@@ -130,8 +143,13 @@ final class Trash
      * @param list<TableDef> $tables
      * @param array<string, list<FieldDef>> $attachmentFields by table key
      */
-    public function empty(array $tables, array $attachmentFields): int
+    public function empty(array $tables, array $attachmentFields, string $userKey): int
     {
+        foreach ($tables as $table) {
+            if (!$table instanceof TableDef) {
+                throw new \InvalidArgumentException('Tables must be table definitions.');
+            }
+        }
         foreach ($attachmentFields as $tableKey => $fields) {
             foreach ($fields as $field) {
                 if (!$field instanceof FieldDef || $field->type !== 'attachment' || $field->tableKey !== $tableKey) {
@@ -139,22 +157,39 @@ final class Trash
                 }
             }
         }
+        self::person($userKey);
 
-        return $this->db->write(function (Database $db) use ($tables, $attachmentFields): int {
+        return $this->db->write(function (Database $db) use ($tables, $attachmentFields, $userKey): int {
             $deleted = 0;
             foreach ($tables as $table) {
-                foreach ($attachmentFields[$table->key] ?? [] as $field) {
-                    $db->run(
-                        'DELETE FROM "_tiffin_attachment_links" WHERE "field_key" = ? AND "record_id" IN (SELECT "id" FROM '
-                        . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL)',
-                        [$field->key],
-                    );
-                }
-                $deleted += $db->run('DELETE FROM ' . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL');
+                $deleted += self::emptyTable($db, $table, $attachmentFields[$table->key] ?? []);
             }
+            $this->touch($db, $deleted, $userKey);
 
             return $deleted;
         });
+    }
+
+    /** @param list<FieldDef> $attachmentFields */
+    private static function emptyTable(Database $db, TableDef $table, array $attachmentFields): int
+    {
+        foreach ($attachmentFields as $field) {
+            $db->run(
+                'DELETE FROM "_tiffin_attachment_links" WHERE "field_key" = ? AND "record_id" IN (SELECT "id" FROM '
+                . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL)',
+                [$field->key],
+            );
+        }
+
+        return $db->run('DELETE FROM ' . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL');
+    }
+
+    /** Records the change in project meta when any record changed (`docs/formats/tiffin.md` section 4.1). */
+    private function touch(Database $db, int $changed, string $userKey): void
+    {
+        if ($changed > 0) {
+            ProjectFile::touch($db, $userKey, $this->clock);
+        }
     }
 
     /**

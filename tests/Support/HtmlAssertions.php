@@ -58,16 +58,49 @@ final class HtmlAssertions
     }
 
     /**
-     * T-WEB-9: no inline style or script, no event-handler attribute, no
-     * `javascript:` address, and no http(s) URL other than the configured
-     * source link.
+     * The only script a page may load (M1 spec part 2 sections 4.1 and 6):
+     * a same-origin file under the assets directory, after an optional base
+     * path, with the version parameter.
+     */
+    private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/[a-z0-9][a-z0-9-]*\.js\?v=[A-Za-z0-9._~%-]+$#';
+
+    /**
+     * Attributes that load or link to an address. Their values (each
+     * candidate, for `srcset`) are the only places an http(s) URL is
+     * checked; text nodes and other attribute text such as `aria-label` or
+     * `placeholder` may name a scheme ("https:// at the start").
+     */
+    private const URL_ATTRIBUTES = [
+        'href', 'src', 'action', 'formaction', 'srcset', 'poster', 'data', 'cite', 'ping',
+        'background', 'manifest', 'xlink:href',
+    ];
+
+    /**
+     * T-WEB-9 and T-WEB-22: no inline style or script, no event-handler
+     * attribute, no `javascript:` address, and no http(s) URL other than the
+     * configured source link. At most one `script` element is allowed: in
+     * `head`, with a same-origin `src` under `/assets/js/`, `defer`, no other
+     * attribute, and no content.
+     *
+     * Only markup is checked (elements, attributes, the addresses in
+     * URL_ATTRIBUTES and in CSS `url()` inside any attribute), never text
+     * nodes: designed body text may mention a scheme.
      */
     public static function assertNoInlineCode(string $html, string $sourceUrl): void
     {
         $xpath = new DOMXPath(self::assertWellFormed($html));
 
         Assert::assertSame(0, $xpath->query('//*[local-name()="style"]')->length, 'No <style> element.');
-        Assert::assertSame(0, $xpath->query('//*[local-name()="script"]')->length, 'No <script> element.');
+        $scripts = $xpath->query('//*[local-name()="script"]');
+        Assert::assertLessThanOrEqual(1, $scripts->length, 'At most one <script> element.');
+        foreach ($scripts as $script) {
+            /** @var DOMElement $script */
+            Assert::assertSame('head', $script->parentNode?->nodeName, 'The script is in <head>.');
+            Assert::assertMatchesRegularExpression(self::SCRIPT_SRC, $script->getAttribute('src'), 'The script is a same-origin file under /assets/js/.');
+            Assert::assertSame('defer', $script->getAttribute('defer'), 'The script is deferred.');
+            Assert::assertSame(2, $script->attributes->length, 'The script has only src and defer.');
+            Assert::assertSame(0, $script->childNodes->length, 'The script element has no content.');
+        }
         Assert::assertSame(0, $xpath->query('//@style')->length, 'No style attribute.');
 
         foreach ($xpath->query('//@*') as $attribute) {
@@ -77,24 +110,59 @@ final class HtmlAssertions
                 $attribute->nodeName,
                 "No event-handler attribute ({$attribute->nodeName}).",
             );
+            $value = $attribute->nodeValue ?? '';
             Assert::assertDoesNotMatchRegularExpression(
-                '/^\s*javascript:/i',
-                $attribute->nodeValue ?? '',
-                'No javascript: address.',
+                '/javascript:/i',
+                $value,
+                "No javascript: address in any attribute ({$attribute->nodeName}).",
             );
             Assert::assertDoesNotMatchRegularExpression(
                 '#^\s*[/\\\\]{2}#',
-                $attribute->nodeValue ?? '',
+                $value,
                 "No protocol-relative address ({$attribute->nodeName}).",
             );
+            foreach (self::addresses($attribute->nodeName, $value) as $address) {
+                Assert::assertDoesNotMatchRegularExpression(
+                    '#^[/\\\\]{2}#',
+                    $address,
+                    "No protocol-relative address ({$attribute->nodeName}).",
+                );
+                if (preg_match('#^https?:#i', $address) === 1) {
+                    Assert::assertSame($sourceUrl, $address, "The only external URL is the configured source link ({$attribute->nodeName}).");
+                }
+            }
         }
-        Assert::assertDoesNotMatchRegularExpression('/javascript:/i', $html, 'No javascript: anywhere.');
-        Assert::assertDoesNotMatchRegularExpression('#["\'=]\s*//#', $html, 'No protocol-relative URL.');
+    }
 
-        preg_match_all('#https?://[^\s"\'<>]*#i', $html, $matches);
-        foreach ($matches[0] as $url) {
-            Assert::assertSame($sourceUrl, $url, 'The only external URL is the configured source link.');
+    /**
+     * The addresses an attribute loads or links to, trimmed: the whole value
+     * of a URL attribute, each candidate of a `srcset`, and every CSS
+     * `url()` in any attribute.
+     *
+     * @return list<string>
+     */
+    private static function addresses(string $name, string $value): array
+    {
+        $name = strtolower($name);
+        $addresses = [];
+        if ($name === 'srcset') {
+            foreach (explode(',', $value) as $candidate) {
+                $parts = preg_split('/\s+/', trim($candidate));
+                $addresses[] = is_array($parts) ? $parts[0] : '';
+            }
+        } elseif (in_array($name, self::URL_ATTRIBUTES, true)) {
+            $addresses[] = trim($value);
         }
+        // A refresh (`<meta http-equiv="refresh" content="0; url=...">`).
+        if ($name === 'content' && preg_match('/;\s*url\s*=\s*([\'"]?)(.*?)\1\s*$/is', $value, $refresh) === 1) {
+            $addresses[] = trim($refresh[2]);
+        }
+        preg_match_all('/url\(\s*([\'"]?)(.*?)\1\s*\)/is', $value, $matches);
+        foreach ($matches[2] as $url) {
+            $addresses[] = trim($url);
+        }
+
+        return $addresses;
     }
 
     /**
@@ -174,6 +242,124 @@ final class HtmlAssertions
             }
         }
         Assert::assertSame([$sourceUrl], $sourceLinks, 'The footer has one source link to the configured URL.');
+    }
+
+    /**
+     * T-WEB-22: M1 spec part 2 section 4.5 items 1, 2, and 6 on every form
+     * in a page.
+     *
+     * 1. `method` is `post` (or `get` for a form that changes nothing, which
+     *    then carries no CSRF field); `action` is a same-origin path; no
+     *    `novalidate`; a POST form's first child is the CSRF field
+     *    (`input type="hidden" name="_csrf"` with a non-empty value).
+     * 2. Every text-like control (input other than hidden, checkbox, radio,
+     *    and buttons; select; textarea) has an id, sits in a `div.field`
+     *    with a `label.label` whose `for` names it; every id in its
+     *    `aria-describedby` exists; when one of them is a `.error-text`, the
+     *    control has `aria-invalid="true"`, and `aria-invalid="true"` is
+     *    never set without a described error. A text-like control may
+     *    instead be named by a non-empty `aria-label` (the repeated inputs
+     *    of item 6, such as the choice editor's existing choices); it then
+     *    needs no id or label, but must have a non-empty `name`.
+     * 6. Every checkbox and radio has a name from a wrapping `label`, a
+     *    `label for`, or `aria-label`; ids in the page are unique.
+     *
+     * Also: every button has a type and a name (text or `aria-label`).
+     */
+    public static function assertForm(string $html): void
+    {
+        $document = self::assertWellFormed($html);
+        $xpath = new DOMXPath($document);
+
+        $ids = [];
+        foreach ($xpath->query('//@id') as $id) {
+            $ids[] = (string) $id->nodeValue;
+        }
+        Assert::assertSame(array_values(array_unique($ids)), $ids, 'Element ids are unique.');
+
+        foreach ($xpath->query('//form') as $form) {
+            /** @var DOMElement $form */
+            $method = $form->getAttribute('method');
+            Assert::assertContains($method, ['post', 'get'], 'A form has method="post" (or "get" when it changes nothing).');
+            Assert::assertMatchesRegularExpression('#^/(?![/\\\\])[^\s"\'<>\\\\]*$#', $form->getAttribute('action'), 'A form posts to a same-origin path.');
+            Assert::assertFalse($form->hasAttribute('novalidate'), 'Forms do not set novalidate.');
+
+            $csrf = $xpath->query('.//input[@name="_csrf"]', $form);
+            if ($method === 'post') {
+                $first = $xpath->query('./*[1]', $form)->item(0);
+                Assert::assertInstanceOf(DOMElement::class, $first, 'A POST form has content.');
+                Assert::assertSame('input', $first->nodeName, 'The CSRF field is the first child of a POST form.');
+                Assert::assertSame('hidden', $first->getAttribute('type'), 'The CSRF field is hidden.');
+                Assert::assertSame('_csrf', $first->getAttribute('name'), 'The first child of a POST form is the CSRF field.');
+                Assert::assertNotSame('', $first->getAttribute('value'), 'The CSRF field has a value.');
+                Assert::assertSame(1, $csrf->length, 'A POST form has one CSRF field.');
+            } else {
+                Assert::assertSame(0, $csrf->length, 'A GET form never carries the CSRF token.');
+            }
+
+            foreach ($xpath->query('.//input | .//select | .//textarea', $form) as $control) {
+                /** @var DOMElement $control */
+                self::assertControl($xpath, $control);
+            }
+            foreach ($xpath->query('.//button', $form) as $button) {
+                /** @var DOMElement $button */
+                Assert::assertContains($button->getAttribute('type'), ['submit', 'button'], 'A button has a type.');
+                Assert::assertTrue(
+                    self::normalise($button->textContent) !== '' || trim($button->getAttribute('aria-label')) !== '',
+                    'A button has a name.',
+                );
+            }
+        }
+    }
+
+    private static function assertControl(DOMXPath $xpath, DOMElement $control): void
+    {
+        $type = $control->nodeName === 'input' ? ($control->getAttribute('type') ?: 'text') : $control->nodeName;
+        if (in_array($type, ['hidden', 'submit', 'button', 'reset', 'image'], true)) {
+            return;
+        }
+        $id = $control->getAttribute('id');
+        $what = "The {$type} control" . ($id === '' ? '' : " #{$id}");
+
+        if (in_array($type, ['checkbox', 'radio'], true)) {
+            $named = $xpath->query('ancestor::label', $control)->length > 0
+                || trim($control->getAttribute('aria-label')) !== ''
+                || ($id !== '' && $xpath->query('//label[@for="' . $id . '"]')->length === 1);
+            Assert::assertTrue($named, "{$what} has a wrapping label, a label for it, or an aria-label.");
+        } elseif (trim($control->getAttribute('aria-label')) !== '') {
+            Assert::assertNotSame('', trim($control->getAttribute('name')), "{$what}, named by aria-label, has a name.");
+            if ($id !== '') {
+                Assert::assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9_-]*$/', $id, "{$what} has a valid id.");
+            }
+        } else {
+            Assert::assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9_-]*$/', $id, "{$what} has an id.");
+            $field = $control->parentNode;
+            Assert::assertInstanceOf(DOMElement::class, $field);
+            Assert::assertSame('div', $field->nodeName, "{$what} sits in a div.field.");
+            Assert::assertContains('field', explode(' ', $field->getAttribute('class')), "{$what} sits in a div.field.");
+            $labels = $xpath->query('./label[@for="' . $id . '"]', $field);
+            Assert::assertSame(1, $labels->length, "{$what} has a label in its div.field.");
+            $label = $labels->item(0);
+            Assert::assertInstanceOf(DOMElement::class, $label);
+            Assert::assertContains('label', explode(' ', $label->getAttribute('class')), "{$what} has a label.label.");
+            Assert::assertNotSame('', self::normalise($label->textContent), "{$what} has a label with text.");
+        }
+
+        $describedBy = trim($control->getAttribute('aria-describedby'));
+        $describedError = false;
+        foreach ($describedBy === '' ? [] : preg_split('/\s+/', $describedBy) as $ref) {
+            $target = $xpath->query('//*[@id="' . $ref . '"]')->item(0);
+            Assert::assertInstanceOf(DOMElement::class, $target, "{$what}: aria-describedby names an existing id ({$ref}).");
+            if (in_array('error-text', explode(' ', $target->getAttribute('class')), true)) {
+                $describedError = true;
+            }
+        }
+        if ($describedError) {
+            Assert::assertSame('true', $control->getAttribute('aria-invalid'), "{$what} has an error, so aria-invalid=\"true\".");
+        }
+        if ($control->getAttribute('aria-invalid') === 'true') {
+            Assert::assertTrue($describedError, "{$what} is marked invalid, so it is described by its .error-text.");
+        }
     }
 
     /** The `class` attribute of the root element, or null when absent. */

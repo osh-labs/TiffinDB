@@ -41,8 +41,9 @@ final class Fallback
     /**
      * Discards any buffered partial output and sends the fallback, unless
      * headers have already gone out (then nothing more can be done safely).
+     * A reply to HEAD carries no body.
      */
-    public static function send(string $body = self::BODY): void
+    public static function send(string $body = self::BODY, bool $headRequest = false): void
     {
         if (headers_sent()) {
             return;
@@ -50,15 +51,19 @@ final class Fallback
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
-        self::response($body)->send();
+        self::response($body)->send($headRequest);
     }
 
-    /** Shutdown function: sends the fallback after an uncatchable fatal error. */
+    /**
+     * Shutdown function: sends the fallback after an uncatchable fatal error.
+     * The one place outside public/index.php that reads a superglobal: the
+     * request may not have been built when the error happened.
+     */
     public static function onShutdown(): void
     {
         $error = error_get_last();
         if ($error !== null && in_array($error['type'], self::FATAL_TYPES, true)) {
-            self::send();
+            self::send(self::BODY, ($_SERVER['REQUEST_METHOD'] ?? null) === 'HEAD');
         }
     }
 

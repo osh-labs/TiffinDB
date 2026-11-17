@@ -14,7 +14,8 @@ use PHPUnit\Framework\TestCase;
 use TiffinDB\Tests\Support\RepoFiles;
 
 /**
- * T-REPO-1: the mandatory .gitignore entries exist, each as a whole line.
+ * T-REPO-1: the mandatory .gitignore entries exist, each as a whole line
+ * (config/local.php added in M1, spec part 2 section 2.9).
  */
 #[CoversNothing]
 final class GitignoreTest extends TestCase
@@ -22,7 +23,7 @@ final class GitignoreTest extends TestCase
     /** @return iterable<string, array{string}> */
     public static function requiredEntries(): iterable
     {
-        foreach (['*.db', '*.sqlite*', '*.tiffin', '.env*', '/local/', '/data/', '/vendor/', '/composer.lock'] as $entry) {
+        foreach (['*.db', '*.sqlite*', '*.tiffin', '.env*', '/local/', '/data/', '/vendor/', '/composer.lock', '/config/local.php'] as $entry) {
             yield $entry => [$entry];
         }
     }

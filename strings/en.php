@@ -3,37 +3,38 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) TiffinDB contributors
  *
- * User interface strings, English (ADR 0008 decision 5; M0 spec section
- * 9.4). A flat map of 'dotted.key' => 'text'. Placeholders are {name}; the
- * view escapes the text and every substituted value.
+ * User interface strings, English (ADR 0008 decision 5, amended by P40;
+ * M1 spec part 2 section 5.1). Returns one flat map of 'dotted.key' =>
+ * 'text', merged from every `en/*.php` part in file-name order. Each part
+ * returns such a map; a key defined by two parts is an error. Placeholders
+ * are {name}; the view escapes the text and every substituted value.
  */
 
 declare(strict_types=1);
 
-return [
-    'app.name' => 'TiffinDB',
+return (static function (string $dir): array {
+    $files = glob($dir . '/*.php');
+    if ($files === false || $files === []) {
+        throw new LogicException('No string files found.');
+    }
+    sort($files, SORT_STRING);
 
-    'shell.skip' => 'Skip to main content',
-    'shell.brand.label' => 'TiffinDB, start page',
-    'shell.title' => '{title} - TiffinDB',
-    'shell.footer.licence' => 'TiffinDB, free software under AGPL-3.0-or-later',
-    'shell.footer.source' => 'Source code',
+    $merged = [];
+    foreach ($files as $file) {
+        $part = (static fn (string $path): mixed => require $path)($file);
+        if (!is_array($part)) {
+            throw new LogicException('String file ' . basename($file) . ' must return an array.');
+        }
+        foreach ($part as $key => $text) {
+            if (!is_string($key) || !is_string($text)) {
+                throw new LogicException('String file ' . basename($file) . ' must map string keys to string text.');
+            }
+            if (array_key_exists($key, $merged)) {
+                throw new LogicException("Duplicate string key {$key} in " . basename($file) . '.');
+            }
+            $merged[$key] = $text;
+        }
+    }
 
-    'home.title' => 'TiffinDB',
-    'home.lead' => 'This is an early build. There is nothing to set up or sign in to yet.',
-    'home.preview.label' => 'Preview a theme',
-    'home.preview.light' => 'Light',
-    'home.preview.dark' => 'Dark',
-    'home.preview.hc-light' => 'High contrast, light',
-    'home.preview.hc-dark' => 'High contrast, dark',
-
-    'error.back' => 'Go to the start page',
-    'error.400.title' => 'That address is not valid',
-    'error.400.body' => 'TiffinDB could not read the address of this page.',
-    'error.404.title' => 'Page not found',
-    'error.404.body' => 'There is no page at this address.',
-    'error.405.title' => 'That action is not available here',
-    'error.405.body' => 'This page can be viewed but not changed.',
-    'error.500.title' => 'Something went wrong',
-    'error.500.body' => 'TiffinDB could not show this page. Nothing was changed.',
-];
+    return $merged;
+})(__DIR__ . '/en');

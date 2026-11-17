@@ -9,8 +9,9 @@ declare(strict_types=1);
 namespace TiffinDB\Web;
 
 /**
- * The result of Router::match(): found (with handler and parameters), not
- * found, or method not allowed (with the allowed methods).
+ * The result of Router::match(): found (with handler, parameters, and
+ * access level), not found, or method not allowed (with the allowed
+ * methods).
  */
 final class RouteMatch
 {
@@ -28,6 +29,7 @@ final class RouteMatch
         public readonly ?array $handler = null,
         public readonly array $params = [],
         public readonly array $allowedMethods = [],
+        public readonly ?AccessLevel $access = null,
     ) {
     }
 
@@ -35,9 +37,9 @@ final class RouteMatch
      * @param array{0: class-string, 1: string} $handler
      * @param array<string, string>             $params
      */
-    public static function found(array $handler, array $params): self
+    public static function found(array $handler, array $params, AccessLevel $access): self
     {
-        return new self(self::FOUND, $handler, $params);
+        return new self(self::FOUND, $handler, $params, [], $access);
     }
 
     public static function notFound(): self

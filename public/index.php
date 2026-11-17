@@ -57,12 +57,19 @@ if (!is_file(__DIR__ . '/../vendor/autoload.php')) {
 try {
     require __DIR__ . '/../vendor/autoload.php';
     $config = require __DIR__ . '/../config/app.php';
-    $kernel = new TiffinDB\Web\Kernel(is_array($config) ? $config : [], dirname(__DIR__));
-    $request = TiffinDB\Web\Request::fromServer($server, $_GET);
+    $config = is_array($config) ? $config : [];
+    // Optional, git-ignored, installation-specific settings (M1 spec part 2
+    // section 2.9): data_dir, timezone, secure_cookies. Anything else, or a
+    // wrong type, gives the plain fallback.
+    if (is_file(__DIR__ . '/../config/local.php')) {
+        $config = TiffinDB\Web\Kernel::withLocalConfig($config, require __DIR__ . '/../config/local.php');
+    }
+    $kernel = new TiffinDB\Web\Kernel($config, dirname(__DIR__));
+    $request = TiffinDB\Web\Request::fromGlobals($server, $_GET, $_POST, $_COOKIE);
     $response = $kernel->handle($request);
 } catch (Throwable $e) {
     TiffinDB\Web\Fallback::log($e);
-    TiffinDB\Web\Fallback::send();
+    TiffinDB\Web\Fallback::send(TiffinDB\Web\Fallback::BODY, ($server['REQUEST_METHOD'] ?? null) === 'HEAD');
     return;
 }
 

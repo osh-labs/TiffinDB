@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace TiffinDB\Web;
 
+use InvalidArgumentException;
 use OutOfBoundsException;
 
 /**
@@ -15,12 +16,17 @@ use OutOfBoundsException;
  * returning a string that is safe to print (ADR 0008 decision 4).
  *
  * - e(), t(), url(), asset() escape what they return.
+ * - csrf() returns the escaped CSRF token, count() the escaped text of
+ *   Format::count() (M1 spec part 2 section 4.3).
  * - partial() and slot() return markup produced by templates.
  * - rootClassAttribute() (layout only) returns markup built solely from
  *   Appearance::rootClasses(), which are server-side constants.
  */
 final class ViewScope
 {
+    /** A same-page element reference: `#` and an id as templates write them. */
+    private const FRAGMENT = '/^#[A-Za-z][A-Za-z0-9_-]*\z/';
+
     /** @var array<string, string> */
     private array $slots = [];
 
@@ -32,10 +38,18 @@ final class ViewScope
     ) {
     }
 
-    /** Escapes a value for an HTML text node or a double-quoted attribute. */
+    /**
+     * Escapes a value for an HTML text node or a double-quoted attribute.
+     * Invalid UTF-8 and characters not allowed in HTML (C0 controls other
+     * than tab, LF, CR, and FF; DEL; C1 controls; noncharacters) become
+     * U+FFFD. Form feed, which HTML allows but XML 1.0 does not, becomes
+     * U+FFFD too, so the output stays well-formed XML (ADR 0008 decision 4).
+     */
     public function e(string|int|float|null $value): string
     {
-        return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
+        $escaped = htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE | ENT_DISALLOWED | ENT_HTML5, 'UTF-8');
+
+        return str_replace("\f", "\u{FFFD}", $escaped);
     }
 
     /**
@@ -49,13 +63,38 @@ final class ViewScope
     }
 
     /**
-     * An escaped application address.
+     * An escaped application address, or a reference to an element of the
+     * same page (`#id`, used by the error summary to link each problem to
+     * its input; the id must be a literal-style id, and no query is allowed).
      *
      * @param array<string, string> $query
      */
     public function url(string $path, array $query = []): string
     {
+        if (str_starts_with($path, '#')) {
+            if ($query !== [] || preg_match(self::FRAGMENT, $path) !== 1) {
+                throw new InvalidArgumentException('Not an element reference.');
+            }
+
+            return $this->e($path);
+        }
+
         return $this->e($this->urls->to($path, $query));
+    }
+
+    /** The escaped CSRF token, for `<input type="hidden" name="_csrf" value="..." />` only. */
+    public function csrf(): string
+    {
+        return $this->e($this->view->csrfToken());
+    }
+
+    /**
+     * The escaped text of `<keyBase>.one` or `<keyBase>.many` ({count} is
+     * $n with thousands separators), for element text and `aria-label`.
+     */
+    public function count(string $keyBase, int $n): string
+    {
+        return $this->e($this->view->format()->count($keyBase, $n));
     }
 
     /** An escaped static asset address. */

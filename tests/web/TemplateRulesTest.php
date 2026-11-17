@@ -15,7 +15,8 @@ use TiffinDB\Tests\Support\RepoFiles;
 
 /**
  * T-WEB-11: the escaping rule and the other template source rules
- * (ADR 0008 decisions 4 and 5; M0 spec sections 6.8 and 15.2).
+ * (ADR 0008 decisions 4 and 5; M0 spec sections 6.8 and 15.2; M1 spec
+ * part 2 section 4.3).
  *
  * The scanner works on PHP tokens and on the static markup as a whole:
  *
@@ -28,25 +29,36 @@ use TiffinDB\Tests\Support\RepoFiles;
  *   name, a `$this->helper` name, a control keyword, or an operator. So no
  *   call of a variable, string, array element, or result. Also no echo,
  *   print, include, eval, exit, closure, class, new, static access,
- *   variable variable, superglobal, or backtick.
+ *   variable variable, superglobal, backtick, or pipe operator (`|>`).
  * - The static markup, with every PHP block removed (so markup split by an
  *   empty PHP block is seen whole), has no inline style or script, no
- *   event-handler attribute, no `javascript:`, external, or
- *   protocol-relative URL, and no character reference or scheme at the
- *   start of a URL attribute.
+ *   event-handler attribute, no `javascript:`, external, protocol-relative
+ *   (`//`), or slash-backslash URL, and no character reference or scheme
+ *   at the start of a URL attribute; no `<meta>` and no element of
+ *   FORBIDDEN_ELEMENTS (iframe, object, embed, base, SVG animation, and
+ *   the like). The exceptions are in the layout's `<head>` only: its two
+ *   fixed meta elements (LAYOUT_METAS) and the show-password script
+ *   element, exactly as SCRIPT_ELEMENT.
  * - Each `<?=` sits in element text, or is the whole value of a
- *   double-quoted attribute (not `class`, `id`, `style`, or `on*`; in a URL
- *   attribute only through url() or asset(), or e() for the footer's
- *   configured source link). The layout accessor may sit in the `<html>`
- *   start tag. Never in a comment or elsewhere in a tag.
- * - Every literal string key passed to t() exists, and every key in the
- *   strings file is used, except the keys code builds at run time.
+ *   double-quoted attribute (not `class`, `id`, `style`, `on*`, or
+ *   NO_OUTPUT_ATTRIBUTES such as `srcdoc` and SVG `to`, `from`, `values`,
+ *   `attributeName`; in a URL attribute only through url() or asset(), or
+ *   e() for the footer's configured source link). csrf() only in the csrf
+ *   partial, as the whole value of a `value` attribute; count() only in element text or `aria-label`. The layout
+ *   accessor may sit in the `<html>` start tag. Never in a comment or
+ *   elsewhere in a tag.
+ * - Every literal string key passed to t(), or as a key parameter to a
+ *   partial, exists. Every key in the strings file is used: literally in
+ *   t() or count(), as a literal key parameter of a partial (the
+ *   parameters each partial passes to t(), partialKeyParameters()), or as
+ *   a whole string literal in a controller (breadcrumb labels); keys code
+ *   builds at run time need a declared prefix (RUNTIME_PREFIXES).
  */
 #[CoversNothing]
 final class TemplateRulesTest extends TestCase
 {
     /** Helpers any template may call (ADR 0008 decision 4). */
-    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot'];
+    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot', 'csrf', 'count'];
 
     /** Accessors only the layout may call, each returning markup built from server-side constants. */
     public const LAYOUT_ACCESSORS = ['rootClassAttribute'];
@@ -56,21 +68,43 @@ final class TemplateRulesTest extends TestCase
     /** The one template that prints a configured (not generated) URL, with e(). */
     public const FOOTER = 'templates/partials/footer.php';
 
+    /** The one template that may call csrf(). */
+    public const CSRF_PARTIAL = 'templates/partials/csrf.php';
+
+    /** The layout's fixed meta elements: the only meta elements any template may hold. */
+    public const LAYOUT_METAS = [
+        '<meta charset="utf-8" />',
+        '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    ];
+
+    /** Elements no template may contain (they load, embed, redirect, or rewrite attributes). */
+    private const FORBIDDEN_ELEMENTS = [
+        'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'base', 'portal',
+        'animate', 'animatemotion', 'animatetransform', 'set', 'foreignobject', 'handler', 'listener',
+    ];
+
+    /** Attributes that never take output: they hold markup or name or set other attributes. */
+    private const NO_OUTPUT_ATTRIBUTES = ['srcdoc', 'to', 'from', 'values', 'by', 'attributename', 'http-equiv'];
+
     /** Plain functions a template may call: pure checks that print nothing. */
     public const ALLOWED_FUNCTIONS = ['is_array', 'is_string', 'is_int', 'is_bool', 'count', 'array_key_exists', 'in_array'];
 
     /**
-     * String keys built at run time, not written literally in a template:
-     * the error page keys (Kernel: error.<status>.title and .body) and the
-     * theme preview link labels (HomeController: home.preview.<theme>).
+     * Prefixes of string keys built at run time, which need not appear
+     * literally in a template (M1 spec part 2 section 4.3).
      */
-    public const RUNTIME_KEYS = [
-        'error.400.title', 'error.400.body',
-        'error.404.title', 'error.404.body',
-        'error.405.title', 'error.405.body',
-        'error.500.title', 'error.500.body',
-        'home.preview.light', 'home.preview.dark', 'home.preview.hc-light', 'home.preview.hc-dark',
+    public const RUNTIME_PREFIXES = [
+        'problem.', 'error.', 'type.', 'setup.check.', 'notice.', 'wait.', 'date.', 'count.', 'role.',
     ];
+
+    /** The one script element, allowed only in the layout (M1 spec part 2 section 4.1). */
+    public const SCRIPT_ELEMENT = '<script src="<?= $this->asset(\'js/show-password.js\') ?>" defer="defer"></script>';
+
+    /** Templates that write the wordmark as live text (ADR 0008 decision 5). */
+    public const WORDMARK_TEMPLATES = ['templates/partials/top-bar.php', 'templates/partials/lockup.php'];
+
+    /** The template whose separators are a literal "/" (hidden from assistive technology). */
+    public const BREADCRUMB = 'templates/partials/breadcrumb.php';
 
     /** Token kinds that are never allowed in a template. */
     private const FORBIDDEN_TOKENS = [
@@ -146,6 +180,9 @@ final class TemplateRulesTest extends TestCase
         $tokens = token_get_all($source);
         $count = count($tokens);
         $allowedMethods = $file === self::LAYOUT ? [...self::HELPERS, ...self::LAYOUT_ACCESSORS] : self::HELPERS;
+        if ($file !== self::CSRF_PARTIAL) {
+            $allowedMethods = array_values(array_diff($allowedMethods, ['csrf']));
+        }
 
         // Header: SPDX block first, then strict types, then markup.
         if (preg_match('#\A<\?php\n/\*\n \* SPDX-License-Identifier: AGPL-3\.0-or-later\n \* Copyright \(C\) TiffinDB contributors\n#', $source) !== 1) {
@@ -171,6 +208,9 @@ final class TemplateRulesTest extends TestCase
             }
             if ($text === '`') {
                 $problems[] = 'Forbidden: backtick execution.';
+            }
+            if (self::isPipe($tokens, $i)) {
+                $problems[] = 'Forbidden: the pipe operator |>.';
             }
             if ($text === '$') {
                 $problems[] = 'Forbidden: a variable variable.';
@@ -205,10 +245,67 @@ final class TemplateRulesTest extends TestCase
             }
         }
 
-        array_push($problems, ...self::markupProblems($html));
+        array_push($problems, ...self::markupProblems(self::withoutLayoutHead($source, $html, $file)));
         array_push($problems, ...self::outputContextProblems($html, $echoes, $file));
 
         return $problems;
+    }
+
+    /**
+     * The pipe operator: one T_PIPE token where the tokenizer has it (PHP
+     * 8.5), or `|` immediately followed by `>` before that.
+     *
+     * @param list<mixed> $tokens
+     */
+    private static function isPipe(array $tokens, int $i): bool
+    {
+        if (defined('T_PIPE') && self::is($tokens[$i], (int) constant('T_PIPE'))) {
+            return true;
+        }
+
+        return $tokens[$i] === '|' && ($tokens[$i + 1] ?? null) === '>';
+    }
+
+    /**
+     * The static markup with what only the layout's head may hold removed:
+     *
+     * - each fixed meta element (LAYOUT_METAS) found inside the one
+     *   `<head>`...`</head>`, exactly as written (so it holds no output);
+     * - the one script element, when the source holds it exactly once and
+     *   exactly as SCRIPT_ELEMENT, with no other script, and it sits inside
+     *   that head.
+     *
+     * Anything else is left as it is, so markupProblems() reports it.
+     */
+    private static function withoutLayoutHead(string $source, string $html, string $file): string
+    {
+        if ($file !== self::LAYOUT || substr_count($html, '<head>') !== 1 || substr_count($html, '</head>') !== 1) {
+            return $html;
+        }
+        $start = (int) strpos($html, '<head>');
+        $end = (int) strpos($html, '</head>');
+        if ($end < $start) {
+            return $html;
+        }
+        $head = substr($html, $start, $end - $start);
+
+        foreach (self::LAYOUT_METAS as $meta) {
+            if (substr_count($head, $meta) === 1) {
+                $head = str_replace($meta, '', $head);
+            }
+        }
+
+        $stripped = '<script src="" defer="defer"></script>';
+        if (
+            substr_count($source, self::SCRIPT_ELEMENT) === 1
+            && preg_match_all('/<\s*\/?\s*script\b/i', $source) === 2
+            && substr_count($html, $stripped) === 1
+            && substr_count($head, $stripped) === 1
+        ) {
+            $head = str_replace($stripped, '', $head);
+        }
+
+        return substr($html, 0, $start) . $head . substr($html, $end);
     }
 
     /**
@@ -266,8 +363,11 @@ final class TemplateRulesTest extends TestCase
             '/javascript\s*:/i' => 'a javascript: address',
             '#https?:#i' => 'an external URL',
             '#["\'=]\s*//#' => 'a protocol-relative URL',
+            '#["\'=]\s*/[\t\n\r]*[/\\\\]#' => 'a slash-backslash or protocol-relative URL',
             '#["\'=]\s*\\\\#' => 'a backslash-relative URL',
             '/<\?/' => 'a short open tag or a stray <?',
+            '/<\s*\/?\s*meta\b/i' => 'a <meta> element other than the layout\'s fixed ones',
+            '/<\s*\/?\s*(?:' . implode('|', self::FORBIDDEN_ELEMENTS) . ')\b/i' => 'a forbidden element (' . implode(', ', self::FORBIDDEN_ELEMENTS) . ')',
         ];
         $problems = [];
         foreach ($rules as $pattern => $what) {
@@ -316,8 +416,11 @@ final class TemplateRulesTest extends TestCase
         for ($pos = 0; $pos <= $length; $pos++) {
             foreach ($byOffset[$pos] ?? [] as $n => [, $helper, $line]) {
                 $where = match ($state) {
-                    'text' => in_array($helper, self::LAYOUT_ACCESSORS, true)
-                        ? 'a layout accessor outside the <html> start tag' : null,
+                    'text' => match (true) {
+                        in_array($helper, self::LAYOUT_ACCESSORS, true) => 'a layout accessor outside the <html> start tag',
+                        $helper === 'csrf' => 'csrf() output in element text',
+                        default => null,
+                    },
                     'comment' => 'output inside a comment',
                     'tag' => $file === self::LAYOUT && $tagName === 'html' && $n === 0
                         && in_array($helper, self::LAYOUT_ACCESSORS, true)
@@ -398,8 +501,18 @@ final class TemplateRulesTest extends TestCase
         if ($pos !== $valueStart || $index !== 0 || ($html[$pos] ?? '') !== '"') {
             return "output that is not the whole value of the {$attribute} attribute";
         }
-        if (in_array($attribute, ['class', 'id', 'style'], true) || str_starts_with($attribute, 'on')) {
+        if (
+            in_array($attribute, ['class', 'id', 'style'], true)
+            || in_array($attribute, self::NO_OUTPUT_ATTRIBUTES, true)
+            || str_starts_with($attribute, 'on')
+        ) {
             return "output in the {$attribute} attribute";
+        }
+        if ($helper === 'csrf') {
+            return $attribute === 'value' ? null : "csrf() output in the attribute {$attribute}";
+        }
+        if ($helper === 'count') {
+            return $attribute === 'aria-label' ? null : "count() output in the attribute {$attribute}";
         }
         if (in_array($attribute, self::URL_ATTRIBUTES, true)) {
             $allowed = ['url', 'asset'];
@@ -595,11 +708,197 @@ final class TemplateRulesTest extends TestCase
         return $m[1];
     }
 
+    /**
+     * The data parameters each partial treats as string keys, derived from
+     * the partials themselves: a partial whose source passes
+     * `$data['submit']` (or a loop variable's `$action['label']`) as the
+     * first argument of t() or count() treats `submit` (or `label`) as a
+     * key. Keyed by partial name (`notice`, `field-options/text`).
+     *
+     * @param array<string, string> $partials partial name => source
+     * @return array<string, list<string>>
+     */
+    public static function partialKeyParameters(array $partials): array
+    {
+        $parameters = [];
+        foreach ($partials as $name => $source) {
+            $tokens = array_values(array_filter(token_get_all($source), self::isCode(...)));
+            $found = [];
+            foreach ($tokens as $i => $token) {
+                if (!self::is($token, T_STRING) || !in_array($token[1], ['t', 'count'], true) || ($tokens[$i - 1] ?? null) === null) {
+                    continue;
+                }
+                $arrow = $tokens[$i - 1];
+                if (!self::is($arrow, T_OBJECT_OPERATOR) && !self::is($arrow, T_NULLSAFE_OBJECT_OPERATOR)) {
+                    continue;
+                }
+                $next = array_slice($tokens, $i + 1, 6);
+                if (
+                    count($next) === 6
+                    && $next[0] === '('
+                    && self::is($next[1], T_VARIABLE)
+                    && $next[2] === '['
+                    && self::is($next[3], T_CONSTANT_ENCAPSED_STRING)
+                    && $next[4] === ']'
+                    && in_array($next[5], [',', ')'], true)
+                ) {
+                    $found[stripslashes(substr($next[3][1], 1, -1))] = true;
+                }
+            }
+            $names = array_keys($found);
+            sort($names);
+            $parameters[$name] = $names;
+        }
+
+        return $parameters;
+    }
+
+    /** @return array<string, string> partial name => source, for the real partials */
+    private static function partialSources(): array
+    {
+        $sources = [];
+        foreach (RepoFiles::withExtension(['php'], 'templates/partials') as $file) {
+            $sources[substr($file, strlen('templates/partials/'), -4)] = RepoFiles::read($file);
+        }
+
+        return $sources;
+    }
+
+    /**
+     * Literal string keys a template passes to a partial: in
+     * `$this->partial('name', [...])`, every `'param' => 'literal'` entry,
+     * at any depth of the array literal (so `actions` lists count too),
+     * whose `param` is one of that partial's key parameters
+     * (partialKeyParameters()). The literal must be the whole value: a key
+     * built by concatenation (`'x.' . $y`) is not a literal key and still
+     * needs a runtime prefix. Values under other names (such as `params`,
+     * whose values are substituted text, or `cancel`, a path) never count.
+     *
+     * @param array<string, list<string>> $parameters partial name => key parameters
+     * @return list<string>
+     */
+    public static function partialKeys(string $source, array $parameters): array
+    {
+        $tokens = array_values(array_filter(token_get_all($source), self::isCode(...)));
+        $count = count($tokens);
+        $keys = [];
+        foreach ($tokens as $i => $token) {
+            if (!self::is($token, T_STRING) || $token[1] !== 'partial' || !self::is($tokens[$i - 1] ?? null, T_OBJECT_OPERATOR)) {
+                continue;
+            }
+            if (
+                ($tokens[$i + 1] ?? null) !== '('
+                || !self::is($tokens[$i + 2] ?? null, T_CONSTANT_ENCAPSED_STRING)
+                || ($tokens[$i + 3] ?? null) !== ','
+                || ($tokens[$i + 4] ?? null) !== '['
+            ) {
+                continue;
+            }
+            $names = $parameters[stripslashes(substr($tokens[$i + 2][1], 1, -1))] ?? [];
+            $depth = 0;
+            for ($n = $i + 4; $n < $count; $n++) {
+                $t = $tokens[$n];
+                if ($t === '[' || $t === '(') {
+                    $depth++;
+                } elseif ($t === ']' || $t === ')') {
+                    $depth--;
+                    if ($depth === 0) {
+                        break;
+                    }
+                } elseif (
+                    self::is($t, T_CONSTANT_ENCAPSED_STRING)
+                    && self::is($tokens[$n + 1] ?? null, T_DOUBLE_ARROW)
+                    && self::is($tokens[$n + 2] ?? null, T_CONSTANT_ENCAPSED_STRING)
+                    && in_array($tokens[$n + 3] ?? null, [',', ']'], true)
+                    && in_array(stripslashes(substr($t[1], 1, -1)), $names, true)
+                ) {
+                    $keys[] = stripslashes(substr($tokens[$n + 2][1], 1, -1));
+                }
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * String literals in PHP code (controllers) that exactly equal a
+     * defined key: the breadcrumb labels and other keys a controller hands
+     * to the layout, which no template names. A literal that is only part
+     * of a key (`'people.' . $x`) is not a defined key and does not count.
+     *
+     * @param array<string, string> $strings
+     * @return list<string>
+     */
+    public static function codeKeys(string $source, array $strings): array
+    {
+        $keys = [];
+        foreach (token_get_all($source) as $token) {
+            if (!self::is($token, T_CONSTANT_ENCAPSED_STRING)) {
+                continue;
+            }
+            $value = stripslashes(substr($token[1], 1, -1));
+            if (array_key_exists($value, $strings)) {
+                $keys[] = $value;
+            }
+        }
+
+        return $keys;
+    }
+
+    /** @return list<string> */
+    private static function controllers(): array
+    {
+        return array_values(array_filter(
+            RepoFiles::withExtension(['php'], 'src/Web/Controller'),
+            static fn (string $file): bool => dirname($file) === 'src/Web/Controller',
+        ));
+    }
+
+    /**
+     * Keys in $strings that nothing uses: not literal in a t() or count()
+     * call, not a literal key passed to a partial, not a literal in a
+     * controller, and not under a runtime prefix.
+     *
+     * @param list<string>                $templates  template sources
+     * @param list<string>                $code       controller sources
+     * @param array<string, string>       $strings
+     * @param array<string, list<string>> $parameters partial name => key parameters
+     * @return list<string>
+     */
+    public static function unusedKeys(array $templates, array $code, array $strings, array $parameters): array
+    {
+        $used = [];
+        foreach ($templates as $source) {
+            foreach ([...self::literalKeys($source), ...self::partialKeys($source, $parameters)] as $key) {
+                $used[$key] = true;
+            }
+        }
+        foreach ($code as $source) {
+            foreach (self::codeKeys($source, $strings) as $key) {
+                $used[$key] = true;
+            }
+        }
+        $unused = [];
+        foreach (array_keys($strings) as $key) {
+            if (!isset($used[$key]) && !self::isRuntimeKey($key)) {
+                $unused[] = $key;
+            }
+        }
+
+        return $unused;
+    }
+
     // The real templates.
 
     public function testTheShellTemplatesExist(): void
     {
-        foreach (['layout', 'partials/top-bar', 'partials/mark', 'partials/footer', 'pages/home', 'pages/error'] as $name) {
+        $names = [
+            'layout', 'pages/error',
+            'partials/top-bar', 'partials/mark', 'partials/footer', 'partials/lockup', 'partials/breadcrumb',
+            'partials/notice', 'partials/error-summary', 'partials/field-error', 'partials/password-toggle',
+            'partials/page-head', 'partials/csrf', 'partials/form-actions', 'partials/field-label',
+        ];
+        foreach ($names as $name) {
             self::assertFileExists(RepoFiles::path("templates/{$name}.php"));
         }
     }
@@ -647,37 +946,172 @@ final class TemplateRulesTest extends TestCase
         self::assertSame([], $missing, 'Partials used in templates but missing.');
     }
 
-    public function testEveryStringIsUsed(): void
+    public function testEveryKeyPassedToAPartialExists(): void
     {
-        $used = [];
+        $strings = self::strings();
+        $parameters = self::partialKeyParameters(self::partialSources());
+        $missing = [];
         foreach (self::templates() as $file) {
-            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
-                $used[$key] = true;
+            foreach (self::partialKeys(RepoFiles::read($file), $parameters) as $key) {
+                if (!array_key_exists($key, $strings)) {
+                    $missing[] = "{$file}: {$key}";
+                }
             }
         }
-        foreach (self::RUNTIME_KEYS as $key) {
-            $used[$key] = true;
-        }
 
-        $unused = array_values(array_diff(array_keys(self::strings()), array_keys($used)));
+        self::assertSame([], $missing, 'String keys passed to partials but missing from strings/en.php.');
+    }
+
+    public function testEveryStringIsUsed(): void
+    {
+        $unused = self::unusedKeys(
+            array_map(RepoFiles::read(...), self::templates()),
+            array_map(RepoFiles::read(...), self::controllers()),
+            self::strings(),
+            self::partialKeyParameters(self::partialSources()),
+        );
         self::assertSame([], $unused, 'Keys in strings/en.php that nothing uses.');
     }
 
-    public function testRuntimeKeysExist(): void
+    public function testPartialKeyParametersAreDerivedFromThePartials(): void
     {
-        $strings = self::strings();
-        foreach (self::RUNTIME_KEYS as $key) {
-            self::assertArrayHasKey($key, $strings);
+        $parameters = self::partialKeyParameters(self::partialSources());
+        // The shared partials of section 4.4 that take keys (others may be added).
+        self::assertSame(['cancelLabel', 'submit'], $parameters['form-actions']);
+        self::assertSame(['key', 'title'], $parameters['notice']);
+        self::assertSame(['key'], $parameters['field-label']);
+        self::assertSame(['label'], $parameters['page-head']);
+        // Partials that print only fixed keys, or plain text, take none.
+        self::assertSame([], $parameters['breadcrumb']);
+        self::assertSame([], $parameters['footer']);
+        self::assertSame([], $parameters['field-error']);
+    }
+
+    public function testKeysPassedToPartialsCountAsUsed(): void
+    {
+        $fixture = RepoFiles::read('tests/web/fixtures/templates/pages/partial-keys.php');
+        self::assertSame([], self::violations($fixture, self::PAGE));
+        $parameters = self::partialKeyParameters(self::partialSources());
+        $strings = [
+            'fixture.submit' => 'Save',
+            'fixture.cancel_label' => 'Go back',
+            'fixture.notice' => 'Saved.',
+            'fixture.notice_title' => 'Done',
+            'fixture.action' => 'Add',
+            'fixture.label' => 'Name',
+            'fixture.literal' => 'Literal',
+            'fixture.in_params' => 'Only a parameter value',
+            'fixture.as_path' => 'Only a cancel path',
+            'fixture.unknown_param' => 'Only under an unknown parameter',
+            'fixture.wrong_partial' => 'Only under another partial\'s parameter',
+            'fixture.built.one' => 'Only built by concatenation',
+            'fixture.nowhere' => 'Never passed anywhere',
+        ];
+
+        self::assertSame(
+            [
+                'fixture.in_params', 'fixture.as_path', 'fixture.unknown_param', 'fixture.wrong_partial',
+                'fixture.built.one', 'fixture.nowhere',
+            ],
+            self::unusedKeys([$fixture], [], $strings, $parameters),
+        );
+        self::assertSame(
+            ['fixture.submit', 'fixture.cancel_label', 'fixture.notice_title', 'fixture.notice', 'fixture.action', 'fixture.label'],
+            self::partialKeys($fixture, $parameters),
+        );
+    }
+
+    public function testControllerLiteralsThatAreKeysCountAsUsed(): void
+    {
+        $code = <<<'PHP'
+            <?php
+            $crumbs = [['label' => 'fixture.crumb', 'path' => '/x'], ['label' => 'fixture.crumb.' . $name, 'path' => null]];
+            $title = "fixture.title";
+            // 'fixture.comment' in a comment is not code.
+            $partial = 'fixture.part';
+            PHP;
+        $strings = [
+            'fixture.crumb' => 'Crumb',
+            'fixture.title' => 'Title',
+            'fixture.crumb.one' => 'Built at run time only',
+            'fixture.comment' => 'Only in a comment',
+            'fixture.part.whole' => 'Longer than the literal',
+        ];
+
+        self::assertSame(['fixture.crumb', 'fixture.title'], self::codeKeys($code, $strings));
+        self::assertSame(
+            ['fixture.crumb.one', 'fixture.comment', 'fixture.part.whole'],
+            self::unusedKeys([], [$code], $strings, []),
+        );
+    }
+
+    public function testTheControllerScanReadsTheControllers(): void
+    {
+        $files = self::controllers();
+        self::assertContains('src/Web/Controller/HomeController.php', $files);
+        foreach ($files as $file) {
+            self::assertSame('src/Web/Controller', dirname($file));
+        }
+    }
+
+    private static function isRuntimeKey(string $key): bool
+    {
+        foreach (self::RUNTIME_PREFIXES as $prefix) {
+            if (str_starts_with($key, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** P50: the shared form strings are printed by their shared partial only. */
+    public function testSharedFormStringsAreOnlyInTheirPartials(): void
+    {
+        $owners = [
+            'form.cancel' => 'templates/partials/form-actions.php',
+            'form.optional' => 'templates/partials/field-label.php',
+            'form.show_password' => 'templates/partials/password-toggle.php',
+            'form.show_passwords' => 'templates/partials/password-toggle.php',
+            'form.errors.page_title' => self::LAYOUT,
+            'shell.breadcrumb' => self::BREADCRUMB,
+        ];
+        $found = [];
+        foreach (self::templates() as $file) {
+            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
+                if (isset($owners[$key])) {
+                    $found[$key][$file] = true;
+                }
+            }
+        }
+        foreach ($owners as $key => $file) {
+            self::assertSame([$file], array_keys($found[$key] ?? []), $key);
+        }
+    }
+
+    public function testRuntimePrefixesMatchOnlyTheirKeys(): void
+    {
+        // The prefixes of section 4.3 whose keys this package owns have
+        // keys; the others (type., setup.check., role.) arrive with the
+        // screen packages. Shared keys outside the prefixes must be used
+        // literally.
+        $keys = array_keys(self::strings());
+        foreach (['problem.', 'error.', 'notice.', 'wait.', 'date.', 'count.'] as $prefix) {
+            self::assertNotSame([], array_filter($keys, static fn (string $k): bool => str_starts_with($k, $prefix)), $prefix);
+        }
+        foreach (['shell.sign_out', 'form.cancel', 'form.optional', 'form.errors.page_title', 'app.name'] as $key) {
+            self::assertFalse(self::isRuntimeKey($key), $key);
         }
     }
 
     public function testStringsArePlainText(): void
     {
         foreach (self::strings() as $key => $text) {
-            self::assertMatchesRegularExpression('/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/', $key);
+            self::assertMatchesRegularExpression('/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/', $key);
             self::assertNotSame('', trim($text), $key);
             self::assertDoesNotMatchRegularExpression('/[<>]/', $text, "{$key}: strings hold text, not markup.");
-            self::assertDoesNotMatchRegularExpression('#https?://#i', $text, "{$key}: no addresses in strings.");
+            // A scheme may be named ("starts with https://"), but no address.
+            self::assertDoesNotMatchRegularExpression('#https?://[^\s.,;]#i', $text, "{$key}: no addresses in strings.");
         }
     }
 
@@ -693,8 +1127,11 @@ final class TemplateRulesTest extends TestCase
             // Remove tags (and the wordmark spans' text in the top bar), then
             // what is left between tags must be empty.
             $text = (string) preg_replace('/<[^>]*>/', ' ', $html);
-            if ($file === 'templates/partials/top-bar.php') {
+            if (in_array($file, self::WORDMARK_TEMPLATES, true)) {
                 $text = (string) preg_replace('/\bTiffin\b|\bDB\b/', ' ', $text);
+            }
+            if ($file === self::BREADCRUMB) {
+                $text = str_replace('/', ' ', $text);
             }
             self::assertSame('', trim($text), "{$file} must take its text from the strings file.");
         }
@@ -712,6 +1149,7 @@ final class TemplateRulesTest extends TestCase
         $page = self::PAGE;
         $layout = self::LAYOUT;
         $footer = self::FOOTER;
+        $csrf = self::CSRF_PARTIAL;
 
         // Output and code.
         yield 'raw variable' => ['<p><?= $data[\'x\'] ?></p>', $page];
@@ -787,6 +1225,104 @@ final class TemplateRulesTest extends TestCase
         yield 'layout accessor in text' => ['<p><?= $this->rootClassAttribute() ?></p>', $layout];
         yield 'layout accessor in another tag' => ['<body<?= $this->rootClassAttribute() ?>>', $layout];
         yield 'markup ending inside a tag' => ['<p title="x"', $page];
+
+        // M1 rules (M1 spec part 2 section 4.3).
+        yield 'pipe operator' => ['<?= $this->e($data[\'x\'] |> trim(...)) ?>', $page];
+        yield 'pipe operator in a statement' => ['<?php $v = $data[\'x\'] |> $data[\'f\']; ?>', $page];
+        yield 'slash-backslash link' => ['<a href="/\\example.org/">x</a>', $page];
+        yield 'slash-double-backslash link' => ['<a href="/\\\\example.org/">x</a>', $page];
+        yield 'slash-backslash image with space' => ['<img src=" /\\example.org/x.png" />', $page];
+        yield 'slash-backslash form action' => ['<form action="/\\example.org/" method="post"></form>', $page];
+        yield 'slash-tab-slash link' => ["<a href=\"/\t/example.org/\">x</a>", $page];
+        yield 'protocol-relative form action' => ['<form action="//example.org/" method="post"></form>', $page];
+        yield 'csrf() in element text' => ['<p><?= $this->csrf() ?></p>', $csrf];
+        yield 'csrf() in a title' => ['<p title="<?= $this->csrf() ?>">x</p>', $csrf];
+        yield 'csrf() in an href' => ['<a href="<?= $this->csrf() ?>">x</a>', $csrf];
+        yield 'csrf() as part of a value' => ['<input type="hidden" name="_csrf" value="x<?= $this->csrf() ?>" />', $csrf];
+        yield 'count() in a title' => ['<p title="<?= $this->count(\'count.problems\', 2) ?>">x</p>', $page];
+        yield 'count() in a value' => ['<input value="<?= $this->count(\'count.problems\', 2) ?>" />', $page];
+        yield 'count() in an href' => ['<a href="<?= $this->count(\'count.problems\', 2) ?>">x</a>', $page];
+        yield 'count() then more' => ['<p><?= $this->count(\'count.problems\', 2) . $data[\'x\'] ?></p>', $page];
+        yield 'script outside the layout' => [self::SCRIPT_ELEMENT, $page];
+        yield 'script in a partial' => [self::SCRIPT_ELEMENT, 'templates/partials/top-bar.php'];
+        yield 'other script in the layout' => ['<script src="<?= $this->asset(\'js/other.js\') ?>" defer="defer"></script>', $layout];
+        yield 'script without defer in the layout' => ['<script src="<?= $this->asset(\'js/show-password.js\') ?>"></script>', $layout];
+        yield 'inline script in the layout' => ['<script>alert(1)</script>', $layout];
+        yield 'two scripts in the layout' => [self::SCRIPT_ELEMENT . "\n" . self::SCRIPT_ELEMENT, $layout];
+        yield 'the script and an inline one in the layout' => [self::SCRIPT_ELEMENT . "\n<script>alert(1)</script>", $layout];
+        yield 'the script with content in the layout' => [str_replace('></script>', '>x</script>', self::SCRIPT_ELEMENT), $layout];
+
+        // Security review follow-ups.
+        $head = static fn (string $inner): string => "<head>\n{$inner}\n</head>\n<body>\n</body>";
+        yield 'csrf() outside the csrf partial' => ['<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', $page];
+        yield 'csrf() in the layout' => [$head('') . '<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', $layout];
+        yield 'csrf() called without output outside the partial' => ['<?php if ($this->csrf() !== \'\') : ?><p></p><?php endif; ?>', $page];
+        yield 'the script in the layout body' => ["<head>\n</head>\n<body>\n" . self::SCRIPT_ELEMENT . "\n</body>", $layout];
+        yield 'the script before the layout head' => [self::SCRIPT_ELEMENT . "\n" . $head(''), $layout];
+        yield 'the script in the layout without a head' => ['<div>' . self::SCRIPT_ELEMENT . '</div>', $layout];
+        yield 'iframe srcdoc with output' => ['<iframe srcdoc="<?= $this->e($data[\'x\']) ?>"></iframe>', $page];
+        yield 'iframe without output' => ['<iframe src="/x"></iframe>', $page];
+        yield 'srcdoc on another element' => ['<p srcdoc="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'meta refresh with output' => ['<meta http-equiv="refresh" content="<?= $this->e($data[\'x\']) ?>" />', $page];
+        yield 'meta refresh, static' => ['<meta http-equiv="refresh" content="0; url=/x" />', $page];
+        yield 'meta in a page' => ['<meta charset="utf-8" />', $page];
+        yield 'meta in the layout body' => [$head('') . "\n" . self::LAYOUT_METAS[0], $layout];
+        yield 'other meta in the layout head' => [$head('<meta name="referrer" content="unsafe-url" />'), $layout];
+        yield 'layout meta with output' => [$head('<meta name="viewport" content="<?= $this->e($data[\'v\']) ?>" />'), $layout];
+        yield 'layout meta twice' => [$head(self::LAYOUT_METAS[0] . "\n" . self::LAYOUT_METAS[0]), $layout];
+        yield 'svg animate href' => ['<svg><animate attributeName="href" to="<?= $this->e($data[\'x\']) ?>" /></svg>', $page];
+        yield 'svg animate, static' => ['<svg><a href="/x"><animate attributeName="href" to="/y" /></a></svg>', $page];
+        yield 'svg set' => ['<svg><set attributeName="href" to="/y" /></svg>', $page];
+        yield 'svg animateTransform' => ['<svg><animateTransform attributeName="transform" from="0" to="1" /></svg>', $page];
+        yield 'to with output' => ['<p to="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'from with output' => ['<p from="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'values with output' => ['<p values="<?= $this->e($data[\'x\']) ?>">x</p>', $page];
+        yield 'attributeName with output' => ['<p attributeName="<?= $this->t(\'k\') ?>">x</p>', $page];
+        yield 'object' => ['<object data="/x"></object>', $page];
+        yield 'embed' => ['<embed src="/x" />', $page];
+        yield 'base' => ['<base href="/x/" />', $page];
+        yield 'base in the layout head' => [$head('<base href="/x/" />'), $layout];
+        yield 'upper-case iframe' => ['<IFRAME src="/x"></IFRAME>', $page];
+    }
+
+    public function testScannerAcceptsTheLayoutHead(): void
+    {
+        $body = "<head>\n" . implode("\n", self::LAYOUT_METAS) . "\n" . self::SCRIPT_ELEMENT . "\n</head>\n<body>\n<section><select name=\"s\"><option>x</option></select></section>\n</body>";
+        self::assertSame([], self::violations(self::HEADER . $body, self::LAYOUT));
+        self::assertSame([], self::violations(self::HEADER . '<input type="hidden" name="_csrf" value="<?= $this->csrf() ?>" />', self::CSRF_PARTIAL));
+    }
+
+    public function testScannerAcceptsTheM1Forms(): void
+    {
+        $page = self::HEADER . <<<'HTML'
+            <form method="post" action="<?= $this->url('/sign-out') ?>">
+            <?= $this->partial('csrf') ?>
+            <h2><?= $this->count('count.problems', count($data['problems'])) ?></h2>
+            <a href="<?= $this->url('#' . $data['field']) ?>" aria-label="<?= $this->count('count.problems', 2) ?>">x</a>
+            <span aria-hidden="true">/</span>
+            <a href="/">x</a>
+            </form>
+            HTML;
+        self::assertSame([], self::violations($page, self::PAGE));
+        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENT . "\n</head>", self::LAYOUT));
+    }
+
+    public function testThePipeCheckDoesNotFlagOtherOperators(): void
+    {
+        $body = '<?php if (($data[\'a\'] | 2) > 1 || $data[\'b\'] >= 1) : ?><p></p><?php endif; ?>';
+        self::assertSame([], self::violations(self::HEADER . $body, self::PAGE));
+    }
+
+    public function testTheComponentFixturesFollowTheRules(): void
+    {
+        $strings = self::strings();
+        foreach (['components', 'notices', 'form-actions'] as $name) {
+            $file = "tests/web/fixtures/templates/pages/{$name}.php";
+            self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
+            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
+                self::assertArrayHasKey($key, $strings, $file);
+            }
+        }
     }
 
     #[DataProvider('badTemplates')]

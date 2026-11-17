@@ -69,7 +69,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 3 rounds (round 2: takeback not net-zero at the address limit; round 3 fix `f9030b5` verified at every boundary and under interleaving, tests fail when the fix is reverted); two nits carried forward |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | round 1 fixes in progress (new implementation agent on top of `5154df5`; unpushed worktree) | wip-wp4 | design tier | round 1 REQUEST CHANGES, no blockers: Identifier and all SQL strings sound; atomicity verified by injected failure on 13 change paths; F1 SQL-string guard test bypassable (6 patterns, case-sensitive SQL word), F2 T-SCH-10 bytes check vacuous under WAL, F3 trash does not touch meta (format doc 4.1), F4 auto-number `next` test cannot fail, D5 retry path untested |
-| M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
+| M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | implemented (`0f4d67d`, local branch `worktree-agent-a82426a549f007492`, unpushed; 3145 tests OK, verified by orchestrator); design-tier security review in progress | worktree | design tier | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
 | M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | not started | | | |
@@ -153,6 +153,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17T06:1xZ | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
 | 2026-11-17T06:2xZ | M1-WP2 merged (APPROVE); suite 2960 tests OK (1 skipped), lint 201 files 0 failed; WP6 dispatched |
 | 2026-11-17T06:3xZ | M1-WP4 review: REQUEST CHANGES (no blockers); rulings P73, P74; fix agent dispatched |
+| 2026-11-17T06:4xZ | M1-WP6 implemented (unpushed); orchestrator re-ran suite 3145 OK, lint 222 files OK; design-tier security review dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

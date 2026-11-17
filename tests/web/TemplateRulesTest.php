@@ -1046,7 +1046,7 @@ final class TemplateRulesTest extends TestCase
     public function testTheComponentFixturesFollowTheRules(): void
     {
         $strings = self::strings();
-        foreach (['components', 'notices'] as $name) {
+        foreach (['components', 'notices', 'form-actions'] as $name) {
             $file = "tests/web/fixtures/templates/pages/{$name}.php";
             self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
             foreach (self::literalKeys(RepoFiles::read($file)) as $key) {

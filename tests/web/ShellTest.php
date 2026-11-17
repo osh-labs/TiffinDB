@@ -36,7 +36,8 @@ use TiffinDB\Web\View;
  *
  * Pages: the real error page, a fixture page that uses every shared
  * partial and form convention (tests/web/fixtures/templates/pages/
- * components.php), and a notice fixture (notices.php), copied next to the
+ * components.php), and the notices.php and form-actions.php fixtures,
+ * copied next to the
  * real templates in a temporary
  * directory. Nothing here goes through the kernel, so these tests do not
  * depend on the request pipeline.
@@ -67,7 +68,7 @@ final class ShellTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-shell-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        foreach (['components', 'notices'] as $fixture) {
+        foreach (['components', 'notices', 'form-actions'] as $fixture) {
             if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
                 throw new RuntimeException("Cannot copy the {$fixture} fixture.");
             }
@@ -111,6 +112,12 @@ final class ShellTest extends TestCase
         self::assertArrayHasKey($key, $strings);
 
         return $strings[$key];
+    }
+
+    /** @param array<string, string|int> $params */
+    private static function formatted(string $key, array $params): string
+    {
+        return (new Strings(RepoFiles::path('strings/en.php')))->get($key, $params);
     }
 
     private static function view(string $theme = 'light', string $basePath = ''): View
@@ -610,6 +617,108 @@ final class ShellTest extends TestCase
     public function testOtherNoticeHeadingValuesKeepTheParagraph(mixed $heading): void
     {
         self::assertSame(self::noticeMain('info', null), self::noticeMain('info', $heading));
+    }
+
+    /**
+     * The form-actions row from the form-actions fixture, as markup.
+     *
+     * @param array<string, mixed> $actions
+     */
+    private static function formActions(array $actions): string
+    {
+        $html = self::render('form-actions', ['title' => 'Actions', 'shell' => self::shell(), 'actions' => $actions]);
+        HtmlAssertions::assertForm($html);
+        self::assertSame(1, preg_match('#<div class="form-actions">.*?</div>#s', $html, $m));
+
+        return $m[0];
+    }
+
+    public function testFormActionsDefaultOutputIsUnchanged(): void
+    {
+        $submit = self::string('shell.sign_out');
+        self::assertSame(
+            "<div class=\"form-actions\">\n<button class=\"button button-large button-primary\" type=\"submit\">{$submit}</button>\n"
+            . '<a class="form-cancel" href="/projects">' . self::string('form.cancel') . "</a>\n</div>",
+            self::formActions(['submit' => 'shell.sign_out', 'danger' => false, 'cancel' => '/projects']),
+        );
+        self::assertSame(
+            "<div class=\"form-actions\">\n<button class=\"button button-large button-danger\" type=\"submit\">{$submit}</button>\n</div>",
+            self::formActions(['submit' => 'shell.sign_out', 'danger' => true, 'cancel' => null]),
+        );
+        // Leaving out the optional data, or giving the defaults, changes nothing.
+        $plain = self::formActions(['submit' => 'shell.sign_out', 'danger' => false, 'cancel' => '/projects']);
+        self::assertSame($plain, self::formActions(['submit' => 'shell.sign_out', 'cancel' => '/projects']));
+        self::assertSame($plain, self::formActions([
+            'submit' => 'shell.sign_out', 'submitParams' => [], 'danger' => false, 'secondary' => false,
+            'size' => 'large', 'block' => false, 'cancel' => '/projects', 'cancelLabel' => null,
+        ]));
+    }
+
+    public function testFormActionsSubmitParams(): void
+    {
+        $html = self::formActions(['submit' => 'shell.account.label', 'submitParams' => ['name' => self::HOSTILE], 'danger' => true, 'cancel' => null]);
+        $button = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//button');
+        self::assertSame('button button-large button-danger', $button->getAttribute('class'));
+        self::assertSame(self::formatted('shell.account.label', ['name' => self::HOSTILE]), self::text($button));
+        self::assertStringNotContainsString('<script>', $html);
+    }
+
+    /** @return array<string, array{array<string, mixed>, string}> */
+    public static function formActionClasses(): array
+    {
+        return [
+            'primary normal' => [['size' => 'normal'], 'button button-primary'],
+            'primary block' => [['block' => true], 'button button-large button-primary button-block'],
+            'primary normal block' => [['size' => 'normal', 'block' => true], 'button button-primary button-block'],
+            'danger normal' => [['danger' => true, 'size' => 'normal'], 'button button-danger'],
+            'danger block' => [['danger' => true, 'block' => true], 'button button-large button-danger button-block'],
+            'danger normal block' => [['danger' => true, 'size' => 'normal', 'block' => true], 'button button-danger button-block'],
+            'danger wins over secondary' => [['danger' => true, 'secondary' => true], 'button button-large button-danger'],
+            'secondary' => [['secondary' => true], 'button button-large'],
+            'secondary normal' => [['secondary' => true, 'size' => 'normal'], 'button'],
+            'secondary block' => [['secondary' => true, 'block' => true], 'button button-large button-block'],
+            'secondary normal block' => [['secondary' => true, 'size' => 'normal', 'block' => true], 'button button-block'],
+            'unknown size is large' => [['size' => 'small'], 'button button-large button-primary'],
+            'block must be true' => [['block' => 'yes'], 'button button-large button-primary'],
+            'secondary must be true' => [['secondary' => 1], 'button button-large button-primary'],
+        ];
+    }
+
+    /** @param array<string, mixed> $options */
+    #[DataProvider('formActionClasses')]
+    public function testFormActionsButtonOptions(array $options, string $class): void
+    {
+        $html = self::formActions(['submit' => 'shell.sign_out', 'cancel' => null, ...$options]);
+        $button = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//button');
+        self::assertSame($class, $button->getAttribute('class'));
+        self::assertSame('submit', $button->getAttribute('type'));
+        self::assertSame(self::string('shell.sign_out'), self::text($button));
+        $css = RepoFiles::read('public/assets/css/app.css');
+        foreach (explode(' ', $class) as $name) {
+            self::assertMatchesRegularExpression('/^\\.' . preg_quote($name, '/') . '[ ,]/m', $css, "{$name} is styled in app.css.");
+        }
+    }
+
+    /** A plain fieldset with legend.legend-plain (people-and-sharing.md, schema-editor.md) shows no default border. */
+    public function testPlainFieldsetHasNoDefaultBorder(): void
+    {
+        $css = RepoFiles::read('public/assets/css/app.css');
+        self::assertSame(1, preg_match('/^fieldset\.field \{([^}]*)\}/m', $css, $m), 'app.css styles fieldset.field.');
+        foreach (['border: 0;', 'margin: 0;', 'padding: 0;', 'min-width: 0;'] as $declaration) {
+            self::assertStringContainsString($declaration, $m[1]);
+        }
+    }
+
+    public function testFormActionsCancelLabel(): void
+    {
+        $html = self::formActions(['submit' => 'shell.sign_out', 'cancel' => '/projects', 'cancelLabel' => 'shell.account.label', 'cancelParams' => ['name' => self::NAME]]);
+        $link = self::element(self::xpath("<!DOCTYPE html>\n" . $html), '//a');
+        self::assertSame('/projects', $link->getAttribute('href'));
+        self::assertSame('form-cancel', $link->getAttribute('class'));
+        self::assertSame(self::formatted('shell.account.label', ['name' => self::NAME]), self::text($link));
+        self::assertStringNotContainsString(self::string('form.cancel'), $html);
+        // A label without a path shows no link.
+        self::assertStringNotContainsString('<a', self::formActions(['submit' => 'shell.sign_out', 'cancel' => null, 'cancelLabel' => 'shell.account.label']));
     }
 
     public function testComponentPartials(): void

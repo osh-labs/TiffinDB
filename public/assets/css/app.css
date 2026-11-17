@@ -563,6 +563,14 @@ h2 {
   gap: 0.3333rem;
 }
 
+/* A fieldset grouping one question (legend.legend-plain): no card, no border. */
+fieldset.field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .label {
   font-weight: 700;
 }

@@ -696,6 +696,11 @@ textarea.input {
   border-radius: var(--radius-control);
 }
 
+.radio-card > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .radio-card:has(input:checked) {
   border-color: var(--accent);
   background: var(--soft);

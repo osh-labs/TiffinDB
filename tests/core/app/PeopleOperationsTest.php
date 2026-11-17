@@ -330,6 +330,49 @@ final class PeopleOperationsTest extends AppTestCase
         $call($this->ops->people(), $this->admin, $this->member2->userKey);
     }
 
+    /** @return iterable<string, array{string}> */
+    public static function guardedChanges(): iterable
+    {
+        foreach (['create', 'update', 'setTemporaryPassword', 'deactivate', 'reactivate', 'setProjectAccess', 'setSharing', 'createProject'] as $name) {
+            yield $name => [$name];
+        }
+    }
+
+    /**
+     * An Admin demoted or deactivated after their session resumed still
+     * holds an Admin actor; the change re-reads them inside its write and
+     * refuses.
+     */
+    #[DataProvider('guardedChanges')]
+    public function testAStaleAdminActorIsRefusedInsideTheWrite(string $change): void
+    {
+        $project = $this->ops->projects()->create($this->admin, 'Example Garden', null);
+        $other = $this->ops->people()->create($this->admin, 'example.owner', 'Example Owner', Role::Admin, self::TEMPORARY, []);
+        $this->ops->people()->deactivate($this->admin, $this->member2->userKey);
+        $calls = [
+            'create' => fn () => $this->ops->people()->create($this->admin, 'example.cook', 'Example Cook', Role::Member, self::TEMPORARY, []),
+            'update' => fn () => $this->ops->people()->update($this->admin, $this->member->userKey, 'member', 'Renamed', Role::Admin),
+            'setTemporaryPassword' => fn () => $this->ops->people()->setTemporaryPassword($this->admin, $this->member->userKey, self::TEMPORARY),
+            'deactivate' => fn () => $this->ops->people()->deactivate($this->admin, $this->member->userKey),
+            'reactivate' => fn () => $this->ops->people()->reactivate($this->admin, $this->member2->userKey),
+            'setProjectAccess' => fn () => $this->ops->people()->setProjectAccess($this->admin, $this->member->userKey, [$project->key]),
+            'setSharing' => fn () => $this->ops->projects()->setSharing($this->admin, $project->key, [$this->member->userKey]),
+            'createProject' => fn () => $this->ops->projects()->create($this->admin, 'Example Books', null),
+        ];
+        foreach (['demoted' => "UPDATE users SET role = 'member' WHERE id = ?", 'deactivated' => 'UPDATE users SET active = 0 WHERE id = ?'] as $how => $sql) {
+            $db = $this->fx->system->db();
+            $id = $this->admin->userId;
+            $db->write(static fn () => $db->run($sql, [$id]));
+            $before = $this->fx->systemRows();
+            $this->assertThrows(AccessDenied::class, $calls[$change]);
+            self::assertSame($before, $this->fx->systemRows(), $how);
+            $db->write(static fn () => $db->run("UPDATE users SET role = 'admin', active = 1 WHERE id = ?", [$id]));
+        }
+        // Restored, the same call goes through.
+        $calls[$change]();
+        self::assertNotNull($other);
+    }
+
     /**
      * @param list<ProjectAccess> $access
      * @return array<string, bool>

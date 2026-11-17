@@ -218,6 +218,56 @@ final class LoopbackHttpProbeTest extends TestCase
         $this->assertSame(1, $outerCalls, 'The handler restored after the probe is the one set before it.');
     }
 
+    public function testAWarningWithAUsableStreamStillGivesNull(): void
+    {
+        // F4: a warning anywhere in the exchange discards even a good answer.
+        $calls = [];
+        $server = null;
+        $inner = $this->connector("HTTP/1.1 200 OK\r\n\r\n0123456789abcdef0123456789abcdef", $calls, $server);
+        $warning = static function (string $uri, array $options, float $timeout) use ($inner): mixed {
+            trigger_error('stream_socket_client(): a warning on the way', E_USER_WARNING);
+
+            return $inner($uri, $options, $timeout);
+        };
+
+        $this->assertNull((new LoopbackHttpProbe($warning))->get(self::target(), '/x'));
+        $this->assertCount(1, $calls, 'The stream was handed over and used.');
+    }
+
+    public function testAnAnswerThatTricklesPastTheDeadlineGivesNull(): void
+    {
+        // F6: bytes keep coming within each read timeout, but the overall
+        // deadline of 10 s passes. The fake time moves 6 s per reading.
+        $calls = [];
+        $server = null;
+        $connector = $this->connector("HTTP/1.1 200 OK\r\n", $calls, $server, false);
+        $now = -6.0;
+        $seconds = static function () use (&$now): float {
+            $now += 6.0;
+
+            return $now;
+        };
+
+        $started = hrtime(true);
+        $this->assertNull((new LoopbackHttpProbe($connector, $seconds))->get(self::target(), '/x'));
+        $this->assertLessThan(2.0, (hrtime(true) - $started) / 1e9, 'No real read timeout was waited for.');
+    }
+
+    public function testAnAnswerWithinTheDeadlineIsKept(): void
+    {
+        $calls = [];
+        $server = null;
+        $connector = $this->connector("HTTP/1.1 404 Not Found\r\n\r\n", $calls, $server);
+        $now = 0.0;
+        $seconds = static function () use (&$now): float {
+            $now += 1.0;
+
+            return $now;
+        };
+
+        $this->assertEquals(new ProbeResponse(404, ''), (new LoopbackHttpProbe($connector, $seconds))->get(self::target(), '/x'));
+    }
+
     public function testAThrowingConnectorGivesNull(): void
     {
         $probe = new LoopbackHttpProbe(static function (): mixed {

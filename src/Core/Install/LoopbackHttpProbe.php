@@ -18,20 +18,30 @@ namespace TiffinDB\Core\Install;
  * handler, restored in `finally`; any warning, timeout, TLS failure, or
  * unparseable answer gives null (P56), so the verdict is `inconclusive`.
  *
+ * Each request has an overall deadline of DEADLINE_SECONDS on top of the
+ * per-read timeout, so a server that trickles bytes cannot hold setup.
+ *
  * Test seam: the connector closure (uri, context options, timeout) returns
  * a stream or false; tests return one end of a stream_socket_pair (T-INS-8).
  */
 final class LoopbackHttpProbe implements HttpProbe
 {
     public const TIMEOUT_SECONDS = 5;
+    /** Overall limit for one request, connection included (F6). */
+    public const DEADLINE_SECONDS = 10;
     public const MAX_BYTES = 65536;
     public const USER_AGENT = 'TiffinDB-setup-check';
 
     private readonly \Closure $connector;
+    private readonly \Closure $seconds;
 
-    /** @param (\Closure(string, array<string, mixed>, float): mixed)|null $connector */
-    public function __construct(?\Closure $connector = null)
+    /**
+     * @param (\Closure(string, array<string, mixed>, float): mixed)|null $connector
+     * @param (\Closure(): float)|null $seconds a monotonic clock in seconds (test seam); hrtime by default
+     */
+    public function __construct(?\Closure $connector = null, ?\Closure $seconds = null)
     {
+        $this->seconds = $seconds ?? static fn (): float => hrtime(true) / 1e9;
         $this->connector = $connector ?? static function (string $uri, array $options, float $timeout): mixed {
             $errorCode = 0;
             $errorText = '';
@@ -90,6 +100,7 @@ final class LoopbackHttpProbe implements HttpProbe
     /** @param array<string, mixed> $options */
     private function exchange(string $uri, array $options, string $request): ?string
     {
+        $deadline = ($this->seconds)() + self::DEADLINE_SECONDS;
         $stream = ($this->connector)($uri, $options, (float) self::TIMEOUT_SECONDS);
         if (!is_resource($stream)) {
             return null;
@@ -108,6 +119,13 @@ final class LoopbackHttpProbe implements HttpProbe
             }
             $raw = '';
             while (strlen($raw) < self::MAX_BYTES && !feof($stream)) {
+                $left = $deadline - ($this->seconds)();
+                if ($left <= 0) {
+                    return null;
+                }
+                if (!stream_set_timeout($stream, (int) min(self::TIMEOUT_SECONDS, ceil($left)))) {
+                    return null;
+                }
                 $chunk = fread($stream, self::MAX_BYTES - strlen($raw));
                 if ($chunk === false) {
                     return null;
@@ -116,6 +134,9 @@ final class LoopbackHttpProbe implements HttpProbe
                     return null;
                 }
                 $raw .= $chunk;
+            }
+            if ($deadline - ($this->seconds)() <= 0) {
+                return null;
             }
 
             return substr($raw, 0, self::MAX_BYTES);

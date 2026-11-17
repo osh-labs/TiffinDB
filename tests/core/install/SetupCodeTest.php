@@ -44,6 +44,19 @@ final class SetupCodeTest extends TestCase
         $this->assertSame('A9AA-9AA9-AA9A-A9AA', SetupCode::generate($random));
     }
 
+    public function testMatchingComparesInConstantTime(): void
+    {
+        // Static check: a plain === or strcmp would give the same results above
+        // but leak timing (review nit; such a mutation survived the behaviour tests).
+        $method = new \ReflectionMethod(SetupCode::class, 'matches');
+        $lines = file((string) $method->getFileName());
+        $this->assertIsArray($lines);
+        $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+
+        $this->assertSame(1, preg_match_all('/\bhash_equals\(\s*\$expected\s*,\s*\$given\s*\)/', $body));
+        $this->assertDoesNotMatchRegularExpression('/\$expected\s*[!=]==?\s*\$given|\$given\s*[!=]==?\s*\$expected|strcmp|strcasecmp/', $body);
+    }
+
     public function testMatching(): void
     {
         $file = "ABCD-EFGH-JKMN-PQRS\n";

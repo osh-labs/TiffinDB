@@ -64,6 +64,8 @@ Independent design-tier exit audit on the integration branch (all M1 work packag
 
 Findings: F-1 (should-fix, fixed: front-controller tests use a scratch app with a temporary `data_dir`) `tests/web/FrontControllerTest.php` not hermetic when a data folder exists next to the checkout; F-2 (nit) no `Origin` check when `Sec-Fetch-Site` is absent (carried forward); F-3 (nit, fixed) duplicate `check` class in `password-toggle.php`. Final suite after fixes: 4777 tests OK (1 skipped), lint 348 files 0 failed. As-built notes appended to both M1 specs; `docs/formats/tiffin.md` section 11 corrected (one transaction per upgrade step).
 
+Post-close CI fix (F-4, should-fix, fixed): the hosted CI runner failed one test, `KernelTest::testBadLocalConfigurationIsRefused` (time zone case). The runner's PHP loads Xdebug, whose develop mode turns PHP 8.3's `DateInvalidTimeZoneException` into an `Error` ("Cannot create dynamic property ...::$xdebug_message"), which `Kernel::checkLocalConfig()` did not catch. The time-zone check now catches `Throwable`, so a bad `timezone` in `config/local.php` is refused on such hosts too. Not reproducible locally (no Xdebug); verified by the hosted CI run on the PR.
+
 Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.
 
 ## 3. Work packages

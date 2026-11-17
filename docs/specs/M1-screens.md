@@ -1,6 +1,6 @@
 # M1 design spec: web layer and screens
 
-Status: design spec for milestone M1, part 2 of 2. Part 1, `docs/specs/M1-foundation.md`, has the core, the test plan for it, the provisional decisions, and the work-package list; this part has the web layer those packages build on, the file ownership of the web packages (section 10), and how screens are checked against the mock-ups (section 8). Screen-by-screen designs, with every UI string, are in `docs/design/m1/`.
+Status: design spec for milestone M1, part 2 of 2; built, M1 closed 2026-11-17 (see the as-built notes at the end and `docs/build/ledger.md`). Part 1, `docs/specs/M1-foundation.md`, has the core, the test plan for it, the provisional decisions, and the work-package list; this part has the web layer those packages build on, the file ownership of the web packages (section 10), and how screens are checked against the mock-ups (section 8). Screen-by-screen designs, with every UI string, are in `docs/design/m1/`.
 
 The M0 request pipeline (`docs/specs/M0-scaffolding.md` sections 6 to 9, and its as-built notes) is extended, not replaced. Everything M0 specified stays true unless a section below changes it.
 

@@ -53,6 +53,7 @@ final class CoreServices implements Services
 
     private ?Installer $installerInstance = null;
     private ?InstallState $state = null;
+    private bool $stateRechecked = false;
     private ?DataDirectory $data = null;
     private ?SystemDatabase $system = null;
     private ?Sessions $sessions = null;
@@ -157,7 +158,7 @@ final class CoreServices implements Services
 
     public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void
     {
-        if ($this->installState() !== InstallState::Installed) {
+        if (!$this->installedNow()) {
             throw new LogicException('There are no sessions before installation.');
         }
         $sessions = $this->sessions();
@@ -194,8 +195,29 @@ final class CoreServices implements Services
             $this->system = null;
             $this->data = null;
             $this->state = null;
+            $this->stateRechecked = false;
             $this->installerInstance = null;
         }
+    }
+
+    /**
+     * True when installed. A request can finish the installation (the
+     * first-Admin POST, after which the controller flashes a notice to the
+     * new session), so a cached state other than Installed is checked
+     * again, at most once per request (M1-WP9 review F1).
+     */
+    private function installedNow(): bool
+    {
+        if ($this->installState() === InstallState::Installed) {
+            return true;
+        }
+        if ($this->stateRechecked) {
+            return false;
+        }
+        $this->stateRechecked = true;
+        $this->state = $this->installerObject()->state();
+
+        return $this->state === InstallState::Installed;
     }
 
     private function installerObject(): Installer

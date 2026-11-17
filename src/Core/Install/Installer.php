@@ -68,7 +68,7 @@ final class Installer
     }
 
     /**
-     * The installation state.
+     * The installation state. May remove a leftover setup code once per instance, so not purely read-only.
      *
      * Not strictly read-only (F5): in the Installed state, the first call on
      * each instance deletes a setup-code.txt left behind because its removal

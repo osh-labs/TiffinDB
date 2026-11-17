@@ -135,10 +135,6 @@ final class LoopbackHttpProbe implements HttpProbe
                 }
                 $raw .= $chunk;
             }
-            if ($deadline - ($this->seconds)() <= 0) {
-                return null;
-            }
-
             return substr($raw, 0, self::MAX_BYTES);
         } finally {
             fclose($stream);

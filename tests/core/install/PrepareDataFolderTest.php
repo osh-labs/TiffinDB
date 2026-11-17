@@ -366,6 +366,29 @@ final class PrepareDataFolderTest extends TestCase
         $this->assertFileExists($public . '/index.php');
     }
 
+    public function testAFolderWithAControlNameInPublicIsLeftAlone(): void
+    {
+        $folder = $this->app() . '/public/probe-0123456789abcdef.txt';
+        mkdir($folder);
+        file_put_contents($folder . '/inside', 'x');
+
+        $this->assertSame('safe', $this->installer()->prepareDataFolder($this->app(), null, $this->spy())->outcome);
+        $this->assertDirectoryExists($folder);
+        $this->assertFileExists($folder . '/inside');
+    }
+
+    public function testALinkWithAControlNameInPublicIsNotFollowedOrRemoved(): void
+    {
+        $target = $this->temp->path('elsewhere.txt');
+        file_put_contents($target, 'not TiffinDB');
+        $link = $this->app() . '/public/probe-0123456789abcdef.txt';
+        symlink($target, $link);
+
+        $this->assertSame('safe', $this->installer()->prepareDataFolder($this->app(), null, $this->spy())->outcome);
+        $this->assertTrue(is_link($link), 'The link is left alone.');
+        $this->assertSame('not TiffinDB', file_get_contents($target));
+    }
+
     public function testCodeIsWrittenBeforeTheSystemDatabase(): void
     {
         $seen = null;

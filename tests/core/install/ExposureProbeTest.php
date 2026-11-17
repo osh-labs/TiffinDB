@@ -326,6 +326,41 @@ final class ExposureProbeTest extends TestCase
         $this->assertSame([], $this->probeFiles());
     }
 
+    public function testTheControlNonceDiffersFromTheProbeNonce(): void
+    {
+        $data = $this->app() . '/data';
+        $public = $this->app() . '/public';
+        $fake = new class ($data, $public) implements HttpProbe {
+            /** @var list<string> */
+            public array $probe = [];
+            /** @var list<string> */
+            public array $control = [];
+
+            public function __construct(private readonly string $data, private readonly string $public)
+            {
+            }
+
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                foreach (glob($this->data . '/probe-*.txt') ?: [] as $file) {
+                    $this->probe[] = (string) file_get_contents($file);
+                }
+                foreach (glob($this->public . '/probe-*.txt') ?: [] as $file) {
+                    $this->control[] = (string) file_get_contents($file);
+                }
+                $control = $this->public . '/' . basename($path);
+
+                return is_file($control) ? new ProbeResponse(200, (string) file_get_contents($control)) : new ProbeResponse(404, '');
+            }
+        };
+
+        $this->assertSame('safe', $this->runProbe($fake));
+        $this->assertNotSame([], $fake->probe);
+        $this->assertNotSame([], $fake->control);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}\z/', $fake->control[0]);
+        $this->assertNotSame($fake->probe[0], $fake->control[0], 'Each file holds its own nonce.');
+    }
+
     public function testProbeFileNameAndNonce(): void
     {
         $seen = [];

@@ -10,12 +10,19 @@ namespace TiffinDB\Tests\Repo;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Install\DataFolder;
 use TiffinDB\Tests\Support\RepoFiles;
+use TiffinDB\Tests\Support\TempDir;
 
 /**
  * T-REPO-3: static checks of the two Apache .htaccess files and of the web
  * root's PHP entry points. Real-server behaviour is verified by the host
  * check and the M1 installer, not here.
+ *
+ * T-REPO-10 (M1): the data folder's .htaccess, written by the installer, is
+ * a deny rule and nothing else; and no nested .htaccess with a mod_rewrite
+ * directive is shipped, including under vendor/, which is part of a
+ * release.
  */
 #[CoversNothing]
 final class HtaccessTest extends TestCase
@@ -23,7 +30,23 @@ final class HtaccessTest extends TestCase
     /** @return list<string> Lines without comments and blank lines, trimmed. */
     private static function directives(string $relative): array
     {
-        $lines = preg_split('/\r\n|\n|\r/', RepoFiles::read($relative));
+        return self::directivesOf(RepoFiles::read($relative));
+    }
+
+    /**
+     * Directives as Apache reads them: a leading UTF-8 byte-order mark is
+     * dropped and backslash-continued lines are joined before comments and
+     * blank lines are removed.
+     *
+     * @return list<string>
+     */
+    private static function directivesOf(string $contents): array
+    {
+        if (str_starts_with($contents, "\xEF\xBB\xBF")) {
+            $contents = substr($contents, 3);
+        }
+        $contents = (string) preg_replace('/\\\\[ \t]*(?:\r\n|\n|\r)/', '', $contents);
+        $lines = preg_split('/\r\n|\n|\r/', $contents);
         self::assertIsArray($lines);
 
         $directives = [];
@@ -132,5 +155,119 @@ final class HtaccessTest extends TestCase
         ));
 
         self::assertSame(['.htaccess', 'public/.htaccess'], $found);
+    }
+
+    public function testDataFolderHtaccessIsOnlyADenyRule(): void
+    {
+        self::assertSame(
+            "# TiffinDB data folder. Nothing here may be served over the web.\nRequire all denied\n",
+            DataFolder::HTACCESS,
+        );
+        $directives = self::directivesOf(DataFolder::HTACCESS);
+        self::assertSame(['Require all denied'], $directives);
+        foreach (['Rewrite', 'Options', 'Header', 'Allow'] as $forbidden) {
+            self::assertSame(0, self::countMatching($directives, '/^' . $forbidden . '/i'), $forbidden);
+            self::assertStringNotContainsStringIgnoringCase($forbidden, DataFolder::HTACCESS);
+        }
+    }
+
+    public function testNoHtaccessUnderVendor(): void
+    {
+        // vendor/ is git-ignored (so not seen by testNoOtherHtaccessFiles) but
+        // ships in a release. A nested .htaccess with a mod_rewrite directive
+        // would replace the root guard's rules for its subtree, so none is
+        // allowed there at all.
+        self::assertSame([], self::htaccessFiles(RepoFiles::path('vendor'), false));
+    }
+
+    public function testHtaccessDetection(): void
+    {
+        $temp = TempDir::create();
+        try {
+            $write = static function (string $relative, string $contents) use ($temp): void {
+                $path = $temp->path($relative);
+                if (!is_dir(dirname($path))) {
+                    mkdir(dirname($path), 0755, true);
+                }
+                file_put_contents($path, $contents);
+            };
+            $write('pkg/a/b/.htaccess', "# note\n  rewriteengine on\n");
+            $write('pkg/c/.htaccess', "Require all denied\n# RewriteRule in a comment only\n");
+            $write('pkg/.htaccess', "<IfModule mod_rewrite.c>\nRewriteOptions Inherit\n</IfModule>\n");
+            $write('pkg/c/htaccess.txt', "RewriteEngine On\n");
+            // Bypasses found in review (F3):
+            $write('bom/.htaccess', "\xEF\xBB\xBFRewriteEngine On\n");
+            $write('bom-comment/.htaccess', "\xEF\xBB\xBF# only a comment\n");
+            $write('continued/.htaccess', "Rewrite\\\nEngine On\n");
+            $write('continued-spaces/.htaccess', "Require all denied\nRewrite\\   \r\nRule ^ x [L]\n");
+            $write('comment-continued/.htaccess', "# a comment \\\nthat goes on\nRequire all denied\n");
+            $write('anywhere/.htaccess', "<IfModule mod_rewrite.c>\n  <If \"true\">\n    RewriteRule ^ x\n  </If>\n</IfModule>\n");
+            $write('inline/.htaccess', "Header set X y\nOptions +FollowSymLinks\n<IfModule MOD_REWRITE.C>\n</IfModule>\n");
+            $write('upper/.HTACCESS', "RewriteEngine On\n");
+            $write('target/deep/.htaccess', "RewriteEngine On\n");
+            symlink($temp->path('target'), $temp->path('pkg/linked'));
+            symlink($temp->path('pkg'), $temp->path('pkg/a/loop'));
+
+            self::assertSame([
+                'anywhere/.htaccess',
+                'bom/.htaccess',
+                'continued-spaces/.htaccess',
+                'continued/.htaccess',
+                'inline/.htaccess',
+                'pkg/.htaccess',
+                'pkg/a/b/.htaccess',
+                'pkg/linked/deep/.htaccess',
+                // target/deep is found once, through the link seen first (loop guard).
+                'upper/.HTACCESS',
+            ], self::htaccessFiles($temp->path(), true));
+            self::assertSame(['.htaccess', 'a/b/.htaccess', 'c/.htaccess', 'linked/deep/.htaccess'], self::htaccessFiles($temp->path('pkg'), false));
+            self::assertSame([], self::htaccessFiles($temp->path('missing'), false));
+        } finally {
+            $temp->remove();
+        }
+    }
+
+    /**
+     * Relative paths of the .htaccess files (name compared ignoring case)
+     * below $dir; with $rewriteOnly, only those that mention "rewrite" in any
+     * letter case anywhere outside a comment. Symbolic links to folders are
+     * followed, each real folder visited once. Empty when $dir is absent.
+     *
+     * @return list<string>
+     */
+    private static function htaccessFiles(string $dir, bool $rewriteOnly): array
+    {
+        $found = [];
+        $visited = [];
+        $walk = static function (string $path, string $relative) use (&$walk, &$found, &$visited, $rewriteOnly): void {
+            $real = realpath($path);
+            if ($real === false || isset($visited[$real]) || !is_dir($real)) {
+                return;
+            }
+            $visited[$real] = true;
+            $names = scandir($path);
+            self::assertIsArray($names);
+            foreach ($names as $name) {
+                if ($name === '.' || $name === '..') {
+                    continue;
+                }
+                $full = $path . '/' . $name;
+                $rel = $relative === '' ? $name : $relative . '/' . $name;
+                if (is_dir($full)) {
+                    $walk($full, $rel);
+                } elseif (strtolower($name) === '.htaccess' && is_file($full)) {
+                    $directives = self::directivesOf((string) file_get_contents($full));
+                    if (!$rewriteOnly || preg_grep('/rewrite/i', $directives) !== []) {
+                        $found[] = $rel;
+                    }
+                }
+            }
+        };
+        if (is_dir($dir)) {
+            $walk($dir, '');
+        }
+        sort($found, SORT_STRING);
+
+        return $found;
     }
 }

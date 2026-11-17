@@ -10,6 +10,8 @@ namespace TiffinDB\Tests\Tools;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Auth\LoginThrottle;
+use TiffinDB\Core\Auth\SignInOutcome;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\RepoFiles;
@@ -62,6 +64,33 @@ final class ResetPasswordTest extends TestCase
         self::assertSame([AuditAction::PEOPLE_PASSWORD_SET, null, 'user', $this->fx->person('admin')->key], [$entry->action, $entry->actorUserId, $entry->targetKind, $entry->targetKey]);
         self::assertStringNotContainsString($this->fx->temp->path(), $output);
         self::assertStringNotContainsString(self::NEW, $output);
+    }
+
+    public function testClearsTheThrottleAndWarnsAboutAnInactivePerson(): void
+    {
+        $ops = $this->fx->operations();
+        for ($i = 0; $i < LoginThrottle::USER_LIMIT; $i++) {
+            $ops->auth()->signIn('member', 'wrong horse ' . $i, '192.0.2.' . (50 + $i));
+        }
+        self::assertSame(SignInOutcome::Throttled, $ops->auth()->signIn('member', CoreFixture::PASSWORD, '192.0.2.60')->outcome);
+        $ops->people()->deactivate($this->fx->actor('admin'), $this->fx->person('member')->key);
+
+        [$code, $output] = $this->reset(['member'], self::NEW . "\n" . self::NEW . "\n");
+
+        self::assertSame(0, $code, $output);
+        self::assertStringContainsString('must reactivate them before they can sign in', $output);
+        $bucket = LoginThrottle::userBucket($this->fx->system, 'member');
+        self::assertNull($this->fx->system->db()->value('SELECT 1 FROM login_throttle WHERE bucket = ?', [$bucket]));
+        $ops->people()->reactivate($this->fx->actor('admin'), $this->fx->person('member')->key);
+        self::assertSame(SignInOutcome::Success, $ops->auth()->signIn('member', self::NEW, '192.0.2.61')->outcome);
+    }
+
+    public function testAnActivePersonGetsNoReactivationNote(): void
+    {
+        [$code, $output] = $this->reset(['member'], self::NEW . "\n" . self::NEW . "\n");
+
+        self::assertSame(0, $code, $output);
+        self::assertStringNotContainsString('reactivate', $output);
     }
 
     public function testAnUnknownUserIsRefused(): void

@@ -22,9 +22,11 @@ declare(strict_types=1);
 
 namespace TiffinDB\Tools\Admin;
 
+use TiffinDB\Core\Auth\LoginThrottle;
 use TiffinDB\Core\Auth\PasswordHasher;
 use TiffinDB\Core\Auth\PasswordPolicy;
 use TiffinDB\Core\Auth\Sessions;
+use TiffinDB\Core\Auth\Usernames;
 use TiffinDB\Core\Auth\Users;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Storage\DataDirectory;
@@ -173,6 +175,15 @@ function main(array $arguments): int
 
         $interactive = stream_isatty(STDIN);
         $hidden = $interactive && setEcho(false);
+        if ($hidden && function_exists('pcntl_signal') && function_exists('pcntl_async_signals')) {
+            // Ctrl-C while typing would otherwise leave the terminal without echo.
+            pcntl_async_signals(true);
+            pcntl_signal(SIGINT, static function (): void {
+                setEcho(true);
+                fwrite(STDERR, "\n");
+                exit(1);
+            });
+        }
         if ($interactive && !$hidden) {
             say('Note: the password will be visible as you type it.');
         }
@@ -215,16 +226,23 @@ function main(array $arguments): int
 
         $hash = (new PasswordHasher())->hash($first);
         $sessions = new Sessions($system, $clock, $random);
+        $throttle = new LoginThrottle($system, $clock);
+        $bucket = LoginThrottle::userBucket($system, Usernames::normalise($person->username));
         $id = $person->id;
-        $system->db()->write(static function () use ($users, $sessions, $id, $hash): void {
+        $system->db()->write(static function () use ($users, $sessions, $throttle, $bucket, $id, $hash): void {
             if ($users->byId($id) === null) {
                 throw new \RuntimeException('The person is gone.');
             }
             $users->setPassword($id, $hash, false);
             $sessions->endAllFor($id);
+            // A forgotten password often follows failed tries: let the person sign in at once.
+            $throttle->clear($bucket);
         });
         (new AuditLog($system, $clock))->record(AuditAction::PEOPLE_PASSWORD_SET, null, null, 'user', $person->key);
         say('The password has been reset, and every session of that person has ended.');
+        if (!$person->active) {
+            say('This person is deactivated: an Admin must reactivate them before they can sign in.');
+        }
 
         return 0;
     } catch (\Throwable $error) {

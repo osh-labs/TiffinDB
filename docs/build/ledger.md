@@ -68,7 +68,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP8 | M1 | implementation | per spec (depends on none; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after follow-up round (show-password reset on submit, scanner forbids meta/iframe/SVG animation and dynamic srcdoc etc., csrf() only in its partial, ENT_DISALLOWED, script only in head, 44 px link); verified by running |
 | M1-WP2 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | round 3 fix done (`f9030b5`); awaiting reviewer verification; preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp2` (not merged) | wip-wp2 | design tier | round 2 REQUEST CHANGES for one regression: takeback not net-zero at the address limit (fixed in `f9030b5`, unverified); round 1 APPROVE with should-fix |
 | M1-WP3 | M1 | implementation | per spec (depends on WP1; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: decimal numbers off by one bit through SQLite, precision limit, URL ports/characters/numeric hosts, email local parts) |
-| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | implemented (`5154df5`, 2833 tests OK per author); preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp4` (not merged); design-tier review not started | wip-wp4 | design tier (on resume) | |
+| M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | implemented (`5154df5`, 2833 tests OK per author); preserved on remote branch `claude/magical-hamilton-isy74q-wip-wp4` (not merged); design-tier review in progress | wip-wp4 | design tier (on resume) | |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | not started | | | |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | not started | | | |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | not started | | | |
@@ -148,6 +148,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
 | 2026-11-12T05:3xZ | WP4 implemented and pushed to `-wip-wp4`; build paused, no agents running |
 | 2026-11-17T05:50Z | Window 3 start (maintainer resume); integration branch now `claude/exciting-maxwell-l2yieq`; offline PHPUnit rebuild started; resume reminder armed for 11:06Z |
+| 2026-11-17T06:1xZ | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

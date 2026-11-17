@@ -30,6 +30,8 @@ final class ExposureProbeTest extends TestCase
     {
         $this->temp = TempDir::create();
         mkdir($this->temp->path('www/my site/app/data'), 0755, true);
+        mkdir($this->temp->path('www/my site/app/public/assets/css'), 0755, true);
+        file_put_contents($this->temp->path('www/my site/app/public/assets/css/fonts.css'), "/* synthetic fonts.css */\n");
     }
 
     protected function tearDown(): void
@@ -48,8 +50,10 @@ final class ExposureProbeTest extends TestCase
     }
 
     /**
-     * A fake whose answer for each call comes from $answer(path, nonce), the
-     * nonce read from the probe file while it exists.
+     * A fake whose answer for each exposure path comes from $answer(path,
+     * nonce), the nonce read from the probe file while it exists. The
+     * positive control (`<basePath>/<name>`) is answered like a working
+     * server: 200 with the control file from `<app>/public/`.
      *
      * @param \Closure(string, string): ?ProbeResponse $answer
      */
@@ -58,6 +62,8 @@ final class ExposureProbeTest extends TestCase
         return new class ($dataDir, $answer) implements HttpProbe {
             /** @var list<string> */
             public array $paths = [];
+            /** @var list<string> */
+            public array $controlPaths = [];
             /** @var list<bool> whether the probe file existed during each call */
             public array $fileExisted = [];
 
@@ -67,6 +73,12 @@ final class ExposureProbeTest extends TestCase
 
             public function get(ProbeTarget $target, string $path): ?ProbeResponse
             {
+                $control = dirname($this->dataDir) . '/public/' . basename($path);
+                if ($path === rtrim($target->basePath, '/') . '/' . basename($path) && preg_match('/^probe-[0-9a-f]{16}\.txt\z/', basename($path)) === 1 && is_file($control)) {
+                    $this->controlPaths[] = $path;
+
+                    return new ProbeResponse(200, (string) file_get_contents($control));
+                }
                 $this->paths[] = $path;
                 $files = glob($this->dataDir . '/probe-*.txt') ?: [];
                 $this->fileExisted[] = count($files) === 1;
@@ -80,7 +92,7 @@ final class ExposureProbeTest extends TestCase
     /** @return list<string> */
     private function probeFiles(): array
     {
-        return glob($this->app() . '/data/probe-*') ?: [];
+        return [...(glob($this->app() . '/data/probe-*') ?: []), ...(glob($this->app() . '/public/probe-*') ?: [])];
     }
 
     private function runProbe(HttpProbe $http, ?ProbeTarget $target = null): string
@@ -111,6 +123,8 @@ final class ExposureProbeTest extends TestCase
 
         $this->assertSame($verdict, $this->runProbe($fake));
         $this->assertNotSame([], $fake->paths);
+        $this->assertCount(1, $fake->controlPaths, 'The positive control is asked once, at <basePath>/<name>.');
+        $this->assertMatchesRegularExpression('#^/probe-[0-9a-f]{16}\.txt\z#', $fake->controlPaths[0]);
         $this->assertNotContains(false, $fake->fileExisted, 'The file exists while it is asked for.');
         $this->assertSame([], $this->probeFiles(), 'The probe file is deleted.');
     }
@@ -146,6 +160,168 @@ final class ExposureProbeTest extends TestCase
             $this->fail('The exception should propagate.');
         } catch (\RuntimeException $error) {
             $this->assertSame('fake failure', $error->getMessage());
+        }
+        $this->assertSame([], $this->probeFiles());
+    }
+
+    /**
+     * Name-based virtual hosting, as in the review (F1): the real host serves
+     * any file below the document root (no deny rule, so the data folder is
+     * exposed), and `<basePath>/x` from `<app>/public/x`; an unknown Host
+     * lands on a default site that answers 404, or 200 with its own page.
+     */
+    private function virtualHosts(): HttpProbe
+    {
+        return new class ($this->temp->path('www'), $this->app() . '/public') implements HttpProbe {
+            public function __construct(private readonly string $root, private readonly string $public)
+            {
+            }
+
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                if ($target->host === 'other.example:8080') {
+                    return new ProbeResponse(200, '<html>Default site</html>');
+                }
+                if ($target->host !== 'example.test') {
+                    return new ProbeResponse(404, 'Not Found');
+                }
+                $decoded = rawurldecode($path);
+                $base = rawurldecode(rtrim($target->basePath, '/'));
+                $candidates = [$this->root . $decoded];
+                if (str_starts_with($decoded, $base . '/')) {
+                    $candidates[] = $this->public . substr($decoded, strlen($base));
+                }
+                foreach ($candidates as $file) {
+                    if (is_file($file)) {
+                        return new ProbeResponse(200, (string) file_get_contents($file));
+                    }
+                }
+
+                return new ProbeResponse(404, 'Not Found');
+            }
+        };
+    }
+
+    public function testAForgedOrUnknownHostIsNeverSafe(): void
+    {
+        foreach (['example.test' => 'exposed', 'unknown.example' => 'inconclusive', 'other.example:8080' => 'inconclusive'] as $host => $verdict) {
+            $target = new ProbeTarget($host, '192.0.2.10', 80, false, $this->temp->path('www'), '/my%20site/app');
+            $this->assertSame($verdict, $this->runProbe($this->virtualHosts(), $target), $host);
+            $this->assertSame([], $this->probeFiles(), $host);
+        }
+    }
+
+    public function testTheRealHostWithADenyRuleIsSafe(): void
+    {
+        // The same server, now refusing the data folder as the deny rule does.
+        $deny = new class ($this->virtualHosts()) implements HttpProbe {
+            public function __construct(private readonly HttpProbe $inner)
+            {
+            }
+
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                return str_contains($path, '/data/') ? new ProbeResponse(403, 'Forbidden') : $this->inner->get($target, $path);
+            }
+        };
+        $target = new ProbeTarget('example.test', '192.0.2.10', 80, false, $this->temp->path('www'), '/my%20site/app');
+
+        $this->assertSame('safe', $this->runProbe($deny, $target));
+    }
+
+    /** The control file name the probe will use with seed tiffindb-exposure-seed-1. */
+    private static function expectedControlName(): string
+    {
+        $random = new SeededRandom('tiffindb-exposure-seed-1');
+        ExposureProbe::probeName($random);
+        $random->bytes(16);
+
+        return ExposureProbe::probeName($random);
+    }
+
+    /** @param \Closure(string): ?ProbeResponse $staticAnswer */
+    private function scripted(\Closure $staticAnswer): HttpProbe
+    {
+        return new class ($staticAnswer) implements HttpProbe {
+            /** @var list<string> */
+            public array $asked = [];
+
+            public function __construct(private readonly \Closure $staticAnswer)
+            {
+            }
+
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                $this->asked[] = $path;
+                if (str_ends_with($path, '/assets/css/fonts.css')) {
+                    return ($this->staticAnswer)($path);
+                }
+
+                return new ProbeResponse(404, 'Not Found');
+            }
+        };
+    }
+
+    public function testAControlWriteFailureFallsBackToTheStaticFile(): void
+    {
+        // Something already at the control file's path makes Fs::writeNew fail.
+        $blocker = $this->app() . '/public/' . self::expectedControlName();
+        mkdir($blocker);
+        $static = (string) file_get_contents($this->app() . '/public/assets/css/fonts.css');
+        $fake = $this->scripted(static fn (): ?ProbeResponse => new ProbeResponse(200, $static));
+
+        $verdict = $this->runProbe($fake, $this->target($this->temp->path('www'), '/my%20site/app'));
+
+        $this->assertSame('safe', $verdict);
+        $this->assertSame('/my%20site/app/assets/css/fonts.css', $fake->asked[0]);
+        $this->assertCount(2, $fake->asked);
+        $this->assertDirectoryExists($blocker, 'What the probe did not write is not removed.');
+        $this->assertSame([], glob($this->app() . '/data/probe-*') ?: []);
+    }
+
+    /** @return iterable<string, array{?ProbeResponse}> */
+    public static function badStaticAnswers(): iterable
+    {
+        yield 'different body' => [new ProbeResponse(200, "/* another site's fonts.css */\n")];
+        yield 'body with extra bytes' => [new ProbeResponse(200, "/* synthetic fonts.css */\n\n")];
+        yield '404' => [new ProbeResponse(404, 'Not Found')];
+        yield '304' => [new ProbeResponse(304, '')];
+        yield 'no answer' => [null];
+    }
+
+    #[DataProvider('badStaticAnswers')]
+    public function testAStaticFileThatDoesNotMatchIsInconclusive(?ProbeResponse $answer): void
+    {
+        mkdir($this->app() . '/public/' . self::expectedControlName());
+        $fake = $this->scripted(static fn (): ?ProbeResponse => $answer);
+
+        $this->assertSame('inconclusive', $this->runProbe($fake));
+        $this->assertCount(1, $fake->asked, 'A failed control stops before the exposure paths.');
+    }
+
+    public function testAMissingStaticFileIsInconclusive(): void
+    {
+        mkdir($this->app() . '/public/' . self::expectedControlName());
+        unlink($this->app() . '/public/assets/css/fonts.css');
+        $fake = $this->scripted(static fn (): ?ProbeResponse => new ProbeResponse(200, ''));
+
+        $this->assertSame('inconclusive', $this->runProbe($fake));
+        $this->assertSame([], $fake->asked);
+    }
+
+    public function testTheControlFileIsRemovedWhenTheControlRequestThrows(): void
+    {
+        $fake = new class implements HttpProbe {
+            public function get(ProbeTarget $target, string $path): ?ProbeResponse
+            {
+                throw new \RuntimeException('control failure');
+            }
+        };
+        try {
+            $this->runProbe($fake);
+            $this->fail('The exception should propagate.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('control failure', $error->getMessage());
         }
         $this->assertSame([], $this->probeFiles());
     }

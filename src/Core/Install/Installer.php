@@ -50,6 +50,7 @@ use TiffinDB\Core\System\SystemDatabase;
 final class Installer
 {
     private ?SystemDatabase $system = null;
+    private bool $leftoverChecked = false;
     private readonly \Closure $createSystem;
 
     /** @param (\Closure(DataDirectory, Clock, Random): SystemDatabase)|null $createSystem */
@@ -66,14 +67,32 @@ final class Installer
             => SystemDatabase::create($data, $clock, $random);
     }
 
+    /**
+     * The installation state.
+     *
+     * Not strictly read-only (F5): in the Installed state, the first call on
+     * each instance deletes a setup-code.txt left behind because its removal
+     * failed at the end of createFirstAdmin(). The deletion is best-effort and
+     * never fails the call; the code it holds is useless once installed.
+     */
     public function state(): InstallState
     {
         $system = $this->system();
         if ($system === null) {
             return InstallState::NeedsDataFolder;
         }
+        if (!$system->isInstalled()) {
+            return InstallState::NeedsAdmin;
+        }
+        if (!$this->leftoverChecked) {
+            $this->leftoverChecked = true;
+            $data = DataDirectory::locate($this->appRoot, $this->configuredDataDir);
+            if ($data !== null) {
+                self::removeQuietly($data->path() . '/' . SetupCode::FILE);
+            }
+        }
 
-        return $system->isInstalled() ? InstallState::Installed : InstallState::NeedsAdmin;
+        return InstallState::Installed;
     }
 
     /** The requirement check (section 10.2); $environment is the test seam. */
@@ -118,10 +137,18 @@ final class Installer
         $chosen = DataFolder::choose($this->appRoot, $this->configuredDataDir, $documentRoot);
         if ($chosen === null) {
             $first = DataFolder::firstCandidate($this->appRoot, $this->configuredDataDir);
-            $rows[] = new Requirement('data', Requirement::FAILED, 'setup.check.data.failed', ['label' => $first->label]);
+            $rows[] = $this->configured()
+                ? new Requirement('data', Requirement::FAILED, 'setup.check.data.configured-failed')
+                : new Requirement('data', Requirement::FAILED, 'setup.check.data.failed', ['label' => $first->label]);
         } else {
-            $key = DataFolder::isOutside($chosen->path, $documentRoot) ? 'setup.check.data.outside' : 'setup.check.data.in-tree';
-            $rows[] = new Requirement('data', Requirement::OK, $key, ['label' => $chosen->label]);
+            // E9: a configured folder gets its own keys, with no English label as a parameter.
+            $outside = DataFolder::isOutside($chosen->path, $documentRoot);
+            $rows[] = match (true) {
+                $this->configured() && $outside => new Requirement('data', Requirement::OK, 'setup.check.data.configured-outside'),
+                $this->configured() => new Requirement('data', Requirement::OK, 'setup.check.data.configured-in-tree'),
+                $outside => new Requirement('data', Requirement::OK, 'setup.check.data.outside', ['label' => $chosen->label]),
+                default => new Requirement('data', Requirement::OK, 'setup.check.data.in-tree', ['label' => $chosen->label]),
+            };
         }
 
         return new RequirementReport($rows);
@@ -151,6 +178,15 @@ final class Installer
         foreach (DataFolder::probeFiles($path) as $stale) {
             Fs::remove($path . '/' . $stale);
         }
+        // Stale positive-control files (P75) in the front controller's folder.
+        $public = rtrim($this->appRoot, '/') . '/' . ExposureProbe::PUBLIC_DIR;
+        if (is_dir($public) && !is_link($public)) {
+            foreach (DataFolder::probeFiles($public) as $stale) {
+                if (is_file($public . '/' . $stale) && !is_link($public . '/' . $stale)) {
+                    Fs::remove($public . '/' . $stale);
+                }
+            }
+        }
 
         $htaccess = $path . '/' . DataFolder::HTACCESS_FILE;
         Fs::remove($htaccess);
@@ -179,18 +215,20 @@ final class Installer
     }
 
     /**
-     * Where the setup code is, for messages: the data folder's label and
-     * the file name, e.g. `../tiffindb-data/setup-code.txt`; never an
-     * absolute path. NeedsAdmin only.
+     * Where the setup code is, as a message key with parameters (E9), never
+     * an absolute path: `setup.code_location` with `path`, e.g.
+     * `../tiffindb-data/setup-code.txt`; or, for a folder set in
+     * config/local.php, `setup.code_location.configured` with `file`.
+     * NeedsAdmin only.
      */
-    public function setupCodeLocation(): string
+    public function setupCodeLocation(): InstallMessage
     {
         $data = $this->requireNeedsAdmin();
-        if ($data->label() === DataDirectory::CONFIGURED_LABEL) {
-            return SetupCode::FILE . ' in ' . DataDirectory::CONFIGURED_LABEL;
+        if ($this->configured()) {
+            return new InstallMessage(InstallMessage::CODE_LOCATION_CONFIGURED, ['file' => SetupCode::FILE]);
         }
 
-        return $data->label() . '/' . SetupCode::FILE;
+        return new InstallMessage(InstallMessage::CODE_LOCATION, ['path' => $data->label() . '/' . SetupCode::FILE]);
     }
 
     /** Writes a new setup code when the file is missing; never replaces one (section 10.3). NeedsAdmin only. */
@@ -273,9 +311,10 @@ final class Installer
         });
         [$admin, $session] = $made;
 
-        Fs::remove($data->path() . '/' . SetupCode::FILE);
         $actor = new Actor($admin->id, $admin->key, Role::Admin, $admin->displayName);
         (new AuditLog($system, $this->clock))->record(AuditAction::SETUP_COMPLETE, $actor->userId, null, 'user', $actor->userKey);
+        // F5: after the audit entry, and best-effort; a leftover file is removed by state() later.
+        self::removeQuietly($data->path() . '/' . SetupCode::FILE);
 
         return $session;
     }
@@ -291,6 +330,20 @@ final class Installer
         }
 
         return $this->system;
+    }
+
+    private function configured(): bool
+    {
+        return $this->configuredDataDir !== null && $this->configuredDataDir !== '';
+    }
+
+    private static function removeQuietly(string $path): void
+    {
+        try {
+            Fs::remove($path);
+        } catch (\RuntimeException) {
+            error_log('TiffinDB installer: could not remove the setup code file.');
+        }
     }
 
     private function refuseWhenInstalled(): void

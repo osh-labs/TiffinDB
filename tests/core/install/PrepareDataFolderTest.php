@@ -16,6 +16,7 @@ use TiffinDB\Core\Install\DataFolder;
 use TiffinDB\Core\Install\DataFolderResult;
 use TiffinDB\Core\Install\HttpProbe;
 use TiffinDB\Core\Install\Installer;
+use TiffinDB\Core\Install\InstallMessage;
 use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Core\Install\ProbeResponse;
 use TiffinDB\Core\Install\ProbeTarget;
@@ -35,6 +36,7 @@ use TiffinDB\Tests\Support\TempDir;
 #[CoversClass(Installer::class)]
 #[CoversClass(DataFolderResult::class)]
 #[CoversClass(InstallState::class)]
+#[CoversClass(InstallMessage::class)]
 final class PrepareDataFolderTest extends TestCase
 {
     private TempDir $temp;
@@ -101,6 +103,11 @@ final class PrepareDataFolderTest extends TestCase
 
             public function get(ProbeTarget $target, string $path): ?ProbeResponse
             {
+                // The positive control in <app>/public/ is answered like a working server.
+                $control = dirname($this->dataDir) . '/public/' . basename($path);
+                if ($path === rtrim($target->basePath, '/') . '/' . basename($path) && str_starts_with(basename($path), 'probe-') && is_file($control)) {
+                    return new ProbeResponse(200, (string) file_get_contents($control));
+                }
                 $this->calls++;
                 $files = glob($this->dataDir . '/probe-*.txt') ?: [];
 
@@ -135,7 +142,7 @@ final class PrepareDataFolderTest extends TestCase
         $this->assertMatchesRegularExpression('/^[ABCDEFGHJKMNPQRSTVWXYZ2-9]{4}(-[ABCDEFGHJKMNPQRSTVWXYZ2-9]{4}){3}\n\z/', $code);
         $this->assertSame(InstallState::NeedsAdmin, $installer->state());
         $this->assertSame(InstallState::NeedsAdmin, $this->installer()->state());
-        $this->assertSame('../tiffindb-data/setup-code.txt', $installer->setupCodeLocation());
+        $this->assertEquals(new InstallMessage('setup.code_location', ['path' => '../tiffindb-data/setup-code.txt']), $installer->setupCodeLocation());
         $this->assertSame([], glob($this->sibling() . '/probe-*') ?: []);
     }
 
@@ -224,7 +231,7 @@ final class PrepareDataFolderTest extends TestCase
         $installer->prepareDataFolder($this->app(), null, $this->spy());
 
         $this->assertFileExists($configured . '/system.sqlite');
-        $this->assertSame('setup-code.txt in the folder set in config/local.php', $installer->setupCodeLocation());
+        $this->assertEquals(new InstallMessage('setup.code_location.configured', ['file' => 'setup-code.txt']), $installer->setupCodeLocation());
     }
 
     /** @return iterable<string, array{\Closure(string): ?ProbeResponse, string}> */
@@ -340,6 +347,23 @@ final class PrepareDataFolderTest extends TestCase
         $this->assertSame('safe', $result->outcome);
         $this->assertFileExists($this->sibling() . '/system.sqlite');
         $this->assertFileDoesNotExist($this->sibling() . '/probe-0123456789abcdef.txt');
+    }
+
+    public function testStaleControlFilesInPublicAreRemovedAndNothingElse(): void
+    {
+        $public = $this->app() . '/public';
+        mkdir($public . '/assets/css', 0755, true);
+        file_put_contents($public . '/probe-0123456789abcdef.txt', 'stale control');
+        file_put_contents($public . '/probe-notes.txt', 'not ours');
+        file_put_contents($public . '/assets/css/fonts.css', 'shipped');
+        file_put_contents($public . '/index.php', '<?php');
+
+        $this->installer()->prepareDataFolder($this->app(), null, $this->spy());
+
+        $this->assertFileDoesNotExist($public . '/probe-0123456789abcdef.txt');
+        $this->assertFileExists($public . '/probe-notes.txt');
+        $this->assertFileExists($public . '/assets/css/fonts.css');
+        $this->assertFileExists($public . '/index.php');
     }
 
     public function testCodeIsWrittenBeforeTheSystemDatabase(): void

@@ -184,6 +184,28 @@ final class RequirementsTest extends TestCase
         $this->assertFalse($report->canContinue());
     }
 
+    public function testAConfiguredFolderHasItsOwnKeys(): void
+    {
+        $configured = function (string $dataDir, ?string $documentRoot): array {
+            $installer = new Installer(
+                $this->temp->path('app'),
+                $dataDir,
+                new FixedClock(),
+                new SeededRandom('tiffindb-requirements-test-seed-2'),
+                new PasswordHasher(['bcrypt' => 4]),
+                '0.1.0',
+            );
+
+            return self::rows($installer->requirements(true, $documentRoot, self::environment()))['data'];
+        };
+        mkdir($this->temp->path('site'));
+
+        $this->assertSame(['ok', 'setup.check.data.configured-in-tree', []], $configured($this->temp->path('site/data'), $this->temp->path('site')));
+        $this->assertSame(['ok', 'setup.check.data.configured-in-tree', []], $configured($this->temp->path('site/data'), null));
+        $this->assertSame(['ok', 'setup.check.data.configured-outside', []], $configured($this->temp->path('private'), $this->temp->path('site')));
+        $this->assertSame(['failed', 'setup.check.data.configured-failed', []], $configured($this->temp->path('missing/deeper'), null));
+    }
+
     public function testRowOrder(): void
     {
         $report = $this->installer()->requirements(true, null, self::environment());

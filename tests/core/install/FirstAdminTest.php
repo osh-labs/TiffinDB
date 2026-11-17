@@ -23,6 +23,7 @@ use TiffinDB\Core\Install\Installer;
 use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Core\Install\ProbeResponse;
 use TiffinDB\Core\Install\ProbeTarget;
+use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\Storage\Keys;
 use TiffinDB\Core\System\AuditAction;
@@ -214,6 +215,73 @@ final class FirstAdminTest extends TestCase
         file_put_contents($this->data . '/setup-code.txt', "\n");
 
         $this->assertSame([['setup_code', 'problem.setup_code.wrong', []]], $this->problemsOf($this->attempt('')));
+    }
+
+    public function testAFailedCodeRemovalKeepsTheAuditEntryAndDoesNotFail(): void
+    {
+        $code = $this->code();
+        $file = $this->data . '/setup-code.txt';
+        // A clock that, on its first use (after the code has been read), puts
+        // a non-empty folder where the code file was, so Fs::remove fails.
+        $clock = new class ($this->clock, $file) implements Clock {
+            private bool $done = false;
+
+            public function __construct(private readonly FixedClock $inner, private readonly string $file)
+            {
+            }
+
+            public function now(): \DateTimeImmutable
+            {
+                if (!$this->done) {
+                    $this->done = true;
+                    unlink($this->file);
+                    mkdir($this->file);
+                    file_put_contents($this->file . '/keep', 'x');
+                }
+
+                return $this->inner->now();
+            }
+        };
+        $installer = new Installer(
+            $this->temp->path('www/app'),
+            null,
+            $clock,
+            new SeededRandom('tiffindb-first-admin-seed-4'),
+            new PasswordHasher(['bcrypt' => 4]),
+            '0.1.0-test',
+        );
+        $log = $this->temp->path('error.log');
+        $previous = ini_set('error_log', $log);
+        try {
+            $session = $installer->createFirstAdmin($code, 'Example Admin', 'admin', self::PASSWORD, self::ADDRESS);
+        } finally {
+            ini_set('error_log', (string) $previous);
+        }
+
+        $this->assertSame(43, strlen($session->token()));
+        $this->assertDirectoryExists($file);
+        $this->assertStringContainsString('could not remove the setup code file', (string) file_get_contents($log));
+        $entries = (new AuditLog($this->system(), $this->clock))->recent(10);
+        $this->assertSame([AuditAction::SETUP_COMPLETE], array_map(static fn ($e): string => $e->action, $entries));
+    }
+
+    public function testALeftoverCodeIsRemovedByStateOnceInstalled(): void
+    {
+        $file = $this->data . '/setup-code.txt';
+        $this->installer->createFirstAdmin($this->code(), 'Example Admin', 'admin', self::PASSWORD, self::ADDRESS);
+        file_put_contents($file, "ABCD-EFGH-JKMN-PQRS\n");
+
+        $this->assertFileExists($file, 'Constructing an installer touches nothing.');
+        $installer = $this->newInstaller();
+        $this->assertFileExists($file);
+        $this->assertSame(InstallState::Installed, $installer->state());
+        $this->assertFileDoesNotExist($file);
+    }
+
+    public function testStateLeavesTheCodeAloneBeforeInstallation(): void
+    {
+        $this->assertSame(InstallState::NeedsAdmin, $this->newInstaller()->state());
+        $this->assertFileExists($this->data . '/setup-code.txt');
     }
 
     public function testEveryMethodButStateIsRefusedOnceInstalled(): void

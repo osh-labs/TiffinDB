@@ -31,7 +31,9 @@ use UnexpectedValueException;
  *  1. malformed request: 400;
  *  2. method not GET, HEAD, POST: 405 with `Allow: GET, HEAD, POST`;
  *  3. route match: 404, or 405 with the route's Allow;
- *  4. POST with `Sec-Fetch-Site: cross-site`: 403;
+ *  4. POST with `Sec-Fetch-Site` `cross-site` or `same-site`: 403 (P79;
+ *     TiffinDB forms always post same-origin, so a sibling subdomain is
+ *     refused too where the browser sends the header);
  *  5. installation state: not installed and access not setup or any, 303
  *     to /setup; installed and access setup, 404;
  *  6. when installed, the session from cookie `tdb_session`; a cookie that
@@ -66,6 +68,9 @@ final class Kernel
 {
     /** Methods the application accepts. */
     public const ACCEPTED_METHODS = ['GET', 'HEAD', 'POST'];
+
+    /** Sec-Fetch-Site values refused on POST (P79, amending M1-screens section 2.5). */
+    public const REFUSED_FETCH_SITES = ['cross-site', 'same-site'];
 
     /** Seconds a client is asked to wait after a Busy answer. */
     public const RETRY_AFTER = 5;
@@ -199,7 +204,7 @@ final class Kernel
         }
 
         // Step 4.
-        if ($request->isPost() && $request->secFetchSite === 'cross-site') {
+        if ($request->isPost() && in_array($request->secFetchSite, self::REFUSED_FETCH_SITES, true)) {
             return $this->errorPage(403);
         }
 

@@ -169,7 +169,7 @@ final class GateTest extends TestCase
     {
         return [
             'cross-site' => ['cross-site', false],
-            'same-site' => ['same-site', true],
+            'same-site (P79)' => ['same-site', false],
             'same-origin' => ['same-origin', true],
             'none' => ['none', true],
             'absent' => [null, true],
@@ -189,6 +189,21 @@ final class GateTest extends TestCase
             self::assertErrorPage($response, 403, 'You cannot do that here');
             self::assertNotContains('resume', $services->calls);
         }
+    }
+
+    public function testSameSitePostIsRefusedOnAnonymousFormsToo(): void
+    {
+        foreach ([[new FakeServices(), '/sign-in'], [new FakeServices(InstallState::NeedsAdmin), '/setup']] as [$services, $uri]) {
+            [$response] = self::send($services, 'POST', $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON], ['HTTP_SEC_FETCH_SITE' => 'same-site']);
+            self::assertErrorPage($response, 403, 'You cannot do that here');
+        }
+    }
+
+    public function testSameSiteGetIsAllowed(): void
+    {
+        [$response] = self::send(self::member(), 'GET', '/projects', [], self::sessionCookie(), ['HTTP_SEC_FETCH_SITE' => 'same-site']);
+
+        self::assertHandled($response);
     }
 
     public function testCrossSiteGetIsAllowed(): void

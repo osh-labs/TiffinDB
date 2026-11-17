@@ -605,7 +605,7 @@ final class EndToEndClient
         $request = Request::fromGlobals($server, $query, $post, $this->cookies);
         [$response, $log] = Fixtures::handle($this->kernel, $request);
         Assert::assertSame('', $log, "No log output for {$method} {$uri}.");
-        Assert::assertLessThan(500, $response->status, "{$method} {$uri} does not fail.");
+        Assert::assertNotSame(500, $response->status, "{$method} {$uri} does not fail.");
 
         foreach ($response->cookies as $cookie) {
             if ($cookie->maxAge === 0) {

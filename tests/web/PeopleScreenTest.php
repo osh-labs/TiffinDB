@@ -425,7 +425,7 @@ final class PeopleScreenTest extends TestCase
         self::assertSame('member2, Member. Cannot sign in at the moment.', HtmlAssertions::text($response->body, '//main/div/p[@class="lead"]'));
         self::assertSame('Another Member cannot sign in. Their name stays on the changes they made.', HtmlAssertions::text($response->body, '//section[h2="Signing in"]/p'));
         $restart = "//section/form[@action=\"/admin/people/{$key}/reactivate\"]";
-        self::assertSame('Let Another Member sign in again', HtmlAssertions::text($response->body, $restart . '/button[@class="button"]'));
+        self::assertSame('Let Another Member sign in again', HtmlAssertions::text($response->body, $restart . '/div[@class="form-actions"]/button[@class="button"]'));
     }
 
     // ---------------------------------------------------------------- person page POSTs

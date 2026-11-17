@@ -146,7 +146,9 @@ final class SignInScreenTest extends TestCase
         foreach ($x->query('./*', $form->item(0)) as $child) {
             $children[] = $child->nodeName . '.' . $child->getAttribute('class');
         }
-        self::assertSame(['input.', 'h1.', 'div.field', 'div.field', 'button.button button-primary button-large button-block', 'p.form-note'], $children);
+        self::assertSame(1, $x->query('//form/div[@class="form-actions"]/button[@class="button button-large button-primary button-block"][@type="submit"]')->length);
+        self::assertSame(0, $x->query('//form/div[@class="form-actions"]/a')->length);
+        self::assertSame(['input.', 'h1.', 'div.field', 'div.field', 'div.form-actions', 'p.form-note'], $children);
         $user = $x->query('//input[@id="signin-username"]')->item(0);
         self::assertSame('', $user->getAttribute('value'));
         self::assertSame('username', $user->getAttribute('autocomplete'));

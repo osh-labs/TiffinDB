@@ -65,9 +65,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 </fieldset>
-<div class="form-actions">
-<button class="button button-primary" type="submit"><?= $this->t('people.details.submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'people.details.submit', 'size' => 'normal', 'cancel' => null]) ?>
 </fieldset>
 </form>
 <?php if ($data['isAdmin'] === true) : ?>
@@ -93,9 +91,7 @@ declare(strict_types=1);
 <?php else : ?>
 <p><?= $this->t('people.field.no_projects') ?></p>
 <?php endif; ?>
-<div class="form-actions">
-<button class="button" type="submit"><?= $this->t('people.access.submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'people.access.submit', 'secondary' => true, 'size' => 'normal', 'cancel' => null]) ?>
 </fieldset>
 </form>
 <?php endif; ?>
@@ -117,9 +113,7 @@ declare(strict_types=1);
 <input class="input input-medium" id="reset-password" type="text" name="temporary_password" value="<?= $this->e($data['password']) ?>" autocomplete="off" spellcheck="false" aria-describedby="reset-password-help" />
 <?php endif; ?>
 </div>
-<div class="form-actions">
-<button class="button" type="submit"><?= $this->t('people.password.submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'people.password.submit', 'secondary' => true, 'size' => 'normal', 'cancel' => null]) ?>
 </fieldset>
 </form>
 <section class="fieldset-card">
@@ -137,7 +131,7 @@ declare(strict_types=1);
 <p><?= $this->t('people.signin.inactive', ['name' => $data['name']]) ?></p>
 <form class="form" method="post" action="<?= $this->url('/admin/people/' . $data['key'] . '/reactivate') ?>">
 <?= $this->partial('csrf') ?>
-<button class="button" type="submit"><?= $this->t('people.signin.restart', ['name' => $data['name']]) ?></button>
+<?= $this->partial('form-actions', ['submit' => 'people.signin.restart', 'submitParams' => ['name' => $data['name']], 'secondary' => true, 'size' => 'normal', 'cancel' => null]) ?>
 </form>
 <?php endif; ?>
 </section>

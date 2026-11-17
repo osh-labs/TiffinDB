@@ -65,8 +65,6 @@ return [
     'people.stop.title' => 'Stop {name} from signing in?',
     'people.stop.body' => '{name} will be signed out now and will not be able to sign in. Nothing they made is deleted, and you can let them sign in again later.',
     'people.stop.submit' => 'Stop {name} from signing in',
-    // Not in the design: the form-actions partial cannot pass {name} to its submit text, so this page writes its actions itself, and only that partial may print form.cancel.
-    'people.stop.cancel' => 'Cancel',
     'sharing.crumb' => 'Sharing',
     'sharing.title' => 'Share {project}',
     'sharing.lead' => 'Admins can always use every project. Choose which Members can use this one. They will be able to view and change its records.',

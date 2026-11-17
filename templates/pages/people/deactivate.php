@@ -7,10 +7,6 @@
  * (docs/design/m1/people-and-sharing.md section 5). The layout prints the
  * breadcrumb before this page.
  *
- * The actions are written here rather than with the form-actions partial
- * because that partial cannot pass {name} to its submit text; the Cancel
- * link therefore uses this page's own `people.stop.cancel`.
- *
  * Data: `key`, `name`.
  */
 
@@ -21,8 +17,5 @@ declare(strict_types=1);
 <p><?= $this->t('people.stop.body', ['name' => $data['name']]) ?></p>
 <form class="form" method="post" action="<?= $this->url('/admin/people/' . $data['key'] . '/deactivate') ?>">
 <?= $this->partial('csrf') ?>
-<div class="form-actions">
-<button class="button button-large button-danger" type="submit"><?= $this->t('people.stop.submit', ['name' => $data['name']]) ?></button>
-<a class="form-cancel" href="<?= $this->url('/admin/people/' . $data['key']) ?>"><?= $this->t('people.stop.cancel') ?></a>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'people.stop.submit', 'submitParams' => ['name' => $data['name']], 'danger' => true, 'cancel' => '/admin/people/' . $data['key']]) ?>
 </form>

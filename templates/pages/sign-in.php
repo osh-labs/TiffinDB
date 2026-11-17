@@ -50,6 +50,6 @@ declare(strict_types=1);
 <?php endif; ?>
 <?= $this->partial('password-toggle', ['plural' => false]) ?>
 </div>
-<button class="button button-primary button-large button-block" type="submit"><?= $this->t('signin.submit') ?></button>
+<?= $this->partial('form-actions', ['submit' => 'signin.submit', 'block' => true, 'cancel' => null]) ?>
 <p class="form-note"><?= $this->t('signin.reset_note') ?></p>
 </form>

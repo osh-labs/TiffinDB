@@ -26,14 +26,20 @@ use TiffinDB\Tests\Support\RepoFiles;
  * Read with token_get_all: every `new Installer(` or `new Operations(`
  * (any qualification, any case) has its top-level arguments counted;
  * a spread argument (`...$args`) or a named argument is refused too,
- * since it could reach the seam without a 7th position. Known limits:
- * construction through reflection or a variable class name is not seen.
+ * since it could reach the seam without a 7th position. Import aliases
+ * (`use ...\\Operations as Ops;`, group uses included) are resolved, and
+ * `new (expr)` and `new $class` are refused outright, since the class
+ * they build cannot be read. Known limit: reflection is not seen.
  */
 #[CoversNothing]
 final class CompositionSeamTest extends TestCase
 {
     public const GUARDED = ['installer', 'operations'];
     public const MAX_ARGUMENTS = 6;
+
+    /** The one file allowed one computed `new`: the kernel's controller dispatch. */
+    public const DISPATCHER = 'src/Web/Kernel.php';
+    public const COMPUTED = 'new with a computed class name';
 
     /**
      * Problems in one source, as "Class: reason", in order.
@@ -51,17 +57,22 @@ final class CompositionSeamTest extends TestCase
         }
         $found = [];
         $count = count($tokens);
+        $aliases = self::aliases($tokens);
         for ($i = 0; $i < $count; $i++) {
             $token = $tokens[$i];
             if (!is_array($token) || $token[0] !== T_NEW) {
                 continue;
             }
             $name = $tokens[$i + 1] ?? null;
+            if ($name === '(' || (is_array($name) && $name[0] === T_VARIABLE)) {
+                $found[] = self::COMPUTED;
+                continue;
+            }
             if (!is_array($name) || !in_array($name[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)) {
                 continue;
             }
-            $parts = explode('\\', $name[1]);
-            $class = strtolower((string) end($parts));
+            $class = self::lastSegment($name[1]);
+            $class = $aliases[$class] ?? $class;
             if (!in_array($class, self::GUARDED, true) || ($tokens[$i + 2] ?? null) !== '(') {
                 continue;
             }
@@ -102,6 +113,40 @@ final class CompositionSeamTest extends TestCase
         return $found;
     }
 
+    private static function lastSegment(string $name): string
+    {
+        $parts = explode('\\', $name);
+
+        return strtolower((string) end($parts));
+    }
+
+    /**
+     * Import aliases (`use A\B as C;`, also inside group uses), as
+     * lower-case alias => lower-case last segment of the imported name.
+     *
+     * @param list<mixed> $tokens
+     * @return array<string, string>
+     */
+    private static function aliases(array $tokens): array
+    {
+        $aliases = [];
+        foreach ($tokens as $i => $token) {
+            if (!is_array($token) || $token[0] !== T_AS) {
+                continue;
+            }
+            $target = $tokens[$i - 1] ?? null;
+            $alias = $tokens[$i + 1] ?? null;
+            if (
+                is_array($target) && in_array($target[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)
+                && is_array($alias) && $alias[0] === T_STRING
+            ) {
+                $aliases[strtolower($alias[1])] = self::lastSegment($target[1]);
+            }
+        }
+
+        return $aliases;
+    }
+
     /** @return list<string> "path: problem" for every PHP file under src/ and public/. */
     public static function violations(string $root): array
     {
@@ -111,8 +156,19 @@ final class CompositionSeamTest extends TestCase
             foreach ($iterator as $file) {
                 /** @var SplFileInfo $file */
                 if ($file->isFile() && $file->getExtension() === 'php') {
-                    foreach (self::problems((string) file_get_contents($file->getPathname())) as $problem) {
-                        $found[] = substr($file->getPathname(), strlen($root) + 1) . ': ' . $problem;
+                    $relative = substr($file->getPathname(), strlen($root) + 1);
+                    $problems = self::problems((string) file_get_contents($file->getPathname()));
+                    if ($relative === self::DISPATCHER) {
+                        // The kernel builds the routed controller from the
+                        // static route table (`new $class($context)`, after
+                        // class_exists): exactly that one computed `new`.
+                        $index = array_search(self::COMPUTED, $problems, true);
+                        if ($index !== false) {
+                            unset($problems[$index]);
+                        }
+                    }
+                    foreach ($problems as $problem) {
+                        $found[] = $relative . ': ' . $problem;
                     }
                 }
             }
@@ -124,6 +180,14 @@ final class CompositionSeamTest extends TestCase
     public function testProductionNeverSetsTheSeams(): void
     {
         self::assertSame([], self::violations(RepoFiles::root()));
+    }
+
+    public function testTheDispatcherHasExactlyOneComputedNew(): void
+    {
+        $source = RepoFiles::read(self::DISPATCHER);
+
+        self::assertSame([self::COMPUTED], self::problems($source));
+        self::assertSame(1, preg_match_all('/new \$class\(\$context\)/', $source));
     }
 
     public function testTheScanSeesTheCompositionRoot(): void
@@ -147,6 +211,14 @@ final class CompositionSeamTest extends TestCase
             'spread' => ['new Installer(...$args);'],
             'named seam' => ['new Operations($a, $b, $c, $d, $e, $f, seam: $s);'],
             'named only' => ['new Installer(createSystem: $s);'],
+            'aliased import' => ["use TiffinDB\\Core\\App\\Operations as Ops;\nnew Ops(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
+            'aliased import, lower case' => ["use TiffinDB\\Core\\Install\\Installer as I;\nnew i(1, 2, 3, 4, 5, 6, 7);"],
+            'group use alias' => ["use TiffinDB\\Core\\{App\\Operations as Ops, Install\\Installer};\nnew Ops(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
+            'group use alias of Installer' => ["use TiffinDB\\Core\\Install\\{Installer as Setup};\nnew \\Setup(1, 2, 3, 4, 5, 6, 7);"],
+            'namespace alias' => ["use TiffinDB\\Core\\App as A;\nnew A\\Operations(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
+            'new with a parenthesised name' => ['new ($class)(\$a);'],
+            'new with a variable' => ['new $class(\$a);'],
+            'new with a variable, no arguments' => ['$x = new $class;'],
         ];
     }
 
@@ -160,11 +232,15 @@ final class CompositionSeamTest extends TestCase
     public static function allowed(): array
     {
         return [
-            'six' => ['new Installer($a, $b, $c, $d, $e, $f);'],
-            'six with trailing comma' => ["new Operations(\n\$a,\n\$b,\n\$c,\n\$d,\n\$e,\n\$f,\n);"],
-            'nested commas' => ['new Operations(f($a, $b, $c, $d), [$x, $y, $z], $c, $d, $e, $f);'],
-            'closure argument' => ['new Installer($a, $b, $c, $d, $e, function ($p, $q) { return [$p, $q]; });'],
-            'other class' => ['new Something($a, $b, $c, $d, $e, $f, $g, $h);'],
+            'six' => ['new Installer(\$a, \$b, \$c, \$d, \$e, \$f);'],
+            'six with trailing comma' => ["new Operations(\n\\$a,\n\\$b,\n\\$c,\n\\$d,\n\\$e,\n\\$f,\n);"],
+            'nested commas' => ['new Operations(f(\$a, \$b, \$c, \$d), [$x, $y, $z], \$c, \$d, \$e, \$f);'],
+            'closure argument' => ['new Installer(\$a, \$b, \$c, \$d, \$e, function ($p, $q) { return [$p, $q]; });'],
+            'other class' => ['new Something(\$a, \$b, \$c, \$d, \$e, \$f, \$g, $h);'],
+            'alias with six' => ["use TiffinDB\\Core\\App\\Operations as Ops;\nnew Ops(\$a, \$b, \$c, \$d, \$e, \$f);"],
+            'unrelated alias' => ["use Some\\Other as Ops2;\nnew Ops2(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
+            'anonymous class' => ['new class ($a) {};'],
+            'static' => ['new static($a, $b, $c, $d, $e, $f, $g);'],
             'ternary' => ['new Installer($a ? $b : $c, $b, $c, $d, $e, $f);'],
         ];
     }

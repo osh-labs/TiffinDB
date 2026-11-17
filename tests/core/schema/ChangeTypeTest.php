@@ -82,12 +82,12 @@ final class ChangeTypeTest extends TestCase
     public function testUnconvertibleValuesNeedConfirmationAndChangeNothing(): void
     {
         $this->fill(['12', 'twelve', '3.5', null, '1,234', 'n/a']);
-        $before = (string) file_get_contents($this->path());
+        $before = $this->dump();
 
         self::assertEquals(new Impact(2, 2), $this->editor()->previewTypeChange($this->notes->key, 'number', ['decimals' => 1]));
         $confirmation = $this->confirmationOf(fn () => $this->editor()->changeType($this->notes->key, 'number', ['decimals' => 1], false));
         self::assertSame([2, 2], [$confirmation->records, $confirmation->values]);
-        self::assertSame($before, (string) file_get_contents($this->path()));
+        self::assertSame($before, $this->dump());
         self::assertSame([], $this->snapshotFiles());
         self::assertSame('TEXT', $this->declaredType());
 
@@ -167,10 +167,10 @@ final class ChangeTypeTest extends TestCase
     public function testDerivedOptionsThatFailValidationAreRefused(): void
     {
         $this->fill(['Tool', "\x01\x02"]);
-        $before = (string) file_get_contents($this->path());
+        $before = $this->dump();
         self::assertSame([['options.choices', 'problem.options.choices_unconvertible', []]], self::problems(fn () => $this->editor()->changeType($this->notes->key, 'choice', [], true)));
         self::assertSame([['options.choices', 'problem.options.choices_unconvertible', []]], self::problems(fn () => $this->editor()->previewTypeChange($this->notes->key, 'choice', [])));
-        self::assertSame($before, (string) file_get_contents($this->path()));
+        self::assertSame($before, $this->dump());
         self::assertSame([], $this->snapshotFiles());
         self::assertSame(['Tool', "\x01\x02"], $this->column($this->items->key, $this->notes->key));
     }

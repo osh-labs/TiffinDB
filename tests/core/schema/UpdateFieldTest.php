@@ -138,13 +138,13 @@ final class UpdateFieldTest extends TestCase
         $options = ['choices' => [['key' => $red['key'], 'label' => 'Red'], ['key' => $green['key'], 'label' => 'Lime']]];
 
         self::assertEquals(new Impact(2, 2), $this->editor()->previewUpdate($field->key, $options));
-        $before = (string) file_get_contents($this->path());
+        $before = $this->dump();
         $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($field->key, 'Paint', $options, false, '', false));
         self::assertSame([2, 2], [$confirmation->records, $confirmation->values]);
         self::assertSame(['Red', 'Blue', 'Blue', 'Green'], $this->column($this->items->key, $field->key));
         self::assertSame('Colour', $this->schema()->field($field->key)->name);
         self::assertSame([], $this->snapshotFiles());
-        self::assertSame($before, (string) file_get_contents($this->path()));
+        self::assertSame($before, $this->dump());
 
         $updated = $this->editor()->updateField($field->key, 'Paint', $options, false, '', true);
         self::assertSame(['Red', null, null, 'Lime'], $this->column($this->items->key, $field->key));

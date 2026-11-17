@@ -150,6 +150,31 @@ trait ProjectFixture
         return $names;
     }
 
+    /**
+     * The logical content of the project file: every sqlite_master row and
+     * every row of every table, in a fixed order. The file runs in WAL mode,
+     * so committed writes may not reach the main file's bytes; compare dumps,
+     * not bytes.
+     *
+     * @return array{master: list<array<string, mixed>>, tables: array<string, list<array<string, mixed>>>}
+     */
+    private function dump(): array
+    {
+        $master = $this->db->all('SELECT "type", "name", "tbl_name", "sql" FROM "sqlite_master" ORDER BY "type", "name"');
+        $tables = [];
+        foreach ($master as $object) {
+            if ($object['type'] !== 'table') {
+                continue;
+            }
+            $name = (string) $object['name'];
+            $quoted = '"' . str_replace('"', '""', $name) . '"';
+            $columns = (int) $this->db->value('SELECT COUNT(*) FROM "pragma_table_info"(?)', [$name]);
+            $tables[$name] = $this->db->all('SELECT * FROM ' . $quoted . ' ORDER BY ' . implode(', ', range(1, $columns)));
+        }
+
+        return ['master' => $master, 'tables' => $tables];
+    }
+
     /** @return array<string, mixed> */
     private function fieldRow(string $fieldKey): array
     {

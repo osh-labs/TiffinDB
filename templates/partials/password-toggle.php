@@ -16,7 +16,7 @@ declare(strict_types=1);
 
 ?>
 <div class="check show-password" hidden="hidden">
-<label class="check">
+<label>
 <input type="checkbox" data-show-password="data-show-password" />
 <?php if (($data['plural'] ?? false) === true) : ?>
 <span><?= $this->t('form.show_passwords') ?></span>

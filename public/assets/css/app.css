@@ -755,9 +755,16 @@ textarea.input {
   color: var(--ink2);
 }
 
-/* The "Show password" row: a .check row, hidden until the script runs */
+/* The "Show password" row: a .check row, hidden until the script runs.
+   Only the row carries .check, so its label lays out box and text itself. */
 .show-password {
   margin: 0;
+}
+
+.show-password > label {
+  display: flex;
+  align-items: center;
+  gap: 0.5556rem;
 }
 
 /* Messages (components.md section 5) */

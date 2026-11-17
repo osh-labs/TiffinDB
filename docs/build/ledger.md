@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M1 resumed by the maintainer (window 3). Integration branch for this session: `claude/exciting-maxwell-l2yieq` (fast-forwarded from `claude/magical-hamilton-isy74q` at `30b072b`). Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
 | Window start | 2026-11-17T05:50Z (window 3) |
 | Resume reminder | `trig_01C1zDDQ81GbWBRxzVqTBV95`, fires 2026-11-17T11:06Z |
-| Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 merged; WP5 merged; WP7 in progress (unpushed worktree; redo if reclaimed). Next: WP9 after WP7 merges; WP10 and WP11 after WP7 merges (WP5 done). Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
+| Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 merged; WP5 and WP7 merged; WP9, WP10, WP11 dispatched (unpushed worktrees; redo if reclaimed); then WP12, then the M1 exit audit, then stop (do not start M2). Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
 
@@ -71,10 +71,10 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP4 | M1 | implementation | per spec (depends on WP1, WP3; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 3 rounds (round 1: scanner bypasses, vacuous WAL bytes check, trash meta, vacuous auto-number test, untested retry; round 2: remaining dynamic-call bypasses, root-cause redesign to default-deny scanner; round 3 APPROVE). Nit follow-ups (P77, computed array callables except as bound parameters, return values or destructuring, Reflection, include) verified by orchestrator |
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: forged Host made an exposed folder `safe`, fixed by positive control P75; T-REPO-10 bypasses; setup-code removal order; read deadline; configured-folder keys). Test nits (distinct control nonce, public cleanup guards, redundant deadline check removed) verified by orchestrator |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE (round 1): IDOR, Member-on-Admin, stale-actor and last-Admin attacks refused by running; follow-ups (Member refusal provider over every Admin-only method, `requireCurrentPerson` active test, reset script clears throttle and notes inactive person, echo restored on SIGINT) verified by orchestrator |
-| M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | implemented (`c27524f`), merged with integration at `5e44f08` on local branch `worktree-agent-a9e8cccc40d2d43db` (unpushed); round 1 fixes done (`ae22f84`, 4295 tests OK, verified by orchestrator); reviewer verifying | worktree | design tier | round 1 REQUEST CHANGES (test-only; runtime gate, CSRF, cookies, headers, flash confirmed by curl against the built-in server): missing P78 seam test, `WebLayerRulesTest` alias/namespace bypasses, `Csrf` `hash_equals` mutant survives, real-route gate test missing; 9 of 11 mutations caught |
-| M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | not started | | | |
-| M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | not started | | | |
-| M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: no) | not started | | | |
+| M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: test gaps only, runtime confirmed by curl; P79 same-site refusal and read-first flash; round 2: runtime fixes confirmed, seam-test alias bypass). Alias fix verified by orchestrator; the kernel's `new $class($context)` controller dispatch (class from the route table) is the one allowed dynamic `new` |
+| M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
+| M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
+| M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: no) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
 | M1-WP12 | M1 | implementation | per spec (depends on WP9, WP10, WP11; security-critical: no) | not started | | | |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
@@ -174,6 +174,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17T10:4xZ | M1-WP7 implemented (unpushed); test-merged with integration (clean, 4142 OK, lint 286 OK); design-tier security review dispatched |
 | 2026-11-17T11:0xZ | M1-WP7 review: REQUEST CHANGES (test-only); ruling P79; author resumed |
 | 2026-11-17T11:2xZ | M1-WP7 round 1 fixes done (unpushed); orchestrator re-ran suite 4295 OK, lint 288 OK; sent to the reviewer |
+| 2026-11-17T11:4xZ | M1-WP7 merged; suite 4308 tests OK (1 skipped), lint 288 files 0 failed; wave 5 (WP9, WP10, WP11) dispatched |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

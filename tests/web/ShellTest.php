@@ -1078,6 +1078,10 @@ final class ShellTest extends TestCase
         yield 'aria-invalid without error' => [$form($csrf . '<div class="field"><label class="label" for="a">A</label><input class="input" id="a" type="text" name="a" aria-invalid="true" /></div>')];
         yield 'unnamed checkbox' => [$form($csrf . '<input type="checkbox" name="c" value="1" />')];
         yield 'duplicate ids' => [$form($csrf . $field . '<p id="a">x</p>')];
+        yield 'input with neither label nor aria-label' => [$form($csrf . '<fieldset><input class="input" type="text" name="c" /></fieldset>')];
+        yield 'input with an empty aria-label' => [$form($csrf . '<fieldset><input class="input" type="text" name="c" aria-label=" " /></fieldset>')];
+        yield 'aria-label input without a name' => [$form($csrf . '<fieldset><input class="input" type="text" aria-label="Choice 1" /></fieldset>')];
+        yield 'aria-label input with an empty name' => [$form($csrf . '<fieldset><input class="input" type="text" name="" aria-label="Choice 1" /></fieldset>')];
         yield 'button without type' => [$form($csrf . $field . '<button>Go</button>')];
         yield 'button without a name' => [$form($csrf . $field . '<button type="submit"></button>')];
     }
@@ -1099,6 +1103,22 @@ final class ShellTest extends TestCase
             . '<button class="button" type="submit" aria-label="Move up">x</button></form>'
             . '<form method="get" action="/y"><fieldset><label class="radio-card"><input type="radio" name="t" value="text" /> T</label></fieldset>'
             . '<button type="submit">Next</button></form>'
+            . '</body></html>';
+
+        HtmlAssertions::assertForm($html);
+        $this->addToAssertionCount(1);
+    }
+
+    /** M1 spec part 2 section 4.5 item 6: repeated inputs (the choice editor's existing choices) may be named by aria-label. */
+    public function testFormAssertionAcceptsControlsNamedByAriaLabel(): void
+    {
+        $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title></head><body>"
+            . '<form method="post" action="/x"><input type="hidden" name="_csrf" value="t" />'
+            . '<fieldset class="field"><legend class="legend-plain">Choices</legend>'
+            . '<input class="input" type="text" name="opt_choice_a" value="Tool" aria-label="Choice 1" />'
+            . '<input class="input" id="choice-b" type="text" name="opt_choice_b" value="Appliance" aria-label="Choice 2" />'
+            . '<select class="input" name="opt_x" aria-label="Kind"><option>x</option></select>'
+            . '</fieldset><button class="button" type="submit">Save</button></form>'
             . '</body></html>';
 
         HtmlAssertions::assertForm($html);

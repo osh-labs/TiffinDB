@@ -216,8 +216,8 @@ final class CompositionSeamTest extends TestCase
             'group use alias' => ["use TiffinDB\\Core\\{App\\Operations as Ops, Install\\Installer};\nnew Ops(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
             'group use alias of Installer' => ["use TiffinDB\\Core\\Install\\{Installer as Setup};\nnew \\Setup(1, 2, 3, 4, 5, 6, 7);"],
             'namespace alias' => ["use TiffinDB\\Core\\App as A;\nnew A\\Operations(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
-            'new with a parenthesised name' => ['new ($class)(\$a);'],
-            'new with a variable' => ['new $class(\$a);'],
+            'new with a parenthesised name' => ['new ($class)($a);'],
+            'new with a variable' => ['new $class($a);'],
             'new with a variable, no arguments' => ['$x = new $class;'],
         ];
     }
@@ -232,11 +232,11 @@ final class CompositionSeamTest extends TestCase
     public static function allowed(): array
     {
         return [
-            'six' => ['new Installer(\$a, \$b, \$c, \$d, \$e, \$f);'],
-            'six with trailing comma' => ["new Operations(\n\\$a,\n\\$b,\n\\$c,\n\\$d,\n\\$e,\n\\$f,\n);"],
-            'nested commas' => ['new Operations(f(\$a, \$b, \$c, \$d), [$x, $y, $z], \$c, \$d, \$e, \$f);'],
-            'closure argument' => ['new Installer(\$a, \$b, \$c, \$d, \$e, function ($p, $q) { return [$p, $q]; });'],
-            'other class' => ['new Something(\$a, \$b, \$c, \$d, \$e, \$f, \$g, $h);'],
+            'six' => ['new Installer($a, $b, $c, $d, $e, $f);'],
+            'six with trailing comma' => ["new Operations(\n\$a,\n\$b,\n\$c,\n\$d,\n\$e,\n\$f,\n);"],
+            'nested commas' => ['new Operations(f($a, $b, $c, $d), [$x, $y, $z], $c, $d, $e, $f);'],
+            'closure argument' => ['new Installer($a, $b, $c, $d, $e, function ($p, $q) { return [$p, $q]; });'],
+            'other class' => ['new Something($a, $b, $c, $d, $e, $f, $g, $h);'],
             'alias with six' => ["use TiffinDB\\Core\\App\\Operations as Ops;\nnew Ops(\$a, \$b, \$c, \$d, \$e, \$f);"],
             'unrelated alias' => ["use Some\\Other as Ops2;\nnew Ops2(\$a, \$b, \$c, \$d, \$e, \$f, \$g);"],
             'anonymous class' => ['new class ($a) {};'],

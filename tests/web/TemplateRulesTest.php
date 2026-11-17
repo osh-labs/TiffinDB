@@ -47,9 +47,12 @@ use TiffinDB\Tests\Support\RepoFiles;
  *   partial, as the whole value of a `value` attribute; count() only in element text or `aria-label`. The layout
  *   accessor may sit in the `<html>` start tag. Never in a comment or
  *   elsewhere in a tag.
- * - Every literal string key passed to t() exists, and every key in the
- *   strings file is used, except the keys code builds at run time
- *   (RUNTIME_PREFIXES).
+ * - Every literal string key passed to t(), or as a key parameter to a
+ *   partial, exists. Every key in the strings file is used: literally in
+ *   t() or count(), as a literal key parameter of a partial (the
+ *   parameters each partial passes to t(), partialKeyParameters()), or as
+ *   a whole string literal in a controller (breadcrumb labels); keys code
+ *   builds at run time need a declared prefix (RUNTIME_PREFIXES).
  */
 #[CoversNothing]
 final class TemplateRulesTest extends TestCase
@@ -88,14 +91,10 @@ final class TemplateRulesTest extends TestCase
 
     /**
      * Prefixes of string keys built at run time, which need not appear
-     * literally in a template (M1 spec part 2 section 4.3). `home.preview.`
-     * covers the M0 theme preview link labels built by the M0
-     * HomeController; it is dead once `/` becomes a redirect (M1-WP7)
-     * and can then be removed.
+     * literally in a template (M1 spec part 2 section 4.3).
      */
     public const RUNTIME_PREFIXES = [
         'problem.', 'error.', 'type.', 'setup.check.', 'notice.', 'wait.', 'date.', 'count.', 'role.',
-        'home.preview.',
     ];
 
     /** The one script element, allowed only in the layout (M1 spec part 2 section 4.1). */
@@ -709,6 +708,186 @@ final class TemplateRulesTest extends TestCase
         return $m[1];
     }
 
+    /**
+     * The data parameters each partial treats as string keys, derived from
+     * the partials themselves: a partial whose source passes
+     * `$data['submit']` (or a loop variable's `$action['label']`) as the
+     * first argument of t() or count() treats `submit` (or `label`) as a
+     * key. Keyed by partial name (`notice`, `field-options/text`).
+     *
+     * @param array<string, string> $partials partial name => source
+     * @return array<string, list<string>>
+     */
+    public static function partialKeyParameters(array $partials): array
+    {
+        $parameters = [];
+        foreach ($partials as $name => $source) {
+            $tokens = array_values(array_filter(token_get_all($source), self::isCode(...)));
+            $found = [];
+            foreach ($tokens as $i => $token) {
+                if (!self::is($token, T_STRING) || !in_array($token[1], ['t', 'count'], true) || ($tokens[$i - 1] ?? null) === null) {
+                    continue;
+                }
+                $arrow = $tokens[$i - 1];
+                if (!self::is($arrow, T_OBJECT_OPERATOR) && !self::is($arrow, T_NULLSAFE_OBJECT_OPERATOR)) {
+                    continue;
+                }
+                $next = array_slice($tokens, $i + 1, 6);
+                if (
+                    count($next) === 6
+                    && $next[0] === '('
+                    && self::is($next[1], T_VARIABLE)
+                    && $next[2] === '['
+                    && self::is($next[3], T_CONSTANT_ENCAPSED_STRING)
+                    && $next[4] === ']'
+                    && in_array($next[5], [',', ')'], true)
+                ) {
+                    $found[stripslashes(substr($next[3][1], 1, -1))] = true;
+                }
+            }
+            $names = array_keys($found);
+            sort($names);
+            $parameters[$name] = $names;
+        }
+
+        return $parameters;
+    }
+
+    /** @return array<string, string> partial name => source, for the real partials */
+    private static function partialSources(): array
+    {
+        $sources = [];
+        foreach (RepoFiles::withExtension(['php'], 'templates/partials') as $file) {
+            $sources[substr($file, strlen('templates/partials/'), -4)] = RepoFiles::read($file);
+        }
+
+        return $sources;
+    }
+
+    /**
+     * Literal string keys a template passes to a partial: in
+     * `$this->partial('name', [...])`, every `'param' => 'literal'` entry,
+     * at any depth of the array literal (so `actions` lists count too),
+     * whose `param` is one of that partial's key parameters
+     * (partialKeyParameters()). The literal must be the whole value: a key
+     * built by concatenation (`'x.' . $y`) is not a literal key and still
+     * needs a runtime prefix. Values under other names (such as `params`,
+     * whose values are substituted text, or `cancel`, a path) never count.
+     *
+     * @param array<string, list<string>> $parameters partial name => key parameters
+     * @return list<string>
+     */
+    public static function partialKeys(string $source, array $parameters): array
+    {
+        $tokens = array_values(array_filter(token_get_all($source), self::isCode(...)));
+        $count = count($tokens);
+        $keys = [];
+        foreach ($tokens as $i => $token) {
+            if (!self::is($token, T_STRING) || $token[1] !== 'partial' || !self::is($tokens[$i - 1] ?? null, T_OBJECT_OPERATOR)) {
+                continue;
+            }
+            if (
+                ($tokens[$i + 1] ?? null) !== '('
+                || !self::is($tokens[$i + 2] ?? null, T_CONSTANT_ENCAPSED_STRING)
+                || ($tokens[$i + 3] ?? null) !== ','
+                || ($tokens[$i + 4] ?? null) !== '['
+            ) {
+                continue;
+            }
+            $names = $parameters[stripslashes(substr($tokens[$i + 2][1], 1, -1))] ?? [];
+            $depth = 0;
+            for ($n = $i + 4; $n < $count; $n++) {
+                $t = $tokens[$n];
+                if ($t === '[' || $t === '(') {
+                    $depth++;
+                } elseif ($t === ']' || $t === ')') {
+                    $depth--;
+                    if ($depth === 0) {
+                        break;
+                    }
+                } elseif (
+                    self::is($t, T_CONSTANT_ENCAPSED_STRING)
+                    && self::is($tokens[$n + 1] ?? null, T_DOUBLE_ARROW)
+                    && self::is($tokens[$n + 2] ?? null, T_CONSTANT_ENCAPSED_STRING)
+                    && in_array($tokens[$n + 3] ?? null, [',', ']'], true)
+                    && in_array(stripslashes(substr($t[1], 1, -1)), $names, true)
+                ) {
+                    $keys[] = stripslashes(substr($tokens[$n + 2][1], 1, -1));
+                }
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * String literals in PHP code (controllers) that exactly equal a
+     * defined key: the breadcrumb labels and other keys a controller hands
+     * to the layout, which no template names. A literal that is only part
+     * of a key (`'people.' . $x`) is not a defined key and does not count.
+     *
+     * @param array<string, string> $strings
+     * @return list<string>
+     */
+    public static function codeKeys(string $source, array $strings): array
+    {
+        $keys = [];
+        foreach (token_get_all($source) as $token) {
+            if (!self::is($token, T_CONSTANT_ENCAPSED_STRING)) {
+                continue;
+            }
+            $value = stripslashes(substr($token[1], 1, -1));
+            if (array_key_exists($value, $strings)) {
+                $keys[] = $value;
+            }
+        }
+
+        return $keys;
+    }
+
+    /** @return list<string> */
+    private static function controllers(): array
+    {
+        return array_values(array_filter(
+            RepoFiles::withExtension(['php'], 'src/Web/Controller'),
+            static fn (string $file): bool => dirname($file) === 'src/Web/Controller',
+        ));
+    }
+
+    /**
+     * Keys in $strings that nothing uses: not literal in a t() or count()
+     * call, not a literal key passed to a partial, not a literal in a
+     * controller, and not under a runtime prefix.
+     *
+     * @param list<string>                $templates  template sources
+     * @param list<string>                $code       controller sources
+     * @param array<string, string>       $strings
+     * @param array<string, list<string>> $parameters partial name => key parameters
+     * @return list<string>
+     */
+    public static function unusedKeys(array $templates, array $code, array $strings, array $parameters): array
+    {
+        $used = [];
+        foreach ($templates as $source) {
+            foreach ([...self::literalKeys($source), ...self::partialKeys($source, $parameters)] as $key) {
+                $used[$key] = true;
+            }
+        }
+        foreach ($code as $source) {
+            foreach (self::codeKeys($source, $strings) as $key) {
+                $used[$key] = true;
+            }
+        }
+        $unused = [];
+        foreach (array_keys($strings) as $key) {
+            if (!isset($used[$key]) && !self::isRuntimeKey($key)) {
+                $unused[] = $key;
+            }
+        }
+
+        return $unused;
+    }
+
     // The real templates.
 
     public function testTheShellTemplatesExist(): void
@@ -767,21 +946,112 @@ final class TemplateRulesTest extends TestCase
         self::assertSame([], $missing, 'Partials used in templates but missing.');
     }
 
+    public function testEveryKeyPassedToAPartialExists(): void
+    {
+        $strings = self::strings();
+        $parameters = self::partialKeyParameters(self::partialSources());
+        $missing = [];
+        foreach (self::templates() as $file) {
+            foreach (self::partialKeys(RepoFiles::read($file), $parameters) as $key) {
+                if (!array_key_exists($key, $strings)) {
+                    $missing[] = "{$file}: {$key}";
+                }
+            }
+        }
+
+        self::assertSame([], $missing, 'String keys passed to partials but missing from strings/en.php.');
+    }
+
     public function testEveryStringIsUsed(): void
     {
-        $used = [];
-        foreach (self::templates() as $file) {
-            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
-                $used[$key] = true;
-            }
-        }
-        $unused = [];
-        foreach (array_keys(self::strings()) as $key) {
-            if (!isset($used[$key]) && !self::isRuntimeKey($key)) {
-                $unused[] = $key;
-            }
-        }
+        $unused = self::unusedKeys(
+            array_map(RepoFiles::read(...), self::templates()),
+            array_map(RepoFiles::read(...), self::controllers()),
+            self::strings(),
+            self::partialKeyParameters(self::partialSources()),
+        );
         self::assertSame([], $unused, 'Keys in strings/en.php that nothing uses.');
+    }
+
+    public function testPartialKeyParametersAreDerivedFromThePartials(): void
+    {
+        $parameters = self::partialKeyParameters(self::partialSources());
+        // The shared partials of section 4.4 that take keys (others may be added).
+        self::assertSame(['cancelLabel', 'submit'], $parameters['form-actions']);
+        self::assertSame(['key', 'title'], $parameters['notice']);
+        self::assertSame(['key'], $parameters['field-label']);
+        self::assertSame(['label'], $parameters['page-head']);
+        // Partials that print only fixed keys, or plain text, take none.
+        self::assertSame([], $parameters['breadcrumb']);
+        self::assertSame([], $parameters['footer']);
+        self::assertSame([], $parameters['field-error']);
+    }
+
+    public function testKeysPassedToPartialsCountAsUsed(): void
+    {
+        $fixture = RepoFiles::read('tests/web/fixtures/templates/pages/partial-keys.php');
+        self::assertSame([], self::violations($fixture, self::PAGE));
+        $parameters = self::partialKeyParameters(self::partialSources());
+        $strings = [
+            'fixture.submit' => 'Save',
+            'fixture.cancel_label' => 'Go back',
+            'fixture.notice' => 'Saved.',
+            'fixture.notice_title' => 'Done',
+            'fixture.action' => 'Add',
+            'fixture.label' => 'Name',
+            'fixture.literal' => 'Literal',
+            'fixture.in_params' => 'Only a parameter value',
+            'fixture.as_path' => 'Only a cancel path',
+            'fixture.unknown_param' => 'Only under an unknown parameter',
+            'fixture.wrong_partial' => 'Only under another partial\'s parameter',
+            'fixture.built.one' => 'Only built by concatenation',
+            'fixture.nowhere' => 'Never passed anywhere',
+        ];
+
+        self::assertSame(
+            [
+                'fixture.in_params', 'fixture.as_path', 'fixture.unknown_param', 'fixture.wrong_partial',
+                'fixture.built.one', 'fixture.nowhere',
+            ],
+            self::unusedKeys([$fixture], [], $strings, $parameters),
+        );
+        self::assertSame(
+            ['fixture.submit', 'fixture.cancel_label', 'fixture.notice_title', 'fixture.notice', 'fixture.action', 'fixture.label'],
+            self::partialKeys($fixture, $parameters),
+        );
+    }
+
+    public function testControllerLiteralsThatAreKeysCountAsUsed(): void
+    {
+        $code = <<<'PHP'
+            <?php
+            $crumbs = [['label' => 'fixture.crumb', 'path' => '/x'], ['label' => 'fixture.crumb.' . $name, 'path' => null]];
+            $title = "fixture.title";
+            // 'fixture.comment' in a comment is not code.
+            $partial = 'fixture.part';
+            PHP;
+        $strings = [
+            'fixture.crumb' => 'Crumb',
+            'fixture.title' => 'Title',
+            'fixture.crumb.one' => 'Built at run time only',
+            'fixture.comment' => 'Only in a comment',
+            'fixture.part.whole' => 'Longer than the literal',
+        ];
+
+        self::assertSame(['fixture.crumb', 'fixture.title'], self::codeKeys($code, $strings));
+        self::assertSame(
+            ['fixture.crumb.one', 'fixture.comment', 'fixture.part.whole'],
+            self::unusedKeys([], [$code], $strings, []),
+        );
+    }
+
+    public function testTheControllerScanReadsTheControllers(): void
+    {
+        $files = self::controllers();
+        self::assertContains('src/Web/Controller/HomeController.php', $files);
+        foreach ($files as $file) {
+            self::assertSame('src/Web/Controller', dirname($file));
+        }
     }
 
     private static function isRuntimeKey(string $key): bool
@@ -1043,13 +1313,15 @@ final class TemplateRulesTest extends TestCase
         self::assertSame([], self::violations(self::HEADER . $body, self::PAGE));
     }
 
-    public function testTheComponentFixtureFollowsTheRules(): void
+    public function testTheComponentFixturesFollowTheRules(): void
     {
-        $file = 'tests/web/fixtures/templates/pages/components.php';
-        self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
         $strings = self::strings();
-        foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
-            self::assertArrayHasKey($key, $strings, $file);
+        foreach (['components', 'notices', 'form-actions'] as $name) {
+            $file = "tests/web/fixtures/templates/pages/{$name}.php";
+            self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
+            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
+                self::assertArrayHasKey($key, $strings, $file);
+            }
         }
     }
 

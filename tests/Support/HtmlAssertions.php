@@ -65,11 +65,26 @@ final class HtmlAssertions
     private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/[a-z0-9][a-z0-9-]*\.js\?v=[A-Za-z0-9._~%-]+$#';
 
     /**
+     * Attributes that load or link to an address. Their values (each
+     * candidate, for `srcset`) are the only places an http(s) URL is
+     * checked; text nodes and other attribute text such as `aria-label` or
+     * `placeholder` may name a scheme ("https:// at the start").
+     */
+    private const URL_ATTRIBUTES = [
+        'href', 'src', 'action', 'formaction', 'srcset', 'poster', 'data', 'cite', 'ping',
+        'background', 'manifest', 'xlink:href',
+    ];
+
+    /**
      * T-WEB-9 and T-WEB-22: no inline style or script, no event-handler
      * attribute, no `javascript:` address, and no http(s) URL other than the
      * configured source link. At most one `script` element is allowed: in
      * `head`, with a same-origin `src` under `/assets/js/`, `defer`, no other
      * attribute, and no content.
+     *
+     * Only markup is checked (elements, attributes, the addresses in
+     * URL_ATTRIBUTES and in CSS `url()` inside any attribute), never text
+     * nodes: designed body text may mention a scheme.
      */
     public static function assertNoInlineCode(string $html, string $sourceUrl): void
     {
@@ -95,24 +110,59 @@ final class HtmlAssertions
                 $attribute->nodeName,
                 "No event-handler attribute ({$attribute->nodeName}).",
             );
+            $value = $attribute->nodeValue ?? '';
             Assert::assertDoesNotMatchRegularExpression(
-                '/^\s*javascript:/i',
-                $attribute->nodeValue ?? '',
-                'No javascript: address.',
+                '/javascript:/i',
+                $value,
+                "No javascript: address in any attribute ({$attribute->nodeName}).",
             );
             Assert::assertDoesNotMatchRegularExpression(
                 '#^\s*[/\\\\]{2}#',
-                $attribute->nodeValue ?? '',
+                $value,
                 "No protocol-relative address ({$attribute->nodeName}).",
             );
+            foreach (self::addresses($attribute->nodeName, $value) as $address) {
+                Assert::assertDoesNotMatchRegularExpression(
+                    '#^[/\\\\]{2}#',
+                    $address,
+                    "No protocol-relative address ({$attribute->nodeName}).",
+                );
+                if (preg_match('#^https?:#i', $address) === 1) {
+                    Assert::assertSame($sourceUrl, $address, "The only external URL is the configured source link ({$attribute->nodeName}).");
+                }
+            }
         }
-        Assert::assertDoesNotMatchRegularExpression('/javascript:/i', $html, 'No javascript: anywhere.');
-        Assert::assertDoesNotMatchRegularExpression('#["\'=]\s*//#', $html, 'No protocol-relative URL.');
+    }
 
-        preg_match_all('#https?://[^\s"\'<>]*#i', $html, $matches);
-        foreach ($matches[0] as $url) {
-            Assert::assertSame($sourceUrl, $url, 'The only external URL is the configured source link.');
+    /**
+     * The addresses an attribute loads or links to, trimmed: the whole value
+     * of a URL attribute, each candidate of a `srcset`, and every CSS
+     * `url()` in any attribute.
+     *
+     * @return list<string>
+     */
+    private static function addresses(string $name, string $value): array
+    {
+        $name = strtolower($name);
+        $addresses = [];
+        if ($name === 'srcset') {
+            foreach (explode(',', $value) as $candidate) {
+                $parts = preg_split('/\s+/', trim($candidate));
+                $addresses[] = is_array($parts) ? $parts[0] : '';
+            }
+        } elseif (in_array($name, self::URL_ATTRIBUTES, true)) {
+            $addresses[] = trim($value);
         }
+        // A refresh (`<meta http-equiv="refresh" content="0; url=...">`).
+        if ($name === 'content' && preg_match('/;\s*url\s*=\s*([\'"]?)(.*?)\1\s*$/is', $value, $refresh) === 1) {
+            $addresses[] = trim($refresh[2]);
+        }
+        preg_match_all('/url\(\s*([\'"]?)(.*?)\1\s*\)/is', $value, $matches);
+        foreach ($matches[2] as $url) {
+            $addresses[] = trim($url);
+        }
+
+        return $addresses;
     }
 
     /**

@@ -8,8 +8,8 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 |---|---|
 | Milestone | M1 in design |
 | Phase | M1 resumed by the maintainer (window 3). Integration branch for this session: `claude/exciting-maxwell-l2yieq` (fast-forwarded from `claude/magical-hamilton-isy74q` at `30b072b`). Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
-| Window start | 2026-11-17T05:50Z (window 3) |
-| Resume reminder | `trig_01C1zDDQ81GbWBRxzVqTBV95`, fires 2026-11-17T11:06Z |
+| Window start | 2026-11-17T11:06Z (window 4) |
+| Resume reminder | `trig_01XraXBmuBPfwKSj34XaMZ6c`, fires 2026-11-17T16:22Z |
 | Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 merged; WP5 and WP7 merged; WP9, WP10, WP11 dispatched (unpushed worktrees; redo if reclaimed); then WP12, then the M1 exit audit, then stop (do not start M2). Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
 
 ## 2. Milestones
@@ -72,10 +72,11 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | M1-WP6 | M1 | implementation | per spec (depends on WP2; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: forged Host made an exposed folder `safe`, fixed by positive control P75; T-REPO-10 bypasses; setup-code removal order; read deadline; configured-folder keys). Test nits (distinct control nonce, public cleanup guards, redundant deadline check removed) verified by orchestrator |
 | M1-WP5 | M1 | implementation | per spec (depends on WP2, WP4; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE (round 1): IDOR, Member-on-Admin, stale-actor and last-Admin attacks refused by running; follow-ups (Member refusal provider over every Admin-only method, `requireCurrentPerson` active test, reset script clears throttle and notes inactive person, echo restored on SIGINT) verified by orchestrator |
 | M1-WP7 | M1 | implementation | per spec (depends on WP2, WP6, WP8; security-critical: yes) | done, merged, pushed | merged | design tier | APPROVE after 2 rounds (round 1: test gaps only, runtime confirmed by curl; P79 same-site refusal and read-first flash; round 2: runtime fixes confirmed, seam-test alias bypass). Alias fix verified by orchestrator; the kernel's `new $class($context)` controller dispatch (class from the route table) is the one allowed dynamic `new` |
-| M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
-| M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
-| M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: no) | in progress (agent worktree, unpushed) | worktree | design tier (pending) | |
+| M1-WP9 | M1 | implementation | per spec (depends on WP6, WP7, WP8; security-critical: yes) | implemented (`1e99373`, local branch `worktree-agent-aba37d35a231cc619`, unpushed; 4388 tests OK per author); on hold for the WP8 follow-up, then restore shared partials (P50), then design-tier security review | worktree | design tier (pending) | |
+| M1-WP10 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes) | implemented (`b74bc78`, local branch `worktree-agent-a1bc49373d2082792`, unpushed); 1 failing test (strings-used scan) awaiting WP8b; then switch hand-written buttons to the extended `form-actions`, then design-tier security review | worktree | design tier (pending) | |
+| M1-WP11 | M1 | implementation | per spec (depends on WP5, WP7, WP8; security-critical: yes, templates) | implemented (`cedde3a`, local branch `worktree-agent-a9ce59c3d079149dc`, unpushed); rebasing onto WP8b, then design-tier review | worktree | design tier (pending) | |
 | M1-WP12 | M1 | implementation | per spec (depends on WP9, WP10, WP11; security-critical: no) | not started | | | |
+| M1-WP8b | M1 | implementation | WP8 files only: string-use scan counts literal keys passed to partials (names derived from each partial's `t()` calls) and literal defined keys in controllers; `notice` `heading` 2/3; `form-actions` `submitParams`, `secondary`, `size`, `block`, `cancelLabel`/`cancelParams` (default output byte-identical); `fieldset.field` reset; `assertNoInlineCode` checks attributes and resource loads only (inline `style`/`script` elements still refused); `home.preview.` prefix removed | done, merged, pushed | merged | orchestrator | accepted after diff read (all output through `t()`/`url()`, literal class lists) and test run |
 
 ## 4. Provisional decisions awaiting maintainer confirmation
 
@@ -119,6 +120,7 @@ Not verified in M0: `.htaccess` behaviour on a real Apache server (not installed
 | P77 | `SchemaEditor` snapshot callback type | Constructor takes `\Closure(SnapshotInfo): void $onSnapshot` (was `callable`), so the SQL scanner needs no allowlist | M1-WP4 round 2 review ruling; amends spec 7.4 |
 | P78 | Core operations details accepted | `Operations` optional 7th constructor argument (test seam inside the write; add a repository test that `src/` and `public/` pass exactly 6 arguments once the web composition root exists); T-APP-30 shown by repositories refusing to run outside a transaction instead of a spy Database; `changeOwnPassword` requires the actor's own live session, takes back the pre-counted failure when the current password was right, clears the bucket on success; deactivate/reactivate of a person already in that state is a no-op, not audited; `projectAccess` lists all projects for an Admin; `setSharing`/`setProjectAccess` keep grants of non-Member or inactive people and on projects being created (demoting a former Member restores their old grants); direct file-system calls and literal system-DB SQL in `ProjectOperations` until `Fs`/`ProjectRegistry` helpers exist. Stale-actor re-check covers people, role, grant and create changes only; other Admin operations rely on `resume()` (one-request window) | M1-WP5 review rulings |
 | P79 | Same-site requests and flash reads | Unsafe-method requests with `Sec-Fetch-Site: same-site` are refused like `cross-site`; cookie names keep `^[a-z_]{1,32}$` (no `__Host-` prefix, which would need `Secure` and `Path=/` and break base-path scoping); residual risk: sibling subdomains on the same registrable domain can plant cookies and are trusted. `takeFlash` reads first and writes only when a flash exists | M1-WP7 review ruling; amends M1-screens 2.5 |
+| P80 | Installer probe port | The probe target is null (inconclusive) unless `SERVER_PORT` is the scheme default or equals the port in the Host header; the port-scan oracle (WP6 F2) stays open under Apache `UseCanonicalName Off`; closing it needs an operator-configured port (config key), deferred to M7 packaging and the host check | M1-WP9 report |
 
 ## 5. Blockers
 
@@ -155,26 +157,30 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-12T05:3xZ | Maintainer permission: unreviewed package work is preserved on side branches `claude/magical-hamilton-isy74q-wip-wp2` and `-wip-wp4` (merge into the assigned branch only after review). WP2 round 3 pushed there |
 | 2026-11-12T05:3xZ | WP4 implemented and pushed to `-wip-wp4`; build paused, no agents running |
 | 2026-11-17T05:50Z | Window 3 start (maintainer resume); integration branch now `claude/exciting-maxwell-l2yieq`; offline PHPUnit rebuild started; resume reminder armed for 11:06Z |
-| 2026-11-17T06:1xZ | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
-| 2026-11-17T06:2xZ | M1-WP2 merged (APPROVE); suite 2960 tests OK (1 skipped), lint 201 files 0 failed; WP6 dispatched |
-| 2026-11-17T06:3xZ | M1-WP4 review: REQUEST CHANGES (no blockers); rulings P73, P74; fix agent dispatched |
-| 2026-11-17T06:4xZ | M1-WP6 implemented (unpushed); orchestrator re-ran suite 3145 OK, lint 222 files OK; design-tier security review dispatched |
-| 2026-11-17T07:0xZ | M1-WP4 round 1 fixes done (unpushed); orchestrator re-ran suite 2879 OK, lint OK; sent back to the WP4 reviewer for verification |
-| 2026-11-17T07:1xZ | M1-WP6 review: REQUEST CHANGES (F1 blocker, spec gap); rulings P75, P76; author resumed with fixes |
-| 2026-11-17T07:3xZ | M1-WP4 round 2: REQUEST CHANGES (scanner only); root-cause redesign to a default-deny scanner sent to the fix agent |
-| 2026-11-17T07:5xZ | M1-WP4 default-deny scanner done (unpushed); orchestrator re-ran suite 2937 OK, lint OK; sent to the reviewer |
-| 2026-11-17T08:0xZ | M1-WP6 round 1 fixes done (unpushed); orchestrator re-ran suite 3168 OK, lint 223 OK; sent to the reviewer. On merge: add `/public/probe-*.txt` to `.gitignore` |
-| 2026-11-17T08:1xZ | M1-WP4 APPROVED (default-deny scanner: 17 old and 28 new bypasses caught); nit follow-ups sent to the fix agent; ruling P77 |
-| 2026-11-17T08:3xZ | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
-| 2026-11-17T08:5xZ | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
-| 2026-11-17T09:0xZ | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
-| 2026-11-17T09:3xZ | M1-WP5 implemented (unpushed); orchestrator re-ran suite 3587 OK, lint 257 OK; design-tier security review dispatched |
-| 2026-11-17T09:5xZ | M1-WP5 APPROVED; follow-ups (Member refusal provider, reset script clears throttle and warns on inactive person) sent to author; ruling P78 |
-| 2026-11-17T10:1xZ | M1-WP5 merged; suite 3810 tests OK (1 skipped), lint 279 files 0 failed |
-| 2026-11-17T10:4xZ | M1-WP7 implemented (unpushed); test-merged with integration (clean, 4142 OK, lint 286 OK); design-tier security review dispatched |
-| 2026-11-17T11:0xZ | M1-WP7 review: REQUEST CHANGES (test-only); ruling P79; author resumed |
-| 2026-11-17T11:2xZ | M1-WP7 round 1 fixes done (unpushed); orchestrator re-ran suite 4295 OK, lint 288 OK; sent to the reviewer |
-| 2026-11-17T11:4xZ | M1-WP7 merged; suite 4308 tests OK (1 skipped), lint 288 files 0 failed; wave 5 (WP9, WP10, WP11) dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | PHPUnit rebuilt (17 MB); suite on integration branch 2528 tests OK (1 skipped: no comma-decimal locale installed), lint 156 files 0 failed. Dispatched: WP2 round 3 verification (design tier), WP4 review (design tier) |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP2 merged (APPROVE); suite 2960 tests OK (1 skipped), lint 201 files 0 failed; WP6 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 review: REQUEST CHANGES (no blockers); rulings P73, P74; fix agent dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 implemented (unpushed); orchestrator re-ran suite 3145 OK, lint 222 files OK; design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 round 1 fixes done (unpushed); orchestrator re-ran suite 2879 OK, lint OK; sent back to the WP4 reviewer for verification |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 review: REQUEST CHANGES (F1 blocker, spec gap); rulings P75, P76; author resumed with fixes |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 round 2: REQUEST CHANGES (scanner only); root-cause redesign to a default-deny scanner sent to the fix agent |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 default-deny scanner done (unpushed); orchestrator re-ran suite 2937 OK, lint OK; sent to the reviewer |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 round 1 fixes done (unpushed); orchestrator re-ran suite 3168 OK, lint 223 OK; sent to the reviewer. On merge: add `/public/probe-*.txt` to `.gitignore` |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 APPROVED (default-deny scanner: 17 old and 28 new bypasses caught); nit follow-ups sent to the fix agent; ruling P77 |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP4 merged; suite 3397 tests OK (1 skipped), lint 227 files 0 failed; WP5 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 APPROVED (positive control held against forged Host, echoing 404, catch-all 200, forged port, wrong basePath, fallback); test nits sent to author |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP6 merged; `/public/probe-*.txt` added to `.gitignore`; suite 3608 tests OK (1 skipped), lint 249 files 0 failed; WP7 dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 implemented (unpushed); orchestrator re-ran suite 3587 OK, lint 257 OK; design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 APPROVED; follow-ups (Member refusal provider, reset script clears throttle and warns on inactive person) sent to author; ruling P78 |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP5 merged; suite 3810 tests OK (1 skipped), lint 279 files 0 failed |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 implemented (unpushed); test-merged with integration (clean, 4142 OK, lint 286 OK); design-tier security review dispatched |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 review: REQUEST CHANGES (test-only); ruling P79; author resumed |
+| 2026-11-17, 06:00Z to 07:40Z | M1-WP7 round 1 fixes done (unpushed); orchestrator re-ran suite 4295 OK, lint 288 OK; sent to the reviewer |
+| 2026-11-17T07:4xZ | M1-WP7 merged; suite 4308 tests OK (1 skipped), lint 288 files 0 failed; wave 5 (WP9, WP10, WP11) dispatched |
+| 2026-11-17, about 08:00Z | Usage limit hit (reset 08:50Z); WP9 (one commit, `c0dd2da`), WP10 and WP11 (uncommitted work) stopped in their worktrees |
+| 2026-11-17T11:06Z | Window 4 start; worker restarted; the three agents resumed in place; resume reminder armed for 16:22Z |
+| 2026-11-17T11:2xZ | M1-WP9 implemented (inlined partial markup because the strings-used scan counts only literal `t()` keys); WP8b follow-up dispatched to fix the scan; WP10 and WP11 told to use the shared partials |
+| 2026-11-17T12:xxZ | WP10, WP11 implemented (each one failing string-use test pending WP8b); WP8b merged (suite 4359 OK, lint 291 OK); WP9, WP10, WP11 told to merge the integration branch and adopt the shared partials |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 
@@ -233,3 +239,5 @@ Brief notes for later M1 packages (from M1-WP8):
 | `rename` writes file meta before the registry name re-check (race leaves names different; spec order); `activate` after a takeover by another create's cleanup throws after `project.created` is audited (practically unreachable) | `src/Core/App/ProjectOperations.php` (M1-WP5 review nits 7, 8) |
 | WP8 owner follow-ups from WP7: remove `home.preview.` from `RUNTIME_PREFIXES` in `tests/web/TemplateRulesTest.php`; refocus or drop `AppearanceTest` preview-link tests (now pass through a fixture start page); fixture `home` template and strings still used by `ViewTest`; optional system-database wording for `error.unavailable.*` | `tests/web/*`, `strings/en/errors.php` |
 | WP9, WP10: call `Context::withNewSession()` at sign-in and first-Admin creation (ends the old cookie's session, rotates CSRF cookie); `Installer` has no `close()`, so `CoreServices::close()` cannot close its connection; `takeFlash` opens a write on every signed-in GET | M1-WP7 report |
+| Confirmation and count strings have no singular forms ("1 values in 1 records"); add plural support to `Strings` or reword | `strings/en/schema.php`, `src/Web/Strings.php` (M1-WP11 report) |
+| `HtmlAssertions::assertForm` requires `id` plus `label for` on every text box; exempt controls named by `aria-label` (choice editor, M1-screens 4.5 item 6) | `tests/Support/HtmlAssertions.php` (M1-WP11 report) |

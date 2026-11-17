@@ -31,7 +31,7 @@ declare(strict_types=1);
 <fieldset class="fieldset-card">
 <legend class="legend"><?= $this->t('people.details.title') ?></legend>
 <div class="field">
-<label class="label" for="edit-name"><?= $this->t('people.field.name') ?></label>
+<label class="label" for="edit-name"><?= $this->partial('field-label', ['key' => 'people.field.name', 'optional' => false]) ?></label>
 <p class="help" id="edit-name-help"><?= $this->t('people.field.name_help') ?></p>
 <?php if (is_string($data['errors']['edit-name'] ?? null)) : ?>
 <p class="error-text" id="edit-name-error"><?= $this->partial('field-error', ['text' => $data['errors']['edit-name']]) ?></p>
@@ -41,7 +41,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="edit-username"><?= $this->t('people.field.username') ?></label>
+<label class="label" for="edit-username"><?= $this->partial('field-label', ['key' => 'people.field.username', 'optional' => false]) ?></label>
 <p class="help" id="edit-username-help"><?= $this->t('people.field.username_help') ?></p>
 <?php if (is_string($data['errors']['edit-username'] ?? null)) : ?>
 <p class="error-text" id="edit-username-error"><?= $this->partial('field-error', ['text' => $data['errors']['edit-username']]) ?></p>
@@ -108,7 +108,7 @@ declare(strict_types=1);
 <p><?= $this->t('people.password.self') ?></p>
 <?php endif; ?>
 <div class="field">
-<label class="label" for="reset-password"><?= $this->t('people.field.temporary') ?></label>
+<label class="label" for="reset-password"><?= $this->partial('field-label', ['key' => 'people.field.temporary', 'optional' => false]) ?></label>
 <p class="help" id="reset-password-help"><?= $this->t('people.field.temporary_help') ?></p>
 <?php if (is_string($data['errors']['reset-password'] ?? null)) : ?>
 <p class="error-text" id="reset-password-error"><?= $this->partial('field-error', ['text' => $data['errors']['reset-password']]) ?></p>

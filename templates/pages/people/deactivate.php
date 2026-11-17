@@ -17,10 +17,6 @@
 declare(strict_types=1);
 
 ?>
-<?php if (false) : ?>
-<?php /* Never rendered: names the breadcrumb key the controller builds, for the strings test. */ ?>
-<?= $this->t('people.stop.crumb') ?>
-<?php endif; ?>
 <h1><?= $this->t('people.stop.title', ['name' => $data['name']]) ?></h1>
 <p><?= $this->t('people.stop.body', ['name' => $data['name']]) ?></p>
 <form class="form" method="post" action="<?= $this->url('/admin/people/' . $data['key'] . '/deactivate') ?>">

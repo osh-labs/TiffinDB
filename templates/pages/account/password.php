@@ -16,9 +16,7 @@ declare(strict_types=1);
 
 ?>
 <?php if ($data['forced'] === true) : ?>
-<div class="notice" role="status">
-<p><?= $this->t('account.password.forced') ?></p>
-</div>
+<?= $this->partial('notice', ['key' => 'account.password.forced', 'params' => [], 'tone' => 'info']) ?>
 <?php endif; ?>
 <div>
 <h1><?= $this->t('account.password.title') ?></h1>
@@ -27,7 +25,7 @@ declare(strict_types=1);
 <form class="form form-card form-narrow" method="post" action="<?= $this->url('/account/password') ?>">
 <?= $this->partial('csrf') ?>
 <div class="field">
-<label class="label" for="account-current"><?= $this->t('account.password.current') ?></label>
+<label class="label" for="account-current"><?= $this->partial('field-label', ['key' => 'account.password.current', 'optional' => false]) ?></label>
 <?php if (is_string($data['errors']['account-current'] ?? null)) : ?>
 <p class="error-text" id="account-current-error"><?= $this->partial('field-error', ['text' => $data['errors']['account-current']]) ?></p>
 <input class="input" id="account-current" type="password" name="current" autocomplete="current-password" required="required" aria-describedby="account-current-error" aria-invalid="true" />
@@ -36,7 +34,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="account-new"><?= $this->t('account.password.new') ?></label>
+<label class="label" for="account-new"><?= $this->partial('field-label', ['key' => 'account.password.new', 'optional' => false]) ?></label>
 <p class="help" id="account-new-help"><?= $this->t('account.password.new_help') ?></p>
 <?php if (is_string($data['errors']['account-new'] ?? null)) : ?>
 <p class="error-text" id="account-new-error"><?= $this->partial('field-error', ['text' => $data['errors']['account-new']]) ?></p>
@@ -46,7 +44,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="account-repeat"><?= $this->t('account.password.repeat') ?></label>
+<label class="label" for="account-repeat"><?= $this->partial('field-label', ['key' => 'account.password.repeat', 'optional' => false]) ?></label>
 <?php if ($data['mismatch'] === true) : ?>
 <p class="error-text" id="account-repeat-error"><?= $this->t('account.password.mismatch') ?></p>
 <input class="input" id="account-repeat" type="password" name="repeat" autocomplete="new-password" required="required" aria-describedby="account-repeat-error" aria-invalid="true" />
@@ -56,9 +54,7 @@ declare(strict_types=1);
 </div>
 <?= $this->partial('password-toggle', ['plural' => true]) ?>
 <?php if ($data['forced'] === true) : ?>
-<div class="form-actions">
-<button class="button button-large button-primary" type="submit"><?= $this->t('account.password.submit') ?></button>
-</div>
+<?= $this->partial('form-actions', ['submit' => 'account.password.submit', 'danger' => false, 'cancel' => null]) ?>
 <?php else : ?>
 <?= $this->partial('form-actions', ['submit' => 'account.password.submit', 'danger' => false, 'cancel' => '/projects']) ?>
 <?php endif; ?>

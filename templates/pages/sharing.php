@@ -14,11 +14,6 @@
 declare(strict_types=1);
 
 ?>
-<?php if (false) : ?>
-<?php /* Never rendered: names the keys the controller and form-actions use, for the strings test. */ ?>
-<?= $this->t('sharing.crumb') ?>
-<?= $this->t('sharing.submit') ?>
-<?php endif; ?>
 <div>
 <h1><?= $this->t('sharing.title', ['project' => $data['project']]) ?></h1>
 <p class="lead"><?= $this->t('sharing.lead') ?></p>

@@ -34,7 +34,7 @@ declare(strict_types=1);
 </div>
 <?php endif; ?>
 <div class="field">
-<label class="label" for="signin-username"><?= $this->t('signin.username') ?></label>
+<label class="label" for="signin-username"><?= $this->partial('field-label', ['key' => 'signin.username', 'optional' => false]) ?></label>
 <?php if ($data['error'] === null) : ?>
 <input class="input" id="signin-username" type="text" name="username" value="<?= $this->e($data['username']) ?>" autocomplete="username" autocapitalize="none" spellcheck="false" required="required" />
 <?php else : ?>
@@ -42,7 +42,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="signin-password"><?= $this->t('signin.password') ?></label>
+<label class="label" for="signin-password"><?= $this->partial('field-label', ['key' => 'signin.password', 'optional' => false]) ?></label>
 <?php if ($data['error'] === null) : ?>
 <input class="input" id="signin-password" type="password" name="password" autocomplete="current-password" required="required" />
 <?php else : ?>

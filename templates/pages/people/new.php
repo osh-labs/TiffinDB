@@ -15,15 +15,11 @@
 declare(strict_types=1);
 
 ?>
-<?php if (false) : ?>
-<?php /* Never rendered: names the key this page passes to form-actions, for the strings test. */ ?>
-<?= $this->t('people.new.submit') ?>
-<?php endif; ?>
 <h1><?= $this->t('people.new.title') ?></h1>
 <form class="form form-card form-wide" method="post" action="<?= $this->url('/admin/people') ?>">
 <?= $this->partial('csrf') ?>
 <div class="field">
-<label class="label" for="person-name"><?= $this->t('people.field.name') ?></label>
+<label class="label" for="person-name"><?= $this->partial('field-label', ['key' => 'people.field.name', 'optional' => false]) ?></label>
 <p class="help" id="person-name-help"><?= $this->t('people.field.name_help') ?></p>
 <?php if (is_string($data['errors']['person-name'] ?? null)) : ?>
 <p class="error-text" id="person-name-error"><?= $this->partial('field-error', ['text' => $data['errors']['person-name']]) ?></p>
@@ -33,7 +29,7 @@ declare(strict_types=1);
 <?php endif; ?>
 </div>
 <div class="field">
-<label class="label" for="person-username"><?= $this->t('people.field.username') ?></label>
+<label class="label" for="person-username"><?= $this->partial('field-label', ['key' => 'people.field.username', 'optional' => false]) ?></label>
 <p class="help" id="person-username-help"><?= $this->t('people.field.username_help') ?></p>
 <?php if (is_string($data['errors']['person-username'] ?? null)) : ?>
 <p class="error-text" id="person-username-error"><?= $this->partial('field-error', ['text' => $data['errors']['person-username']]) ?></p>
@@ -58,7 +54,7 @@ declare(strict_types=1);
 </div>
 </fieldset>
 <div class="field">
-<label class="label" for="person-password"><?= $this->t('people.field.temporary') ?></label>
+<label class="label" for="person-password"><?= $this->partial('field-label', ['key' => 'people.field.temporary', 'optional' => false]) ?></label>
 <p class="help" id="person-password-help"><?= $this->t('people.field.temporary_help') ?></p>
 <?php if (is_string($data['errors']['person-password'] ?? null)) : ?>
 <p class="error-text" id="person-password-error"><?= $this->partial('field-error', ['text' => $data['errors']['person-password']]) ?></p>

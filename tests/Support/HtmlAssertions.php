@@ -257,7 +257,10 @@ final class HtmlAssertions
      *    with a `label.label` whose `for` names it; every id in its
      *    `aria-describedby` exists; when one of them is a `.error-text`, the
      *    control has `aria-invalid="true"`, and `aria-invalid="true"` is
-     *    never set without a described error.
+     *    never set without a described error. A text-like control may
+     *    instead be named by a non-empty `aria-label` (the repeated inputs
+     *    of item 6, such as the choice editor's existing choices); it then
+     *    needs no id or label, but must have a non-empty `name`.
      * 6. Every checkbox and radio has a name from a wrapping `label`, a
      *    `label for`, or `aria-label`; ids in the page are unique.
      *
@@ -323,6 +326,11 @@ final class HtmlAssertions
                 || trim($control->getAttribute('aria-label')) !== ''
                 || ($id !== '' && $xpath->query('//label[@for="' . $id . '"]')->length === 1);
             Assert::assertTrue($named, "{$what} has a wrapping label, a label for it, or an aria-label.");
+        } elseif (trim($control->getAttribute('aria-label')) !== '') {
+            Assert::assertNotSame('', trim($control->getAttribute('name')), "{$what}, named by aria-label, has a name.");
+            if ($id !== '') {
+                Assert::assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9_-]*$/', $id, "{$what} has a valid id.");
+            }
         } else {
             Assert::assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9_-]*$/', $id, "{$what} has an id.");
             $field = $control->parentNode;

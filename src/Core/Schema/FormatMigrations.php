@@ -17,8 +17,10 @@ use TiffinDB\Core\Storage\Snapshots;
  * Forward-only upgrades of the project file format (M1 spec section 7.2,
  * `docs/formats/tiffin.md` section 11). STEPS maps a target version to the
  * statements that bring a file from the version before it; it is empty in
- * M1 (version 2 arrives with M2). The constructor takes other steps as a
- * test seam.
+ * M1 (version 2 arrives with M2). Every statement run here comes from a
+ * constant of this class (M1 spec section 3.3): the steps run as
+ * functions, and only the test seam supplies functions other than those
+ * that run STEPS.
  */
 final class FormatMigrations
 {
@@ -34,21 +36,32 @@ final class FormatMigrations
         1 => 'PRAGMA user_version = 1',
     ];
 
-    /** @var array<int, list<string>> */
+    /** @var array<int, \Closure(Database): void> */
     private readonly array $steps;
 
-    /** @param array<int, list<string>>|null $steps */
+    /**
+     * Without arguments, the steps run the statements of STEPS.
+     *
+     * @internal The $steps argument is a test seam: each function makes
+     *     the changes of one target version on the connection it is given.
+     *     Application code calls this constructor with no arguments.
+     * @param array<int, \Closure(Database): void>|null $steps
+     */
     public function __construct(?array $steps = null)
     {
-        $steps ??= self::STEPS;
-        foreach ($steps as $version => $statements) {
-            if (!is_int($version) || $version < 1 || !is_array($statements) || !array_is_list($statements)) {
-                throw new \InvalidArgumentException('Format steps map a version to a list of statements.');
+        if ($steps === null) {
+            $steps = [];
+            foreach (array_keys(self::STEPS) as $version) {
+                $steps[$version] = static function (Database $db) use ($version): void {
+                    foreach (self::STEPS[$version] as $statement) {
+                        $db->run($statement);
+                    }
+                };
             }
-            foreach ($statements as $statement) {
-                if (!is_string($statement)) {
-                    throw new \InvalidArgumentException('A format step statement must be a string.');
-                }
+        }
+        foreach ($steps as $version => $step) {
+            if (!is_int($version) || $version < 1 || !$step instanceof \Closure) {
+                throw new \InvalidArgumentException('Format steps map a version to a function.');
             }
         }
         $this->steps = $steps;
@@ -73,13 +86,14 @@ final class FormatMigrations
         }
         $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
         for ($version = $from + 1; $version <= ProjectFile::VERSION; $version++) {
-            $statements = $this->steps[$version];
-            $pragma = self::VERSION_PRAGMAS[$version];
-            $db->write(static function (Database $db) use ($statements, $pragma, $version): void {
-                foreach ($statements as $statement) {
-                    $db->run($statement);
+            $step = $this->steps[$version];
+            $db->write(static function (Database $db) use ($step, $version): void {
+                $step($db);
+                foreach (self::VERSION_PRAGMAS as $target => $pragma) {
+                    if ($target === $version) {
+                        $db->run($pragma);
+                    }
                 }
-                $db->run($pragma);
                 $db->run('UPDATE "_tiffin_meta" SET "value" = ? WHERE "key" = \'format_version\'', [(string) $version]);
             });
         }

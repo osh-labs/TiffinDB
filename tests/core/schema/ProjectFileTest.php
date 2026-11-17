@@ -215,7 +215,10 @@ final class ProjectFileTest extends TestCase
     public function testInjectedStepRunsAfterAFormatUpgradeSnapshot(): void
     {
         $this->makeVersionZero();
-        $steps = new FormatMigrations([1 => ['CREATE TABLE "_tiffin_example" ("x" TEXT)', 'INSERT INTO "_tiffin_example" ("x") VALUES (\'synthetic\')']]);
+        $steps = new FormatMigrations([1 => static function (Database $db): void {
+            $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
+            $db->run('INSERT INTO "_tiffin_example" ("x") VALUES (\'synthetic\')');
+        }]);
         $this->db = ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
 
         self::assertSame(1, $this->db->value('PRAGMA user_version'));
@@ -235,7 +238,10 @@ final class ProjectFileTest extends TestCase
     public function testAFailingStepRollsBack(): void
     {
         $this->makeVersionZero();
-        $steps = new FormatMigrations([1 => ['CREATE TABLE "_tiffin_example" ("x" TEXT)', 'INSERT INTO "_tiffin_missing" VALUES (1)']]);
+        $steps = new FormatMigrations([1 => static function (Database $db): void {
+            $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
+            $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
+        }]);
         try {
             ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
             self::fail('The failing step was not reported.');
@@ -263,7 +269,13 @@ final class ProjectFileTest extends TestCase
         for ($version = 1; $version <= ProjectFile::VERSION; $version++) {
             self::assertSame('PRAGMA user_version = ' . $version, FormatMigrations::VERSION_PRAGMAS[$version]);
         }
-        $this->expectException(\InvalidArgumentException::class);
-        new FormatMigrations([0 => ['SELECT 1']]);
+        foreach ([[0 => static function (Database $db): void {}], [1 => ['SELECT 1']], ['1' => 'SELECT 1']] as $steps) {
+            try {
+                new FormatMigrations($steps);
+                self::fail('Bad format steps were accepted.');
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
     }
 }

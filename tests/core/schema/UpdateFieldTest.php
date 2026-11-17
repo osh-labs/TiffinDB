@@ -13,11 +13,14 @@ use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Error\ConfirmationRequired;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\FieldDef;
+use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\FieldUpdate;
 use TiffinDB\Core\Schema\Identifier;
 use TiffinDB\Core\Schema\Impact;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Schema\TableDef;
+use TiffinDB\Core\Schema\Type\Checked;
+use TiffinDB\Core\Schema\Type\FieldType;
 use TiffinDB\Core\Storage\SnapshotInfo;
 use TiffinDB\Core\Storage\SnapshotReason;
 
@@ -261,8 +264,13 @@ final class UpdateFieldTest extends TestCase
     {
         $editor = $this->editor();
         $price = $editor->addField($this->items->key, 'Price', 'currency', ['code' => 'usd'], false, '');
+        // Added over three records, so the stored next (8) differs from start (5) and from the next given below (1).
+        foreach (range(1, 3) as $ignored) {
+            $this->insert($this->items->key);
+        }
         $number = $editor->addField($this->items->key, 'Number', 'auto_number', ['start' => 5], false, '');
-        $this->insert($this->items->key);
+        self::assertSame(['start' => 5, 'next' => 8], $number->options);
+        self::assertSame([5, 6, 7], $this->column($this->items->key, $number->key));
 
         self::assertSame(
             [['options.minor_digits', 'problem.options.minor_digits_fixed', []]],
@@ -275,8 +283,148 @@ final class UpdateFieldTest extends TestCase
             self::problems(fn () => $editor->updateField($number->key, 'Number', ['start' => 1], false, '', true)),
         );
         $updated = $editor->updateField($number->key, 'No.', ['start' => 5, 'next' => 1], true, '', false);
-        self::assertSame(['start' => 5, 'next' => 5], $updated->options);
+        self::assertSame(['start' => 5, 'next' => 8], $updated->options);
         self::assertFalse($updated->required);
-        self::assertSame(['start' => 5, 'next' => 5], $this->schema()->field($number->key)->options);
+        self::assertSame(['start' => 5, 'next' => 8], $this->schema()->field($number->key)->options);
+        self::assertSame(['start' => 5, 'next' => 8], $editor->updateField($number->key, 'No.', ['start' => 5], false, '', false)->options);
+        self::assertSame(['start' => 5, 'next' => 8], $this->schema()->field($number->key)->options);
+    }
+
+    // ------------------------------------------------------------ the retry path
+
+    /**
+     * Swaps the rating type for one whose first normaliseOptions() call
+     * reports the old maximum (5), so the check outside the transaction finds
+     * nothing to clear, while every later call reports the real one. To
+     * updateField this is the same as a value above the new maximum appearing
+     * between its check and its transaction. Returns the call counter.
+     *
+     * @return \ArrayObject<int, int> [0 => calls so far]
+     */
+    private function ratingWithALateValue(): \ArrayObject
+    {
+        $calls = new \ArrayObject([0]);
+        $standard = FieldTypes::standard();
+        $rating = $standard->get('rating');
+        $late = new class ($rating, $calls) implements FieldType {
+            /** @param \ArrayObject<int, int> $calls */
+            public function __construct(private readonly FieldType $inner, private readonly \ArrayObject $calls)
+            {
+            }
+
+            public function id(): string
+            {
+                return $this->inner->id();
+            }
+
+            public function columnDefinition(): ?string
+            {
+                return $this->inner->columnDefinition();
+            }
+
+            public function defaultOptions(): array
+            {
+                return $this->inner->defaultOptions();
+            }
+
+            public function normaliseOptions(array $options): array
+            {
+                $this->calls[0]++;
+                $normalised = $this->inner->normaliseOptions($options);
+
+                return $this->calls[0] === 1 ? ['max' => 5] + $normalised : $normalised;
+            }
+
+            public function fromStorage(mixed $stored, array $options): mixed
+            {
+                return $this->inner->fromStorage($stored, $options);
+            }
+
+            public function toStorage(mixed $value, array $options): string|int|float|null
+            {
+                return $this->inner->toStorage($value, $options);
+            }
+
+            public function check(mixed $value, array $options): Checked
+            {
+                return $this->inner->check($value, $options);
+            }
+
+            public function parse(string $text, array $options, bool $lenient = false): Checked
+            {
+                return $this->inner->parse($text, $options, $lenient);
+            }
+
+            public function toText(mixed $value, array $options): string
+            {
+                return $this->inner->toText($value, $options);
+            }
+
+            public function canBeTitle(): bool
+            {
+                return $this->inner->canBeTitle();
+            }
+
+            public function isEditable(): bool
+            {
+                return $this->inner->isEditable();
+            }
+        };
+        $types = [];
+        foreach ($standard->ids() as $id) {
+            $types[] = $id === 'rating' ? $late : $this->types->get($id);
+        }
+        $class = new \ReflectionClass(FieldTypes::class);
+        $wrapped = $class->newInstanceWithoutConstructor();
+        $constructor = $class->getConstructor();
+        self::assertNotNull($constructor);
+        $constructor->invoke($wrapped, $types);
+        $this->types = $wrapped;
+
+        return $calls;
+    }
+
+    public function testAValueThatAppearsAfterTheCheckIsClearedOnTheRetryWithOneSnapshot(): void
+    {
+        $stars = $this->editor()->addField($this->items->key, 'Stars', 'rating', ['max' => 5], false, '');
+        $this->insert($this->items->key, [$stars->key => 2]);
+        $this->insert($this->items->key, [$stars->key => 4]);
+        $calls = $this->ratingWithALateValue();
+        $before = $this->dump();
+        $atSnapshot = null;
+        $editor = $this->editor(null, function () use (&$atSnapshot): void {
+            $atSnapshot = $this->dump();
+        });
+
+        $updated = $editor->updateField($stars->key, 'Stars', ['max' => 3], false, '', true);
+
+        // Check (nothing), transaction (a value: back out), check again (snapshot), transaction (apply).
+        self::assertSame(4, $calls[0]);
+        self::assertCount(1, $this->taken);
+        self::assertSame(SnapshotReason::FieldOptions, $this->taken[0]->reason);
+        self::assertSame([$this->taken[0]->file], $this->snapshotFiles());
+        self::assertSame($before, $atSnapshot, 'The first attempt committed something.');
+        self::assertSame([2, null], $this->column($this->items->key, $stars->key));
+        self::assertSame(['max' => 3], $updated->options);
+        self::assertSame(['max' => 3], $this->schema()->field($stars->key)->options);
+    }
+
+    public function testAValueThatAppearsAfterTheCheckNeedsConfirmationAndChangesNothing(): void
+    {
+        $stars = $this->editor()->addField($this->items->key, 'Stars', 'rating', ['max' => 5], false, '');
+        $this->insert($this->items->key, [$stars->key => 2]);
+        $this->insert($this->items->key, [$stars->key => 4]);
+        $calls = $this->ratingWithALateValue();
+        $before = $this->dump();
+        $this->clock->advance(60);
+
+        $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($stars->key, 'Stars', ['max' => 3], false, '', false));
+
+        self::assertSame(2, $calls[0]);
+        self::assertSame([1, 1], [$confirmation->records, $confirmation->values]);
+        self::assertFalse($this->db->inTransaction());
+        self::assertSame($before, $this->dump());
+        self::assertSame([], $this->taken);
+        self::assertSame([], $this->snapshotFiles());
     }
 }

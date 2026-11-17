@@ -6,18 +6,18 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M1 in design |
-| Phase | M1 resumed by the maintainer (window 3). Integration branch for this session: `claude/exciting-maxwell-l2yieq` (fast-forwarded from `claude/magical-hamilton-isy74q` at `30b072b`). Merged: WP0, WP1, WP3, WP8. Preserved unmerged: WP2 (`-wip-wp2`, round 3 fix awaiting verification), WP4 (`-wip-wp4`, awaiting review) |
+| Milestone | M1 CLOSED; M2 not started |
+| Phase | Stopped at the end of M1 by maintainer instruction; no agents running. Integration branch `claude/exciting-maxwell-l2yieq` holds all of M0 and M1 |
 | Window start | 2026-11-17T11:06Z (window 4) |
-| Resume reminder | `trig_01XraXBmuBPfwKSj34XaMZ6c`, fires 2026-11-17T16:22Z |
-| Next action | (1) WP2 merged; (2) WP4 merged; (3) WP6 merged; All M1 work packages merged. M1 exit audit dispatched (independent design tier); then fix findings, record results, stop (do not start M2). Review economy (maintainer instruction): nit-only follow-ups are verified by the orchestrator (test run and diff read) instead of resuming the reviewer; security fixes still go back to the reviewer; browser checks only in WP12 and the exit audit. Stop when M1 closes; do not start M2. If resuming after a reclaim: rebuild the PHPUnit install and redo every unpushed package (check the worktree branches first; WP2 and WP4 work is on the `-wip-wp2` and `-wip-wp4` remote branches). |
+| Resume reminder | none (deleted at the M1 stop; the maintainer resumes the build) |
+| Next action | Stopped. On the maintainer's instruction to continue: design M2 (`docs/specs/M2-*.md`) per orchestration section 3, starting with the carried-forward items in section 7 that are mapped to M2. If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9); everything is pushed. Brief every agent with its own scratch subfolder and port |
 
 ## 2. Milestones
 
 | Milestone | Status | Exit-criteria results |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
-| M1 | exit audit done (CLOSES WITH LISTED FIXES); F-1 and F-3 fixes in progress | See M1 exit results below |
+| M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
 | M2 | not started | |
 | M3 | not started | |
 | M4 | not started | |
@@ -62,7 +62,7 @@ Independent design-tier exit audit on the integration branch (all M1 work packag
 | Tests not vacuous | PASS | 10 of 10 mutations caught (core and web) |
 | Plan section 8 and spec 1.3 exit criteria | PASS | Headless core tests; Admin can create a project and a table; screens match the mock-ups; trash, snapshots and audit log working |
 
-Findings: F-1 (should-fix) `tests/web/FrontControllerTest.php` not hermetic when a data folder exists next to the checkout; F-2 (nit) no `Origin` check when `Sec-Fetch-Site` is absent (carried forward); F-3 (nit) duplicate `check` class in `password-toggle.php`. As-built notes appended to both M1 specs; `docs/formats/tiffin.md` section 11 corrected (one transaction per upgrade step).
+Findings: F-1 (should-fix, fixed: front-controller tests use a scratch app with a temporary `data_dir`) `tests/web/FrontControllerTest.php` not hermetic when a data folder exists next to the checkout; F-2 (nit) no `Origin` check when `Sec-Fetch-Site` is absent (carried forward); F-3 (nit, fixed) duplicate `check` class in `password-toggle.php`. Final suite after fixes: 4777 tests OK (1 skipped), lint 348 files 0 failed. As-built notes appended to both M1 specs; `docs/formats/tiffin.md` section 11 corrected (one transaction per upgrade step).
 
 Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.
 
@@ -215,6 +215,7 @@ Deferred maintainer tasks (raise only at end of build):
 | 2026-11-17, window 4 | M1-WP12 implemented; D1 fix (WP8d) and WP12 review dispatched; P83 accepts D2 to D6 |
 | 2026-11-17, window 4 | WP8d and WP12 merged; suite 4777 tests OK (1 skipped), lint 348 files 0 failed; M1 exit audit dispatched |
 | 2026-11-17, window 4 | M1 exit audit: CLOSES WITH LISTED FIXES; as-built notes and format-doc correction merged; F-1 and F-3 fixes dispatched |
+| 2026-11-17, window 4 | M1 exit fixes F-1 and F-3 merged; M1 CLOSED. Stopped per maintainer instruction (do not start M2); resume reminder deleted |
 
 ## 7. Carried forward to M1 (open nits from reviews, none blocking)
 

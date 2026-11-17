@@ -696,6 +696,31 @@ textarea.input {
   border-radius: var(--radius-control);
 }
 
+.radio-card > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Narrow forms (a phone at a large text size): thinner card padding and
+ * the radio above its text, so whole words fit. rem tracks the text size.
+ */
+.form-wide {
+  container-type: inline-size;
+}
+
+@container (max-width: 12.5rem) {
+  .fieldset-card {
+    padding-inline: var(--space-3);
+  }
+
+  .radio-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-inline: var(--space-2);
+  }
+}
+
 .radio-card:has(input:checked) {
   border-color: var(--accent);
   background: var(--soft);

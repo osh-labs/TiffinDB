@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | Phase 1: M2-D1 (design) dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
+| Phase | Phase 1: M2-D1 merged (suite 4777 OK, lint OK); M2-R1 (spec review) dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merge M2-D1 output, dispatch M2-R1 (second design-tier reviewer), then wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+| Next action | Merge M2-R1, record P84 to P109 in section 4 (P108 process-only), then wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 

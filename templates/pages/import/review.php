@@ -80,7 +80,7 @@ declare(strict_types=1);
 </form>
 <div class="io-actions">
 <button class="button button-primary button-large" type="submit" form="<?= $this->id('import', 'review') ?>" name="action" value="import"><?= $this->t('import.review.import', ['count' => $data['importCount']]) ?></button>
-<form class="inline-form" method="post" action="<?= $this->url($data['cancel']) ?>">
+<form method="post" action="<?= $this->url($data['cancel']) ?>">
 <?= $this->partial('csrf') ?>
 <button class="button button-large" type="submit"><?= $this->t('import.start_again') ?></button>
 </form>

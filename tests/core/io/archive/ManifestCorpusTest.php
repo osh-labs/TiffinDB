@@ -82,6 +82,30 @@ final class ManifestCorpusTest extends TestCase
         }
     }
 
+    public function testDuplicateMembersAreRefused(): void
+    {
+        $copy = $this->copyOfSource();
+        $bytes = (string) file_get_contents($copy);
+        $members = '"format":"tiffindb-archive","archive_version":1,"created_at":"' . self::CREATED . '","created_with":"0.3.0-dev",'
+            . '"project_format_version":3,"project_name":"Example Project","project_size":' . strlen($bytes)
+            . ',"project_sha256":"' . hash('sha256', $bytes) . '","attachments":0';
+        $cases = [
+            'repeated' => '{' . $members . ',"project_name":"Other Project"}',
+            'escaped repeat' => '{' . $members . ',"project\\u005fname":"Other Project"}',
+            'repeat after spaces' => '{' . $members . ' , "attachments" : 0}',
+        ];
+        foreach ($cases as $label => $json) {
+            $json = str_replace('\\\\u', '\\u', $json);
+            $path = (new ZipBytes())->add(ZipCheck::MANIFEST, $json)->add(ZipCheck::PROJECT, $bytes)->write($this->jobFolder() . '/upload.zip');
+            self::assertSame(ArchiveRefused::MANIFEST, $this->refusal($path), $label);
+        }
+        $quoted = '{' . str_replace('"Example Project"', '"Example \\": \\"project_name\\": x"', $members) . '}';
+        $quoted = str_replace('\\\\', '\\', $quoted);
+        $path = (new ZipBytes())->add(ZipCheck::MANIFEST, $quoted)->add(ZipCheck::PROJECT, $bytes)->write($this->jobFolder() . '/upload.zip');
+        [$reader] = $this->check($path);
+        self::assertSame('Example ": "project_name": x', $reader->manifest->projectName, 'A quote inside a value is not a member name.');
+    }
+
     public function testValidManifestReadsBack(): void
     {
         [$reader] = $this->check($this->zipFor($this->copyOfSource(), ['project_name' => '  Example Project  ']));

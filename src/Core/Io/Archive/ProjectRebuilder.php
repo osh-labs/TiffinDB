@@ -55,6 +55,17 @@ use TiffinDB\Core\Storage\Timestamp;
 final class ProjectRebuilder
 {
     public const PAGE = 1000;
+    /** Most bytes one page of records may hold when every value is at its cap. */
+    public const PAGE_BYTES = 16777216;
+    /** Cap for values of types other than text and long text (characters, or bytes of a blob). */
+    public const VALUE_CAP = 1000;
+    public const TRIM_ROOM = 1000;
+    /** The largest `sqlite_sequence` value carried over (2^53 - 1, as auto-numbers). */
+    public const MAX_SEQUENCE = AutoNumberType::MAX;
+    /** Most bytes the id and six system values of one row can take after their length guards. */
+    private const SYSTEM_ROW_BYTES = 2048;
+    /** Forms read per page: each html is at most FormFormat::MAX_BYTES characters. */
+    private const FORM_PAGE = 8;
     public const FALLBACK_MEDIA_TYPE = 'application/octet-stream';
     public const FALLBACK_FILE_NAME = 'file';
     public const MAX_FILE_NAME = 255;
@@ -265,23 +276,66 @@ final class ProjectRebuilder
     private function copyRecords(UntrustedProject $src, Database $source, Database $db, TableDef $table, array &$emptied): array
     {
         $fields = array_values(array_filter($src->fieldsOf($table->key), static fn (FieldDef $f): bool => $f->hasColumn));
-        $parts = [];
+        $names = [];
+        $reads = [];
+        $rowBytes = self::SYSTEM_ROW_BYTES;
         foreach ($fields as $field) {
-            $parts[] = Sql::of(Identifier::column($field->key));
+            $cap = self::valueCap($field);
+            $rowBytes += 4 * $cap;
+            $names[] = Sql::of(Identifier::column($field->key));
+            // A value longer than any valid one is never read: it arrives as one NUL byte, which every type refuses.
+            $reads[] = Sql::of(
+                'CASE WHEN length(' . Identifier::column($field->key) . ') > ? THEN x\'00\' ELSE ' . Identifier::column($field->key)
+                . ' END AS ' . Identifier::column($field->key),
+                [$cap],
+            );
         }
-        if ($parts === []) {
-            return $this->copyPages($source, $db, $table, $fields, null, $emptied);
+        $limit = max(1, min(self::PAGE, intdiv(self::PAGE_BYTES, $rowBytes)));
+        if ($fields === []) {
+            return $this->copyPages($source, $db, $table, $fields, null, null, $limit, $emptied);
         }
 
-        return $this->copyPages($source, $db, $table, $fields, Sql::join(', ', $parts), $emptied);
+        return $this->copyPages($source, $db, $table, $fields, Sql::join(', ', $reads), Sql::join(', ', $names), $limit, $emptied);
     }
 
     /**
-     * @param list<FieldDef> $fields the fields with a column, in the order of $columns
+     * The bound values of a page query: the caps of the guarded columns, then the last id and the row limit.
+     *
+     * @return list<string|int|float|bool|null>
+     */
+    private function pageParams(Sql $reads, int $after, int $limit): array
+    {
+        $params = $reads->params();
+        $params[] = $after;
+        $params[] = $limit;
+
+        return $params;
+    }
+
+    /**
+     * The longest stored value (in characters, or bytes for a blob) that
+     * can still be valid for the field: text and long text up to their
+     * `max_length` plus room for white space that is trimmed, anything
+     * else far below VALUE_CAP.
+     */
+    private static function valueCap(FieldDef $field): int
+    {
+        if ($field->type === 'text' || $field->type === 'long_text') {
+            return (int) ($field->options['max_length'] ?? 0) + self::TRIM_ROOM;
+        }
+
+        return self::VALUE_CAP;
+    }
+
+    /**
+     * Copies records in pages of at most $limit rows, a number chosen so
+     * that a page of values at their caps stays within PAGE_BYTES.
+     *
+     * @param list<FieldDef> $fields the fields with a column, in the order of $reads and $names
      * @param array<string, int> $emptied
      * @return array{0: int, 1: int}
      */
-    private function copyPages(Database $source, Database $db, TableDef $table, array $fields, ?Sql $columns, array &$emptied): array
+    private function copyPages(Database $source, Database $db, TableDef $table, array $fields, ?Sql $reads, ?Sql $names, int $limit, array &$emptied): array
     {
         $copied = 0;
         $skipped = 0;
@@ -290,10 +344,20 @@ final class ProjectRebuilder
         $after = PHP_INT_MIN;
         $count = 7 + count($fields);
         while (true) {
-            if ($columns === null) {
-                $page = $source->all('SELECT "id", "_created_at", "_created_by", "_updated_at", "_updated_by", "_trashed_at", "_trashed_by" FROM ' . $table->sql() . ' WHERE "id" > ? ORDER BY "id" LIMIT ?', [$after, self::PAGE]);
+            if ($reads === null) {
+                $page = $source->all('SELECT "id", CASE WHEN length("_created_at") > 64 THEN x\'00\' ELSE "_created_at" END AS "_created_at",'
+                . ' CASE WHEN length("_created_by") > 64 THEN x\'00\' ELSE "_created_by" END AS "_created_by",'
+                . ' CASE WHEN length("_updated_at") > 64 THEN x\'00\' ELSE "_updated_at" END AS "_updated_at",'
+                . ' CASE WHEN length("_updated_by") > 64 THEN x\'00\' ELSE "_updated_by" END AS "_updated_by",'
+                . ' CASE WHEN length("_trashed_at") > 64 THEN x\'00\' ELSE "_trashed_at" END AS "_trashed_at",'
+                . ' CASE WHEN length("_trashed_by") > 64 THEN x\'00\' ELSE "_trashed_by" END AS "_trashed_by"' . ' FROM ' . $table->sql() . ' WHERE "id" > ? ORDER BY "id" LIMIT ?', [$after, $limit]);
             } else {
-                $page = $source->all('SELECT "id", "_created_at", "_created_by", "_updated_at", "_updated_by", "_trashed_at", "_trashed_by", ' . $columns->sql() . ' FROM ' . $table->sql() . ' WHERE "id" > ? ORDER BY "id" LIMIT ?', [$after, self::PAGE]);
+                $page = $source->all('SELECT "id", CASE WHEN length("_created_at") > 64 THEN x\'00\' ELSE "_created_at" END AS "_created_at",'
+                . ' CASE WHEN length("_created_by") > 64 THEN x\'00\' ELSE "_created_by" END AS "_created_by",'
+                . ' CASE WHEN length("_updated_at") > 64 THEN x\'00\' ELSE "_updated_at" END AS "_updated_at",'
+                . ' CASE WHEN length("_updated_by") > 64 THEN x\'00\' ELSE "_updated_by" END AS "_updated_by",'
+                . ' CASE WHEN length("_trashed_at") > 64 THEN x\'00\' ELSE "_trashed_at" END AS "_trashed_at",'
+                . ' CASE WHEN length("_trashed_by") > 64 THEN x\'00\' ELSE "_trashed_by" END AS "_trashed_by"' . ', ' . $reads->sql() . ' FROM ' . $table->sql() . ' WHERE "id" > ? ORDER BY "id" LIMIT ?', $this->pageParams($reads, $after, $limit));
             }
             if ($page === []) {
                 break;
@@ -323,13 +387,14 @@ final class ProjectRebuilder
                     }
                     $params[] = $value;
                 }
-                if ($columns === null) {
+                if ($names === null) {
                     $db->run('INSERT INTO ' . $table->sql() . ' ("id", "_created_at", "_created_by", "_updated_at", "_updated_by", "_trashed_at", "_trashed_by") VALUES (' . Database::placeholders($count) . ')', $params);
                 } else {
-                    $db->run('INSERT INTO ' . $table->sql() . ' ("id", "_created_at", "_created_by", "_updated_at", "_updated_by", "_trashed_at", "_trashed_by", ' . $columns->sql() . ') VALUES (' . Database::placeholders($count) . ')', $params);
+                    $db->run('INSERT INTO ' . $table->sql() . ' ("id", "_created_at", "_created_by", "_updated_at", "_updated_by", "_trashed_at", "_trashed_by", ' . $names->sql() . ') VALUES (' . Database::placeholders($count) . ')', $params);
                 }
                 $copied++;
             }
+            unset($page);
         }
         foreach ($fields as $field) {
             if ($field->type === 'auto_number') {
@@ -421,13 +486,17 @@ final class ProjectRebuilder
         while (true) {
             if ($leftOne) {
                 $page = $source->all(
-                    'SELECT "left_id", "right_id", "position" FROM ' . $relation->sql()
+                    'SELECT CASE WHEN typeof("left_id") = \'integer\' THEN "left_id" END AS "left_id",'
+                    . ' CASE WHEN typeof("right_id") = \'integer\' THEN "right_id" END AS "right_id",'
+                    . ' CASE WHEN typeof("position") = \'integer\' THEN "position" END AS "position" FROM ' . $relation->sql()
                     . ' ORDER BY CASE WHEN typeof("position") = \'integer\' THEN "position" ELSE 0 END, "right_id", "left_id" LIMIT ? OFFSET ?',
                     [self::PAGE, $offset],
                 );
             } else {
                 $page = $source->all(
-                    'SELECT "left_id", "right_id", "position" FROM ' . $relation->sql()
+                    'SELECT CASE WHEN typeof("left_id") = \'integer\' THEN "left_id" END AS "left_id",'
+                    . ' CASE WHEN typeof("right_id") = \'integer\' THEN "right_id" END AS "right_id",'
+                    . ' CASE WHEN typeof("position") = \'integer\' THEN "position" END AS "position" FROM ' . $relation->sql()
                     . ' ORDER BY CASE WHEN typeof("position") = \'integer\' THEN "position" ELSE 0 END, "left_id", "right_id" LIMIT ? OFFSET ?',
                     [self::PAGE, $offset],
                 );
@@ -474,7 +543,13 @@ final class ProjectRebuilder
         $offset = 0;
         while (true) {
             $page = $source->all(
-                'SELECT "id", "sha256", "size", "media_type", "original_name", "created_at", "created_by" FROM "_tiffin_attachments"'
+                'SELECT CASE WHEN typeof("id") = \'integer\' THEN "id" END AS "id",'
+                . ' CASE WHEN length("sha256") <= 64 THEN "sha256" END AS "sha256",'
+                . ' CASE WHEN typeof("size") = \'integer\' THEN "size" END AS "size",'
+                . ' CASE WHEN length("media_type") <= 255 THEN "media_type" END AS "media_type",'
+                . ' CASE WHEN length("original_name") <= 1020 THEN "original_name" END AS "original_name",'
+                . ' CASE WHEN length("created_at") > 64 THEN x\'00\' ELSE "created_at" END AS "created_at",'
+                . ' CASE WHEN length("created_by") > 64 THEN x\'00\' ELSE "created_by" END AS "created_by" FROM "_tiffin_attachments"'
                 . ' ORDER BY "id" LIMIT ? OFFSET ?',
                 [self::PAGE, $offset],
             );
@@ -513,7 +588,10 @@ final class ProjectRebuilder
         $offset = 0;
         while (true) {
             $page = $source->all(
-                'SELECT "field_key", "record_id", "attachment_id", "position" FROM "_tiffin_attachment_links"'
+                'SELECT CASE WHEN length("field_key") <= 64 THEN "field_key" END AS "field_key",'
+                . ' CASE WHEN typeof("record_id") = \'integer\' THEN "record_id" END AS "record_id",'
+                . ' CASE WHEN typeof("attachment_id") = \'integer\' THEN "attachment_id" END AS "attachment_id",'
+                . ' CASE WHEN typeof("position") = \'integer\' THEN "position" END AS "position" FROM "_tiffin_attachment_links"'
                 . ' ORDER BY "field_key", "record_id", "attachment_id" LIMIT ? OFFSET ?',
                 [self::PAGE, $offset],
             );
@@ -589,57 +667,90 @@ final class ProjectRebuilder
         $edited = [];
         if ($src->formatVersion >= 2) {
             $defaults = [];
-            $rows = $source->all(
-                'SELECT "key", "table_key", "name", "format", "html", "is_default", "generated", "created_at", "updated_at"'
-                . ' FROM "_tiffin_forms" ORDER BY "key"',
-            );
-            foreach ($rows as $row) {
-                $key = $row['key'];
-                $tableKey = $row['table_key'];
-                $html = $row['html'];
-                if (!Keys::isValid($key) || !is_string($tableKey) || !isset($src->tables[$tableKey]) || $row['format'] !== 1 || !is_string($html)) {
-                    $dropped++;
-                    continue;
+            $offset = 0;
+            while (true) {
+                // An html longer than FormFormat::MAX_BYTES characters is never read: it arrives as null and the form is dropped.
+                $rows = $source->all(
+                    'SELECT CASE WHEN length("key") <= 64 THEN "key" END AS "key",'
+                    . ' CASE WHEN length("table_key") <= 64 THEN "table_key" END AS "table_key",'
+                    . ' CASE WHEN length("name") <= 400 THEN "name" END AS "name",'
+                    . ' CASE WHEN typeof("format") = \'integer\' THEN "format" END AS "format",'
+                    . ' CASE WHEN length("html") <= 262144 THEN "html" END AS "html",'
+                    . ' CASE WHEN typeof("is_default") = \'integer\' THEN "is_default" END AS "is_default",'
+                    . ' CASE WHEN typeof("generated") = \'integer\' THEN "generated" END AS "generated",'
+                    . ' CASE WHEN length("created_at") > 64 THEN x\'00\' ELSE "created_at" END AS "created_at",'
+                    . ' CASE WHEN length("updated_at") > 64 THEN x\'00\' ELSE "updated_at" END AS "updated_at"'
+                    . ' FROM "_tiffin_forms" ORDER BY "key" LIMIT ? OFFSET ?',
+                    [self::FORM_PAGE, $offset],
+                );
+                if ($rows === []) {
+                    break;
                 }
-                try {
-                    $this->parser->parse($html);
-                } catch (FormRejected) {
-                    $dropped++;
-                    continue;
-                }
-                $isDefault = $row['is_default'] === 1;
-                if ($isDefault && isset($defaults[$tableKey])) {
-                    $dropped++;
-                    continue;
-                }
-                $generated = $row['generated'] === 1;
-                if ($isDefault) {
-                    $defaults[$tableKey] = true;
-                    if (!$generated) {
-                        $edited[$key] = $html;
+                $offset += count($rows);
+                foreach ($rows as $row) {
+                    $kept = $this->copyForm($src, $db, $row, $defaults);
+                    if ($kept === null) {
+                        $dropped++;
+                    } elseif ($kept !== '') {
+                        $edited[(string) $row['key']] = $kept;
                     }
                 }
-                $name = is_string($row['name']) && Text::nameProblems($row['name'], 'name', UntrustedProject::MAX_FORM_NAME) === []
-                    ? Text::trim($row['name'])
-                    : FormStore::GENERATED_NAME;
-                $db->run(
-                    'INSERT INTO "_tiffin_forms" ("key", "table_key", "name", "format", "html", "css", "is_default", "generated", "created_at", "updated_at")'
-                    . ' VALUES (?, ?, ?, 1, ?, \'\', ?, ?, ?, ?)',
-                    [$key, $tableKey, $name, $html, $isDefault ? 1 : 0, $generated ? 1 : 0, $this->time($row['created_at']), $this->time($row['updated_at'])],
-                );
+                unset($rows);
             }
         }
         $schema = new Schema($db, $this->types);
         $store = new FormStore($db, $this->keys, $this->clock, $this->parser);
         $store->regenerate($schema, array_map(static fn (TableDef $t): string => $t->key, $schema->tables()));
         $extended = 0;
-        foreach ($edited as $key => $html) {
-            if ($db->value('SELECT "html" FROM "_tiffin_forms" WHERE "key" = ?', [$key]) !== $html) {
+        foreach ($edited as $key => $hash) {
+            if (!hash_equals($hash, hash('sha256', (string) $db->value('SELECT "html" FROM "_tiffin_forms" WHERE "key" = ?', [(string) $key])))) {
                 $extended++;
             }
         }
 
         return [$dropped, $extended];
+    }
+
+    /**
+     * One form row: inserted when it is valid, else dropped (null).
+     * Returns the SHA-256 of an edited default form's html, so regeneration
+     * can be seen to change it, or '' for any other kept form.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, true> $defaults tables that already have a default form
+     */
+    private function copyForm(UntrustedProject $src, Database $db, array $row, array &$defaults): ?string
+    {
+        $key = $row['key'];
+        $tableKey = $row['table_key'];
+        $html = $row['html'];
+        if (!Keys::isValid($key) || !is_string($tableKey) || !isset($src->tables[$tableKey]) || $row['format'] !== 1 || !is_string($html)) {
+            return null;
+        }
+        try {
+            $this->parser->parse($html);
+        } catch (FormRejected) {
+            return null;
+        }
+        $isDefault = $row['is_default'] === 1;
+        if ($isDefault && isset($defaults[$tableKey])) {
+            return null;
+        }
+        $generated = $row['generated'] === 1;
+        $name = is_string($row['name']) && Text::nameProblems($row['name'], 'name', UntrustedProject::MAX_FORM_NAME) === []
+            ? Text::trim($row['name'])
+            : FormStore::GENERATED_NAME;
+        $db->run(
+            'INSERT INTO "_tiffin_forms" ("key", "table_key", "name", "format", "html", "css", "is_default", "generated", "created_at", "updated_at")'
+            . ' VALUES (?, ?, ?, 1, ?, \'\', ?, ?, ?, ?)',
+            [$key, $tableKey, $name, $html, $isDefault ? 1 : 0, $generated ? 1 : 0, $this->time($row['created_at']), $this->time($row['updated_at'])],
+        );
+        if (!$isDefault) {
+            return '';
+        }
+        $defaults[$tableKey] = true;
+
+        return $generated ? '' : hash('sha256', $html);
     }
 
     /** Step 8: creation facts from the source when valid; `updated_*` stay the import's (ProjectFile::create). */
@@ -662,11 +773,16 @@ final class ProjectRebuilder
     /**
      * `sqlite_sequence` for a table: the larger of the source's value and
      * the largest id now in the table, so new ids continue after both and
-     * an id the source used before is never given out again.
+     * an id the source used before is never given out again. A source
+     * value above MAX_SEQUENCE is ignored.
      */
     private function continueSequence(UntrustedProject $src, Database $db, string $tableName): void
     {
         $sequence = $src->sequences[$tableName] ?? 0;
+        if ($sequence > self::MAX_SEQUENCE) {
+            // A value near 2^63 - 1 would leave AUTOINCREMENT no id to give; the largest id copied is used instead.
+            $sequence = 0;
+        }
         $current = $db->value('SELECT "seq" FROM "sqlite_sequence" WHERE "name" = ?', [$tableName]);
         if (is_int($current)) {
             if ($sequence > $current) {

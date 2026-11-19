@@ -175,6 +175,22 @@ final class ZipCorpusTest extends TestCase
         }
     }
 
+    public function testLinkModeIsRefusedForEveryCreatorSystem(): void
+    {
+        foreach ([0, 1, 6, 10, 11, 19, 30] as $system) {
+            $zip = (new ZipBytes())
+                ->add(ZipCheck::MANIFEST, $this->manifest, ['system' => $system])
+                ->add(ZipCheck::PROJECT, $this->project, ['system' => $system, 'mode' => 0120777, 'method' => 0])
+                ->write($this->jobFolder() . '/upload.zip');
+            self::assertSame(ArchiveRefused::ENTRY_NAME, $this->refusal($zip), 'system ' . $system);
+        }
+        $zip = (new ZipBytes())
+            ->add(ZipCheck::MANIFEST, $this->manifest, ['system' => 0, 'mode' => 0])
+            ->add(ZipCheck::PROJECT, $this->project, ['system' => 0, 'mode' => 0])
+            ->write($this->jobFolder() . '/upload.zip');
+        self::assertSame(strlen($this->project), $this->check($zip)[0]->manifest->projectSize, 'An MS-DOS archive without mode bits is read.');
+    }
+
     public function testMissingEntriesAndNonArchivesAreRefused(): void
     {
         $cases = [

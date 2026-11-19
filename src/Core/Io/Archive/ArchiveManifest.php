@@ -104,6 +104,9 @@ final class ArchiveManifest
         if (!$object instanceof \stdClass) {
             throw new ArchiveRefused(ArchiveRefused::MANIFEST, 'manifest object');
         }
+        if (self::hasDuplicateMember($json)) {
+            throw new ArchiveRefused(ArchiveRefused::MANIFEST, 'manifest member twice');
+        }
         $members = get_object_vars($object);
         $names = array_keys($members);
         $expected = self::MEMBERS;
@@ -143,6 +146,33 @@ final class ArchiveManifest
         }
 
         return new self($createdAt, $createdWith, $formatVersion, Text::trim($name), $size, $sha256, $attachments);
+    }
+
+    /**
+     * Whether a member name appears twice (json_decode keeps the last one
+     * silently). The text has already decoded at depth 2 as one object of
+     * scalars, so every string followed by `:` is a member name of it.
+     */
+    private static function hasDuplicateMember(string $json): bool
+    {
+        // Strings and the text between them, in order from the start, so a quote inside a string never starts a token.
+        if (preg_match_all('/"(?:[^"\\\\]|\\\\.)*"|[^"]+/s', $json, $matches) === false) {
+            return true;
+        }
+        $tokens = $matches[0];
+        $seen = [];
+        foreach ($tokens as $i => $token) {
+            if (!str_starts_with($token, '"') || !str_starts_with(ltrim($tokens[$i + 1] ?? ''), ':')) {
+                continue;
+            }
+            $name = json_decode($token, false, 2);
+            if (!is_string($name) || isset($seen[$name])) {
+                return true;
+            }
+            $seen[$name] = true;
+        }
+
+        return false;
     }
 
     private static function isTimestamp(string $value): bool

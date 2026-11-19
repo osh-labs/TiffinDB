@@ -61,6 +61,11 @@ use TiffinDB\Core\Storage\Sqlite;
  *    table's `id` equal to its rowid, so ids are whole numbers and unique
  *    (`bad-table`).
  *
+ * Memory: every read is bounded before it runs. Row counts are checked
+ * with COUNT(*) and value sizes with length() in SQL first, so a row whose
+ * text is larger than TiffinDB could have written (a 300 MB form, a huge
+ * name) is refused, or read as null, without ever reaching PHP.
+ *
  * Any PDOException (or Busy) while checking, for example a schema naming
  * an unknown collation, refuses the file as `damaged`. The connection is
  * closed on every refusal.
@@ -70,6 +75,11 @@ final class UntrustedProject
     public const MAX_TABLES = 200;
     public const MAX_FIELDS = SchemaEditor::MAX_FIELDS;
     public const MAX_FORM_NAME = 100;
+    /** More stored forms than any project could use (one default per table, a few more each). */
+    public const MAX_FORMS = 10000;
+    public const MAX_SCHEMA_OBJECTS = 10000;
+    /** All field options together; one choice field with 200 labels needs about 30 KiB. */
+    public const MAX_OPTIONS_TOTAL = 16777216;
 
     private const HEADER = "SQLite format 3\0";
     private const USER_OBJECT = '/^[tj]_[a-z2-7]{12}\z/';
@@ -210,7 +220,7 @@ final class UntrustedProject
 
         // Step 5.
         $meta = [];
-        foreach ($db->all('SELECT "key", "value" FROM "_tiffin_meta"') as $row) {
+        foreach ($db->all('SELECT "key", "value" FROM "_tiffin_meta" WHERE length("key") <= 64 AND length("value") <= 4096 LIMIT 100') as $row) {
             if (is_string($row['key']) && is_string($row['value'])) {
                 $meta[$row['key']] = $row['value'];
             }
@@ -257,7 +267,7 @@ final class UntrustedProject
         }
 
         $sequences = [];
-        foreach ($db->all('SELECT "name", "seq" FROM "sqlite_sequence"') as $row) {
+        foreach ($db->all('SELECT "name", "seq" FROM "sqlite_sequence" WHERE length("name") <= 64 AND typeof("seq") = \'integer\' LIMIT 10000') as $row) {
             if (is_string($row['name']) && is_int($row['seq']) && $row['seq'] > 0) {
                 $sequences[$row['name']] = max($sequences[$row['name']] ?? 0, $row['seq']);
             }
@@ -280,6 +290,14 @@ final class UntrustedProject
         $userIndexes = [];
         $fieldIndexes = [];
         $sqliteTables = [];
+        // Bounds first, so no schema row larger than TiffinDB could have written is ever read into PHP.
+        if ((int) $db->value('SELECT COUNT(*) FROM "sqlite_master"') > self::MAX_SCHEMA_OBJECTS) {
+            throw new ArchiveRefused(ArchiveRefused::UNEXPECTED_OBJECT, 'too many schema objects');
+        }
+        $oversized = $db->value('SELECT COUNT(*) FROM "sqlite_master" WHERE length("type") > 16 OR length("name") > 256 OR length("tbl_name") > 256 OR length("sql") > 1048576');
+        if ($oversized !== 0) {
+            throw new ArchiveRefused(ArchiveRefused::UNEXPECTED_OBJECT, 'oversized schema object');
+        }
         $rows = $db->all('SELECT "type", "name", "tbl_name", "sql" FROM "sqlite_master"');
         foreach ($rows as $row) {
             $type = $row['type'];
@@ -427,11 +445,15 @@ final class UntrustedProject
      */
     private static function readTables(Database $db, array &$rows): array
     {
-        $result = $db->all('SELECT "key", "sql_name", "name", "item_name", "position", "title_field", "created_at", "updated_at"'
+        self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_tables"') <= self::MAX_TABLES, 'too many tables');
+        self::require($db->value(
+            'SELECT COUNT(*) FROM "_tiffin_tables" WHERE length("key") > 64 OR length("sql_name") > 64 OR length("name") > 240'
+            . ' OR length("item_name") > 160 OR length("position") > 20 OR length("title_field") > 64',
+        ) === 0, 'oversized table row');
+        $result = $db->all('SELECT "key", "sql_name", "name", "item_name", "position", "title_field",'
+            . ' CASE WHEN length("created_at") <= 64 THEN "created_at" END AS "created_at",'
+            . ' CASE WHEN length("updated_at") <= 64 THEN "updated_at" END AS "updated_at"'
             . ' FROM "_tiffin_tables" ORDER BY "position", "key"');
-        if (count($result) > self::MAX_TABLES) {
-            throw new ArchiveRefused(ArchiveRefused::BAD_METADATA, 'too many tables');
-        }
         $tables = [];
         $names = [];
         foreach ($result as $row) {
@@ -460,7 +482,17 @@ final class UntrustedProject
      */
     private static function readFields(Database $db, FieldTypes $types, array $tables, array &$rows): array
     {
-        $result = $db->all('SELECT "key", "table_key", "sql_name", "name", "type", "options", "required", "help", "position", "created_at", "updated_at"'
+        self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_fields"') <= self::MAX_TABLES * self::MAX_FIELDS, 'too many fields');
+        self::require($db->value('SELECT COUNT(*) FROM (SELECT 1 FROM "_tiffin_fields" GROUP BY "table_key" HAVING COUNT(*) > 500)') === 0, 'too many fields');
+        self::require($db->value(
+            'SELECT COUNT(*) FROM "_tiffin_fields" WHERE length("key") > 64 OR length("table_key") > 64 OR length("sql_name") > 64'
+            . ' OR length("name") > 240 OR length("type") > 64 OR length("options") > 65536 OR length("required") > 20'
+            . ' OR length("help") > 800 OR length("position") > 20',
+        ) === 0, 'oversized field row');
+        self::require((int) $db->value('SELECT COALESCE(SUM(length("options")), 0) FROM "_tiffin_fields"') <= self::MAX_OPTIONS_TOTAL, 'field options too large');
+        $result = $db->all('SELECT "key", "table_key", "sql_name", "name", "type", "options", "required", "help", "position",'
+            . ' CASE WHEN length("created_at") <= 64 THEN "created_at" END AS "created_at",'
+            . ' CASE WHEN length("updated_at") <= 64 THEN "updated_at" END AS "updated_at"'
             . ' FROM "_tiffin_fields" ORDER BY "table_key", "position", "key"');
         $fields = [];
         $names = [];
@@ -509,7 +541,14 @@ final class UntrustedProject
      */
     private static function readRelations(Database $db, array $fields, array &$rows): array
     {
-        $result = $db->all('SELECT "key", "join_table", "left_table", "left_field", "left_max", "right_table", "right_field", "right_max", "created_at"'
+        self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_relations"') <= count($fields), 'too many relations');
+        self::require($db->value(
+            'SELECT COUNT(*) FROM "_tiffin_relations" WHERE length("key") > 64 OR length("join_table") > 64 OR length("left_table") > 64'
+            . ' OR length("left_field") > 64 OR length("left_max") > 16 OR length("right_table") > 64 OR length("right_field") > 64'
+            . ' OR length("right_max") > 16',
+        ) === 0, 'oversized relation row');
+        $result = $db->all('SELECT "key", "join_table", "left_table", "left_field", "left_max", "right_table", "right_field", "right_max",'
+            . ' CASE WHEN length("created_at") <= 64 THEN "created_at" END AS "created_at"'
             . ' FROM "_tiffin_relations" ORDER BY "key"');
         $relations = [];
         $sides = [];
@@ -562,7 +601,8 @@ final class UntrustedProject
      */
     private static function checkFormKeys(Database $db, array $rows): void
     {
-        foreach ($db->all('SELECT "key" FROM "_tiffin_forms"') as $row) {
+        self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_forms"') <= self::MAX_FORMS, 'too many forms');
+        foreach ($db->all('SELECT "key" FROM "_tiffin_forms" WHERE length("key") <= 64') as $row) {
             self::require(!Keys::isValid($row['key']) || !isset($rows[$row['key']]), 'form key used twice');
         }
     }

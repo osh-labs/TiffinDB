@@ -181,6 +181,39 @@ final class ArchiveImportTest extends TestCase
         self::assertSame(3, json_decode((string) $db->value('SELECT "report" FROM "_tiffin_import_log"'), true)['archive']['files_missing']);
     }
 
+    public function testSameSizeFileWithAnotherHashIsNotKept(): void
+    {
+        $sha1 = hash('sha256', self::FILE_ONE);
+        $sha2 = hash('sha256', self::FILE_TWO);
+        $impostor = str_repeat('x', strlen(self::FILE_TWO));
+        self::assertNotSame($sha2, hash('sha256', $impostor));
+        $entries = [
+            'attachments/' . substr($sha1, 0, 2) . '/' . $sha1 => self::FILE_ONE,
+            'attachments/' . substr($sha2, 0, 2) . '/' . $sha2 => $impostor,
+        ];
+        [$report, , $folder] = $this->import($this->zipFor($this->copyOfSource(), [], $entries));
+
+        self::assertSame(1, $report->filesMissing);
+        self::assertSame(0, $report->filesSkipped);
+        self::assertFileExists($folder . '/attachments/' . substr($sha1, 0, 2) . '/' . $sha1);
+        self::assertFileDoesNotExist($folder . '/attachments/' . substr($sha2, 0, 2) . '/' . $sha2);
+    }
+
+    public function testHugeSequenceValueDoesNotBlockNewIds(): void
+    {
+        $copy = $this->copyOfSource();
+        self::rawEdit(
+            $copy,
+            "UPDATE sqlite_sequence SET seq = 9223372036854775807 WHERE name = '" . Identifier::tableName($this->items->key) . "'",
+            "UPDATE sqlite_sequence SET seq = 9223372036854775807 WHERE name = '_tiffin_attachments'",
+        );
+        [, $db] = $this->import($this->zipFor($copy));
+        self::assertSame(3, $db->value('SELECT "seq" FROM "sqlite_sequence" WHERE "name" = ?', [Identifier::tableName($this->items->key)]));
+        self::assertSame(2, $db->value('SELECT "seq" FROM "sqlite_sequence" WHERE "name" = \'_tiffin_attachments\''));
+        $db->run('INSERT INTO ' . Identifier::table($this->items->key) . ' ("_created_at", "_updated_at") VALUES (?, ?)', [self::START, self::START]);
+        self::assertSame(4, $db->lastInsertId());
+    }
+
     public function testBadAttachmentRowsAreDroppedOrRepaired(): void
     {
         $copy = $this->copyOfSource();

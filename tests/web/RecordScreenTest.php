@@ -244,6 +244,7 @@ final class RecordScreenTest extends TestCase
         self::assertSame($this->r($b) . '?q=ben', $this->attr($x, '//form[@id="record-form"]', 'action'));
         self::assertSame($this->r($b) . '/trash?q=ben', $this->attr($x, '//form[@class="trash-form"]', 'action'));
         self::assertSame($this->l() . '?q=ben', $this->attr($x, '//div[@class="record-actions-main"]/a', 'href'));
+        self::assertSame($this->l() . '?q=ben', $this->attr($x, '//nav[@class="breadcrumb"]/a[2]', 'href'), 'The table link keeps the list state.');
 
         // Outside the list's search: no position, "Last saved" alone.
         $x = $this->xpath($this->page(self::MEMBER, $this->r($a) . '?q=ben'));

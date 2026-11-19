@@ -554,10 +554,10 @@ final class RecordController
     }
 
     /**
-     * Breadcrumb: project, table (the list), and the current page. The
-     * shared partial takes paths only, so the table link has no view state.
+     * Breadcrumb: project, table (the list, with its view state), and the
+     * current page.
      *
-     * @return list<array{label: string, path: string|null}>
+     * @return list<array{label: string, path: string|null, query?: array<string, string>}>
      */
     private function crumbs(RecordScreen $screen, string $current): array
     {
@@ -565,7 +565,7 @@ final class RecordController
 
         return [
             ['label' => $project->name, 'path' => '/projects/' . $project->key],
-            ['label' => $screen->table->name, 'path' => self::listPath($project->key, $screen->table->key)],
+            ['label' => $screen->table->name, 'path' => self::listPath($project->key, $screen->table->key), 'query' => $screen->request->toQuery()],
             ['label' => $current, 'path' => null],
         ];
     }

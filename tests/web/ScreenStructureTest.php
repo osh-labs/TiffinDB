@@ -252,6 +252,18 @@ final class ScreenStructureTest extends TestCase
         $this->screen($admin, $serial . '/type', 'Change the type of Serial number', 'Change the type of Serial number');
         $this->visit($this->fieldPath($admin, $items, 'Room') . '/type', 303, $admin);
 
+        // Record screens (record.md sections 2 to 6), as the Member.
+        $nameKey = substr($this->fieldPath($admin, $items, 'Name'), strlen($items . '/fields/'));
+        $this->screen($member, $items . '/records/new', 'New item', 'New item');
+        $added = $member->submit($items . '/records', ['f_' . $nameKey => 'Stand mixer']);
+        self::assertSame(303, $added->status);
+        $record = (string) parse_url((string) $added->header('Location'), PHP_URL_PATH);
+        $this->screen($member, $record, 'Stand mixer', 'Stand mixer', 'The item has been added.');
+        self::assertSame(303, $member->submit($record . '/trash')->status);
+        $this->screen($member, $record, 'Stand mixer', 'This item is in the trash', 'Stand mixer has been moved to the trash. Undo');
+        self::assertSame(303, $member->submit($record . '/restore')->status);
+        $this->screen($member, $record, 'Stand mixer', 'Stand mixer', 'Stand mixer has been restored.');
+
         // People (people-and-sharing.md sections 2 to 5).
         $this->screen($admin, '/admin/people', 'People', 'People');
         $this->screen($admin, '/admin/people/new', 'Add a person', 'Add a person');

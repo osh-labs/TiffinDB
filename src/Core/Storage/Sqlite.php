@@ -83,6 +83,15 @@ final class Sqlite
      * absolute plain path to a regular file, not a symbolic link
      * (Unavailable('missing') otherwise). A PDOException from SQLite
      * reaches the caller, which treats it as a damaged file.
+     *
+     * The read-only flag is what keeps the file as it arrived: with it, a
+     * hot rollback journal beside the file is never rolled back into it
+     * (the read fails instead). A file whose header says WAL (bytes 18 and
+     * 19 are 2) may still make SQLite create a `-shm` file beside it, and
+     * reads of it depend on a `-wal` file; the archive import (M3 spec
+     * section 11.4 step 1) therefore rewrites both header bytes to 1 in its
+     * own copy before calling this, so the copy opens as a rollback-journal
+     * file with no side files.
      */
     public static function openUntrusted(string $path): Database
     {

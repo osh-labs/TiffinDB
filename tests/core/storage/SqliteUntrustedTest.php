@@ -77,6 +77,43 @@ final class SqliteUntrustedTest extends TestCase
         self::assertFileDoesNotExist($path . '-journal');
     }
 
+    public function testAHotJournalIsNeverRolledBackIntoTheFile(): void
+    {
+        // A copy taken mid-transaction: the file holds spilled pages and a hot rollback journal sits beside it.
+        $source = $this->temp->path('live.sqlite');
+        $pdo = new \PDO('sqlite:' . $source);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA journal_mode = DELETE');
+        $pdo->exec('CREATE TABLE t (x)');
+        $pdo->exec('INSERT INTO t VALUES (1)');
+        $pdo->exec('PRAGMA cache_size = 1');
+        $pdo->beginTransaction();
+        for ($i = 0; $i < 2000; $i++) {
+            $pdo->exec('INSERT INTO t VALUES (randomblob(500))');
+        }
+        $path = $this->temp->path('hot.sqlite');
+        copy($source, $path);
+        copy($source . '-journal', $path . '-journal');
+        $pdo->rollBack();
+        $pdo = null;
+        $file = hash_file('sha256', $path);
+        $journal = hash_file('sha256', $path . '-journal');
+
+        $db = Sqlite::openUntrusted($path);
+        try {
+            $db->value('SELECT COUNT(*) FROM t');
+            self::fail('The hot journal was rolled back to answer the read.');
+        } catch (\PDOException) {
+            $this->addToAssertionCount(1);
+        } finally {
+            $db->close();
+        }
+        clearstatcache();
+        self::assertSame($file, hash_file('sha256', $path), 'The file is as it arrived.');
+        self::assertFileExists($path . '-journal');
+        self::assertSame($journal, hash_file('sha256', $path . '-journal'));
+    }
+
     public function testSchemaFunctionsDoNotRun(): void
     {
         // A view using a function: with trusted_schema off, SQLite refuses functions not marked innocuous in schema

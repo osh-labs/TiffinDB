@@ -29,6 +29,8 @@ final class IoLimits
     public const ARCHIVE_MAX_TOTAL_BYTES = 4294967296;
     /** Free disk space kept back at upload time (section 6.8). */
     public const DISK_RESERVE_BYTES = 104857600;
+    /** New records one import may add to linked tables for titles not found there (P142). */
+    public const MAX_NEW_LINK_RECORDS = 10000;
     /** First row numbers kept per column in the import report (format section 4.7.1). */
     public const REPORT_ROWS = 20;
 

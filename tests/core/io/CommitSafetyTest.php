@@ -199,6 +199,56 @@ final class CommitSafetyTest extends TestCase
         self::assertSame(JobState::Reading, $job->state());
     }
 
+    public function testAReadyJobWithoutTheLockIsNotCommitted(): void
+    {
+        $importer = $this->importer();
+        $job = $this->readyJob($importer);
+        $job->unlock();
+        $before = $this->dump();
+        try {
+            $this->commit($job);
+            self::fail('A Ready job was committed without its lock.');
+        } catch (\LogicException $e) {
+            self::assertSame('Take the job lock first.', $e->getMessage());
+        }
+        self::assertEquals($before, $this->dump());
+        self::assertSame([], $this->snapshotFiles());
+        self::assertSame(JobState::Ready, $job->state());
+    }
+
+    public function testTheNumberOfNewLinkedRecordsIsCapped(): void
+    {
+        self::assertSame(10000, \TiffinDB\Core\Io\IoLimits::MAX_NEW_LINK_RECORDS);
+        // Rooms holds Kitchen; the file names six other rooms: over a cap of five, nothing is committed.
+        $rows = [];
+        foreach (['Kitchen', 'Hall', 'Attic', 'Cellar', 'Porch', 'Loft', 'Den', 'hall'] as $i => $room) {
+            $rows[] = ['Item ' . $i, $room];
+        }
+        $importer = new FakeImporter(['Name', 'Rooms'], $rows);
+        $job = $this->readyJob($importer);
+        $mapping = $job->mapping();
+        self::assertNotNull($mapping);
+        $before = $this->dump();
+        try {
+            (new Committer(null, 5))->commit($job, $mapping, $this->db, $this->types, $this->clock, $this->hookedEditor(), $this->snapshots, $this->folder, self::USER_KEY);
+            self::fail('The cap was not applied.');
+        } catch (ValidationFailed $failed) {
+            self::assertSame([['table', 'problem.import.too_many_links']], self::flat($failed));
+            self::assertSame(['max' => 5], $failed->problems[0]->params);
+        }
+        $after = $this->dump();
+        self::assertSame($before['tables'], $after['tables']);
+        self::assertSame(JobState::Review, $job->state(), 'Back to review, so a link column can be left out.');
+
+        // At the cap the same file imports.
+        $job2 = $this->readyJob($importer);
+        $mapping2 = $job2->mapping();
+        self::assertNotNull($mapping2);
+        $report = (new Committer(null, 6))->commit($job2, $mapping2, $this->db, $this->types, $this->clock, $this->hookedEditor(), $this->snapshots, $this->folder, self::USER_KEY);
+        self::assertSame(6, $report->linksAdded);
+        self::assertSame(8, $report->rowsImported);
+    }
+
     public function testASecondCommitReturnsTheLogKeyAndImportsNothing(): void
     {
         $importer = $this->importer();

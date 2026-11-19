@@ -97,6 +97,25 @@ final class StagingAreaTest extends TestCase
         self::assertDirectoryExists($outside . '/imports/b7xk2mq4nz3p');
     }
 
+    public function testSweepLeavesALockedJobAlone(): void
+    {
+        $now = $this->clock->now()->getTimestamp();
+        [$key, $path] = $this->staging->create('imports');
+        touch($path, $now - StagingArea::MAX_AGE['imports'] - 10);
+        $held = fopen($path . '/' . StagingArea::LOCK, 'r');
+        self::assertIsResource($held);
+        self::assertTrue(flock($held, LOCK_EX | LOCK_NB));
+        try {
+            $this->staging->sweep();
+            self::assertSame($path, $this->staging->folder('imports', $key), 'An old job in use is kept.');
+        } finally {
+            flock($held, LOCK_UN);
+            fclose($held);
+        }
+        $this->staging->sweep();
+        self::assertNull($this->staging->folder('imports', $key), 'Once the lock is released the old job goes.');
+    }
+
     public function testSweepByAgePerKind(): void
     {
         $now = $this->clock->now()->getTimestamp();

@@ -10,6 +10,7 @@ namespace TiffinDB\Core\Io;
 
 use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\DataDirectory;
+use TiffinDB\Core\Storage\ErrorTrap;
 use TiffinDB\Core\Storage\Fs;
 use TiffinDB\Core\Storage\Keys;
 
@@ -96,8 +97,9 @@ final class StagingArea
 
     /**
      * Removes job folders of every kind whose modification time is older
-     * than MAX_AGE. Entries that are not job keys are left alone; an entry
-     * that cannot be read or removed is logged and skipped.
+     * than MAX_AGE. A job whose lock another request holds is in use and is
+     * left alone, however old. Entries that are not job keys are left
+     * alone; an entry that cannot be read or removed is logged and skipped.
      */
     public function sweep(): void
     {
@@ -119,7 +121,7 @@ final class StagingArea
                 }
                 $path = $this->kindFolder($kind) . '/' . $name;
                 try {
-                    if ($now - Fs::modifiedAt($path) > self::MAX_AGE[$kind]) {
+                    if ($now - Fs::modifiedAt($path) > self::MAX_AGE[$kind] && !self::inUse($path)) {
                         Fs::removeTree($path, $this->root());
                     }
                 } catch (\RuntimeException) {
@@ -127,6 +129,26 @@ final class StagingArea
                 }
             }
         }
+    }
+
+    /** Whether another request holds the job lock of the folder (tried without waiting, and released at once). */
+    private static function inUse(string $path): bool
+    {
+        $lock = $path . '/' . self::LOCK;
+        if (!Fs::isFile($lock)) {
+            return false;
+        }
+        $handle = ErrorTrap::run(static fn (): mixed => fopen($lock, 'r'), 'Cannot open the job lock.');
+        if (!is_resource($handle)) {
+            return true;
+        }
+        $free = flock($handle, LOCK_EX | LOCK_NB);
+        if ($free) {
+            flock($handle, LOCK_UN);
+        }
+        fclose($handle);
+
+        return !$free;
     }
 
     private function kindFolder(string $kind): string

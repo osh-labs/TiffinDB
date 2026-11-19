@@ -30,6 +30,12 @@ use TiffinDB\Tests\Support\TempDir;
  * itself: every TiffinDB name in those files is under
  * TiffinDB\Core\Io\Contract\ (M3 spec section 2.1).
  *
+ * The core CSV reader and writer, src/Core/Io/Csv/, which plugins may
+ * name (P143), use nothing but PHP, themselves, the plugin contract, and
+ * the one class TiffinDB\Core\Error\Text, so that what plugins reach
+ * through them stays small (M3 spec section 2.1). Only files that exist
+ * are checked.
+ *
  * For each PHP file under src/Core/<Area>/, every name of the form
  * TiffinDB\Core\<Other>\... must name the area itself or one in its
  * allowed list. Names are read with token_get_all: `use` statements
@@ -77,6 +83,11 @@ final class CoreLayerRulesTest extends TestCase
     /** The plugin contract's folder: names in it stay inside its own namespace. */
     public const CONTRACT = 'src/Core/Io/Contract/';
     public const CONTRACT_NAMESPACE = 'TiffinDB\\Core\\Io\\Contract\\';
+
+    /** The core CSV folder (P143): names in it stay in itself, the contract, and CSV_MAY_USE. */
+    public const CSV = 'src/Core/Io/Csv/';
+    public const CSV_NAMESPACE = 'TiffinDB\\Core\\Io\\Csv\\';
+    public const CSV_MAY_USE = ['TiffinDB\\Core\\Error\\Text'];
 
     public const FORBIDDEN_FUNCTIONS = ['random_bytes', 'random_int', 'mt_rand', 'rand', 'time', 'date', 'microtime'];
 
@@ -287,6 +298,21 @@ final class CoreLayerRulesTest extends TestCase
                 }
             }
         }
+        if (str_starts_with($relative, self::CSV)) {
+            foreach (array_unique(self::namesIn($source)) as $name) {
+                $plain = ltrim($name, '\\');
+                $inside = false;
+                foreach ([self::CSV_NAMESPACE, self::CONTRACT_NAMESPACE] as $namespace) {
+                    $inside = $inside || stripos($plain, $namespace) === 0 || strcasecmp($plain, rtrim($namespace, '\\')) === 0;
+                }
+                foreach (self::CSV_MAY_USE as $class) {
+                    $inside = $inside || strcasecmp($plain, $class) === 0;
+                }
+                if (stripos($plain, 'TiffinDB\\') === 0 && !$inside) {
+                    $found[] = "names {$plain}, which the core CSV classes may not use";
+                }
+            }
+        }
         if (!in_array($relative, self::FUNCTION_EXEMPT, true)) {
             foreach (array_unique(self::forbiddenCalls($source)) as $function) {
                 $found[] = "calls {$function}() directly";
@@ -395,12 +421,18 @@ final class CoreLayerRulesTest extends TestCase
         yield 'schema uses forms' => ['src/Core/Schema/A.php', $head('Schema') . "use TiffinDB\\Core\\Forms\\FormStore;\n", ['uses TiffinDB\\Core\\Forms, which Schema may not use']];
         yield 'io uses schema, query, forms, storage, error' => ['src/Core/Io/A.php', $head('Io') . "use TiffinDB\\Core\\Schema\\Ddl;\nuse TiffinDB\\Core\\Query\\Records;\nuse TiffinDB\\Core\\Forms\\FormStore;\nuse TiffinDB\\Core\\Storage\\Fs;\nuse TiffinDB\\Core\\Error\\Text;\n", []];
         yield 'io uses system' => ['src/Core/Io/A.php', $head('Io') . "use TiffinDB\\Core\\System\\AuditLog;\n", ['uses TiffinDB\\Core\\System, which Io may not use']];
-        yield 'io uses auth' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Auth\\Actor;\n", ['uses TiffinDB\\Core\\Auth, which Io may not use']];
+        yield 'io uses auth' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Auth\\Actor;\n", ['uses TiffinDB\\Core\\Auth, which Io may not use', 'names TiffinDB\\Core\\Auth\\Actor, which the core CSV classes may not use']];
         yield 'io uses app' => ['src/Core/Io/Archive/A.php', $head('Io\\Archive') . "\$x = \\TiffinDB\\Core\\App\\Context::class;\n", ['uses TiffinDB\\Core\\App, which Io may not use']];
         yield 'io uses install' => ['src/Core/Io/Plugin/A.php', $head('Io\\Plugin') . "use TiffinDB\\Core\\Install\\Installer;\n", ['uses TiffinDB\\Core\\Install, which Io may not use']];
         yield 'app uses io' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Io\\ImportJob;\n", []];
         yield 'query uses io' => ['src/Core/Query/A.php', $head('Query') . "use TiffinDB\\Core\\Io\\ImportJob;\n", ['uses TiffinDB\\Core\\Io, which Query may not use']];
         yield 'system uses io' => ['src/Core/System/A.php', $head('System') . "use TiffinDB\\Core\\Io\\Plugin\\PluginInfo;\n", ['uses TiffinDB\\Core\\Io, which System may not use']];
+        yield 'csv uses itself, the contract, and Text' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Io\\Csv\\CsvDialect;\nuse TiffinDB\\Core\\Io\\Contract\\PluginFailure;\nuse TiffinDB\\Core\\Error\\Text;\n", []];
+        yield 'csv uses another io class' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Io\\IoLimits;\n", ['names TiffinDB\\Core\\Io\\IoLimits, which the core CSV classes may not use']];
+        yield 'csv uses the plugin loader' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "\$x = \\TiffinDB\\Core\\Io\\Plugin\\PluginLoader::class;\n", ['names TiffinDB\\Core\\Io\\Plugin\\PluginLoader, which the core CSV classes may not use']];
+        yield 'csv uses storage' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Storage\\Fs;\n", ['names TiffinDB\\Core\\Storage\\Fs, which the core CSV classes may not use']];
+        yield 'csv uses another error class' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Error\\Problem;\n", ['names TiffinDB\\Core\\Error\\Problem, which the core CSV classes may not use']];
+        yield 'csv look-alike folder is not the csv rule' => ['src/Core/Io/CsvEvil/A.php', $head('Io\\CsvEvil') . "use TiffinDB\\Core\\Storage\\Fs;\n", []];
         yield 'contract uses itself' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "use TiffinDB\\Core\\Io\\Contract\\Settings;\n\$e = new \\RuntimeException();\n", []];
         yield 'contract uses io' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "use TiffinDB\\Core\\Io\\ImportJob;\n", ['names TiffinDB\\Core\\Io\\ImportJob outside the plugin contract']];
         yield 'contract uses error' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "\$x = \\TiffinDB\\Core\\Error\\Text::class;\n", ['names TiffinDB\\Core\\Error\\Text outside the plugin contract']];

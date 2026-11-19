@@ -7,7 +7,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M3 CLOSED; M4 not started (needs a new maintainer instruction) |
-| Phase | Stopped at the end of M3 per the session plan (section 11); no agents running. Integration branch `claude/gifted-archimedes-ix5bwy` holds all of M0 to M3, pushed. Suite 8413 tests OK (1 skipped), lint 684 files 0 failed |
+| Phase | Stopped at the end of M3 per the session plan (section 11); no agents running. Integration branch `claude/gifted-archimedes-ix5bwy` holds all of M0 to M3, pushed. Suite 8414 tests OK (1 skipped), lint 684 files 0 failed |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
 | Next action | Stopped. On the maintainer's instruction to continue: design M4 (relation picker, attachment upload and serving, trash screen, saved collections) per orchestration section 3, starting with the carried-forward items in the M2 and M3 sections below. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt); everything is pushed |
@@ -447,7 +447,7 @@ T-RT-1..6, T-E2E-8..10, T-SCR-3, T-KBD-2 pass; K-2 keyboard-only run passes (fil
 
 ### M3 exit results
 
-Independent design-tier exit audit on the integration branch (all M3 packages and review follow-ups merged). Suite: `composer test` OK (8413 tests, 1 skipped: no comma-decimal locale); `composer lint` 684 files, 0 failed. Evidence in the session scratchpad (not committed).
+Independent design-tier exit audit on the integration branch (all M3 packages and review follow-ups merged). Suite: `composer test` OK (8414 tests, 1 skipped: no comma-decimal locale); `composer lint` 684 files, 0 failed. Evidence in the session scratchpad (not committed).
 
 | Criterion | Result | Evidence |
 |---|---|---|

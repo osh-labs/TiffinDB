@@ -13,8 +13,7 @@ use InvalidArgumentException;
 /**
  * PHP's upload limits as the web layer needs them (M3 spec part 2 sections
  * 2.1 and 2.3): `upload_max_filesize` and `post_max_size`, each in bytes or
- * null when PHP sets no limit (`0`, `-1`, or any value that is not a
- * quantity PHP documents).
+ * null when PHP sets no limit (parse()).
  *
  * Upload screens state effective(), the smallest of the core's own cap
  * (IoLimits::MAX_UPLOAD_BYTES, which the core screen objects report as
@@ -27,9 +26,6 @@ use InvalidArgumentException;
  */
 final class UploadLimits
 {
-    /** An ini quantity: digits and an optional K, M, or G suffix (either case). */
-    private const QUANTITY = '/^\s*\+?([0-9]{1,40})\s*([KMGkmg]?)\s*\z/';
-
     public function __construct(
         public readonly ?int $uploadMaxFilesize,
         public readonly ?int $postMaxSize,
@@ -46,32 +42,38 @@ final class UploadLimits
     }
 
     /**
-     * An ini quantity in bytes: `2M` is 2,097,152, `512K` 524,288, `1G`
-     * 1,073,741,824, plain digits are bytes; null for `0`, a negative value
-     * (`-1`), an empty or absent setting, or anything else (no limit
-     * known). Values too large for an int become PHP_INT_MAX.
+     * An ini quantity in bytes, read by PHP's own rules (ini_parse_quantity,
+     * the parser PHP uses for upload_max_filesize and post_max_size): `2M`
+     * is 2,097,152, `512K` 524,288, `1G` 1,073,741,824, plain digits are
+     * bytes, `0x10` is 16 and `010` is 8, and a malformed value is read as
+     * PHP reads it (`1.5M` is 1 MB, `1MB` is 1 byte). Null when PHP sets no
+     * limit: `0`, a negative value such as `-1`, an empty or absent setting,
+     * or a value with no leading digits (PHP reads those as 0). A value out
+     * of range becomes PHP_INT_MAX.
      */
     public static function parse(string|false $value): ?int
     {
-        if (!is_string($value) || preg_match(self::QUANTITY, $value, $m) !== 1) {
+        if (!is_string($value)) {
             return null;
         }
-        $digits = ltrim($m[1], '0');
-        if ($digits === '') {
+        $warning = '';
+        set_error_handler(static function (int $severity, string $message) use (&$warning): bool {
+            $warning = $message;
+
+            return true;
+        });
+        try {
+            $bytes = ini_parse_quantity($value);
+        } catch (\ValueError) {
             return null;
+        } finally {
+            restore_error_handler();
         }
-        if (strlen($digits) > 18) {
+        if (str_contains($warning, 'out of range')) {
             return PHP_INT_MAX;
         }
-        $number = (int) $digits;
-        $factor = match (strtoupper($m[2])) {
-            'K' => 1024,
-            'M' => 1024 * 1024,
-            'G' => 1024 * 1024 * 1024,
-            default => 1,
-        };
 
-        return $number > intdiv(PHP_INT_MAX, $factor) ? PHP_INT_MAX : $number * $factor;
+        return $bytes > 0 ? $bytes : null;
     }
 
     /** The request body size above which the kernel answers 413, or null for no check. */

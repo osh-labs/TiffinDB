@@ -541,11 +541,14 @@ final class RequestTest extends TestCase
         yield 'error as text' => ['file', ['error' => 'none'] + $ok];
         yield 'not an array' => ['file', 'a.csv'];
         yield 'upper-case field' => ['File', $ok];
+        yield 'field starting with a digit' => ['2file', $ok];
+        yield 'field starting with an underscore' => ['_file', $ok];
         yield 'field with a dash' => ['the-file', $ok];
         yield 'field with brackets' => ['file[0]', $ok];
         yield 'field with markup' => ['<b>', $ok];
         yield 'empty field' => ['', $ok];
         yield 'long field' => [str_repeat('f', 33), $ok];
+        yield 'field with a space' => ['my file', $ok];
         yield 'numeric field' => [0, $ok];
     }
 
@@ -553,6 +556,17 @@ final class RequestTest extends TestCase
     public function testMalformedEntriesAreDropped(int|string $field, mixed $entry): void
     {
         self::assertSame([], Request::uploadedFiles([$field => $entry], static fn (string $path): bool => true));
+    }
+
+    public function testFieldNamesWithDigitsAndUnderscoresAreKept(): void
+    {
+        $files = Request::uploadedFiles(
+            ['file2' => self::entry('a.csv', '/tmp/phpA'), 'data_file_3' => self::entry('b.csv', '/tmp/phpB'), str_repeat('f', 32) => self::entry('c.csv', '/tmp/phpC')],
+            static fn (string $path): bool => true,
+        );
+
+        self::assertSame(['file2', 'data_file_3', str_repeat('f', 32)], array_keys($files));
+        self::assertSame('/tmp/phpA', $files['file2']->tmpPath);
     }
 
     public function testATemporaryPathPhpDidNotReceiveIsNotUsed(): void
@@ -645,6 +659,7 @@ final class RequestTest extends TestCase
     public static function badUploadedFiles(): iterable
     {
         yield 'bad field' => ['File', 'a', 0, 0, null];
+        yield 'field starting with a digit' => ['1file', 'a', 0, 0, null];
         yield 'negative size' => ['file', 'a', -1, 0, null];
         yield 'negative error' => ['file', 'a', 0, -1, null];
         yield 'unknown error' => ['file', 'a', 0, 9, null];
@@ -724,14 +739,23 @@ final class RequestTest extends TestCase
         yield 'gigabytes' => ['1G', 1073741824];
         yield 'bytes' => ['1000', 1000];
         yield 'spaces' => [' 64M ', 67108864];
-        yield 'leading zeros' => ['008M', 8388608];
+        yield 'plus sign' => ['+5M', 5242880];
+        // PHP's own reading of unusual values (ini_parse_quantity).
+        yield 'decimal point: PHP reads 1.5M as 1M' => ['1.5M', 1048576];
+        yield 'hexadecimal' => ['0x10', 16];
+        yield 'octal' => ['010', 8];
+        yield 'binary' => ['0b11', 3];
+        yield 'MB: PHP reads the B as no suffix' => ['1MB', 1];
+        yield 'unknown suffix: PHP keeps the digits' => ['5T', 5];
+        yield 'two suffixes: PHP uses the last' => ['1MK', 1024];
+        yield 'invalid octal digits read as 0' => ['008M', null];
         yield 'zero means no limit' => ['0', null];
         yield 'minus one means no limit' => ['-1', null];
+        yield 'negative means no limit' => ['-5M', null];
         yield 'empty' => ['', null];
+        yield 'blank' => [' ', null];
         yield 'absent setting' => [false, null];
-        yield 'unknown suffix' => ['5T', null];
         yield 'words' => ['lots', null];
-        yield 'two suffixes' => ['1MK', null];
         yield 'huge' => ['99999999999999999999G', PHP_INT_MAX];
         yield 'overflow on the factor' => ['9223372036854775807K', PHP_INT_MAX];
     }
@@ -740,6 +764,26 @@ final class RequestTest extends TestCase
     public function testIniQuantitiesAreParsed(string|false $value, ?int $expected): void
     {
         self::assertSame($expected, UploadLimits::parse($value));
+    }
+
+    /** The parse agrees with what PHP itself applies, and raises no warning (the kernel turns warnings into 500s). */
+    public function testParseAgreesWithPhpAndRaisesNothing(): void
+    {
+        $raised = 0;
+        set_error_handler(static function () use (&$raised): bool {
+            $raised++;
+
+            return true;
+        });
+        try {
+            foreach (['1.5M', '0x10', '1MB', '010', 'lots', '99999999999999999999G'] as $value) {
+                UploadLimits::parse($value);
+            }
+        } finally {
+            restore_error_handler();
+        }
+        self::assertSame(0, $raised);
+        self::assertSame(ini_parse_quantity('0x10'), UploadLimits::parse('0x10'));
     }
 
     public function testTheEffectiveLimitIsTheSmallest(): void

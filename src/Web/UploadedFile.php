@@ -28,8 +28,11 @@ use InvalidArgumentException;
  */
 final class UploadedFile
 {
-    /** Field names an upload may have; anything else is dropped. */
-    public const FIELD = '/^[a-z_]{1,32}\z/';
+    /**
+     * Field names an upload may have: a lower-case letter, then up to 31
+     * lower-case letters, digits, or underscores; anything else is dropped.
+     */
+    public const FIELD = '/^[a-z][a-z0-9_]{0,31}\z/';
 
     /** One accepted extension, with or without its leading dot. */
     private const ACCEPT_ITEM = '/^\.?([a-z0-9]{1,10})\z/';

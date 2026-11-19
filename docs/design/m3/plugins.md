@@ -1,6 +1,6 @@
 # M3 screen design: plugins
 
-Status: design for milestone M3 (ui-design-plan section 6.2, "Plugins"; no mock-up). Logic: `docs/specs/M3-io.md` section 4 and 13.3; ADR 0015. Implemented by M3-WP10. Strings: `strings/en/plugins.php` (WP10). Example data is synthetic.
+Status: design for milestone M3 (ui-design-plan section 6.2, "Plugins"; no mock-up). Logic: `docs/specs/M3-io.md` section 4 and 13.3; ADR 0015. Implemented by M3-WP10. Strings: `strings/en/plugins.php` (WP10). Example data is synthetic. Notice and reason keys corrected to the as-built screen at the M3 exit audit.
 
 ## 1. Overview
 
@@ -21,7 +21,7 @@ Page title: `plugins.title` "Plugins".
 2. `h1` `plugins.title`.
 3. `p.lead` `plugins.lead` "Plugins read and write file formats for importing and exporting. A plugin can read and change everything in this installation, so turn on only plugins you trust."
 4. Two sections, `h2` `plugins.import` "Import formats" and `h2` `plugins.export` "Export formats", each `ul.plugin-list` of `li.plugin-row`:
-   - `div`: `h3` (`font-size` 20) `a` to the plugin page with the plugin's name (plain; for a broken plugin without a readable name, `plugins.unnamed` "Plugin in folder {id}"); `p.help` `plugins.row_facts` "Version {version}. Reads {extensions}." or for export "Writes {extension}."; `plugins.shipped` "Comes with TiffinDB." for the five shipped plugins.
+   - `div`: `h3` (`font-size` 20) `a` to the plugin page with the plugin's name (plain; for a broken plugin without a readable name, `plugins.unnamed` "Plugin in folder {id}"); `p.help` `plugins.row_facts_import` "Version {version}. Reads {extensions}." or `plugins.row_facts_export` "Version {version}. Writes {extension}." (as built: two keys); `plugins.shipped` "Comes with TiffinDB." for the five shipped plugins.
    - `span.plugin-status` with the class for its status and the word: `plugins.status.enabled` "On", `plugins.status.disabled` "Off", `plugins.status.unavailable` "Cannot be used", `plugins.status.broken` "Damaged".
 5. When a section is empty: `p` `plugins.none` "None found."
 6. `p.help` `plugins.install_help` "To add a plugin, copy its folder into plugins/import or plugins/export on the server. It appears here turned off."
@@ -39,10 +39,10 @@ Page title: the plugin's name.
    - Disabled, shipped: `form` POST `.../enable` with `button.button.button-primary.button-large` `plugins.enable` "Turn on".
    - Disabled, added: `a.button.button-primary.button-large` `plugins.enable` "Turn on" to the confirmation page.
    - Unavailable: `p.notice` `plugins.unavailable_body` "This plugin needs PHP extensions that this server does not have: {extensions}. Ask your hosting provider to turn them on."
-   - Broken: `p.notice` `plugins.broken_body` "This plugin's description file has a problem, so TiffinDB will not use it." and `p.help` with the reason, `plugins.reason.<code>` (for example `plugins.reason.unknown-member` "The description file has an entry TiffinDB does not know.", one string per reason code of `docs/specs/M3-io.md` section 4.1 and `too-many`).
+   - Broken: `p.notice` `plugins.broken_body` "This plugin's description file has a problem, so TiffinDB will not use it." and `p.help` with the reason, `plugins.reason.<code>` (for example `plugins.reason.unknown_member` "The description file has an entry TiffinDB does not know.", one string per reason code of `docs/specs/M3-io.md` section 4.1, `too-many`, `php-tag`, and `duplicate-member`; the key replaces `-` in the code with `_`).
 6. `a` `plugins.back` "All plugins" to `/admin/plugins`.
 
-Notices after a change: `plugins.notice.enabled` "{name} is turned on." / `plugins.notice.disabled` "{name} is turned off." Turning on a shipped plugin or turning off any plugin needs no confirmation: both are reversible and change no data.
+Notices after a change (as built, M3-WP10): `notice.plugin_enabled` "{name} is turned on." / `notice.plugin_disabled` "{name} is turned off." Turning on a shipped plugin or turning off any plugin needs no confirmation: both are reversible and change no data.
 
 ## 4. Turn on a plugin that did not come with TiffinDB
 

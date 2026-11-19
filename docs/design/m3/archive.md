@@ -1,6 +1,6 @@
 # M3 screen design: import a project archive
 
-Status: design for milestone M3 (no mock-up; ADR 0017). Logic: `docs/specs/M3-io.md` sections 11 and 13.4. Implemented by M3-WP10. Strings: `strings/en/archive.php` (WP10). Example data is synthetic.
+Status: design for milestone M3 (no mock-up; ADR 0017). Logic: `docs/specs/M3-io.md` sections 11 and 13.4. Implemented by M3-WP10. Strings: `strings/en/archive.php` (WP10). Example data is synthetic. Notice keys and the name-taken key corrected to the as-built screen at the M3 exit audit.
 
 ## 1. Overview
 
@@ -28,8 +28,8 @@ Page title: `archive.title` "Import a project archive".
 
 ## 3. Name already taken
 
-The same page, 422, with the file field replaced by `p` `archive.checked` "The archive {file} has been checked." (the uploaded name, escaped), and the name field showing the name with the problem `problem.name.taken`; the form posts to `/projects/import/{job}` (the checked archive is kept for one hour). Buttons as above.
+The same page, 422, with the file field replaced by `p` `archive.checked` "The archive {file} has been checked." (the uploaded name, escaped), and the name field showing the name with the problem `problem.project_name.taken` (as built; the M1 project-name key); the form posts to `/projects/import/{job}` (the checked archive is kept for one hour). Buttons as above.
 
 ## 4. Result
 
-303 to `/projects/{new key}/tables` with flash `archive.notice.done` "The project {name} has been made from the archive." When the rebuild changed anything, a second paragraph in the notice: `archive.notice.changes` "Some things were changed to fit TiffinDB's rules: {list}." where `{list}` joins, in this order and only when non-zero, `archive.change.values` "{count|# value|# values} left empty", `archive.change.links` "{count|# link|# links} dropped", `archive.change.forms_dropped` "{count|# form|# forms} replaced by the standard layout", `archive.change.forms_extended` "{count|# form|# forms} given missing fields", `archive.change.files` "{count|# file|# files} missing". The same counts are kept in the new project's import log (`docs/formats/tiffin.md` section 4.7). (A flash carries strings and integers only, M1; the controller builds the list text with `t()` and passes it as one string parameter.)
+303 to `/projects/{new key}/tables` with one flash notice (as built, M3-WP10): `notice.archive_imported` "The project {name} has been made from the archive." when nothing was changed, else `notice.archive_imported_changes` "The project {name} has been made from the archive. Some things were changed to fit TiffinDB's rules: {list}." (one sentence pair in one notice, not a second paragraph), where `{list}` joins, in this order and only when non-zero, `archive.change.values` "{count|# value|# values} left empty", `archive.change.links` "{count|# link|# links} dropped", `archive.change.forms_dropped` "{count|# form|# forms} replaced by the standard layout", `archive.change.forms_extended` "{count|# form|# forms} given missing fields", `archive.change.files` "{count|# file|# files} missing". The same counts are kept in the new project's import log (`docs/formats/tiffin.md` section 4.7). (A flash carries strings and integers only, M1; the controller builds the list text with `t()` and passes it as one string parameter.)

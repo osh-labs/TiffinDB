@@ -319,7 +319,7 @@ final class Records
             }
             $existing = $db->all(
                 'SELECT "jj".' . Identifier::system($otherSide) . ' AS "id", "o"."_trashed_at" AS "trashed" FROM ' . $relation->sql()
-                . ' AS "jj" JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
+                . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
                 . ' WHERE "jj".' . Identifier::system($thisSide) . ' = ?',
                 [$id],
             );
@@ -938,7 +938,7 @@ final class Records
             Sql::of('SELECT "jj".' . Identifier::system($thisSide) . ' AS "rid", "jj".' . Identifier::system($otherSide) . ' AS "oid", "o"."_trashed_at" AS "trashed",'),
             $titleColumn,
             Sql::of(
-                'FROM ' . $relation->sql() . ' AS "jj" JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
+                'FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
                 . ' WHERE "jj".' . Identifier::system($thisSide) . ' IN (' . Database::placeholders(count($ids)) . ')'
                 . ' ORDER BY "jj".' . Identifier::system($thisSide) . ', "jj"."position", "jj".' . Identifier::system($otherSide),
                 $ids,
@@ -966,7 +966,7 @@ final class Records
     {
         $rows = $this->db->all(
             'SELECT "l"."record_id" AS "rid", "a"."id" AS "id", "a"."original_name" AS "name", "a"."media_type" AS "type", "a"."size" AS "size"'
-            . ' FROM "_tiffin_attachment_links" AS "l" JOIN "_tiffin_attachments" AS "a" ON "a"."id" = "l"."attachment_id"'
+            . ' FROM "_tiffin_attachment_links" AS "l" CROSS JOIN "_tiffin_attachments" AS "a" ON "a"."id" = "l"."attachment_id"'
             . ' WHERE "l"."field_key" = ? AND "l"."record_id" IN (' . Database::placeholders(count($ids)) . ')'
             . ' ORDER BY "l"."record_id", "l"."position", "a"."id"',
             [$fieldKey, ...$ids],

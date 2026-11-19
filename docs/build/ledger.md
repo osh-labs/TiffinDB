@@ -6,11 +6,11 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M2 CLOSED; M3 design reconciliation next (was: M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | M3 implementation complete and merged (all packages WP0 to WP11 and their review follow-ups); M3-X exit audit dispatched. Suite 8393 tests OK (1 skipped), lint 682 files 0 failed |
+| Milestone | M3 CLOSED; M4 not started (needs a new maintainer instruction) |
+| Phase | Stopped at the end of M3 per the session plan (section 11); no agents running. Integration branch `claude/gifted-archimedes-ix5bwy` holds all of M0 to M3, pushed. Suite 8413 tests OK (1 skipped), lint 684 files 0 failed |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merge M3-X (as-built notes, doc corrections), record M3 CLOSED with exit results in the ledger, fix any audit findings via the owning authors, then send the single end-of-session notification (plan section 11) and stop; M4 needs a new instruction. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt) |
+| Next action | Stopped. On the maintainer's instruction to continue: design M4 (relation picker, attachment upload and serving, trash screen, saved collections) per orchestration section 3, starting with the carried-forward items in the M2 and M3 sections below. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt); everything is pushed |
 
 ### Phase 0 record (2026-11-19)
 
@@ -25,7 +25,7 @@ XLSX dependency probe (metadata read from Packagist; no code installed): `opensp
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
 | M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
-| M3 | not started | |
+| M3 | CLOSED 2026-11-19 (independent exit audit; no blocking findings; MEDIUM repository-rule finding fixed) | See M3 exit results below |
 | M4 | not started | |
 | M5 | not started | |
 | M6 | deferred (awaiting maintainer discovery output) | |
@@ -444,3 +444,26 @@ T-RT-1..6, T-E2E-8..10, T-SCR-3, T-KBD-2 pass; K-2 keyboard-only run passes (fil
 - M3-WP1d merged: first values over 60 characters are cut to 59 plus an ellipsis; Web address is proposed only when every cell starts with http://, https:// or www.; importing into a URL field leaves a non-URL cell empty with an "unreadable" issue instead of rewriting it; the type menu lists the proposed type, then types every cell fits, then text and long text, then every other importable type (phone and date included), then links; a money word in the heading proposes currency for plain amounts (P138; spec 6.3.1 still also says two decimals: align to P138); 1/0 still proposes Number with Checkbox in the menu (P117).
 - P145 (provisional, orchestrator ruling): CSV export writes checkbox values as yes/no per M3-io spec 8.2 (the core text is 1/0 per spec 3.3), mapped in `plugins/export/csv/src/CsvExporter.php`; CSV import proposes Checkbox for yes/no columns, so the round trip holds. JSON and XLSX keep their own documented forms. Cheapest to reverse: one mapping. To do (WP4 author), with the round-trip tests adjusted.
 - Spec text to update at the M3 audit: M3-io 6.3 (type menu offers every importable type; Web address needs an explicit scheme or www.) and 6.3.1 (P138 wording).
+
+### M3 exit results
+
+Independent design-tier exit audit on the integration branch (all M3 packages and review follow-ups merged). Suite: `composer test` OK (8413 tests, 1 skipped: no comma-decimal locale); `composer lint` 684 files, 0 failed. Evidence in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above |
+| Round-trip tests on seeded synthetic fixtures | PASS | Auditor's own seed (424242): CSV byte-identical; XLSX equal cell for cell (read with openpyxl); JSON checked against `docs/formats/json-export.md` with an independent decoder; archive equal table by table. No binary fixtures committed; mutating any of the five writers fails the tests |
+| Import flow usable by keyboard only | PASS | Auditor's own key-presses-only run on the live server (data folder outside `public/`); the file choice is the one non-keyboard step; "Save the rows" never auto-submits. Manual screen-reader pass: not verified |
+| Import that fails part-way leaves the target unchanged | PASS | 10 injection points; project checksum unchanged; one `import` snapshot each |
+| Admin only; authorization in core | PASS | A Member refused on all 27 core methods; no job-existence oracle; CSRF 403 on every M3 POST; 0 outbound connect calls under strace |
+| Hostile corpus (CSV, XLSX, archive) | PASS | 71 files: every refusal a 422, no 500s, no leftover jobs, read memory at most 11 MiB |
+| Plugins | PASS | Hostile folders show Broken or are not listed; no plugin code ran during discovery |
+| Dependencies | PASS | OpenSpout 5.2.2 at `95403917927ef252f7ae82d919c55286a642962a`, MIT and Apache-2.0 licence hashes match, no `composer.lock` |
+| Data portability | PASS | Version 3 file matches `docs/formats/tiffin.md`; an M2-made version 2 file upgrades after a snapshot; JSON and CSV open without TiffinDB |
+| Visual V-15 to V-19 | PASS | 72 states; deviations M3 D-22 to D-30, `f-tablename` id and the over-limit line without a row figure accepted |
+| Repository rules | FAIL then fixed | Five `@` operators in `plugins/export/json/src/JsonExporter.php` (ADR 0008 decision 6): removed in WP6b; new `tests/repo/NoErrorSuppressionTest.php` scans src, plugins, templates; `.gitignore` gained `*.tiffindb.zip` (WP0c) |
+| Tests not vacuous | PASS | 16 of 18 mutations killed; survivors: XLSX early stop on entries holding more bytes than declared (time only), archive trigger/view check (equivalent) |
+
+Open low items carried forward (none blocking): "Check again" loses a table name typed before switching to an existing target and back (WP9/WP8); the report's "Rows" column is right-aligned like the count column (WP3/WP9); a CSV over 200 columns or with a record over 1 MiB shows "uses something TiffinDB cannot read yet" instead of the column-limit message (WP1/WP4); no test pins the XLSX early stop on size lies (WP5); `@` operators remain outside the rule's scope in `tools/host-check/host-check.php` (22, M0/M3-WP0 tool) and `tools/discovery/discover-structure.php` (15, M0 discovery tool deferred to the maintainer); replacement counts for UTF-16 and Windows-1252 do not reach the review warning (contract limitation); XLSX late-skip timing (a worst-case chunk can exceed the 5-second budget, bounded by the verified sheet size and the 100,000-row cap) deferred to the maintainer's host check.
+
+Not verified in M3: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass; commit and archive-rebuild times on a shared host.

@@ -1932,8 +1932,11 @@ li.link-row a {
   padding-left: 1.2222rem;
 }
 
-/* 5. Mapping table */
-.table-scroll {
+/* 5. Mapping table; div.table-scroll also holds the report table, so a
+   narrow page never scrolls sideways */
+div.table-scroll {
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   border: var(--border-card) solid var(--line);
   border-radius: var(--radius-card);
@@ -2108,6 +2111,8 @@ li.link-row a {
   vertical-align: middle;
 }
 
+.report-table td,
+.report-table thead th + th,
 .report-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;

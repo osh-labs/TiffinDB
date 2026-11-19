@@ -32,6 +32,7 @@ final class Workbook
 {
     private ?Styles $styles = null;
     private ?SharedStrings $strings = null;
+    private ?JobCache $cache = null;
 
     /**
      * @param list<array{name: string, hidden: bool, part: string}> $sheets
@@ -45,16 +46,17 @@ final class Workbook
     ) {
     }
 
-    /** Checks the workbook at $path (WorkbookCheck) and reads its structure. */
-    public static function open(string $path): self
+    /**
+     * Reads the structure of the workbook at $path, whose zip directory
+     * WorkbookCheck::directory() returned as $lower and whose contents
+     * check passed; styles and shared strings come from $cache when it
+     * holds them.
+     *
+     * @param array<string, string> $lower lower-case entry name => entry name
+     */
+    public static function open(string $path, array $lower, JobCache $cache): self
     {
-        $entries = WorkbookCheck::check($path);
-        $lower = [];
-        foreach (array_keys($entries) as $name) {
-            $lower[strtolower((string) $name)] ??= (string) $name;
-        }
-
-        return Xml::run(static function () use ($path, $lower): self {
+        $workbook = Xml::phase(Limits::STEPS_STRUCTURE, static fn (): self => Xml::run(static function () use ($path, $lower): self {
             $workbookPart = WorkbookCheck::WORKBOOK;
             foreach (self::relationships($path, '_rels/.rels', '', $lower) as [$type, $target]) {
                 if ($type === 'officeDocument' && $target !== null) {
@@ -68,6 +70,11 @@ final class Workbook
             $stylesPart = null;
             $stringsPart = null;
             foreach (self::relationships($path, $relsPart, $folder, $lower) as $id => [$type, $target]) {
+                foreach (WorkbookCheck::MACRO_TYPES as $word) {
+                    if (str_contains(strtolower($type), $word)) {
+                        throw new PluginFailure(PluginFailure::REASON_UNSUPPORTED, 'The workbook holds macros.');
+                    }
+                }
                 if ($target === null) {
                     continue;
                 }
@@ -85,15 +92,30 @@ final class Workbook
             }
 
             return new self($path, $sheets, $date1904, $stylesPart, $stringsPart);
-        });
+        }));
+        $workbook->cache = $cache;
+
+        return $workbook;
+    }
+
+    public function cache(): ?JobCache
+    {
+        return $this->cache;
     }
 
     public function styles(): Styles
     {
         if ($this->styles === null) {
-            $part = $this->stylesPart;
-            $path = $this->path;
-            $this->styles = $part === null ? Styles::none() : Xml::run(static fn (): Styles => Styles::read($path, $part));
+            $cached = $this->cache?->styles();
+            if ($cached !== null) {
+                $this->styles = Styles::fromBytes($cached);
+            } else {
+                $part = $this->stylesPart;
+                $path = $this->path;
+                $this->styles = $part === null ? Styles::none()
+                    : Xml::phase(Limits::STEPS_STYLES, static fn (): Styles => Xml::run(static fn (): Styles => Styles::read($path, $part)));
+                $this->cache?->setStyles($this->styles->bytes());
+            }
         }
 
         return $this->styles;
@@ -102,9 +124,18 @@ final class Workbook
     public function strings(): SharedStrings
     {
         if ($this->strings === null) {
-            $part = $this->stringsPart;
-            $path = $this->path;
-            $this->strings = $part === null ? SharedStrings::none() : Xml::run(static fn (): SharedStrings => SharedStrings::read($path, $part));
+            $cached = $this->stringsPart === null ? null : $this->cache?->strings();
+            if ($cached !== null) {
+                $this->strings = $cached;
+            } else {
+                $part = $this->stringsPart;
+                $path = $this->path;
+                $this->strings = $part === null ? SharedStrings::none()
+                    : Xml::phase(Limits::STEPS_SHARED, static fn (): SharedStrings => Xml::run(static fn (): SharedStrings => SharedStrings::read($path, $part)));
+                if ($part !== null) {
+                    $this->cache?->setStrings($this->strings);
+                }
+            }
         }
 
         return $this->strings;
@@ -126,7 +157,7 @@ final class Workbook
         $reader = Xml::open($path, $entry);
         $found = [];
         try {
-            while ($reader->read()) {
+            while (Xml::read($reader)) {
                 if ($reader->nodeType !== \XMLReader::ELEMENT || $reader->localName !== 'Relationship' || count($found) >= Limits::MAX_ENTRIES) {
                     continue;
                 }
@@ -196,7 +227,7 @@ final class Workbook
         $parts = [];
         $date1904 = false;
         try {
-            while ($reader->read()) {
+            while (Xml::read($reader)) {
                 if ($reader->nodeType !== \XMLReader::ELEMENT) {
                     continue;
                 }

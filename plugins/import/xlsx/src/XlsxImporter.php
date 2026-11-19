@@ -61,7 +61,7 @@ final class XlsxImporter implements Importer
 
     public function detect(SourceFile $file): Settings
     {
-        $workbook = Workbook::open($file->path);
+        $workbook = self::open($file);
         $choices = [];
         $default = null;
         foreach ($workbook->sheets as $index => $sheet) {
@@ -79,19 +79,21 @@ final class XlsxImporter implements Importer
 
     public function inspect(SourceFile $file, Settings $settings): Inspection
     {
-        $workbook = Workbook::open($file->path);
+        $workbook = self::open($file);
         $heading = $settings->value('heading') !== '0';
         $tables = [];
         $hidden = 0;
-        foreach ($workbook->sheets as $index => $sheet) {
-            $tables[] = new SourceTable(
-                Charset::cut(Charset::scrub($sheet['name']), SourceTable::MAX_NAME_BYTES),
-                self::columns($workbook, $index, $heading),
-                null,
-                $sheet['hidden'],
-            );
-            $hidden += $sheet['hidden'] ? 1 : 0;
-        }
+        Xml::phase(Limits::STEPS_COLUMNS, static function () use ($workbook, $heading, &$tables, &$hidden): void {
+            foreach ($workbook->sheets as $index => $sheet) {
+                $tables[] = new SourceTable(
+                    Charset::cut(Charset::scrub($sheet['name']), SourceTable::MAX_NAME_BYTES),
+                    self::columns($workbook, $index, $heading),
+                    null,
+                    $sheet['hidden'],
+                );
+                $hidden += $sheet['hidden'] ? 1 : 0;
+            }
+        });
         $count = count($tables);
         $readAs = 'Excel workbook, ' . $count . ($count === 1 ? ' sheet' : ' sheets') . ($hidden > 0 ? ' (' . $hidden . ' hidden)' : '');
 
@@ -104,12 +106,12 @@ final class XlsxImporter implements Importer
         if ($from < 0 || $limit < 1 || $table < 0) {
             return [];
         }
-        $workbook = Workbook::open($file->path);
+        $workbook = self::open($file);
         if (!isset($workbook->sheets[$table])) {
             return [];
         }
         $heading = $settings->value('heading') !== '0';
-        $width = count(self::columns($workbook, $table, $heading));
+        $width = count(Xml::phase(Limits::STEPS_COLUMNS, static fn (): array => self::columns($workbook, $table, $heading)));
         Xml::run(static function () use ($workbook): void {
             $workbook->styles();
             $workbook->strings();
@@ -126,6 +128,7 @@ final class XlsxImporter implements Importer
      */
     private static function generate(Workbook $workbook, string $part, int $width, int $first, int $limit): \Generator
     {
+        Xml::budget(Limits::STEPS_ROWS);
         $cursor = Xml::run(static fn (): SheetCursor => new SheetCursor($workbook, $part));
         try {
             $next = Xml::run(static function () use ($cursor, $first): ?int {
@@ -183,6 +186,10 @@ final class XlsxImporter implements Importer
      */
     private static function columns(Workbook $workbook, int $index, bool $heading): array
     {
+        $cached = $workbook->cache()?->columns($index, $heading);
+        if ($cached !== null) {
+            return $cached;
+        }
         [$headings, $widest] = Xml::run(static function () use ($workbook, $index, $heading): array {
             $cursor = new SheetCursor($workbook, $workbook->sheets[$index]['part']);
             try {
@@ -216,8 +223,26 @@ final class XlsxImporter implements Importer
             $text = $heading && isset($headings[$i]) ? Charset::cut(Charset::scrub($headings[$i]), SourceTable::MAX_HEADING_BYTES) : '';
             $columns[] = trim($text, " \t\n") === '' ? self::COLUMN . ($i + 1) : $text;
         }
+        $workbook->cache()?->setColumns($index, $heading, $columns);
 
         return $columns;
+    }
+
+    /**
+     * Checks the workbook (the zip directory on every call; every entry's
+     * bytes once per job, remembered in the job cache) and reads its
+     * structure.
+     */
+    private static function open(SourceFile $file): Workbook
+    {
+        $names = WorkbookCheck::directory($file->path);
+        $cache = JobCache::for($file);
+        if (!$cache->checked()) {
+            WorkbookCheck::contents($file->path);
+            $cache->markChecked();
+        }
+
+        return Workbook::open($file->path, $names, $cache);
     }
 
     /** @param array<int, string> $cells */

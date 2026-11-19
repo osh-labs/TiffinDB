@@ -32,8 +32,9 @@ use TiffinDB\Core\Error\Text;
  *   IPv6 address, then optionally `:` and a port of 1 to 5 digits from 1 to
  *   65535, then `/`, `?`, `#`, or the end;
  * - no host that browsers read as an IPv4 address written another way: a
- *   label starting with `0x`, a single integer, or all-digit labels other
- *   than exactly four decimal labels of 0 to 255 without leading zeros.
+ *   label that is `0x` and hexadecimal digits only, or a host whose last
+ *   label is all digits, other than exactly four decimal labels of 0 to 255
+ *   without leading zeros (T-CF-2; `0xford.example` is an ordinary name).
  *
  * Lenient parsing first puts `https://` in front of a value that has no
  * scheme, starts with a letter or digit, and has a dot before any `/`. The
@@ -160,15 +161,29 @@ final class UrlType implements FieldType
         return $url;
     }
 
-    /** A host browsers would read as an IPv4 address in a form other than four plain decimal labels. */
+    /**
+     * A host browsers would read as an IPv4 address in a form other than four
+     * plain decimal labels (T-CF-2). Browsers treat a host as IPv4 when its
+     * last label (ignoring one trailing dot) is a number: decimal digits, or
+     * `0x` followed by hexadecimal digits only. Such a host is refused unless
+     * it is exactly four plain decimal labels of 0 to 255. Any label that is
+     * a hexadecimal number (`0x` and hexadecimal digits only) is refused too,
+     * wherever it stands; a label that merely starts with `0x`, such as
+     * `0xford`, is an ordinary name.
+     */
     private static function looksLikeOtherIpv4(string $host): bool
     {
-        foreach (explode('.', $host) as $label) {
-            if (stripos($label, '0x') === 0) {
+        $labels = explode('.', $host);
+        foreach ($labels as $label) {
+            if (preg_match('/^0x[0-9A-Fa-f]*\z/i', $label) === 1) {
                 return true;
             }
         }
-        if (preg_match('/^[0-9.]+\z/', $host) !== 1) {
+        if (count($labels) > 1 && end($labels) === '') {
+            array_pop($labels);
+        }
+        $last = end($labels);
+        if ($last === false || preg_match('/^[0-9]+\z/', $last) !== 1) {
             return false;
         }
         $octet = '(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)';

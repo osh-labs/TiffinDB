@@ -132,7 +132,8 @@ abstract class RoundTripCase extends TestCase
     /**
      * Every table of a project file with every row, read with plain SQL on
      * a read-only connection: table name => list of rows (columns by name),
-     * rows in rowid or primary key order; plus `sqlite_master` and the
+     * rows in rowid order (by content for WITHOUT ROWID tables and
+     * `sqlite_sequence`); plus `sqlite_master` and the
      * user_version and application_id pragmas.
      *
      * @return array<string, mixed>
@@ -150,7 +151,8 @@ abstract class RoundTripCase extends TestCase
                 $name = (string) $table['name'];
                 $withoutRowid = str_contains((string) $table['sql'], 'WITHOUT ROWID');
                 $rows = $db->all('SELECT * FROM "' . str_replace('"', '""', $name) . '"' . ($withoutRowid ? '' : ' ORDER BY rowid'));
-                if ($withoutRowid) {
+                if ($withoutRowid || $name === 'sqlite_sequence') {
+                    // A set: rows by content (the sequence table's row order follows insertion).
                     sort($rows);
                 }
                 $dump[$name] = $rows;

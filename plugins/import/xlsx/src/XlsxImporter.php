@@ -229,20 +229,16 @@ final class XlsxImporter implements Importer
     }
 
     /**
-     * Checks the workbook (the zip directory on every call; every entry's
-     * bytes once per job, remembered in the job cache) and reads its
-     * structure.
+     * Checks the workbook (the zip directory, then every entry's real bytes,
+     * prologs, and content types: on every call, whatever the job cache
+     * holds) and reads its structure.
      */
     private static function open(SourceFile $file): Workbook
     {
         $names = WorkbookCheck::directory($file->path);
-        $cache = JobCache::for($file);
-        if (!$cache->checked()) {
-            WorkbookCheck::contents($file->path);
-            $cache->markChecked();
-        }
+        WorkbookCheck::contents($file->path);
 
-        return Workbook::open($file->path, $names, $cache);
+        return Workbook::open($file->path, $names, JobCache::for($file));
     }
 
     /** @param array<int, string> $cells */

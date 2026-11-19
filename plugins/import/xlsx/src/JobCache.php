@@ -12,11 +12,16 @@ use TiffinDB\Core\Io\Contract\SourceFile;
 use TiffinDB\Core\Io\Contract\SourceTable;
 
 /**
- * What one call learnt about a workbook, kept for the next calls of the
- * same import job in the job's temporary folder: that the whole-file
- * checks (WorkbookCheck::contents) passed, each sheet's columns, the cell
- * format kinds, and the shared strings. Each later call then does only
- * the zip directory check, the workbook structure, and its own rows.
+ * Data one call derived from a workbook, kept for the next calls of the
+ * same import job in the job's temporary folder: each sheet's columns, the
+ * cell format kinds, and the shared strings. Later calls do not parse
+ * those again.
+ *
+ * Only derived data is kept, never the outcome of a safety check: every
+ * call runs the zip directory check and the whole-file check (real bytes,
+ * prologs, content types) itself, so a cache forged by anyone who can
+ * write the job folder can at most change the values read from this
+ * workbook, never skip a check or reach other files.
  *
  * The cache is read back as untrusted data: it is used only when its key
  * (the SHA-256 of the whole uploaded file and its size) matches the file
@@ -24,8 +29,11 @@ use TiffinDB\Core\Io\Contract\SourceTable;
  * a depth limit, and every value is checked for type, count, and length
  * (columns as SourceTable allows, format kinds 0 to 3, the shared strings
  * files by their recorded sizes and SHA-256). Anything else is ignored and
- * recomputed. Writes go to a temporary name and are renamed into place; a
- * folder that cannot be written only means nothing is cached.
+ * recomputed. Writes go to a new temporary file created exclusively (an
+ * existing temporary name is removed first when it is a regular file, and
+ * nothing is written when it is anything else, such as a link) and are
+ * renamed into place; a folder that cannot be written only means nothing
+ * is cached.
  *
  * @internal
  */
@@ -34,10 +42,10 @@ final class JobCache
     private const FILE = 'xlsx-cache.json';
     private const TEXT = 'xlsx-strings.bin';
     private const OFFSETS = 'xlsx-offsets.bin';
-    private const VERSION = 1;
+    private const VERSION = 2;
 
     /**
-     * @param array{checked: bool, columns: array<string, list<string>>, styles: ?string, strings: ?array{count: int, bytes: int, text: string, offsets: string}} $data
+     * @param array{columns: array<string, list<string>>, styles: ?string, strings: ?array{count: int, bytes: int, text: string, offsets: string}} $data
      */
     private function __construct(private readonly string $folder, private readonly string $key, private array $data)
     {
@@ -48,7 +56,7 @@ final class JobCache
         $hash = hash_file('sha256', $file->path);
         $key = ($hash === false ? 'none' : $hash) . ':' . (int) filesize($file->path);
         $folder = rtrim($file->tempFolder, '/');
-        $empty = ['checked' => false, 'columns' => [], 'styles' => null, 'strings' => null];
+        $empty = ['columns' => [], 'styles' => null, 'strings' => null];
         $raw = self::readFile($folder . '/' . self::FILE, Limits::MAX_CACHE_BYTES);
         if ($raw === null || $hash === false) {
             return new self($folder, $key, $empty);
@@ -63,22 +71,10 @@ final class JobCache
         }
 
         return new self($folder, $key, [
-            'checked' => ($decoded['checked'] ?? null) === true,
             'columns' => self::validColumns($decoded['columns'] ?? null),
             'styles' => self::validStyles($decoded['styles'] ?? null),
             'strings' => self::validStrings($decoded['strings'] ?? null),
         ]);
-    }
-
-    public function checked(): bool
-    {
-        return $this->data['checked'];
-    }
-
-    public function markChecked(): void
-    {
-        $this->data['checked'] = true;
-        $this->save();
     }
 
     /** @return list<string>|null */
@@ -134,7 +130,7 @@ final class JobCache
 
     private function save(): void
     {
-        $data = ['v' => self::VERSION, 'key' => $this->key, 'checked' => $this->data['checked'], 'columns' => $this->data['columns'],
+        $data = ['v' => self::VERSION, 'key' => $this->key, 'columns' => $this->data['columns'],
             'styles' => $this->data['styles'] === null ? null : base64_encode($this->data['styles']), 'strings' => $this->data['strings']];
         $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         if (is_string($json) && strlen($json) > Limits::MAX_CACHE_BYTES) {
@@ -209,11 +205,37 @@ final class JobCache
         return is_string($bytes) && strlen($bytes) <= $max ? $bytes : null;
     }
 
+    /**
+     * Writes $bytes to $path through a new temporary file. An existing
+     * temporary name is removed when it is a regular file; when it is a
+     * link or anything else, nothing is written.
+     */
     private static function writeFile(string $path, string $bytes): bool
     {
         $part = $path . '.part';
 
-        return self::quietly(static fn () => file_put_contents($part, $bytes) === strlen($bytes) && rename($part, $path)) === true;
+        return self::quietly(static function () use ($part, $path, $bytes): bool {
+            clearstatcache(true, $part);
+            if (is_link($part) || file_exists($part) && !is_file($part)) {
+                return false;
+            }
+            if (is_file($part) && !unlink($part)) {
+                return false;
+            }
+            $handle = fopen($part, 'xb');
+            if ($handle === false) {
+                return false;
+            }
+            $written = fwrite($handle, $bytes);
+            $closed = fclose($handle);
+            if ($written !== strlen($bytes) || !$closed) {
+                unlink($part);
+
+                return false;
+            }
+
+            return rename($part, $path);
+        }) === true;
     }
 
     /** Runs $call with PHP warnings ignored (a cache that cannot be read or written is not an error). */

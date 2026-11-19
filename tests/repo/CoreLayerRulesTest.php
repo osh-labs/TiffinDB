@@ -22,8 +22,13 @@ use TiffinDB\Tests\Support\TempDir;
 /**
  * T-REPO-9: the dependency rule between core areas (ADR 0012 decision 1,
  * M1 spec section 2.1, amended by ADR 0014 decision 5 and M2 spec
- * section 2.1), and no direct calls to clock or randomness
- * functions under src/Core/ (section 3.2).
+ * section 2.1, and by ADR 0015 decision 5 and M3 spec section 2.1, T-PLG-7),
+ * and no direct calls to clock or randomness functions under src/Core/
+ * (section 3.2).
+ *
+ * The plugin contract, src/Core/Io/Contract/, uses nothing but PHP and
+ * itself: every TiffinDB name in those files is under
+ * TiffinDB\Core\Io\Contract\ (M3 spec section 2.1).
  *
  * For each PHP file under src/Core/<Area>/, every name of the form
  * TiffinDB\Core\<Other>\... must name the area itself or one in its
@@ -65,8 +70,13 @@ final class CoreLayerRulesTest extends TestCase
         'Query' => ['Schema', 'Storage', 'Error'],
         'Forms' => ['Schema', 'Storage', 'Error'],
         'Install' => ['Auth', 'System', 'Storage', 'Error'],
-        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query', 'Forms'],
+        'Io' => ['Schema', 'Query', 'Forms', 'Storage', 'Error'],
+        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query', 'Forms', 'Io'],
     ];
+
+    /** The plugin contract's folder: names in it stay inside its own namespace. */
+    public const CONTRACT = 'src/Core/Io/Contract/';
+    public const CONTRACT_NAMESPACE = 'TiffinDB\\Core\\Io\\Contract\\';
 
     public const FORBIDDEN_FUNCTIONS = ['random_bytes', 'random_int', 'mt_rand', 'rand', 'time', 'date', 'microtime'];
 
@@ -268,6 +278,15 @@ final class CoreLayerRulesTest extends TestCase
         foreach (self::bareNamespaces($source) as $bare) {
             $found[] = "names {$bare} without an area";
         }
+        if (str_starts_with($relative, self::CONTRACT)) {
+            foreach (array_unique(self::namesIn($source)) as $name) {
+                $plain = ltrim($name, '\\');
+                $inside = stripos($plain, self::CONTRACT_NAMESPACE) === 0 || strcasecmp($plain, rtrim(self::CONTRACT_NAMESPACE, '\\')) === 0;
+                if (stripos($plain, 'TiffinDB\\') === 0 && !$inside) {
+                    $found[] = "names {$plain} outside the plugin contract";
+                }
+            }
+        }
         if (!in_array($relative, self::FUNCTION_EXEMPT, true)) {
             foreach (array_unique(self::forbiddenCalls($source)) as $function) {
                 $found[] = "calls {$function}() directly";
@@ -374,6 +393,18 @@ final class CoreLayerRulesTest extends TestCase
         yield 'forms uses app' => ['src/Core/Forms/A.php', $head('Forms') . "\$x = \\TiffinDB\\Core\\App\\Context::class;\n", ['uses TiffinDB\\Core\\App, which Forms may not use']];
         yield 'query uses forms' => ['src/Core/Query/A.php', $head('Query') . "use TiffinDB\\Core\\Forms\\FormDocument;\n", ['uses TiffinDB\\Core\\Forms, which Query may not use']];
         yield 'schema uses forms' => ['src/Core/Schema/A.php', $head('Schema') . "use TiffinDB\\Core\\Forms\\FormStore;\n", ['uses TiffinDB\\Core\\Forms, which Schema may not use']];
+        yield 'io uses schema, query, forms, storage, error' => ['src/Core/Io/A.php', $head('Io') . "use TiffinDB\\Core\\Schema\\Ddl;\nuse TiffinDB\\Core\\Query\\Records;\nuse TiffinDB\\Core\\Forms\\FormStore;\nuse TiffinDB\\Core\\Storage\\Fs;\nuse TiffinDB\\Core\\Error\\Text;\n", []];
+        yield 'io uses system' => ['src/Core/Io/A.php', $head('Io') . "use TiffinDB\\Core\\System\\AuditLog;\n", ['uses TiffinDB\\Core\\System, which Io may not use']];
+        yield 'io uses auth' => ['src/Core/Io/Csv/A.php', $head('Io\\Csv') . "use TiffinDB\\Core\\Auth\\Actor;\n", ['uses TiffinDB\\Core\\Auth, which Io may not use']];
+        yield 'io uses app' => ['src/Core/Io/Archive/A.php', $head('Io\\Archive') . "\$x = \\TiffinDB\\Core\\App\\Context::class;\n", ['uses TiffinDB\\Core\\App, which Io may not use']];
+        yield 'io uses install' => ['src/Core/Io/Plugin/A.php', $head('Io\\Plugin') . "use TiffinDB\\Core\\Install\\Installer;\n", ['uses TiffinDB\\Core\\Install, which Io may not use']];
+        yield 'app uses io' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Io\\ImportJob;\n", []];
+        yield 'query uses io' => ['src/Core/Query/A.php', $head('Query') . "use TiffinDB\\Core\\Io\\ImportJob;\n", ['uses TiffinDB\\Core\\Io, which Query may not use']];
+        yield 'system uses io' => ['src/Core/System/A.php', $head('System') . "use TiffinDB\\Core\\Io\\Plugin\\PluginInfo;\n", ['uses TiffinDB\\Core\\Io, which System may not use']];
+        yield 'contract uses itself' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "use TiffinDB\\Core\\Io\\Contract\\Settings;\n\$e = new \\RuntimeException();\n", []];
+        yield 'contract uses io' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "use TiffinDB\\Core\\Io\\ImportJob;\n", ['names TiffinDB\\Core\\Io\\ImportJob outside the plugin contract']];
+        yield 'contract uses error' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "\$x = \\TiffinDB\\Core\\Error\\Text::class;\n", ['names TiffinDB\\Core\\Error\\Text outside the plugin contract']];
+        yield 'contract names a plugin in a string' => ['src/Core/Io/Contract/A.php', $head('Io\\Contract') . "\$c = 'TiffinDB\\\\Core\\\\Storage\\\\Fs';\n", ['names TiffinDB\\Core\\Storage\\Fs outside the plugin contract']];
         yield 'unknown area' => ['src/Core/Reports/A.php', $head('Reports'), ['is in an area the dependency table does not list (Reports)']];
         yield 'file directly in core' => ['src/Core/A.php', "<?php\n", ['is not inside an area folder under src/Core/']];
 

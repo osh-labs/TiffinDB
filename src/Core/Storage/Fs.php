@@ -274,6 +274,22 @@ final class Fs
         return (int) $stat['size'];
     }
 
+    /**
+     * The modification time (Unix seconds) of whatever is at the path, read
+     * with lstat (a symbolic link's own time, never its target's). Throws
+     * \RuntimeException when nothing is there.
+     */
+    public static function modifiedAt(string $path): int
+    {
+        self::refuseNul($path);
+        $stat = self::lstat($path);
+        if ($stat === null) {
+            throw new \RuntimeException('Cannot read the time: nothing is there.');
+        }
+
+        return (int) $stat['mtime'];
+    }
+
     public static function isWritableDir(string $path): bool
     {
         return !str_contains($path, "\0") && is_dir($path) && is_writable($path);

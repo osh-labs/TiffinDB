@@ -51,7 +51,9 @@ Contrast: `--warn` on `--warn-soft` is 7.61:1 in the light theme after P99; text
 | `.mapping-table th[scope="row"]` | `background: transparent; color: var(--ink); font-size: 18; font-weight: 700; overflow-wrap: anywhere` |
 | `.mapping-left-out` | on a row whose "Bring in" is unticked when the page is drawn: `th[scope="row"]` colour `var(--ink2)` |
 | `.mapping-first` | `color: var(--ink2); overflow-wrap: anywhere` (First values) |
-| `.mapping-table .input`, `.mapping-table select` | `width: 100%; min-width: 0` |
+| `.mapping-table .input` | `width: 100%; min-width: 0` (the field name input) |
+| `.mapping-table select` | `width: auto` (the Type and Field menus take the width of their longest choice, as the mock-up; never clipped) |
+| `.mapping-table input[type="checkbox"]` | `width: 24; height: 24; margin: 0; accent-color: var(--accent)` (mock-up "Bring in") |
 
 ## 6. Inline choice row (target table)
 

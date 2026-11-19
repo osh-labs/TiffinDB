@@ -1978,10 +1978,24 @@ li.link-row a {
   overflow-wrap: anywhere;
 }
 
-.mapping-table .input,
-.mapping-table select {
+.mapping-table .input {
   width: 100%;
   min-width: 0;
+}
+
+/* The Type and Field menus take the width of their longest choice, as in the mock-up. */
+.mapping-table select,
+.mapping-table select.input {
+  width: auto;
+  max-width: none;
+}
+
+.mapping-table input[type="checkbox"] {
+  width: 1.3333rem;
+  height: 1.3333rem;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
 }
 
 /* 6. Inline choice row (target table) */

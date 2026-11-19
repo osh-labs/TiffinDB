@@ -1,6 +1,6 @@
-# TiffinDB project file format, version 1
+# TiffinDB project file format, version 2
 
-Status: format version 1, written by TiffinDB from milestone M1. Provisional until the maintainer confirms ADR 0010. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
+Status: format version 2, written by TiffinDB from milestone M2 (version 1 was written in M1; section 11 says how a version 1 file is upgraded). Provisional until the maintainer confirms ADR 0010 and ADR 0014. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
 
 Every example in this document is synthetic.
 
@@ -30,15 +30,15 @@ projects/
 | Check | Value |
 |---|---|
 | `PRAGMA application_id` | `1413891138` (hexadecimal `0x54464442`, the ASCII bytes `TFDB`) |
-| `PRAGMA user_version` | The format version: `1` for this document |
+| `PRAGMA user_version` | The format version: `2` for this document |
 | `SELECT value FROM _tiffin_meta WHERE key = 'format'` | `tiffindb-project` |
-| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `1` |
+| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `2` |
 
 TiffinDB refuses to open a file whose `application_id` or `format` differs, or whose version is higher than it understands. It upgrades a file with a lower version in place, after saving a snapshot (section 11).
 
 ## 3. Keys and names
 
-Every project, table, field, relation, and person has a **key**: 12 characters from `abcdefghijklmnopqrstuvwxyz234567`, for example `q7mzk2wbx4ae`. Keys are random, never change, and are never reused. The names people see ("Items", "Purchased") are stored separately and can change at any time without touching the database structure.
+Every project, table, field, relation, form, and person has a **key**: 12 characters from `abcdefghijklmnopqrstuvwxyz234567`, for example `q7mzk2wbx4ae`. Keys are random, never change, and are never reused. The names people see ("Items", "Purchased") are stored separately and can change at any time without touching the database structure.
 
 SQL names are built from keys only:
 
@@ -55,7 +55,7 @@ Names starting with `_tiffin_`, `t_`, `f_`, `j_`, `x_`, or `sqlite_` are reserve
 
 ## 4. Metadata tables
 
-All metadata lives in tables whose names start with `_tiffin_`. Exact definitions for version 1:
+All metadata lives in tables whose names start with `_tiffin_`. Exact definitions of the tables version 1 introduced (unchanged in version 2):
 
 ```sql
 CREATE TABLE _tiffin_meta (
@@ -123,6 +123,25 @@ CREATE TABLE _tiffin_attachment_links (
 ) WITHOUT ROWID;
 ```
 
+Version 2 adds one table and its two indexes:
+
+```sql
+CREATE TABLE _tiffin_forms (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    format     INTEGER NOT NULL,
+    html       TEXT NOT NULL,
+    css        TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    generated  INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX _tiffin_forms_table ON _tiffin_forms (table_key);
+CREATE UNIQUE INDEX _tiffin_forms_default ON _tiffin_forms (table_key) WHERE is_default = 1;
+```
+
 The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that does not will not enforce the `REFERENCES` clauses; that only matters when writing.
 
 ### 4.1 `_tiffin_meta`
@@ -130,7 +149,7 @@ The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that do
 | Key | Value |
 |---|---|
 | `format` | `tiffindb-project` |
-| `format_version` | `1` |
+| `format_version` | `2` |
 | `project_key` | The project's key; equals the folder name |
 | `project_name` | The project name shown in TiffinDB, for example `Home Inventory` |
 | `created_at` | When the project was created (time format in section 5) |
@@ -157,9 +176,27 @@ One row per relation between two tables (section 7).
 
 Files and which record field they belong to (section 8).
 
-### 4.6 Reserved for later versions
+### 4.6 `_tiffin_forms` (version 2)
 
-`_tiffin_forms`, `_tiffin_collections`, and `_tiffin_import_log` are named in the plan and will be added in later format versions. Version 1 files do not contain them.
+One row per stored form: the layout used to show and edit one table's records (section 12).
+
+| Column | Meaning |
+|---|---|
+| `key` | The form's key. Forms share the key scope of tables, fields, and relations in the project |
+| `table_key` | The table whose records the form shows. Deleting the table deletes its forms |
+| `name` | The form's name, for example `Standard form` |
+| `format` | The form format version of `html` (section 12): `1` |
+| `html` | The form's layout, in the form format of section 12 |
+| `css` | Reserved for a form's own styling. Always the empty string in files written by milestone M2; TiffinDB ignores any other value until a later version documents it |
+| `is_default` | 1 for the form TiffinDB uses for the table; at most one per table (index `_tiffin_forms_default`) |
+| `generated` | 1 while the form is exactly what TiffinDB generates from the table's fields; 0 once a person has edited it (a later milestone) |
+| `created_at`, `updated_at` | UTC times (section 5) |
+
+A table may have no row here, for example in a file just upgraded from version 1. TiffinDB then lays the table's records out as it would generate them (section 12.3), and stores that form the next time the table's fields change.
+
+### 4.7 Reserved for later versions
+
+`_tiffin_collections` and `_tiffin_import_log` are named in the plan and will be added in later format versions. Version 2 files do not contain them.
 
 ## 5. User tables
 
@@ -310,8 +347,109 @@ The 20 newest snapshots other than `manual` ones are kept; older ones are delete
 
 - `PRAGMA user_version` and `_tiffin_meta.format_version` always hold the same number.
 - Each new format version is described in a new section of this document, with the exact SQL of its upgrade step. Upgrades only go forward. After a `format-upgrade` snapshot, each version step runs in its own transaction, which also sets `PRAGMA user_version` and `format_version` to that step's version, so an interrupted upgrade leaves the file at the last completed version.
+- A file with a version older than 1 does not exist. A file with a version newer than the application knows is refused, never opened.
 - Version history:
 
 | Version | Introduced in | Changes |
 |---|---|---|
 | 1 | M1 | First version: metadata, tables, fields, relations, attachments, trash columns |
+| 2 | M2 | Adds `_tiffin_forms` (sections 4.6 and 12) |
+
+### 11.1 Upgrade from version 1 to version 2
+
+After the `format-upgrade` snapshot, in one transaction, exactly:
+
+```sql
+CREATE TABLE _tiffin_forms (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    format     INTEGER NOT NULL,
+    html       TEXT NOT NULL,
+    css        TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    generated  INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX _tiffin_forms_table ON _tiffin_forms (table_key);
+CREATE UNIQUE INDEX _tiffin_forms_default ON _tiffin_forms (table_key) WHERE is_default = 1;
+PRAGMA user_version = 2;
+UPDATE _tiffin_meta SET value = '2' WHERE key = 'format_version';
+```
+
+No other table or row changes. In particular, no forms are written during the upgrade: each table has no row in `_tiffin_forms` until its fields next change (section 4.6). The upgrade can be done by hand with the statements above, on a copy, while TiffinDB is not running.
+
+## 12. Forms (version 2)
+
+A form says which fields of a table appear on the screen that shows one record, in what order and in what groups. It does not hold record values: TiffinDB fills those in when it shows a record. The form text is a small, fixed subset of HTML written as well-formed XML, so it can be read in any text editor, and TiffinDB reads it with an XML parser.
+
+### 12.1 Form format 1
+
+`_tiffin_forms.format` is `1`, and the outermost element repeats it. Everything below is the complete vocabulary of format 1; TiffinDB refuses a form that contains anything else (section 12.4).
+
+**Document rules.** One root element. Well-formed XML 1.0 in UTF-8. No `<!DOCTYPE>`, no processing instructions, no CDATA sections. Comments are allowed and ignored. Character references (`&#233;`) and the five XML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`) are the only references. White space between block elements has no meaning. At most 262,144 bytes, 5,000 elements, and 8 levels of nesting.
+
+**Elements.**
+
+| Element | Where | Attributes | Content |
+|---|---|---|---|
+| `div` (root) | Outermost element only | `data-tiffin-form="1"` (required, exactly this) | Blocks |
+| `fieldset` | In the root | `data-tiffin-section` (optional): a role word of 1 to 32 characters from `a-z`, `0-9`, `-`, starting with a letter; TiffinDB writes `details`, `files`, and `links`. Placement attributes | An optional `legend` first, then blocks other than `fieldset` |
+| `legend` | First child of a `fieldset` | none | Text only, 1 to 100 characters |
+| `div` (field) | In the root or a `fieldset` | `data-tiffin-field` (required): a field key of the form's table. `data-tiffin-label` (optional): text shown instead of the field's name, 1 to 60 characters. Placement attributes | Empty |
+| `h2`, `h3` | In the root or a `fieldset` | Placement attributes | Inline content |
+| `p` | In the root or a `fieldset` | Placement attributes | Inline content |
+| `hr` | In the root or a `fieldset` | Placement attributes | Empty |
+| `img` | In the root or a `fieldset` | `src` (required): `attachment:` followed by an attachment `id` from `_tiffin_attachments`. `alt` (required): 0 to 200 characters. Placement attributes | Empty |
+| `strong`, `em` | Inline content | none | Inline content |
+| `br` | Inline content | none | Empty |
+| `a` | Inline content | `href` (required): an `http` or `https` address following the rules of the `url` field type (section 6) | Inline content other than `a` |
+
+Inline content is text and the inline elements `strong`, `em`, `br`, and `a`. No other element and no other attribute is allowed anywhere: in particular no `class`, `id`, `style`, event attributes, `script`, `style`, `iframe`, `form`, or `input`.
+
+**Placement attributes** (optional, on any block element) place an element on a grid of 12 columns, for later form editors: `data-tiffin-col` (first column, 1 to 12), `data-tiffin-row` (row, 1 to 50), `data-tiffin-span` (columns covered, 1 to 12, or `full` for the whole width). Milestone M2 uses only `data-tiffin-span="full"`; it shows the other values in reading order without explicit placement.
+
+### 12.2 Example
+
+A generated form for an Items table (synthetic keys):
+
+```html
+<div data-tiffin-form="1">
+  <fieldset data-tiffin-section="details">
+    <legend>Details</legend>
+    <div data-tiffin-field="m4pz7k2qsw3n"></div>
+    <div data-tiffin-field="w2qn6kz7tb4x"></div>
+    <div data-tiffin-field="r5vk3pn7qx2m"></div>
+    <div data-tiffin-field="b7xk2mq4nz3p"></div>
+    <div data-tiffin-field="t6mq2zk4wn7x" data-tiffin-span="full"></div>
+  </fieldset>
+  <fieldset data-tiffin-section="files">
+    <legend>Files</legend>
+    <div data-tiffin-field="p3zk7mq2xn4w"></div>
+  </fieldset>
+  <fieldset data-tiffin-section="links">
+    <legend>Warranties</legend>
+    <div data-tiffin-field="k2xq7vn4mz3t"></div>
+  </fieldset>
+</div>
+```
+
+Empty elements other than `hr`, `br`, and `img` are written with an end tag (`<div ...></div>`), so the text also reads correctly as HTML.
+
+### 12.3 Generated forms
+
+TiffinDB generates a table's form from its fields, in field order (`_tiffin_fields.position`):
+
+1. A `fieldset` with role `details` and legend `Details` holding every field except attachment fields and relation fields that may link to several records. Long text and rating fields carry `data-tiffin-span="full"`.
+2. When the table has attachment fields: a `fieldset` with role `files` and legend `Files` holding them.
+3. For each relation field that may link to several records, in field order: a `fieldset` with role `links` whose legend is the field's name, holding that field.
+
+The legends are written in English as data, like the `Name` field of a new table. The generated form is stored with `name` `Standard form`, `is_default` 1, and `generated` 1, and is rewritten whenever the table's fields change while `generated` is 1.
+
+### 12.4 How TiffinDB uses a stored form
+
+- A field element whose key is not a field of the table (for example after the field was deleted) shows nothing.
+- A field of the table that no field element names is not shown on the record screen and is left unchanged when a record is saved.
+- A form that breaks any rule of section 12.1, or whose `format` is not `1`, is not used: TiffinDB shows the generated layout instead (section 12.3) and leaves the stored text as it is.
+- Stored form text is never sent to a browser as it is. TiffinDB reads it into the elements of section 12.1 and builds the page from those, escaping all text.

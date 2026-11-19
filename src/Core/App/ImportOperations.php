@@ -10,6 +10,7 @@ namespace TiffinDB\Core\App;
 
 use TiffinDB\Core\Auth\Actor;
 use TiffinDB\Core\Auth\Permission;
+use TiffinDB\Core\Error\Busy;
 use TiffinDB\Core\Error\NotFound;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Error\Text;
@@ -68,6 +69,8 @@ final class ImportOperations
 {
     /** Reason code of a job whose plugin is no longer enabled (section 4.3). */
     public const FAILURE_PLUGIN = 'plugin-unavailable';
+    /** Reason code of a job whose commit failed and was rolled back (section 6.6). */
+    public const FAILURE_COMMIT = 'commit-failed';
     public const IMPORTS = 'imports';
     private const KIND = 'import';
     private const MAX_INPUT_NAME = 60;
@@ -465,14 +468,36 @@ final class ImportOperations
     /**
      * Saves the rows (section 6.6) after an `import` snapshot, recorded as
      * `snapshot.taken`; audits `import.completed` and removes the job.
-     * Returns the import log key (the job key).
+     *
+     * A failure inside the committing step (a database error, or anything
+     * else the committer did not expect) is rolled back by the committer's
+     * single transaction, so the project is unchanged; the job is Failed
+     * with reason `commit-failed`, the cause goes to the server log only,
+     * and the result carries `problem.import.commit_failed` instead of a
+     * log key (the web layer answers with a 303 to the job address, which
+     * shows the failure page).
      *
      * @throws ValidationFailed `problem.import.target_changed` or `problem.import.too_many_links` (the job is back in Review)
      * @throws \TiffinDB\Core\Error\Busy the project is busy (the job stays Ready)
      */
+    public function save(Actor $actor, string $projectKey, string $jobKey): ImportCommitResult
+    {
+        return $this->saveJob($actor, $projectKey, $jobKey, false);
+    }
+
+    /**
+     * As save(), returning the log key; a failed commit (the job is then
+     * Failed with `commit-failed`, the project unchanged) passes its error
+     * on, as before save() existed. The web layer uses save().
+     */
     public function commit(Actor $actor, string $projectKey, string $jobKey): string
     {
-        [$logKey, $report, $project] = $this->withJob($actor, $projectKey, $jobKey, function (ProjectRecord $project, ImportJob $job) use ($actor): array {
+        return (string) $this->saveJob($actor, $projectKey, $jobKey, true)->logKey;
+    }
+
+    private function saveJob(Actor $actor, string $projectKey, string $jobKey, bool $rethrow): ImportCommitResult
+    {
+        [$logKey, $report, $project] = $this->withJob($actor, $projectKey, $jobKey, function (ProjectRecord $project, ImportJob $job) use ($actor, $rethrow): array {
             if ($job->state() === JobState::Done) {
                 // An earlier commit finished but its clean-up did not.
                 return [(string) $job->meta('report'), null, $project];
@@ -483,23 +508,45 @@ final class ImportOperations
                 throw new \LogicException('A ready job has a mapping.');
             }
             [$db] = $this->project($project);
-            $report = (new Committer())->commit(
-                $job,
-                $mapping,
-                $db,
-                $this->c->types,
-                $this->c->clock,
-                $this->c->editor($project, $db, $actor),
-                $this->c->snapshots,
-                $this->c->opener->folder($project->key),
-                $actor->userKey,
-                function (SnapshotInfo $info) use ($project, $actor): void {
-                    $this->c->recordSnapshot($project, $actor, $info);
-                },
-            );
+            // Test seam (composition root only, never request data): Context::seam is called with
+            // `import.commit.<step>` inside the transaction after each sub-step of section 6.6 step 3.
+            $committer = new Committer(function (string $step): void {
+                $this->c->seam('import.commit.' . $step);
+            });
+            try {
+                $report = $committer->commit(
+                    $job,
+                    $mapping,
+                    $db,
+                    $this->c->types,
+                    $this->c->clock,
+                    $this->c->editor($project, $db, $actor),
+                    $this->c->snapshots,
+                    $this->c->opener->folder($project->key),
+                    $actor->userKey,
+                    function (SnapshotInfo $info) use ($project, $actor): void {
+                        $this->c->recordSnapshot($project, $actor, $info);
+                    },
+                );
+            } catch (ValidationFailed|Busy $expected) {
+                throw $expected;
+            } catch (\Throwable $error) {
+                error_log('TiffinDB: an import commit failed and was rolled back (' . $error::class . ').');
+                if ($job->state() !== JobState::Failed) {
+                    $job->fail(self::FAILURE_COMMIT);
+                }
+                if ($rethrow) {
+                    throw $error;
+                }
+
+                return [null, null, $project];
+            }
 
             return [$report->key, $report, $project];
         });
+        if ($logKey === null) {
+            return new ImportCommitResult(null, new Problem(null, 'problem.import.commit_failed'));
+        }
         if ($report !== null) {
             $this->c->audit->record(AuditAction::IMPORT_COMPLETED, $actor->userId, $project->id, 'table', $report->tableKey, [
                 'plugin' => $report->plugin,
@@ -509,7 +556,7 @@ final class ImportOperations
         }
         IoSupport::removeJob($this->c, self::IMPORTS, $jobKey);
 
-        return $logKey;
+        return new ImportCommitResult($logKey);
     }
 
     /** The report of an import, from the project's import log (format section 4.7). */
@@ -873,7 +920,8 @@ final class ImportOperations
                 $target = $this->linkTargetOf($byColumn[$n] ?? null, $mapping, $schema);
                 $params = ['column' => $table->columns[$n] ?? '', 'table' => $target?->name ?? '', 'count' => $count];
                 if ($kind === 'links_added') {
-                    $params['items'] = $target?->itemName ?? '';
+                    // The design's {items} is the linked table's name in lower case ("new rooms"), not its item name.
+                    $params['items'] = strtolower($target?->name ?? '');
                 }
                 $warnings[] = new ReviewWarning($kind, $params);
             }

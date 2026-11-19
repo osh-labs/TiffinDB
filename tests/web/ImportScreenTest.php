@@ -375,7 +375,7 @@ final class ImportScreenTest extends TestCase
 
         // The warning panel is a region with a heading.
         self::assertSame(1, $x->query('//section[@class="warning-panel"][@aria-labelledby]/h2')->length);
-        self::assertStringContainsString('are not in the Rooms table yet. They will be added as new room.', HtmlAssertions::text($response->body, '//section[@class="warning-panel"]//li'));
+        self::assertStringContainsString('are not in the Rooms table yet. They will be added as new rooms.', HtmlAssertions::text($response->body, '//section[@class="warning-panel"]//li'));
 
         $import = $x->query('//div[@class="io-actions"]/button[@form="import-review"]')->item(0);
         self::assertSame(['submit', 'action', 'import', 'Import 12 rows'], [$import?->getAttribute('type'), $import?->getAttribute('name'), $import?->getAttribute('value'), trim((string) $import?->textContent)]);

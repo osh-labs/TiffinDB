@@ -65,7 +65,7 @@ final class ImportOperationsTest extends AppTestCase
         );
         self::assertSame('Rooms', $review->columns[1]->typeChoices[0]->tableName);
         $warnings = array_map(static fn ($w) => [$w->kind, $w->params], $review->warnings);
-        self::assertContains(['links_added', ['column' => 'Room', 'table' => 'Rooms', 'count' => 4, 'items' => 'room']], $warnings);
+        self::assertContains(['links_added', ['column' => 'Room', 'table' => 'Rooms', 'count' => 4, 'items' => 'rooms']], $warnings);
 
         $imports->saveMapping($this->admin, $p, $job, self::input($review));
         self::assertSame(ImportJobView::STATE_PREPARING, $imports->job($this->admin, $p, $job)->state);
@@ -117,6 +117,39 @@ final class ImportOperationsTest extends AppTestCase
         self::assertSame(['reason' => 'import'], $entries[$taken]->detail);
         self::assertSame($snapshots[0]->file, $entries[$taken]->targetKey);
         self::assertLessThan(array_search(AuditAction::IMPORT_COMPLETED, $actions, true), $taken);
+    }
+
+    /** A failure inside the commit is rolled back, fails the job, and is a result, not an error page. */
+    public function testAFailedCommitLeavesTheProjectUnchangedAndFailsTheJob(): void
+    {
+        $p = $this->project->key;
+        $this->captureLog();
+        $ops = $this->fx->operations(null, null, static function (string $point): void {
+            if ($point === 'import.commit.rows-half') {
+                throw new \RuntimeException('Injected failure.');
+            }
+        });
+        $job = $this->readyJob("Name,Room\nKettle,Pantry\nLamp,Hall\nRug,Hall\n");
+        $before = $this->dump();
+        $actions = $this->auditActions();
+
+        $result = $ops->imports()->save($this->admin, $p, $job);
+        self::assertTrue($result->failed());
+        self::assertNull($result->logKey);
+        self::assertSame([null, 'problem.import.commit_failed', []], [$result->problem?->field, $result->problem?->key, $result->problem?->params]);
+        self::assertSame($before, $this->dump(), 'The project is unchanged.');
+        $view = $ops->imports()->job($this->admin, $p, $job);
+        self::assertSame([ImportJobView::STATE_FAILED, ImportOperations::FAILURE_COMMIT], [$view->state, $view->failure]);
+        self::assertNotContains(AuditAction::IMPORT_COMPLETED, array_slice($this->auditActions(), count($actions)));
+        self::assertStringContainsString('an import commit failed and was rolled back (RuntimeException)', $this->errorLog());
+        self::assertStringNotContainsString('Kettle', $this->errorLog());
+        // A failed job cannot be saved again; commit() passes the error on after the same roll-back.
+        $this->assertThrows(NotFound::class, fn () => $ops->imports()->save($this->admin, $p, $job));
+
+        $second = $this->readyJob("Name\nStool\n");
+        $this->assertThrows(\RuntimeException::class, fn () => $ops->imports()->commit($this->admin, $p, $second));
+        self::assertSame(ImportOperations::FAILURE_COMMIT, $ops->imports()->job($this->admin, $p, $second)->failure);
+        self::assertSame($before, $this->dump());
     }
 
     public function testLargeFilesAreReadInChunks(): void
@@ -273,6 +306,19 @@ final class ImportOperationsTest extends AppTestCase
         }
 
         return $input;
+    }
+
+    /** @return array<string, list<array<string, mixed>>> every row of every table of the project file, schema included */
+    private function dump(): array
+    {
+        $db = $this->fx->projectDb($this->project->key);
+        $dump = ['sqlite_master' => $db->all('SELECT type, name, sql FROM sqlite_master ORDER BY name')];
+        foreach ($db->all("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name") as $table) {
+            $name = (string) $table['name'];
+            $dump[$name] = $db->all('SELECT * FROM "' . str_replace('"', '""', $name) . '"');
+        }
+
+        return $dump;
     }
 
     /** @return list<string> */

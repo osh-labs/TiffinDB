@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M2 CLOSED; M3 design reconciliation next (was: M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | M2 CLOSED. Next: M3-D2 (resume the M3 design author with the M2 as-built notes and M3-R1 mismatches), then M3 waves per `docs/specs/M3-io.md` section 16. Suite 6310 tests OK (1 skipped), lint 474 files 0 failed. All work pushed on `claude/gifted-archimedes-ix5bwy` |
+| Phase | Phase 5: M3 implementation. M2 CLOSED; M3-D1, M3-R1, M3-D2 merged (P110 to P141 recorded). Waves per `docs/specs/M3-io.md` section 16: wave 1 WP1, WP3, then WP0; wave 1b WP2 (after WP1), WP7; wave 2 WP4, WP6, then WP5; wave 3 WP8; wave 4 WP9, WP10 (merge one at a time: both edit `TemplateRulesTest.php` pending lists); wave 5 WP11 |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | M3-D2: resume the M3-D1 author to reconcile M3 specs (as-built notes: `docs/specs/M2-records.md` section 15, `M2-screens.md` section 14; M3-R1 mismatches in M3-io section 18; rulings in ledger section 5 end). Review the reconciliation, record new P numbers from P135, stage OpenSpout 5.2.2 for WP0 (trimmed install at scratchpad `openspout-install/vendor`, rebuild per orchestration 9 if reclaimed), then dispatch M3 wave 1 (WP1, WP3, then WP0) and wave 1b (WP2, WP7). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+| Next action | Dispatch M3 wave 1; merge each package, run its security review (every package except WP6 and WP11 is security-critical); stage OpenSpout 5.2.2 for WP0 (scratchpad `openspout-install/vendor`; rebuild per orchestration 9 if reclaimed). End with M3-X audit and the single end-of-session notification (plan 11). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 
@@ -206,6 +206,13 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P132 | Navigation | Sidebar Import and Export for people with `io.use`; Plugins tab for Admins; "Import a project archive" on the project list | part 2 section 4 |
 | P133 | Plugin text | Names, setting labels, `readAs`, descriptions supplied by plugins are escaped plain text, not message keys (built-in plugins write English) | this spec 3 |
 | P134 | Import jobs | Bound to the project and the Admin who started them; anyone else gets "not found" | this spec 5.2 |
+| P135 | CSV formula protection (ruling) | "Protect against spreadsheet formulas" stays off by default; the export page tells people who will open the file in a spreadsheet program to choose XLSX, whose text cells are never formulas | this spec 8.2; `docs/design/m3/export.md` |
+| P136 | Archives over the upload cap (ruling) | The 64 MiB upload cap stays; a larger archive is restored by hand into a project created in TiffinDB, by the documented procedure (`docs/formats/tiffin.md` section 13.4); no command-line tool in v1 | ADR 0017 d2; format 13.4 |
+| P137 | "Check again" on the review page (ruling) | Core method `ImportOperations::recheck` stores the posted target and shape-checked column values without `MappingCheck`, so switching the target table never shows errors for the old table | this spec 13.1 |
+| P138 | Currency proposal (ruling) | A symbol in any cell, or a heading containing a money word (price, cost, value, amount, total, paid, spent, fee, budget, balance, money, salary, wage), proposes currency; two decimals alone propose number with 2 decimals | this spec 6.3.1 |
+| P139 | XLSX rows per chunk (ruling) | Every row a plugin yields, empty or not, counts towards the chunk (at most 2,000 per `rows()` call) and towards a cap of 100,000 yielded rows per import | this spec 6.8, 9.2 |
+| P140 | Records after a schema change in one transaction | The committer builds a new `Schema` and `Records` inside the transaction after creating the table (as built, `Records` keeps the `Schema` it was given); `SchemaEditor`'s joined copy reads a fresh `Schema` per call | this spec 6.6 |
+| P141 | Pending strings for wave-4 screens | `TemplateRulesTest` gains two lists, `PENDING_IMPORT` and `PENDING_EXPORT`, merged into `PENDING_KEYS`; WP3 fills them with the shared keys only WP9 or WP10 templates print, and WP9 and WP10 each empty only their own list (separate lines, so their edits do not conflict) | part 2 sections 6, 11 |
 
 ## 5. Blockers
 

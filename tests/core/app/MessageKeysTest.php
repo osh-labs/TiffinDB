@@ -39,9 +39,7 @@ final class MessageKeysTest extends TestCase
      * orchestrator adds each to M3 spec section 14 and its text to
      * strings/en/problems.php (owned by M3-WP3), then removes it here.
      */
-    private const PENDING_SPEC_KEYS = [
-        'problem.import.too_many_links', // P142, M3-WP1b
-    ];
+    private const PENDING_SPEC_KEYS = [];
 
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {

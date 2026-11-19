@@ -312,7 +312,7 @@ final class StringsTest extends TestCase
         self::assertCount(8, $m2, 'The M2 specification table was read.');
         self::assertSame([], array_intersect_key($m1, $m2), 'The M2 table adds keys only.');
         $m3 = self::problemRows('docs/specs/M3-io.md', "\n## 14. Message keys produced by the core", "\n## 15. ");
-        self::assertCount(31, $m3, 'The M3 specification table was read.');
+        self::assertCount(32, $m3, 'The M3 specification table was read.');
         self::assertSame([], array_intersect_key($m1 + $m2, $m3), 'The M3 table adds keys only.');
 
         $problems = require RepoFiles::path('strings/en/problems.php');

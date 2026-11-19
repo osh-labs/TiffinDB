@@ -589,7 +589,7 @@ Scope `project` only; no settings. Writes `docs/formats/json-export.md` exactly,
 
 Any `PDOException` raised while opening or reading the copy (for example a schema naming an unknown collation, which SQLite reports when it first parses the schema) refuses the archive as `damaged`; it never reaches the request as an error page.
 
-1. The first 16 bytes are `SQLite format 3\0`; bytes 18 and 19 are 1 or 2; when 2 (WAL), both are rewritten to 1 in the copy (rollback journal), so it opens read-only without a `-wal` file (`not-sqlite`).
+1. The first 16 bytes are `SQLite format 3\0`; bytes 18 and 19 are 1 or 2; when 2 (WAL), both are rewritten to 1 in the copy (rollback journal), so it opens read-only without a `-wal` file (`not-sqlite`). The rewrite is made to the extracted copy in the job folder (never to the upload), before any connection opens it: a WAL-mode file would make SQLite look for a `-wal` file and use a `-shm` shared-memory index beside it, which the archive never carries and which a read-only, untrusted open must not create or read. After the rewrite SQLite treats the copy as a rollback-journal database, so no `-wal` or `-shm` file appears in the job folder (note from the M3-WP1 review).
 2. Open with `Sqlite::openUntrusted($path)` (M3-WP1): PDO with `SQLITE_OPEN_READONLY`, exceptions on, then `PRAGMA trusted_schema = OFF`, `PRAGMA query_only = ON`, `PRAGMA cell_size_check = ON`, `PRAGMA mmap_size = 0`; no `journal_mode`, `foreign_keys`, or other writes. (`Sqlite::open` sets WAL mode, which writes, and is never used on an untrusted file.)
 3. `PRAGMA integrity_check(1)` returns exactly `ok` (`damaged`).
 4. `PRAGMA application_id` = 1413891138, `PRAGMA user_version` 1 to 3 and equal to the manifest's, `_tiffin_meta` `format` = `tiffindb-project` and `format_version` = `user_version` (`not-project`, `newer`).
@@ -720,6 +720,7 @@ English text in `strings/en/problems.php` (owned by M3-WP3), exactly:
 | `problem.import.field_twice` | Each field can take only one column. |
 | `problem.import.too_many_choices` | This column has more than {max} different values, so it cannot be a choice. |
 | `problem.import.target_changed` | The table changed while you were importing. Check the fields again. |
+| `problem.import.too_many_links` | This file would add more than {max} records to other tables. Leave a link column out, or link fewer titles. |
 | `problem.export.failed` | The export could not be made. |
 | `problem.archive.entry_name` | This archive holds a file that does not belong in a TiffinDB archive. |
 | `problem.archive.duplicate` | This archive holds the same file twice. |

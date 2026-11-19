@@ -410,8 +410,17 @@ final class RecordScreenTest extends TestCase
         self::assertSame(['#f-' . $count], $this->texts($x, '//div[@class="error-summary"]//a/@href'));
         self::assertSame($version, $this->attr($x, '//input[@name="version"]', 'value'));
 
-        // Someone else saves meanwhile: the corrected form meets the conflict.
+        // Someone else saves meanwhile. The page shown again for errors still
+        // carries the version first posted, not the record's new one, so the
+        // corrected form meets the conflict.
         $this->ops->records()->update($this->admin(), $this->project, $this->items, (string) $id, [$this->name => 'Drill press'], $version);
+        $current = $this->version($id);
+        self::assertNotSame($version, $current);
+        $stale = $this->request(self::MEMBER, 'POST', $this->r($id), ['version' => $version, 'f_' . $this->name => 'Drill', 'f_' . $count => 'y']);
+        self::assertSame(422, $stale->status);
+        $x = $this->xpath($stale->body);
+        self::assertSame($version, $this->attr($x, '//input[@name="version"]', 'value'));
+        self::assertStringNotContainsString($current, $stale->body);
         $again = $this->request(self::MEMBER, 'POST', $this->r($id), ['version' => $version, 'f_' . $this->name => 'Drill', 'f_' . $count => '2']);
         self::assertSame(409, $again->status);
     }
@@ -428,7 +437,7 @@ final class RecordScreenTest extends TestCase
         $this->ops->records()->update($this->admin(), $this->project, $this->items, (string) $id, [$this->name => 'Drill press'], $old);
         $current = $this->version($id);
 
-        $response = $this->request(self::MEMBER, 'POST', $this->r($id) . '?q=dr', ['version' => $old, 'f_' . $this->name => 'Cordless drill', 'f_' . $count => '1', 'f_' . $notes => "Two\nlines", '_extra' => 'x']);
+        $response = $this->request(self::MEMBER, 'POST', $this->r($id) . '?q=dr', ['version' => $old, 'f_' . $this->name => 'Cordless drill', 'f_' . $count => '1', 'f_' . $notes => "Two\nlines", '_extra' => 'x', 'f_zzzzzzzzzzzz' => 'unknown']);
         self::assertSame(409, $response->status);
         $html = $response->body;
         $this->assertScreen($html);
@@ -458,6 +467,8 @@ final class RecordScreenTest extends TestCase
         // Line breaks stay in the attribute (an XML parser would fold them; HTML keeps them).
         self::assertStringContainsString('name="f_' . $notes . '" value="Two' . "\n" . 'lines"', $html);
         self::assertStringNotContainsString('_extra', $html);
+        self::assertStringNotContainsString('zzzzzzzzzzzz', $html, 'Only the inputs the form shows are re-posted.');
+        self::assertStringNotContainsString('unknown', $html);
 
         // "Save my version anyway" re-posts exactly that form.
         $post = [];
@@ -470,6 +481,31 @@ final class RecordScreenTest extends TestCase
         self::assertSame(303, $saved->status);
         self::assertSame('Cordless drill', $this->stored($this->name, $id));
         self::assertSame("Two\nlines", $this->stored($notes, $id));
+    }
+
+    public function testConflictValuesAreEscapedOnce(): void
+    {
+        $notes = $this->addField('Notes', 'long_text');
+        $saved = '<script>alert("saved")</script> & \'{name}\'';
+        $yours = '<img src=x onerror="alert(1)"> &amp; {when}';
+        $id = $this->add([$this->name => 'Drill', $notes => 'first']);
+        $old = $this->version($id);
+        $this->ops->records()->update($this->admin(), $this->project, $this->items, (string) $id, [$this->name => $saved, $notes => $saved], $old);
+
+        $response = $this->request(self::MEMBER, 'POST', $this->r($id), ['version' => $old, 'f_' . $this->name => $yours, 'f_' . $notes => $yours]);
+        self::assertSame(409, $response->status);
+        $html = $response->body;
+        $this->assertScreen($html);
+        $x = $this->xpath($html);
+
+        self::assertStringNotContainsString('<script', $html);
+        self::assertStringNotContainsString('<img', $html);
+        self::assertSame([$saved, $yours], $this->texts($x, '//tbody/tr[1]/td'));
+        self::assertSame($saved, $x->query('//tbody/tr[2]/td[1]/span[@class="text-multiline"]')->item(0)?->textContent);
+        self::assertSame($yours, $x->query('//tbody/tr[2]/td[2]/span[@class="text-multiline"]')->item(0)?->textContent);
+        self::assertSame($yours, $this->attr($x, '//div[@class="form-actions"]/form/input[@name="f_' . $this->name . '"]', 'value'));
+        self::assertSame($saved, $this->text($x, '//nav[@class="breadcrumb"]/span[@aria-current="page"]'));
+        self::assertSame($saved . ' - TiffinDB', HtmlAssertions::text($html, '//title'));
     }
 
     public function testConflictWithNoDifferingFields(): void

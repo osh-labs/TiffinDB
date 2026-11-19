@@ -20,7 +20,10 @@ use TiffinDB\Core\Schema\FieldTypes;
  * The type counters count cells the M1 type's lenient parse accepts, with
  * the narrowings of section 6.3: checkbox only for the words yes, no,
  * true, false; time and duration only for cells holding `:` (rule 6 and
- * the duration counter); currency by the cell pattern of section 6.3.1.
+ * the duration counter); date only for cells without `:` (M1's lenient
+ * date parse accepts a date-time and drops its time, which would propose
+ * `date` for a date-time column); currency by the cell pattern of section
+ * 6.3.1.
  */
 final class ColumnStats
 {
@@ -102,6 +105,10 @@ final class ColumnStats
         }
         foreach (self::LENIENT as $type) {
             if (($type === 'duration' || $type === 'time') && !str_contains($text, ':')) {
+                continue;
+            }
+            if ($type === 'date' && str_contains($text, ':')) {
+                // The lenient date parse drops a time of day; such a cell is a date-time, not a date.
                 continue;
             }
             if ($types->get($type)->parse($text, $types->get($type)->defaultOptions(), true)->isOk()) {

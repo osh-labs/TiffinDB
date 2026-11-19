@@ -30,9 +30,9 @@ use TiffinDB\Core\Storage\Database;
  *   proposes for its column (CANONICAL_TYPES), with a byte order mark,
  *   CRLF line ends, and quoting only where the writer quotes, so that an
  *   import with the default mapping followed by a CSV export gives the
- *   same bytes. Phone numbers are read as text (no rule proposes phone)
- *   and the 0/1 column as a number (the checkbox rule takes only yes, no,
- *   true, and false, while the export writes a checkbox as 1 or 0).
+ *   same bytes. Phone numbers are read as text (no rule proposes phone);
+ *   the In use column is yes or no, which the import proposes as a
+ *   checkbox and the CSV export writes back as yes or no (P145).
  * - sampleRows() and sampleCsv(): `inventory-sample.csv` of the import
  *   review mock-up (docs/design/model-ui/import.html, visual check V-15):
  *   52 rows and the eight columns shown, "Stand mixer" and "Cordless
@@ -62,7 +62,7 @@ final class IoFixture
     /** The type the import proposes for each T-RT-1 column ('link' for the Room column). */
     public const CANONICAL_TYPES = [
         'text', 'link', 'choice', 'date', 'currency', 'number', 'number', 'date_time', 'time', 'duration',
-        'url', 'email', 'text', 'long_text', 'number',
+        'url', 'email', 'text', 'long_text', 'checkbox',
     ];
 
     /** The mock-up's headings (import.html), in its order. */
@@ -175,7 +175,7 @@ final class IoFixture
                 $i % 5 === 0 ? '' : 'item' . $i . '@example.com',
                 sprintf('555-01%02d', $i % 100),
                 $notes,
-                (string) $this->next(2),
+                $this->next(2) === 0 ? 'yes' : 'no',
             ];
         }
 

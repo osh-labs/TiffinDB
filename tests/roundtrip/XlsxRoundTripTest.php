@@ -127,8 +127,8 @@ final class XlsxRoundTripTest extends RoundTripCase
     /**
      * $rows (T-RT-1 order) as a hand-assembled workbook: names, rooms, and
      * categories as shared strings; Purchased as date serials (format 14)
-     * and Delivered as date-time serials (a custom format); Weight,
-     * Quantity, and In use as numbers; everything else as inline strings.
+     * and Delivered as date-time serials (a custom format); Weight and
+     * Quantity as numbers; everything else as inline strings.
      *
      * @param list<list<string>> $rows
      */
@@ -160,7 +160,7 @@ final class XlsxRoundTripTest extends RoundTripCase
                     0, 1, 2 => '<c r="' . $ref . '" t="s"><v>' . $sharedIndex($text) . '</v></c>',
                     3 => '<c r="' . $ref . '" s="' . $date . '"><v>' . self::serial($text) . '</v></c>',
                     7 => '<c r="' . $ref . '" s="' . $dateTime . '"><v>' . self::serial($text) . '</v></c>',
-                    5, 6, 14 => '<c r="' . $ref . '"><v>' . $text . '</v></c>',
+                    5, 6 => '<c r="' . $ref . '"><v>' . $text . '</v></c>',
                     default => WorkbookBuilder::inline($ref, $text),
                 };
             }

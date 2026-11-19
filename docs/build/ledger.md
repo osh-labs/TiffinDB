@@ -398,3 +398,10 @@ Not verified in M2: `.htaccess` behaviour on a real Apache server (host check); 
 ### M3-WP0 merged (review running)
 
 OpenSpout 5.2.2 pinned; shared vendor with OpenSpout is at scratchpad `vendor-m3` (steps in `STEPS.txt`; `vendor/composer/installed.php` merged by hand because dump-autoload does not rebuild it); the main checkout's `vendor/` now includes it, so T-DEP-1 fails in any worktree without it. Orchestrator sign-offs: `tests/web/SetupScreenTest.php` (row ids shifted by the three new setup rows) assigned to WP0 for that change; `ci.yml` tolerates only the exact-pin warning from `composer validate --strict`; the licence check accepts "MIT AND Apache-2.0" only when every operand is allowlisted. Stale: `docs/design/m1/installer.md` lists only the old checks (fix at the M3 audit).
+
+### M3-WP1 and WP3 merged and reviewed (APPROVE, follow-ups merged)
+
+- P142 (provisional): at most 10,000 new records in linked tables per import (`IoLimits::MAX_NEW_LINK_RECORDS`); over the cap the commit is refused with `problem.import.too_many_links {max}`, nothing is committed, the job returns to Review. Cheapest to reverse: a constant.
+- Open for WP8 (owner of the core operations and strings): add the `problem.import.too_many_links` row to M3-io section 14, its text to `strings/en/problems.php` ("This file would add more than {max} records to other tables. Leave a link column out, or link fewer titles."), and remove it from `MessageKeysTest::PENDING_SPEC_KEYS`; add the `-shm`/header-rewrite note (WAL-mode source) to M3-io section 11.4.
+- WP7 note: rewrite the source header before opening a WAL-mode untrusted file. WP2 review must confirm the plugin include path is validated before `require`.
+- WP3 follow-ups merged (download headers, ini quantity parsing, field-name rule). Routes and the Admin Plugins nav link return 500 until WP9 and WP10.

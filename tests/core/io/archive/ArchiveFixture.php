@@ -233,9 +233,16 @@ trait ArchiveFixture
     private function zipFor(string $dbPath, array $manifest = [], array $entries = []): string
     {
         $bytes = (string) file_get_contents($dbPath);
-        $pdo = new \PDO('sqlite:' . $dbPath);
-        $version = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
-        $pdo = null;
+        $version = 3;
+        if (str_starts_with($bytes, "SQLite format 3\0") && ord($bytes[18] ?? "\0") === 1) {
+            try {
+                $pdo = new \PDO('sqlite:' . $dbPath, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+                $version = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
+            } catch (\PDOException) {
+                $version = 3;
+            }
+            $pdo = null;
+        }
         $members = array_merge([
             'format' => 'tiffindb-archive',
             'archive_version' => 1,

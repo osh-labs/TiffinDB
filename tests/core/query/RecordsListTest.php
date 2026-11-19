@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Query\Condition;
 use TiffinDB\Core\Query\InputMode;
+use TiffinDB\Core\Query\LinkedRecord;
 use TiffinDB\Core\Query\ListQuery;
 use TiffinDB\Core\Query\ListSql;
 use TiffinDB\Core\Query\Operator;
@@ -215,6 +216,59 @@ final class RecordsListTest extends TestCase
             ],
             $roomTokens,
         );
+    }
+
+    public function testPickListAndTitles(): void
+    {
+        $records = $this->records();
+        $b = $this->room('beta');
+        $a = $this->room('Alpha');
+        $gone = $this->room('Aardvark');
+        $c = $this->room('alpha');
+        $empty = $records->create($this->rooms->key, [], InputMode::Form, self::USER_KEY);
+        $this->trashRecord($this->rooms, $gone);
+
+        $list = $records->pickList($this->rooms->key, Records::PICKER_LIMIT);
+        self::assertSame([$a, $c, $b, $empty], array_map(static fn (LinkedRecord $l): int => $l->id, $list), 'Live records only, by title ignoring case, empties last.');
+        self::assertEquals(new LinkedRecord($this->rooms->key, $a, 'Alpha'), $list[0]);
+        self::assertNull($list[3]->title);
+        self::assertSame([$a, $c], array_map(static fn (LinkedRecord $l): int => $l->id, $records->pickList($this->rooms->key, 2)));
+
+        // Without a title field: live records by id, titles null.
+        $plain = $this->editor()->createTable('Plain', 'plain', false);
+        $records = $this->records();
+        $p1 = $records->create($plain->key, [], InputMode::Form, self::USER_KEY);
+        $p2 = $records->create($plain->key, [], InputMode::Form, self::USER_KEY);
+        $p3 = $records->create($plain->key, [], InputMode::Form, self::USER_KEY);
+        $this->trashRecord($plain, $p2);
+        self::assertEquals([new LinkedRecord($plain->key, $p1, null), new LinkedRecord($plain->key, $p3, null)], $records->pickList($plain->key, 10));
+        foreach ([0, Records::PICKER_LIMIT + 1] as $bad) {
+            try {
+                $records->pickList($plain->key, $bad);
+                self::fail((string) $bad);
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+
+        // Titles of live and trashed records, in the given order; absent ids left out.
+        self::assertSame([$gone => 'Aardvark', $b => 'beta', $empty => null], $records->titles($this->rooms->key, [$gone, 999, $b, $empty, $b]));
+        self::assertSame([$p2 => null], $records->titles($plain->key, [$p2]));
+    }
+
+    public function testRecordIdsFromTextStayWithinRange(): void
+    {
+        self::assertSame(PHP_INT_MAX, ListSql::recordId('9223372036854775807'));
+        self::assertSame(1, ListSql::recordId('1'));
+        // One past the largest integer would saturate to PHP_INT_MAX in a cast; it is refused instead.
+        foreach (['9223372036854775808', '9999999999999999999', '10000000000000000000', '0', '01', '-1', '1e3', ' 1', ''] as $bad) {
+            try {
+                ListSql::recordId($bad);
+                self::fail($bad);
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
     }
 
     public function testSortValueObjects(): void

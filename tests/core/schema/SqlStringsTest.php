@@ -32,7 +32,10 @@ use TiffinDB\Tests\Support\RepoFiles;
  *    name that is not written out; and a call of a variable not shown to
  *    hold a Closure, or of any other expression; a two-element array
  *    `[$var, X]` whose X is not one string literal; any Reflection class;
- *    and the include and require keywords. There are no exceptions.
+ *    the include and require keywords; a namespace-relative name
+ *    (`namespace\X`); closure rebinding (`->call(`, `->bindTo(`, `::bind(`);
+ *    and `new Sql` (fragments come only from Sql::of, Sql::join, and
+ *    ->wrap()). There are no exceptions.
  *    Method, function, and class names are compared ignoring case.
  * 1. No interpolated strings, heredocs, or nowdocs at all.
  * 2. No `.=`, and no sprintf, vsprintf, printf, implode, join, str_repeat,
@@ -372,6 +375,15 @@ final class SqlStringsTest extends TestCase
         yield 'include_once' => ['include_once \'x.php\';', 'include'];
         yield 'require' => ['require $file;', 'include'];
         yield 'require_once' => ['require_once __DIR__ . \'/x.php\';', 'include'];
+        yield 'namespace-relative static call' => ['$s = namespace\\Sql::of(\'1\');', 'namespace-relative'];
+        yield 'namespace-relative function call' => ['$n = namespace\\strlen(\'x\');', 'namespace-relative'];
+        yield 'Closure call' => ['$v = $f->call($o);', 'closure-rebinding'];
+        yield 'Closure bindTo' => ['$g = $f->bindTo($o, Other::class);', 'closure-rebinding'];
+        yield 'Closure bind' => ['$g = \\Closure::bind($f, $o, Other::class);', 'closure-rebinding'];
+        yield 'Closure bind in capitals' => ['$g = Closure::BIND($f, $o);', 'closure-rebinding'];
+        yield 'nullsafe call' => ['$v = $f?->call($o);', 'closure-rebinding'];
+        yield 'new Sql' => [self::USE_SQL . '$q = new Sql(\'1\', []);', 'fragment-new'];
+        yield 'new Sql fully qualified' => ['$q = new \\TiffinDB\\Core\\Query\\Sql(\'1\', []);', 'fragment-new'];
     }
 
     #[DataProvider('forbiddenSources')]
@@ -400,6 +412,10 @@ final class SqlStringsTest extends TestCase
         yield 'array-callable' => ['array-callable', 'usort($x, [$db, \'r\' . \'un\']);'];
         yield 'reflection' => ['reflection', '$m = new \ReflectionMethod(Database::class, $name); $m->invoke($db, $sql);'];
         yield 'include' => ['include', 'include $path;'];
+        // Security review round 1 (M2-WP2), reproducers A, B, C.
+        yield 'namespace-relative' => ['namespace-relative', self::USE_SQL . 'final class X { function f(string $x): void { $this->g(namespace\\Sql::of($x)); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }'];
+        yield 'closure-rebinding' => ['closure-rebinding', self::USE_SQL . 'final class X { function f(string $x): void { $this->g($this->forge($x)->call(Sql::of(\'1\'))); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }'];
+        yield 'fragment-new' => ['fragment-new', self::USE_SQL . 'final class X { function f(string $x): void { $this->g(new Sql($x, [])); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }'];
     }
 
     #[DataProvider('bypassesStoppedOnlyByOneRule')]
@@ -408,6 +424,28 @@ final class SqlStringsTest extends TestCase
         $source = self::SYNTHETIC_HEADER . $code . "\n";
         self::assertNotSame([], self::violations($source, ['$statement', '$pragma']), $code);
         self::assertSame([], self::violations($source, ['$statement', '$pragma'], [$rule]), 'Without ' . $rule . ' the bypass passes.');
+    }
+
+    /** @return iterable<string, array{string, list<string>}> code in the Query namespace, rules that each refuse it */
+    public static function reviewReproducers(): iterable
+    {
+        // The security review's reproducers (M2-WP2 round 1, cases A to C), as written there.
+        yield 'A namespace-relative Sql::of' => ['final class X { function f(string $x): void { $this->g(namespace\\Sql::of($x)); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }', ['namespace-relative']];
+        yield 'B fragment forged through Closure::call' => ['final class X { function f(string $x): void { $this->g((fn() => new Sql($x, []))->call(Sql::of(\'1\'))); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }', ['closure-rebinding', 'fragment-new']];
+        yield 'C new Sql' => ['final class X { function f(string $x): void { $this->g(new Sql($x, [])); } function g(Sql $q): void { $this->db->all($q->sql(), $q->params()); } }', ['fragment-new']];
+    }
+
+    /** @param list<string> $rules */
+    #[DataProvider('reviewReproducers')]
+    public function testReviewReproducersAreRefused(string $code, array $rules): void
+    {
+        $source = "<?php\nnamespace TiffinDB\\Core\\Query;\nuse TiffinDB\\Core\\Storage\\Database;\n" . $code . "\n";
+        $all = implode("\n", self::violations($source, []));
+        foreach ($rules as $rule) {
+            self::assertStringContainsString('(' . $rule . ')', $all);
+        }
+        // Without these rules the code scans clean: they are what stops it.
+        self::assertSame([], self::violations($source, [], $rules));
     }
 
     public function testNoConstructIsAllowedByException(): void
@@ -614,7 +652,7 @@ final class SqlStringsTest extends TestCase
                 $found[] = 'line ' . self::lineOf($tokens, $k) . ': forbidden construct (' . $rule . '): ' . $what;
             }
         };
-        $callableNames = [...self::QUERY_METHODS, ...self::PDO_METHODS, ...array_merge(...array_values(self::FORBIDDEN_FUNCTIONS))];
+        $callableNames = [...self::QUERY_METHODS, ...self::PDO_METHODS, ...array_merge(...array_values(self::FORBIDDEN_FUNCTIONS)), 'call', 'bindto', 'bind'];
 
         foreach ($tokens as $k => $t) {
             $next = $tokens[$k + 1] ?? null;
@@ -664,6 +702,22 @@ final class SqlStringsTest extends TestCase
             // new $class, new ($expression)
             if (self::isToken($t, T_NEW) && (self::isToken($next, T_VARIABLE) || $next === '(' || $next === '$')) {
                 $add('variable-new', $k, 'new with a class name that is not written out');
+            }
+            // namespace\Name is resolved by PHP against the file's namespace, not through the imports
+            // the scan reads, so a call such as namespace\Sql::of() would escape rule 3a.
+            if (self::isToken($t, T_NAME_RELATIVE)) {
+                $add('namespace-relative', $k, 'namespace-relative name ' . $t[1]);
+            }
+            // Closure rebinding runs code as another object, reaching its private members
+            // (for example a private constructor): ->call(), ->bindTo(), ::bind().
+            if (self::isToken($t, T_STRING) && $next === '(' && ((self::isMethodCall($tokens, $k) && in_array(strtolower($t[1]), ['call', 'bindto'], true))
+                || (self::isToken($prev, T_DOUBLE_COLON) && strtolower($t[1]) === 'bind'))) {
+                $add('closure-rebinding', $k, 'closure rebinding ' . $t[1] . '()');
+            }
+            // An Sql fragment is made only by Sql::of(), Sql::join(), and ->wrap(), whose checks
+            // `new Sql` would skip (the private constructor refuses it only at run time).
+            if (self::isToken($t, T_NEW) && self::isName($next) && strtolower((string) self::resolveClass($c, $next[1], $k)) === strtolower(self::SQL_CLASS)) {
+                $add('fragment-new', $k, 'new Sql outside ' . self::EXEMPT_FILE);
             }
             // A string naming a query method or a forbidden function, as an array value or a call argument.
             if (self::isToken($t, T_CONSTANT_ENCAPSED_STRING) && in_array(strtolower(substr($t[1], 1, -1)), $callableNames, true)

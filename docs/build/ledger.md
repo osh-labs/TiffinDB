@@ -350,3 +350,8 @@ XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first n
 - UrlType: hexadecimal labels are refused anywhere in the host (stricter than spec 10.5 "last label only"; amend the spec wording at M2-X). Hosts whose last label is all digits (e.g. `example.123`) were accepted in M1 and are now refused; stored values read back as empty (behaviour change, recorded here).
 - `ProjectOperations::create` with a symbolic-link `projects/` folder now fails closed; no test covers it (add at M2-X). `Fs::entries` lstat-then-scandir race is out of the threat model. Mutation survivor: the abandoned-row recheck inside the write transaction.
 - M2-WP1 (mechanical tier) merged before its implementation-tier review; review pending, to be done with the M2-X audit at the latest.
+
+### M2-WP5 review findings carried (APPROVE)
+
+- Low: `ValueText::cut` loses its length cap on invalid UTF-8 (output is safe). Add tests at M2-X: markup in plural text (mutation M5 survived: escaping around the plural result in `Strings::format`) and a static check for the class-name check in `settings-preview.js` (M7 survived; no JS test).
+- Info: right-to-left override characters in values are printed escaped but not isolated (visual spoofing possible); `HtmlAssertions::assertNoInlineCode` flags `value="javascript:..."` inputs, which WP7 hostile-value tests may trip.

@@ -129,6 +129,18 @@ final class CsvReaderTest extends TestCase
         self::assertSame([["Caf\xE9"]], iterator_to_array($file->rows(0, 5), false), 'Cells keep the bytes; the read loop replaces and counts them.');
     }
 
+    /** Review M3-WP4 item 3: a heading of nearly a megabyte is cut before it is scrubbed, even without the JIT. */
+    public function testLongHeadingWithoutTheJit(): void
+    {
+        $path = $this->file(str_repeat('h', 900000) . "\xFF,B\r\nx,y\r\n");
+        $other = $this->file("N\xFF\xFE" . str_repeat("\x80", 50000) . ",B\n");
+        $script = 'use TiffinDB\Core\Io\Csv\CsvDialect; use TiffinDB\Core\Io\Csv\CsvFile;'
+            . '$a = (new CsvFile(' . var_export($path, true) . ', new CsvDialect("utf-8", ",")))->columns();'
+            . '$b = (new CsvFile(' . var_export($other, true) . ', new CsvDialect("utf-8", ",")))->columns();'
+            . 'echo json_encode([$a === [str_repeat("h", 80000), "B"], strlen($b[0]) <= 80000 && preg_match("//u", $b[0]) === 1, $b[1]]);';
+        self::assertSame('[true,true,"B"]', self::runWithoutJit($script));
+    }
+
     public function testColumnLimitAndEmptyFile(): void
     {
         $ok = new CsvFile($this->file(implode(',', range(1, 200)) . "\n"), new CsvDialect('utf-8', ','));

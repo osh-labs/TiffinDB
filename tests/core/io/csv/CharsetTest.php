@@ -11,7 +11,10 @@ namespace TiffinDB\Tests\Core\Io\Csv;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Io\Contract\PluginFailure;
 use TiffinDB\Core\Io\Csv\Charset;
+
+require_once __DIR__ . '/CsvFiles.php';
 
 /**
  * T-CSV-1: character set detection and streaming decoding (M3 spec section
@@ -22,6 +25,8 @@ use TiffinDB\Core\Io\Csv\Charset;
 #[CoversClass(Charset::class)]
 final class CharsetTest extends TestCase
 {
+    use CsvFiles;
+
     private const R = "\u{FFFD}";
 
     /** @return iterable<string, array{0: string, 1: string}> */
@@ -166,6 +171,41 @@ final class CharsetTest extends TestCase
         self::assertSame('ab', Charset::cut('ab', 5));
         self::assertSame("a\u{E9}", Charset::cut("a\u{E9}\u{20AC}", 4), 'A character is never split.');
         self::assertSame('a', Charset::cut("a\u{E9}", 2));
+    }
+
+    /**
+     * Review M3-WP4 item 3: long text is converted in pieces, so it stays
+     * within PCRE's limits without the JIT; a conversion that still fails
+     * is a PluginFailure, as the contract asks. Run in a PHP subprocess
+     * started with `pcre.jit=0` (a compiled pattern keeps its JIT code in
+     * this process).
+     */
+    public function testLongTextWithoutTheJit(): void
+    {
+        $script = <<<'PHP'
+            use TiffinDB\Core\Io\Contract\PluginFailure;
+            use TiffinDB\Core\Io\Csv\Charset;
+            $r = "\u{FFFD}";
+            $out = [];
+            $replaced = 0;
+            $out[] = Charset::scrub(str_repeat("a\u{E9}", 400000) . "\xFF" . str_repeat('b', 300000), $replaced) === str_repeat("a\u{E9}", 400000) . $r . str_repeat('b', 300000) && $replaced === 1;
+            $p = Charset::PIECE_BYTES;
+            $edge = str_repeat('a', $p - 1) . "\u{20AC}\xE2\x82" . str_repeat('c', $p);
+            $out[] = Charset::scrub($edge, $replaced) === str_repeat('a', $p - 1) . "\u{20AC}" . $r . str_repeat('c', $p) && $replaced === 1;
+            $decode = Charset::decoder(Charset::UTF16LE);
+            $out[] = $decode(str_repeat("a\x00", 600000) . "\x3D\xD8\x00\xDE" . str_repeat("b\x00", 10), true) === str_repeat('a', 600000) . "\u{1F600}" . str_repeat('b', 10);
+            $decode = Charset::decoder(Charset::UTF16LE);
+            $out[] = $decode(str_repeat("a\x00", $p / 2 - 1) . "\x3D\xD8\x00\xDE" . "b\x00", true) === str_repeat('a', $p / 2 - 1) . "\u{1F600}b";
+            ini_set('pcre.backtrack_limit', '1');
+            try {
+                Charset::scrub(str_repeat('a', 5000) . "\xFF");
+                $out[] = false;
+            } catch (PluginFailure $failure) {
+                $out[] = $failure->reason === PluginFailure::REASON_UNREADABLE;
+            }
+            echo json_encode($out);
+            PHP;
+        self::assertSame('[true,true,true,true,true]', self::runWithoutJit($script));
     }
 
     public function testUnknownCharset(): void

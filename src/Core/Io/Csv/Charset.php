@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace TiffinDB\Core\Io\Csv;
 
+use TiffinDB\Core\Io\Contract\PluginFailure;
+
 /**
  * Character set detection and streaming conversion to UTF-8 (M3 spec
  * section 8.1, P121). Needs no mbstring or iconv.
@@ -32,6 +34,12 @@ final class Charset
     public const SAMPLE_BYTES = 65536;
 
     public const REPLACEMENT = "\u{FFFD}";
+
+    /**
+     * Regular expressions run over at most this many bytes at a time, so
+     * that they stay within PCRE's limits with or without the JIT.
+     */
+    public const PIECE_BYTES = 65536;
 
     /** Windows-1252 bytes 0x80 to 0x9F (0xA0 to 0xFF are the same code points as Latin 1). Null: undefined. */
     private const CP1252_HIGH = [
@@ -184,7 +192,7 @@ final class Charset
             }
             $held = strlen($pending);
             $count = 0;
-            $out = preg_replace_callback($pattern, static function (array $m) use ($ascii, $bigEndian, &$count): string {
+            $convert = static function (array $m) use ($ascii, $bigEndian, &$count): string {
                 if (($m[1] ?? '') !== '') {
                     return (string) preg_replace($ascii, '$1', $m[1]);
                 }
@@ -201,9 +209,21 @@ final class Charset
                 }
 
                 return self::encode($unit);
-            }, $whole);
-            if (!is_string($out)) {
-                throw new \RuntimeException('UTF-16 text could not be converted.');
+            };
+            $out = '';
+            $length = strlen($whole);
+            for ($at = 0; $at < $length; $at += $piece) {
+                $piece = min(self::PIECE_BYTES, $length - $at);
+                // A surrogate pair is never split between two pieces.
+                $last = ord($whole[$at + $piece - ($bigEndian ? 2 : 1)]);
+                if ($at + $piece < $length && $last >= 0xD8 && $last <= 0xDB) {
+                    $piece -= 2;
+                }
+                $part = preg_replace_callback($pattern, $convert, substr($whole, $at, $piece));
+                if (!is_string($part)) {
+                    throw new PluginFailure(PluginFailure::REASON_UNREADABLE, 'UTF-16 text could not be converted.');
+                }
+                $out = $out . $part;
             }
             if ($final && $tail !== '') {
                 // An unpaired high surrogate or a lone byte where the input ends.
@@ -235,7 +255,7 @@ final class Charset
                 return $text;
             }, $bytes);
             if (!is_string($out)) {
-                throw new \RuntimeException('Windows-1252 text could not be converted.');
+                throw new PluginFailure(PluginFailure::REASON_UNREADABLE, 'Windows-1252 text could not be converted.');
             }
             $replaced += $count;
 
@@ -278,16 +298,28 @@ final class Charset
     private static function replaceInvalid(string $data, int &$replaced): string
     {
         $count = 0;
-        $out = preg_replace_callback(self::VALID_OR_NOT, static function (array $m) use (&$count): string {
+        $convert = static function (array $m) use (&$count): string {
             if (($m[1] ?? '') !== '') {
                 return $m[1];
             }
             $count++;
 
             return self::REPLACEMENT;
-        }, $data);
-        if (!is_string($out)) {
-            throw new \RuntimeException('Text could not be converted.');
+        };
+        $out = '';
+        $length = strlen($data);
+        for ($at = 0; $at < $length; $at += $piece) {
+            $piece = min(self::PIECE_BYTES, $length - $at);
+            // A piece ends before a byte that is not a continuation byte, looking back at most
+            // three bytes (a sequence has at most three), so no sequence, well-formed or not, is split.
+            for ($back = 0; $back < 3 && $at + $piece < $length && (ord($data[$at + $piece]) & 0xC0) === 0x80; $back++) {
+                $piece--;
+            }
+            $part = preg_replace_callback(self::VALID_OR_NOT, $convert, substr($data, $at, $piece));
+            if (!is_string($part)) {
+                throw new PluginFailure(PluginFailure::REASON_UNREADABLE, 'Text could not be converted.');
+            }
+            $out = $out . $part;
         }
         $replaced += $count;
 

@@ -20,7 +20,7 @@ Record reading and writing is `TiffinDB\Core\Query\Records`, beside the M1 `Tras
 
 - One sort at a time, query parameter `sort` with the value `<field key>.asc`, `<field key>.desc`, `added.asc`, `added.desc`, or `changed.desc`. Anything else falls back to the default.
 - Default: the table's title field from A to Z; with no title field, the order records were added.
-- Every field type sorts except attachment. Text-like values sort without regard to the case of ASCII letters (SQLite `NOCASE`); numbers, money, ratings, durations, and auto-numbers numerically; dates and times chronologically; checkboxes unticked first when ascending; choices in the order the choices are listed in the field; relation fields by the stored title of the first linked live record.
+- Every field type sorts except attachment. Text-like values sort without regard to the case of ASCII letters (SQLite `NOCASE`); numbers, money, ratings, durations, and auto-numbers numerically; dates and times chronologically; checkboxes unticked first when ascending; choices in the order the choices are listed in the field; relation fields by the lowest stored title among the linked live records (only when the linked table has a title field).
 - Empty values sort last in both directions. Ties are broken by record id, ascending.
 
 ### 4. Filter

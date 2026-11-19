@@ -1,6 +1,6 @@
 # M2 screen design: reading and display settings
 
-Status: design for milestone M2, following `docs/design/model-ui/settings.html`. Logic: `docs/specs/M2-records.md` section 7.4 (`SettingsOperations`); values: `docs/specs/M1-foundation.md` section 5.5. Implemented by M2-WP8 with the components and the preview script of M2-WP5. Strings: `strings/en/settings.php` (WP8). Example data is synthetic.
+Status: design for milestone M2, following `docs/design/model-ui/settings.html`. Logic: `docs/specs/M2-records.md` section 7.3 (`SettingsOperations`); values: `docs/specs/M1-foundation.md` section 5.5. Implemented by M2-WP8 with the components and the preview script of M2-WP5. Strings: `strings/en/settings.php` (WP8). Example data is synthetic.
 
 ## 1. Overview
 

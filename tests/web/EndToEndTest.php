@@ -27,8 +27,10 @@ use TiffinDB\Core\Install\Installer;
 use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Core\Install\ProbeResponse;
 use TiffinDB\Core\Install\ProbeTarget;
+use TiffinDB\Core\Storage\Sqlite;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -39,12 +41,16 @@ use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\Services;
 use TiffinDB\Web\UploadLimits;
+use TiffinDB\Web\UploadedFile;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
 /**
- * T-E2E-1 to T-E2E-4 (M1 spec part 2 section 9) and T-E2E-5 to T-E2E-7
- * (M2 spec part 2 section 12): the application driven
+ * T-E2E-1 to T-E2E-4 (M1 spec part 2 section 9), T-E2E-5 to T-E2E-7
+ * (M2 spec part 2 section 12), and T-E2E-8 to T-E2E-10 (M3 spec part 2
+ * section 10.1: import, a failed import, and the project archive, with
+ * files uploaded through the Request test seam and downloads read from
+ * the response): the application driven
  * through the kernel with the real route table, templates, strings, and the
  * real CoreServices (a FixedClock, a SeededRandom, and a bcrypt cost 4
  * PasswordHasher) over an empty temporary data folder. DOCUMENT_ROOT is the
@@ -561,6 +567,221 @@ final class EndToEndTest extends TestCase
      * section 5, with the document's synthetic keys: Items with Name (the
      * title) and Value (currency USD), two live records and one trashed.
      */
+    // T-E2E-8 (M3): import a seeded CSV into a new table through the routes, then export it.
+
+    public function testAdminImportsACsvIntoANewTableAndExportsTheSameBytes(): void
+    {
+        $admin = $this->install();
+        [$projectPath] = $this->homeInventory($admin);
+        $csv = (new IoFixture())->canonicalCsv(60, ['Kitchen', 'Garage', 'Study']);
+
+        $report = $this->importCsv($admin, $projectPath, $csv, 'inventory.csv');
+        self::assertSame('60 rows were imported into inventory.', HtmlAssertions::text($report->body, '//main//div[@class="notice"][@role="status"]/p'));
+        self::assertContains('Records added 60', $admin->texts('//dl[@class="facts"]/div'));
+        self::assertContains('Linked records added 3', $admin->texts('//dl[@class="facts"]/div'));
+        self::assertContains('3 records were added to Rooms.', $admin->texts('//main/p'));
+        $tablePath = (string) $admin->xpath()->query('//main//a[normalize-space(.)="Open the table"]/@href')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#^' . preg_quote($projectPath, '#') . '/tables/[a-z2-7]{12}\z#', $tablePath);
+
+        // The records are in the list.
+        $list = $admin->get($tablePath);
+        self::assertSame(200, $list->status);
+        self::assertScreen($list->body);
+        self::assertSame('inventory', HtmlAssertions::text($list->body, '//h1'));
+        self::assertStringStartsWith('60 records', HtmlAssertions::text($list->body, '//main//div[@class="page-head"]//p[@class="lead"]'));
+        $names = array_map(static fn (array $row): string => $row[0], (new IoFixture())->canonicalRows(60, ['Kitchen', 'Garage', 'Study']));
+        foreach ($admin->texts('//main//table/tbody/tr/th') as $title) {
+            self::assertContains($title, $names);
+        }
+
+        // Export the table as CSV: the same bytes come back (T-RT-1 through the web).
+        $export = $admin->get($projectPath . '/export');
+        self::assertSame(200, $export->status);
+        self::assertScreen($export->body);
+        $tableKey = substr($tablePath, strrpos($tablePath, '/') + 1);
+        $download = $admin->submit($projectPath . '/export', ['format' => 'export/csv', 'scope' => 'table', 'table' => $tableKey]);
+        self::assertSame(200, $download->status, $download->body);
+        self::assertTrue($download->isDownload());
+        self::assertSame('text/csv; charset=utf-8', $download->header('Content-Type'));
+        self::assertStringContainsString('filename="inventory.csv"', (string) $download->header('Content-Disposition'));
+        self::assertSame($csv, $download->body(), 'CSV to project to CSV through the routes is byte-identical.');
+        $admin->cleanUp();
+    }
+
+    // T-E2E-9 (M3): a commit that fails leaves the project file as it was.
+
+    public function testAFailedImportLeavesTheProjectUnchanged(): void
+    {
+        $admin = $this->install();
+        [$projectPath] = $this->homeInventory($admin);
+        $csv = (new IoFixture())->canonicalCsv(40, ['Kitchen', 'Garage']);
+        $jobPath = $this->reviewCsv($admin, $projectPath, $csv, 'inventory.csv');
+        self::assertSame(303, $admin->submit($jobPath, ['action' => 'import'])->status);
+        $this->continueToSave($admin, $jobPath);
+
+        // The failure is injected into the project file (ImportOperations::commit
+        // has no core seam into the committer): a trigger that raises an error
+        // when the commit writes the import log row, after every other step.
+        $file = $this->temp->path('projects/' . substr($projectPath, strlen('/projects/')) . '/project.tiffin');
+        $db = Sqlite::open($file);
+        $db->run('CREATE TRIGGER "injected_failure" AFTER INSERT ON "_tiffin_import_log" BEGIN SELECT RAISE(ABORT, \'injected failure\'); END');
+        $db->close();
+        $before = self::projectChecksum($file);
+
+        // As built, the save POST answers with the 500 error page (the
+        // committer marks the job Failed and passes the error on, and
+        // neither ImportOperations::commit nor the controller turns it into
+        // the failure page; reported to M3-WP8/WP9). The failure page is
+        // reached at the job's address.
+        $admin->allowFailure = true;
+        $saved = $admin->submit($jobPath . '/continue', ['step' => 'save']);
+        $admin->allowFailure = false;
+        self::assertContains($saved->status, [303, 500], $saved->body);
+        self::assertStringNotContainsString('injected failure', $saved->body, 'No internal detail is shown.');
+        self::assertSame($before, self::projectChecksum($file), 'The project file holds exactly what it held before.');
+
+        $failed = $admin->get($jobPath);
+        self::assertSame(200, $failed->status);
+        self::assertScreen($failed->body);
+        self::assertSame('The import did not finish - TiffinDB', HtmlAssertions::text($failed->body, '//title'));
+        self::assertSame(['Nothing was saved. The project is exactly as it was before.', 'Saving the rows went wrong.'], $admin->texts('//main/p'));
+        self::assertSame(['Start again'], $admin->texts('//main//form[@action="' . $jobPath . '/cancel"]//button'));
+        $again = $admin->submit($jobPath . '/cancel');
+        self::assertSame(303, $again->status);
+        self::assertSame($projectPath . '/import', $again->header('Location'), 'Start again leads to step 1.');
+        self::assertSame(200, $admin->follow($again)->status);
+        $tables = $admin->get($projectPath . '/tables');
+        self::assertSame(['Items', 'Rooms'], $admin->texts('//main//tbody/tr/th'), 'No table was added.');
+        self::assertSame(200, $tables->status);
+        $admin->cleanUp();
+    }
+
+    // T-E2E-10 (M3): archive export and import through the routes.
+
+    public function testArchiveExportAndImportThroughTheRoutes(): void
+    {
+        $admin = $this->install();
+        [$projectPath] = $this->homeInventory($admin);
+        $member = $this->member($admin, $projectPath);
+        $this->importCsv($admin, $projectPath, (new IoFixture())->canonicalCsv(45, ['Kitchen', 'Garage']), 'inventory.csv');
+        $tablePath = (string) $admin->xpath()->query('//main//a[normalize-space(.)="Open the table"]/@href')->item(0)?->nodeValue;
+        $admin->get($tablePath);
+        $titles = $admin->texts('//main//table/tbody/tr/th');
+        self::assertCount(45, $titles);
+
+        $admin->get($projectPath . '/export');
+        $archive = $admin->submit($projectPath . '/export/archive');
+        self::assertSame(200, $archive->status, $archive->body);
+        self::assertSame('application/zip', $archive->header('Content-Type'));
+        self::assertStringContainsString('filename="home-inventory.tiffindb.zip"', (string) $archive->header('Content-Disposition'));
+        $zip = $this->temp->path('home-inventory.tiffindb.zip');
+        file_put_contents($zip, $archive->body());
+
+        $form = $admin->get('/projects/import');
+        self::assertSame(200, $form->status);
+        self::assertScreen($form->body);
+        $imported = $admin->upload('/projects/import', 'file', $zip, 'home-inventory.tiffindb.zip', ['name' => 'Home Inventory copy']);
+        self::assertSame(303, $imported->status, $imported->body);
+        $copyPath = (string) $imported->header('Location');
+        self::assertMatchesRegularExpression('#^/projects/[a-z2-7]{12}#', $copyPath);
+        self::assertStringStartsNotWith($projectPath, $copyPath);
+        $landing = $admin->follow($imported);
+        while ($landing->status === 303) {
+            $landing = $admin->follow($landing);
+        }
+        self::assertSame(200, $landing->status);
+        self::assertStringContainsString('Home Inventory copy', HtmlAssertions::text($landing->body, '//main//*[@role="status"]'));
+
+        // The copy lists the same records.
+        $copyKey = substr($copyPath, strlen('/projects/'), 12);
+        $copyTable = '/projects/' . $copyKey . substr($tablePath, strlen($projectPath));
+        self::assertSame(200, $admin->get($copyTable)->status);
+        self::assertSame($titles, $admin->texts('//main//table/tbody/tr/th'), 'The same records, in the same order.');
+        $admin->get('/projects');
+        self::assertSame(['Home Inventory', 'Home Inventory copy'], $admin->texts('//main//li[contains(@class, "project-card")]//h2'));
+
+        // The Member granted on the original does not see the copy.
+        $member->get('/projects');
+        self::assertSame(['Home Inventory'], $member->texts('//main//li[contains(@class, "project-card")]//h2'));
+        self::assertSame(404, $member->get($copyTable)->status);
+        self::assertSame(404, $member->get('/projects/' . $copyKey . '/tables')->status);
+        $admin->cleanUp();
+    }
+
+    /** Uploads $csv on step 1 of $projectPath's import; returns the job path (the review page is the last page). */
+    private function reviewCsv(EndToEndClient $admin, string $projectPath, string $csv, string $name): string
+    {
+        $start = $admin->get($projectPath . '/import');
+        self::assertSame(200, $start->status);
+        self::assertScreen($start->body);
+        $path = $this->temp->path('upload-' . $name);
+        file_put_contents($path, $csv);
+        $uploaded = $admin->upload($projectPath . '/import', 'file', $path, $name);
+        self::assertSame(303, $uploaded->status, $uploaded->body);
+        $jobPath = (string) $uploaded->header('Location');
+        self::assertMatchesRegularExpression('#^' . preg_quote($projectPath, '#') . '/import/[A-Za-z0-9_-]+\z#', $jobPath);
+        $review = $admin->follow($uploaded);
+        self::assertSame(200, $review->status);
+        self::assertScreen($review->body);
+        self::assertSame('Check the fields - TiffinDB', HtmlAssertions::text($review->body, '//title'));
+
+        return $jobPath;
+    }
+
+    /** Presses Continue on the progress page until "Save the rows" appears. */
+    private function continueToSave(EndToEndClient $admin, string $jobPath): void
+    {
+        for ($i = 0; $i < 20; $i++) {
+            $page = $admin->get($jobPath);
+            self::assertSame(200, $page->status);
+            self::assertScreen($page->body);
+            if ($admin->xpath()->query('//form[@action="' . $jobPath . '/continue"]//input[@name="step"][@value="save"]')->length === 1) {
+                self::assertSame(['Save the rows'], $admin->texts('//form[@action="' . $jobPath . '/continue"]//button'));
+
+                return;
+            }
+            self::assertSame(303, $admin->submit($jobPath . '/continue')->status);
+        }
+        self::fail('The import never became ready to save.');
+    }
+
+    /** The whole import of $csv into a new table with the review's defaults; returns the report page. */
+    private function importCsv(EndToEndClient $admin, string $projectPath, string $csv, string $name): Response
+    {
+        $jobPath = $this->reviewCsv($admin, $projectPath, $csv, $name);
+        $accepted = $admin->submit($jobPath, ['action' => 'import']);
+        self::assertSame(303, $accepted->status, $accepted->body);
+        self::assertSame($jobPath, $accepted->header('Location'));
+        $this->continueToSave($admin, $jobPath);
+        $saved = $admin->submit($jobPath . '/continue', ['step' => 'save']);
+        self::assertSame(303, $saved->status, $saved->body);
+        self::assertSame($jobPath . '/report', $saved->header('Location'));
+        $report = $admin->follow($saved);
+        self::assertSame(200, $report->status);
+        self::assertScreen($report->body);
+        self::assertSame('Import report - TiffinDB', HtmlAssertions::text($report->body, '//title'));
+
+        return $report;
+    }
+
+    /** SHA-256 of every table's rows and the schema of a project file, read with plain SQL. */
+    private static function projectChecksum(string $file): string
+    {
+        $db = Sqlite::openUntrusted($file);
+        try {
+            $content = [$db->all('SELECT type, name, sql FROM sqlite_master ORDER BY type, name')];
+            foreach ($db->all("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name") as $table) {
+                $rows = $db->all('SELECT * FROM "' . str_replace('"', '""', (string) $table['name']) . '"');
+                sort($rows);
+                $content[(string) $table['name']] = $rows;
+            }
+        } finally {
+            $db->close();
+        }
+
+        return hash('sha256', serialize($content));
+    }
+
     private static function buildVersionOne(string $file, string $projectKey): void
     {
         $time = '2026-11-03T09:00:00Z';
@@ -894,7 +1115,13 @@ final class EndToEndClient
     /** @var array<string, string> */
     public array $cookies = [];
 
+    /** Whether a response may write to the PHP log and be a 500 (a failure the test injects on purpose). */
+    public bool $allowFailure = false;
+
     private string $page = '';
+
+    /** @var list<string> */
+    private array $uploads = [];
 
     public function __construct(private readonly Kernel $kernel)
     {
@@ -928,6 +1155,50 @@ final class EndToEndClient
      */
     public function submit(string $action, array $values = []): Response
     {
+        return $this->post($action, $this->formFields($action, $values));
+    }
+
+    /**
+     * Submits the last page's multipart POST form whose action is $action
+     * with the file at $path as the upload of field $field, named
+     * $clientName, as PHP hands an accepted upload to the application
+     * (the Request test seam: fromGlobals only builds files that pass
+     * is_uploaded_file()). The file is copied first, so the core can move it.
+     *
+     * @param array<string, string|list<string>> $values
+     */
+    public function upload(string $action, string $field, string $path, string $clientName, array $values = []): Response
+    {
+        Assert::assertSame(1, $this->xpath()->query('//form[@method="post"][@action="' . $action . '"][@enctype="multipart/form-data"]//input[@type="file"][@name="' . $field . '"]')->length, "A multipart form posting to {$action} with the file input {$field}.");
+        $copy = (string) tempnam(sys_get_temp_dir(), 'tiffindb-upload-');
+        Assert::assertTrue(copy($path, $copy));
+        $this->uploads[] = $copy;
+
+        return $this->send('POST', $action, $this->formFields($action, $values), [$field => new UploadedFile($field, $clientName, (int) filesize($copy), UPLOAD_ERR_OK, $copy)]);
+    }
+
+    /** Removes the upload copies the core did not move away. */
+    public function cleanUp(): void
+    {
+        foreach ($this->uploads as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+        $this->uploads = [];
+    }
+
+    /**
+     * The fields a browser sends for the last page's POST form posting to
+     * $action, overridden by $values; names with brackets (`include[0]`,
+     * `setting[export/csv][record_ids]`) become nested arrays, as PHP builds
+     * them.
+     *
+     * @param array<string, string|list<string>> $values
+     * @return array<string, mixed>
+     */
+    private function formFields(string $action, array $values): array
+    {
         $xpath = $this->xpath();
         $forms = $xpath->query('//form[@method="post"][@action="' . $action . '"]');
         Assert::assertGreaterThan(0, $forms->length, "The page has a form posting to {$action}.");
@@ -936,6 +1207,12 @@ final class EndToEndClient
 
         $fields = [];
         $present = [];
+        $id = $form->getAttribute('id');
+        foreach ($xpath->query('//button[@name][@form="' . $id . '"] | .//button[@name]', $form) as $button) {
+            /** @var DOMElement $button */
+            // A named submit button sends its value only when pressed: pass it in $values.
+            $present[$button->getAttribute('name')] = true;
+        }
         foreach ($xpath->query('.//input[@name] | .//select[@name] | .//textarea[@name]', $form) as $control) {
             /** @var DOMElement $control */
             $name = $control->getAttribute('name');
@@ -961,8 +1238,15 @@ final class EndToEndClient
             Assert::assertArrayHasKey($name, $present, "The form posting to {$action} has a field {$name}.");
             $fields[$name] = $value;
         }
+        foreach ($fields as $name => $value) {
+            if (str_contains($name, '[')) {
+                unset($fields[$name]);
+                parse_str(http_build_query([$name => $value]), $nested);
+                $fields = array_replace_recursive($fields, $nested);
+            }
+        }
 
-        return $this->post($action, $fields);
+        return $fields;
     }
 
     /** The body of the last page that was not a redirect. */
@@ -1021,8 +1305,11 @@ final class EndToEndClient
         return $control->getAttribute('value');
     }
 
-    /** @param array<string, string|list<string>> $post */
-    private function send(string $method, string $uri, array $post): Response
+    /**
+     * @param array<string, mixed> $post
+     * @param array<string, UploadedFile> $files
+     */
+    private function send(string $method, string $uri, array $post, array $files = []): Response
     {
         $query = [];
         $queryString = parse_url('http://tiffindb.example' . $uri, PHP_URL_QUERY);
@@ -1042,9 +1329,18 @@ final class EndToEndClient
             $server['HTTP_SEC_FETCH_SITE'] = 'same-origin';
         }
         $request = Request::fromGlobals($server, $query, $post, $this->cookies);
+        if ($files !== []) {
+            $request = new Request(
+                $request->method, $request->path, $request->basePath, $request->query, $request->malformed, $request->post,
+                $request->cookies, $request->secure, $request->clientAddress, $request->secFetchSite, $request->host,
+                $request->serverAddress, $request->serverPort, $request->documentRoot, $request->origin, $files, $request->contentLength,
+            );
+        }
         [$response, $log] = Fixtures::handle($this->kernel, $request);
-        Assert::assertSame('', $log, "No log output for {$method} {$uri}.");
-        Assert::assertNotSame(500, $response->status, "{$method} {$uri} does not fail.");
+        if (!$this->allowFailure) {
+            Assert::assertSame('', $log, "No log output for {$method} {$uri}.");
+            Assert::assertNotSame(500, $response->status, "{$method} {$uri} does not fail.");
+        }
 
         foreach ($response->cookies as $cookie) {
             if ($cookie->maxAge === 0) {
@@ -1053,7 +1349,7 @@ final class EndToEndClient
                 $this->cookies[$cookie->name] = $cookie->value;
             }
         }
-        if ($response->status !== 303) {
+        if ($response->status !== 303 && !$response->isDownload()) {
             $this->page = $response->body;
         }
 

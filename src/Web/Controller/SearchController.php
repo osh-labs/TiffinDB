@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Web\Controller;
 
 use TiffinDB\Core\App\SearchResultHit;
+use TiffinDB\Core\Auth\Permission;
 use TiffinDB\Web\Context;
 use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
@@ -83,7 +84,7 @@ final class SearchController
         return $this->context->page('search', [
             'title' => $view->text('search.page_title', ['project' => $project->name]),
             'layout' => 'list',
-            'sidebar' => Sidebar::build($project->key, $project->name, $results->tables, $results->trashCount, null),
+            'sidebar' => Sidebar::build($project->key, $project->name, $results->tables, $results->trashCount, null, $this->canImportExport($project->key)),
             'search' => ['project' => $project->key, 'projectName' => $project->name, 'q' => $q === '' ? null : $q],
             'heading' => $view->text('search.title'),
             'lead' => $lead,
@@ -131,5 +132,11 @@ final class SearchController
         }
 
         return ($start > 0 ? "\u{2026}" : '') . $body . $tail;
+    }
+
+    /** Whether the sidebar shows the Data group (Import, Export): `io.use` on the project (M3 spec part 2 section 4). */
+    private function canImportExport(string $projectKey): bool
+    {
+        return $this->context->services()->operations()->auth()->can($this->context->actor(), Permission::ImportExport, $projectKey);
     }
 }

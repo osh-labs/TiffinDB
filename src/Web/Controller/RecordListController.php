@@ -15,6 +15,7 @@ use TiffinDB\Core\App\ListRequest;
 use TiffinDB\Core\App\RecordListing;
 use TiffinDB\Core\App\SortOption;
 use TiffinDB\Core\App\TableSummary;
+use TiffinDB\Core\Auth\Permission;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Web\Context;
 use TiffinDB\Web\Request;
@@ -99,7 +100,7 @@ final class RecordListController
         $data = [
             'title' => $view->text('lists.page_title', ['table' => $table->name, 'project' => $project->name]),
             'layout' => 'list',
-            'sidebar' => Sidebar::build($project->key, $project->name, $listing->tables, $listing->trashCount, $table->key),
+            'sidebar' => Sidebar::build($project->key, $project->name, $listing->tables, $listing->trashCount, $table->key, $this->canImportExport($project->key)),
             'search' => ['project' => $project->key, 'projectName' => $project->name, 'q' => null],
             'tableName' => $table->name,
             'itemName' => $table->itemName,
@@ -462,5 +463,11 @@ final class RecordListController
         }
 
         return $hidden;
+    }
+
+    /** Whether the sidebar shows the Data group (Import, Export): `io.use` on the project (M3 spec part 2 section 4). */
+    private function canImportExport(string $projectKey): bool
+    {
+        return $this->context->services()->operations()->auth()->can($this->context->actor(), Permission::ImportExport, $projectKey);
     }
 }

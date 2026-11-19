@@ -2030,6 +2030,18 @@ li.link-row a {
   color: var(--ink2);
 }
 
+/* Secondary large buttons on these pages ("Start again", "Cancel"): 0 20 (components.md section 10). */
+.io-actions .button-large:not(.button-primary),
+.inline-form .button-large:not(.button-primary) {
+  padding: 0 1.1111rem;
+}
+
+/* A form holding one button, placed in a row of actions (the "Start again" forms). */
+.inline-form {
+  display: inline-flex;
+  margin: 0;
+}
+
 /* 8. Progress */
 .progress {
   display: flex;

@@ -69,6 +69,8 @@ Contrast: `--warn` on `--warn-soft` is 7.61:1 in the light theme after P99; text
 |---|---|
 | `.io-actions` | `display: flex; flex-wrap: wrap; align-items: center; gap: 12 20` |
 | `.io-note` | `flex: 1 1 320; color: var(--ink2)` (mock-up "Nothing is saved until you choose Import...") |
+| `.io-actions .button-large` (not primary) | `padding: 0 20` ("Start again", "Cancel", "Import another file"; section 10) |
+| `.inline-form` | `display: inline-flex; margin: 0`: a form holding one button inside a row of actions (the "Start again" forms) |
 
 ## 8. Progress
 

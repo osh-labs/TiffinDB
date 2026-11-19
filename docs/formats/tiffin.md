@@ -1,6 +1,6 @@
-# TiffinDB project file format, version 2
+# TiffinDB project file format, version 3
 
-Status: format version 2, written by TiffinDB from milestone M2 (version 1 was written in M1; section 11 says how a version 1 file is upgraded). Provisional until the maintainer confirms ADR 0010 and ADR 0014. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
+Status: format version 3, written by TiffinDB from milestone M3 (version 1 was written in M1 and version 2 in M2; section 11 says how an older file is upgraded). Everything marked "version 3" is absent from version 2 files; the rest describes both. Section 13 describes the project archive (a zip file for backup and transfer). Provisional until the maintainer confirms ADR 0010, ADR 0014, ADR 0015, and ADR 0017. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
 
 Every example in this document is synthetic.
 
@@ -30,9 +30,9 @@ projects/
 | Check | Value |
 |---|---|
 | `PRAGMA application_id` | `1413891138` (hexadecimal `0x54464442`, the ASCII bytes `TFDB`) |
-| `PRAGMA user_version` | The format version: `2` for this document |
+| `PRAGMA user_version` | The format version: `3` for this document (`2` in files written by M2) |
 | `SELECT value FROM _tiffin_meta WHERE key = 'format'` | `tiffindb-project` |
-| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `2` |
+| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `3` (`2` in files written by M2) |
 
 TiffinDB refuses to open a file whose `application_id` or `format` differs, or whose version is higher than it understands. It upgrades a file with a lower version in place, after saving a snapshot (section 11).
 
@@ -142,6 +142,31 @@ CREATE INDEX _tiffin_forms_table ON _tiffin_forms (table_key);
 CREATE UNIQUE INDEX _tiffin_forms_default ON _tiffin_forms (table_key) WHERE is_default = 1;
 ```
 
+Version 3 adds one table and its index:
+
+```sql
+CREATE TABLE _tiffin_import_log (
+    key            TEXT PRIMARY KEY,
+    imported_at    TEXT NOT NULL,
+    imported_by    TEXT,
+    source         TEXT NOT NULL,
+    plugin         TEXT,
+    file_name      TEXT NOT NULL,
+    file_size      INTEGER NOT NULL,
+    file_sha256    TEXT NOT NULL,
+    table_key      TEXT,
+    new_table      INTEGER NOT NULL DEFAULT 0,
+    rows_read      INTEGER NOT NULL,
+    rows_imported  INTEGER NOT NULL,
+    rows_skipped   INTEGER NOT NULL,
+    values_emptied INTEGER NOT NULL,
+    links_added    INTEGER NOT NULL DEFAULT 0,
+    snapshot       TEXT,
+    report         TEXT NOT NULL DEFAULT '{}'
+) WITHOUT ROWID;
+CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at);
+```
+
 The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that does not will not enforce the `REFERENCES` clauses; that only matters when writing.
 
 ### 4.1 `_tiffin_meta`
@@ -149,7 +174,7 @@ The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that do
 | Key | Value |
 |---|---|
 | `format` | `tiffindb-project` |
-| `format_version` | `2` |
+| `format_version` | `3` (`2` in files written by M2) |
 | `project_key` | The project's key; equals the folder name |
 | `project_name` | The project name shown in TiffinDB, for example `Home Inventory` |
 | `created_at` | When the project was created (time format in section 5) |
@@ -159,6 +184,8 @@ The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that do
 | `updated_by` | Key of the person who made that change |
 
 Person keys refer to accounts in the installation's system database; a project file on its own does not say who they are.
+
+A project made by importing a project archive (section 13) gets a new `project_key` and the name chosen at import; `created_at`, `created_by`, and `created_with` keep the archive's values, and `updated_at` and `updated_by` record the import. Its person keys belong to the installation the archive came from.
 
 ### 4.2 `_tiffin_tables`
 
@@ -194,9 +221,43 @@ One row per stored form: the layout used to show and edit one table's records (s
 
 A table may have no row here, for example in a file just upgraded from version 1. TiffinDB then lays the table's records out as it would generate them (section 12.3), and stores that form the next time the table's fields change.
 
-### 4.7 Reserved for later versions
+### 4.7 `_tiffin_import_log` (version 3)
 
-`_tiffin_collections` and `_tiffin_import_log` are named in the plan and will be added in later format versions. Version 2 files do not contain them.
+One row per completed import into the project. An import that fails or is abandoned leaves no row (it changes nothing in the project).
+
+| Column | Meaning |
+|---|---|
+| `key` | The import's key (12 characters from the key alphabet, section 3); unique within this table. Not used in SQL names |
+| `imported_at`, `imported_by` | When, and the key of the person who imported (null when unknown) |
+| `source` | `file` (a CSV, XLSX, or other file read by an import plugin into a table) or `archive` (the project itself was made from a project archive, section 13) |
+| `plugin` | The import plugin as `<kind>/<id>`, for example `import/csv`; null for `archive` |
+| `file_name` | The file's name as it was uploaded, for example `inventory.csv`. Shown only; never used as a path |
+| `file_size`, `file_sha256` | Size in bytes and SHA-256 (lower-case hexadecimal) of the uploaded file |
+| `table_key` | The table the rows went into; null for `archive`. Not a foreign key: the table may be deleted later |
+| `new_table` | 1 when the import created that table, else 0 |
+| `rows_read` | Data rows read from the file (heading row not counted) |
+| `rows_imported` | Records added |
+| `rows_skipped` | Rows left out (empty rows, rows over the row limit, rows with an error the import cannot recover from) |
+| `values_emptied` | Values that could not be read as the field's type and were left empty |
+| `links_added` | Records added to other tables because a linked title was not found there |
+| `snapshot` | File name of the `import` snapshot taken just before (section 10), or null |
+| `report` | A JSON object with the per-column details the report screen shows: counts and row numbers, never cell values (section 4.7.1) |
+
+#### 4.7.1 The `report` object
+
+```json
+{"columns":[{"name":"Purchased","field":"f3kq7vn2xbma","emptied":3,"rows":[4,17,30]}],
+ "skipped":{"empty":2,"over_limit":0},
+ "links":[{"field":"r5vk3pn7qx2m","table":"p6wz2kq7nm3v","added":2}],
+ "required_empty":[{"field":"m4pz7k2qsw3n","count":1}],
+ "archive":{"values_emptied":0,"links_dropped":0,"forms_dropped":0,"forms_extended":1,"files_missing":0}}
+```
+
+`rows` holds at most the first 20 row numbers (1 is the first data row). Members are omitted when empty; `archive` appears only when `source` is `archive`. Readers must ignore members they do not know.
+
+### 4.8 Reserved for later versions
+
+`_tiffin_collections` is named in the plan and will be added in a later format version. Version 3 files do not contain it.
 
 ## 5. User tables
 
@@ -337,6 +398,7 @@ File name: `<UTC time as YYYYMMDDTHHMMSSZ>-<reason>-<4 random characters from th
 | `field-type-change` | Changing the type of a field |
 | `field-options` | Changing field options in a way that clears or rewrites stored values |
 | `empty-trash` | Emptying the trash |
+| `import` | Saving the rows of an import into the project (version 3; the snapshot is taken by the application before the import transaction, so older versions of TiffinDB simply never write this reason) |
 | `manual` | An Admin asked for one |
 
 The 20 newest snapshots other than `manual` ones are kept; older ones are deleted when a new one is taken. Manual snapshots are kept until removed by hand.
@@ -354,6 +416,7 @@ The 20 newest snapshots other than `manual` ones are kept; older ones are delete
 |---|---|---|
 | 1 | M1 | First version: metadata, tables, fields, relations, attachments, trash columns |
 | 2 | M2 | Adds `_tiffin_forms` (sections 4.6 and 12) |
+| 3 | M3 | Adds `_tiffin_import_log` (section 4.7) and the snapshot reason `import` (section 10) |
 
 ### 11.1 Upgrade from version 1 to version 2
 
@@ -379,6 +442,37 @@ UPDATE _tiffin_meta SET value = '2' WHERE key = 'format_version';
 ```
 
 No other table or row changes. In particular, no forms are written during the upgrade: each table has no row in `_tiffin_forms` until its fields next change (section 4.6). The upgrade can be done by hand with the statements above, on a copy, while TiffinDB is not running.
+
+### 11.2 Upgrade from version 2 to version 3
+
+After the `format-upgrade` snapshot, in one transaction, exactly:
+
+```sql
+CREATE TABLE _tiffin_import_log (
+    key            TEXT PRIMARY KEY,
+    imported_at    TEXT NOT NULL,
+    imported_by    TEXT,
+    source         TEXT NOT NULL,
+    plugin         TEXT,
+    file_name      TEXT NOT NULL,
+    file_size      INTEGER NOT NULL,
+    file_sha256    TEXT NOT NULL,
+    table_key      TEXT,
+    new_table      INTEGER NOT NULL DEFAULT 0,
+    rows_read      INTEGER NOT NULL,
+    rows_imported  INTEGER NOT NULL,
+    rows_skipped   INTEGER NOT NULL,
+    values_emptied INTEGER NOT NULL,
+    links_added    INTEGER NOT NULL DEFAULT 0,
+    snapshot       TEXT,
+    report         TEXT NOT NULL DEFAULT '{}'
+) WITHOUT ROWID;
+CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at);
+PRAGMA user_version = 3;
+UPDATE _tiffin_meta SET value = '3' WHERE key = 'format_version';
+```
+
+No other table or row changes. The snapshot reason `import` needs no change to the file. A version 1 file is upgraded by section 11.1 and then this section, each step in its own transaction.
 
 ## 12. Forms (version 2)
 
@@ -453,3 +547,45 @@ The legends are written in English as data, like the `Name` field of a new table
 - A field of the table that no field element names is not shown on the record screen and is left unchanged when a record is saved.
 - A form that breaks any rule of section 12.1, or whose `format` is not `1`, is not used: TiffinDB shows the generated layout instead (section 12.3) and leaves the stored text as it is.
 - Stored form text is never sent to a browser as it is. TiffinDB reads it into the elements of section 12.1 and builds the page from those, escaping all text.
+
+## 13. Project archive
+
+A project archive is a zip file that holds one project for backup or for moving it to another TiffinDB installation. TiffinDB writes it from the project's Export page and reads it with "Import a project archive" on the project list, which always makes a **new** project. It can be unpacked with any zip tool; `project.tiffin` inside it is an ordinary project file (sections 1 to 12) and opens on its own.
+
+### 13.1 Contents
+
+```
+tiffindb-archive.json                 the manifest (section 13.2)
+project.tiffin                        a complete copy of the project database (made with VACUUM INTO; never a -wal or -shm file)
+attachments/9f/9f86d0...0a08          one entry per attachment file listed in _tiffin_attachments (section 8)
+```
+
+No other entry is written, and TiffinDB refuses an archive that holds any other entry (for example a folder added by a zip tool, `snapshots/`, or a `project.tiffin-wal`). Entry names use `/`, are case-sensitive, and are exactly `tiffindb-archive.json`, `project.tiffin`, or `attachments/` followed by the first two characters of a SHA-256, `/`, and all 64 lower-case hexadecimal characters. Entries are stored or compressed with deflate; none is encrypted. Snapshots are not included.
+
+### 13.2 Manifest
+
+`tiffindb-archive.json` is a UTF-8 JSON object with exactly these members:
+
+| Member | Value |
+|---|---|
+| `format` | `"tiffindb-archive"` |
+| `archive_version` | `1` |
+| `created_at` | UTC time the archive was written, `YYYY-MM-DDTHH:MM:SSZ` |
+| `created_with` | TiffinDB version, for example `"0.3.0-dev"` |
+| `project_format_version` | The `user_version` of `project.tiffin`, for example `3` |
+| `project_name` | The project's name |
+| `project_size` | Size of `project.tiffin` in bytes |
+| `project_sha256` | SHA-256 of `project.tiffin`, lower-case hexadecimal |
+| `attachments` | Number of `attachments/` entries |
+
+Example (synthetic):
+
+```json
+{"format":"tiffindb-archive","archive_version":1,"created_at":"2026-11-19T10:15:00Z","created_with":"0.3.0-dev","project_format_version":3,"project_name":"Home Inventory","project_size":204800,"project_sha256":"5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef","attachments":2}
+```
+
+### 13.3 What TiffinDB does when importing an archive
+
+TiffinDB treats the archive as untrusted. It checks the zip and the manifest, opens `project.tiffin` read-only, and refuses it when `PRAGMA integrity_check` is not `ok`, when its identity (section 2) is wrong or its version is newer than TiffinDB knows, or when it holds a trigger, a view, a virtual table, an object whose name is not one of the documented patterns (sections 3 and 4), or a user or join table whose columns differ from sections 5 and 7. It then builds a **new** project file and copies the archive's metadata and values into it, checking each one against this document: values that do not fit their field type are left empty, links whose records are missing are dropped, and forms that break section 12 are dropped; every table's forms are then brought in line with its fields (section 12.3), so an edited form gains a field element for any field it does not name. Keys and record ids are kept; the project gets a new key and no sharing. The import report lists everything that was emptied, dropped, or missing.
+
+To restore an archive by hand instead: unpack it, create a project folder as in section 1 with `project.tiffin` and `attachments/` from the archive, and set `project_key` in `_tiffin_meta` to the folder name. A project folder made by hand is not known to an installation until it is registered; TiffinDB has no screen for that in v1.

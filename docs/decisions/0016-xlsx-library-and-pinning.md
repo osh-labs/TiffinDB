@@ -1,6 +1,6 @@
 # ADR 0016: XLSX library and the pinning of shipped dependencies
 
-Status: Accepted (provisional, awaiting maintainer confirmation). Settles M0 provisional decision P6 and ADR 0009 row B5 (XLSX library), and applies ADR 0008 decision 12 (no lock file; shipped packages pinned exactly) to the first shipped dependency, as the session plan's default for maintainer question 1 requires. Implementation: `docs/specs/M3-io.md` section 12 (M3-WP0) and section 9 (XLSX plugins).
+Status: Accepted (provisional, awaiting maintainer confirmation). Settles M0 provisional decision P6 and ADR 0009 row B5 (XLSX library), and applies ADR 0008 decision 12 (no lock file; shipped packages pinned exactly) to the first shipped dependency, as the session plan's default for maintainer question 1 requires. Implementation: `docs/specs/M3-io.md` section 16 (M3-WP0) and section 9 (XLSX plugins).
 
 ## Context
 

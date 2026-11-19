@@ -13,7 +13,7 @@ Plan section 6.1 commits an import "in a single transaction"; plan section 10 mi
 An import runs in four phases, each its own request or series of requests, against a **staging job** that lives outside the project file:
 
 1. **Upload.** The file is stored in the job folder `<data directory>/staging/imports/<job key>/` under a name the application chooses.
-2. **Read.** The importer plugin's rows are copied, as text, into the job's own SQLite file (`job.sqlite` in the job folder), in chunks of at most 2,000 rows or 5 seconds per request. Column types are inferred incrementally while reading.
+2. **Read.** The importer plugin's rows are copied, as text, into the job's own SQLite file (`job.sqlite` in the job folder), in chunks of at most 2,000 rows or 5 seconds per request; empty rows count towards a chunk, and at most 100,000 rows (empty ones included) are read per import, so a sheet with a far-down cell cannot make one request iterate without bound (P139). Column types are inferred incrementally while reading.
 3. **Review** (mock-up step 2). Nothing is written to the project.
 4. **Import** (step 3). The staged rows are coerced to the chosen field types in chunks, written back into the job file; then **one final request takes the `import` snapshot and moves every prepared row into the project in a single transaction**, together with any new table, fields, relation, linked records it adds, and the import log row. A failure at any point before or inside that transaction leaves the project unchanged.
 

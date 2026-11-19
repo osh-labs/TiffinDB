@@ -76,7 +76,7 @@ Page title: `import.review.title` "Check the fields". In reading order, as `impo
 
 Implicit submission: pressing Enter in a text input of the form submits it with its first submit button in tree order: "Check again" when the project has tables (it sits in the target fieldset), otherwise "Import". Either is safe: "Import" only checks the mapping and starts preparing; the rows are saved only when the person presses "Save the rows" on step 3, which never submits itself (section 6).
 
-On "Import": `saveMapping`; problems give 422 with the summary; otherwise 303 to `.../import/{job}` (screen 6), whose first chunk starts. On "Check again": the mapping is saved as given without validation of names (only the target changes), and the page is drawn again (303).
+On "Import": `saveMapping`; problems give 422 with the summary; otherwise 303 to `.../import/{job}` (screen 6), whose first chunk starts. On "Check again": `ImportOperations::recheck` (P137) stores the target and the shape-checked column values with no mapping check, and the page is drawn again for the chosen target (303); no error summary appears for the table that was left.
 
 Keyboard: the mapping table is a sequence of native controls in row order; Tab moves across a row then to the next. The scrolling box needs no focus of its own. Screen reader: every control names its column; the warning panel is a region with a heading.
 

@@ -22,6 +22,7 @@ Page title: `archive.title` "Import a project archive".
 4. `form` (`method="post"`, `enctype="multipart/form-data"`): `csrf`; `file-field` name `file`, label `archive.file` "Archive file", help `archive.file_help` "A .zip file made by TiffinDB, up to {max}.", `accept` `.zip`; `div.field`: `label` `archive.name` "Name for the new project" (with `span.label-optional` "(optional)", M1 marker), `p.help` `archive.name_help` "Leave empty to use the name stored in the archive.", `input.input` `name="name"` `id('f', 'name')` `maxlength` as the M1 project-name limit.
 5. `div.io-actions`: `button.button.button-primary.button-large` `archive.import` "Import"; `a.button.button-large` `archive.cancel` "Cancel" to `/projects`.
 6. `p.help` `archive.note` "TiffinDB checks the archive before using it. The new project is shared with nobody until you share it."
+7. `p.help` `archive.too_large_note` "An archive larger than {max} cannot be uploaded. It can be restored by hand on the server; the steps are in the TiffinDB project file documentation, section 13.4." (P136; `{max}` as in the file help)
 
 422 problems at the file field: `problem.upload.*` and every `problem.archive.*` (part 1 section 14).
 

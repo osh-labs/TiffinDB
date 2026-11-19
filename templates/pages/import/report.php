@@ -72,6 +72,7 @@ declare(strict_types=1);
 <?php if (count($data['columns']) > 0) : ?>
 <section class="panel" aria-labelledby="<?= $this->id('i', 'emptied') ?>">
 <h2 id="<?= $this->id('i', 'emptied') ?>"><?= $this->t('import.report.columns') ?></h2>
+<div class="table-scroll">
 <table class="report-table">
 <caption class="visually-hidden"><?= $this->t('import.report.caption') ?></caption>
 <thead>
@@ -83,6 +84,7 @@ declare(strict_types=1);
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 <p class="help"><?= $this->t('import.report.rows_help') ?></p>
 </section>
 <?php endif; ?>

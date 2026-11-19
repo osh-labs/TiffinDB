@@ -1,0 +1,12 @@
+{
+    "api": 1,
+    "id": "csv",
+    "kind": "import",
+    "name": "CSV",
+    "version": "1.0.0",
+    "class": "TiffinDB\\Plugin\\Import\\Csv\\CsvImporter",
+    "licence": "AGPL-3.0-or-later",
+    "extensions": ["csv", "tsv", "txt"],
+    "requires_extensions": [],
+    "description": "Reads comma-separated and other delimited text files in UTF-8, UTF-16, or Windows Latin 1."
+}

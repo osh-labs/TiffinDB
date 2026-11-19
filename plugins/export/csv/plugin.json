@@ -1,0 +1,14 @@
+{
+    "api": 1,
+    "id": "csv",
+    "kind": "export",
+    "name": "CSV",
+    "version": "1.0.0",
+    "class": "TiffinDB\\Plugin\\Export\\Csv\\CsvExporter",
+    "licence": "AGPL-3.0-or-later",
+    "extensions": ["csv"],
+    "media_type": "text/csv",
+    "scopes": ["table"],
+    "requires_extensions": [],
+    "description": "Writes one table as a comma-separated text file in UTF-8."
+}

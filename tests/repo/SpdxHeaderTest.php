@@ -53,6 +53,7 @@ final class SpdxHeaderTest extends TestCase
     public const EXEMPTIONS = [
         ['path', 'composer.json', 'JSON has no comments; the licence is in its license field (T-REPO-2).'],
         ['path', 'docs/design/model-ui/canvas-source/canvas.json', 'JSON has no comments; design canvas data.'],
+        ['glob', 'plugins/*/*/plugin.json', 'JSON has no comments and a plugin manifest allows no other members; the licence is in its licence member (M3 spec section 4.1).'],
         ['name', '*.woff2', 'Binary third-party font; covered by the LICENSE.txt beside it and docs/dependencies.md.'],
         ['glob', 'public/assets/fonts/*/LICENSE.txt', 'Third-party licence text, reproduced verbatim.'],
         ['path', 'LICENSE', 'Canonical licence text; never edited.'],
@@ -235,6 +236,7 @@ final class SpdxHeaderTest extends TestCase
         self::assertSame([
             'path:composer.json',
             'path:docs/design/model-ui/canvas-source/canvas.json',
+            'glob:plugins/*/*/plugin.json',
             'name:*.woff2',
             'glob:public/assets/fonts/*/LICENSE.txt',
             'path:LICENSE',

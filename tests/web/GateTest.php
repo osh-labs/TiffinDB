@@ -213,6 +213,107 @@ final class GateTest extends TestCase
         self::assertHandled($response);
     }
 
+    // ------------------------------------------------ Origin without Sec-Fetch-Site (T-CF-1)
+
+    /** @return array<string, array{array<string, string>, string, bool}> */
+    public static function origins(): array
+    {
+        $http = ['HTTP_HOST' => 'example.test'];
+        $https = ['HTTP_HOST' => 'example.test', 'HTTPS' => 'on'];
+
+        return [
+            'same origin' => [$http, 'http://example.test', true],
+            'same origin, other case' => [$http, 'HTTP://Example.TEST', true],
+            'default port in Origin' => [$http, 'http://example.test:80', true],
+            'default port in Host' => [['HTTP_HOST' => 'example.test:80'], 'http://example.test', true],
+            'https same origin' => [$https, 'https://example.test', true],
+            'https default port in Origin' => [$https, 'https://example.test:443', true],
+            'https default port in Host' => [['HTTP_HOST' => 'example.test:443', 'HTTPS' => 'on'], 'https://example.test', true],
+            'other port on both' => [['HTTP_HOST' => 'example.test:8728'], 'http://example.test:8728', true],
+            'IPv6 host' => [['HTTP_HOST' => '[2001:db8::1]:8080'], 'http://[2001:db8::1]:8080', true],
+            'foreign host' => [$http, 'http://attacker.example', false],
+            'sibling subdomain' => [$http, 'http://sub.example.test', false],
+            'host as a prefix' => [$http, 'http://example.test.attacker.example', false],
+            'null' => [$http, 'null', false],
+            'empty' => [$http, '', false],
+            'scheme differs (http page, https origin)' => [$http, 'https://example.test', false],
+            'scheme differs (https page, http origin)' => [$https, 'http://example.test', false],
+            'port differs' => [$http, 'http://example.test:8080', false],
+            'port missing from Origin' => [['HTTP_HOST' => 'example.test:8728'], 'http://example.test', false],
+            'other scheme default port' => [$http, 'http://example.test:443', false],
+            'path after origin' => [$http, 'http://example.test/', false],
+            'no Host' => [[], 'http://example.test', false],
+        ];
+    }
+
+    /** @param array<string, string> $server */
+    #[DataProvider('origins')]
+    public function testPostOriginIsCheckedWhenSecFetchSiteIsAbsent(array $server, string $origin, bool $allowed): void
+    {
+        $services = self::member();
+        [$response] = self::send($services, 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server + ['HTTP_ORIGIN' => $origin]);
+
+        if ($allowed) {
+            self::assertHandled($response, 'POST');
+        } else {
+            self::assertCsrfRefused($response);
+        }
+    }
+
+    public function testForeignOriginIsRefusedOnAnonymousFormsToo(): void
+    {
+        foreach ([[new FakeServices(), '/sign-in'], [new FakeServices(InstallState::NeedsAdmin), '/setup']] as [$services, $uri]) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://attacker.example'];
+            [$response] = self::send($services, 'POST', $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON], $server);
+            self::assertCsrfRefused($response);
+            [$response] = self::send($services, 'POST', $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON], ['HTTP_ORIGIN' => 'http://example.test'] + $server);
+            self::assertHandled($response, 'POST');
+        }
+    }
+
+    public function testMatchingOriginStillNeedsTheCsrfToken(): void
+    {
+        $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://example.test'];
+        [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => 'wrong'], self::sessionCookie(), $server);
+
+        self::assertCsrfRefused($response);
+    }
+
+    public function testPostWithNeitherHeaderGoesToTheCsrfCheck(): void
+    {
+        $server = ['HTTP_HOST' => 'example.test'];
+        [$handled] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+        [$refused] = self::send(self::member(), 'POST', '/projects', ['_csrf' => 'wrong'], self::sessionCookie(), $server);
+
+        self::assertHandled($handled, 'POST');
+        self::assertCsrfRefused($refused);
+    }
+
+    /** With Sec-Fetch-Site present the M1 rules apply and Origin is not consulted. */
+    public function testOriginIsIgnoredWhenSecFetchSiteIsPresent(): void
+    {
+        foreach (['same-origin', 'none'] as $site) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://attacker.example', 'HTTP_SEC_FETCH_SITE' => $site];
+            [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+            self::assertHandled($response, 'POST');
+        }
+        foreach (['cross-site', 'same-site'] as $site) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://example.test', 'HTTP_SEC_FETCH_SITE' => $site];
+            [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+            self::assertErrorPage($response, 403, 'You cannot do that here');
+        }
+    }
+
+    public function testGetAndHeadNeverCheckTheOrigin(): void
+    {
+        foreach (['GET', 'HEAD'] as $method) {
+            foreach (['http://attacker.example', 'null', ''] as $origin) {
+                [$response] = self::send(self::member(), $method, '/projects', [], self::sessionCookie(), ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => $origin]);
+                self::assertSame(200, $response->status, "{$method} {$origin}");
+            }
+        }
+    }
+
     // ------------------------------------------------ step 5
 
     /** @return array<string, array{InstallState}> */

@@ -271,6 +271,36 @@ final class RequestTest extends TestCase
     }
 
     /** @return array<string, array{mixed, string|null}> */
+    public static function originCases(): array
+    {
+        $longest = 'https://' . str_repeat('a', Request::MAX_ORIGIN - 8);
+
+        return [
+            'absent' => [null, null],
+            'origin' => ['https://example.test', 'https://example.test'],
+            'with port' => ['http://example.test:8728', 'http://example.test:8728'],
+            'null' => ['null', 'null'],
+            'empty is kept' => ['', ''],
+            'space is printable' => ['http://a b', 'http://a b'],
+            'longest' => [$longest, $longest],
+            'too long' => [$longest . 'a', null],
+            'newline' => ["https://example.test\n", null],
+            'tab' => ["https://example.test\t", null],
+            'NUL' => ["https://example.test\0", null],
+            'DEL' => ["https://example.test\x7F", null],
+            'non-ASCII' => ["https://\xC3\xA9.example", null],
+            'not a string' => [['https://example.test'], null],
+        ];
+    }
+
+    #[DataProvider('originCases')]
+    public function testOrigin(mixed $value, ?string $expected): void
+    {
+        $server = $value === null ? [] : ['HTTP_ORIGIN' => $value];
+        self::assertSame($expected, self::globals($server)->origin);
+    }
+
+    /** @return array<string, array{mixed, string|null}> */
     public static function hostCases(): array
     {
         return [
@@ -407,6 +437,8 @@ final class RequestTest extends TestCase
             'port zero' => [['serverPort' => 0]],
             'port too large' => [['serverPort' => 65536]],
             'client address too long' => [['clientAddress' => str_repeat('a', 65)]],
+            'origin with a newline' => [['origin' => "https://example.test\n"]],
+            'origin too long' => [['origin' => str_repeat('a', Request::MAX_ORIGIN + 1)]],
         ];
     }
 
@@ -426,5 +458,11 @@ final class RequestTest extends TestCase
         self::assertSame('y', $request->cookie('tdb_csrf'));
         self::assertTrue($request->secure);
         self::assertSame('same-origin', $request->secFetchSite);
+    }
+
+    public function testConstructorAcceptsAnOrigin(): void
+    {
+        self::assertSame('https://example.test', (new Request('POST', '/', origin: 'https://example.test'))->origin);
+        self::assertNull((new Request('POST', '/'))->origin);
     }
 }

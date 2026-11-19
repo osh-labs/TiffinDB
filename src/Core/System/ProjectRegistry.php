@@ -120,6 +120,25 @@ final class ProjectRegistry
         return array_map(self::record(...), $rows);
     }
 
+    /**
+     * Projects still in state 'creating' whose creation time is before
+     * $before (a Timestamp string), by id: abandoned creations (P57,
+     * T-CF-4). Read-only; a caller that acts on a row checks it again with
+     * this method inside its own write() transaction.
+     *
+     * @return list<ProjectRecord>
+     */
+    public function abandoned(string $before): array
+    {
+        Timestamp::parse($before);
+        $rows = $this->system->db()->all(
+            'SELECT ' . self::COLUMNS . ' FROM projects WHERE state = ? AND created_at < ? ORDER BY id',
+            [ProjectRecord::STATE_CREATING, $before],
+        );
+
+        return array_map(self::record(...), $rows);
+    }
+
     /** @param array<string, mixed> $row */
     private static function record(array $row): ProjectRecord
     {

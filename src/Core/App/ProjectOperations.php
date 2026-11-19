@@ -20,7 +20,6 @@ use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Schema\TableDef;
 use TiffinDB\Core\Storage\Database;
-use TiffinDB\Core\Storage\ErrorTrap;
 use TiffinDB\Core\Storage\Fs;
 use TiffinDB\Core\Storage\Snapshots;
 use TiffinDB\Core\Storage\Timestamp;
@@ -100,12 +99,12 @@ final class ProjectOperations
         try {
             $folder = $this->c->opener->folder($project->key);
             $projects = dirname($folder);
-            if (!is_dir($projects)) {
+            if (!Fs::isDir($projects)) {
                 try {
                     Fs::makeDir($projects);
                 } catch (\RuntimeException $error) {
                     // Another request may have made it at the same moment.
-                    if (!is_dir($projects)) {
+                    if (!Fs::isDir($projects)) {
                         throw $error;
                     }
                 }
@@ -285,36 +284,32 @@ final class ProjectOperations
     }
 
     /**
-     * P57: every `creating` row older than an hour is removed; its folder
-     * too when it holds nothing but what a creation makes (empty
-     * `attachments/` and `snapshots/`, `project.tiffin` and its `-wal` and
-     * `-shm`). A folder holding anything else is left in place, and a line
-     * naming the project key goes to the server error log.
+     * Step 0 of create (P57, T-CF-4): every `creating` row older than an
+     * hour is removed; its folder too when it holds nothing but what a
+     * creation makes (empty `attachments/` and `snapshots/`, `project.tiffin`
+     * and its `-wal` and `-shm`). A folder holding anything else is left in
+     * place, and a line naming the project key goes to the server error log.
+     * File-system access goes through Fs and registry access through
+     * ProjectRegistry (P78); neither follows symbolic links.
      */
     private function clearAbandoned(): void
     {
         $cutoff = Timestamp::format($this->c->clock->now()->modify('-' . self::ABANDONED_SECONDS . ' seconds'));
-        $rows = $this->c->db()->all(
-            'SELECT id, key FROM projects WHERE state = ? AND created_at < ? ORDER BY id',
-            [ProjectRecord::STATE_CREATING, $cutoff],
-        );
-        foreach ($rows as $row) {
-            $key = (string) $row['key'];
-            $removed = $this->c->db()->write(function () use ($row, $cutoff): bool {
+        foreach ($this->c->registry->abandoned($cutoff) as $project) {
+            $removed = $this->c->db()->write(function () use ($project, $cutoff): bool {
                 // Checked again: the row must still be an old creation.
-                $still = $this->c->db()->value(
-                    'SELECT 1 FROM projects WHERE id = ? AND state = ? AND created_at < ?',
-                    [(int) $row['id'], ProjectRecord::STATE_CREATING, $cutoff],
-                );
-                if ($still === null) {
-                    return false;
-                }
-                $this->c->registry->remove((int) $row['id']);
+                foreach ($this->c->registry->abandoned($cutoff) as $still) {
+                    if ($still->id === $project->id) {
+                        $this->c->registry->remove($project->id);
 
-                return true;
+                        return true;
+                    }
+                }
+
+                return false;
             });
             if ($removed) {
-                $this->removeAbandonedFolder($key);
+                $this->removeAbandonedFolder($project->key);
             }
         }
     }
@@ -322,26 +317,23 @@ final class ProjectOperations
     private function removeAbandonedFolder(string $key): void
     {
         $folder = $this->c->opener->folder($key);
-        if (!file_exists($folder) && !is_link($folder)) {
-            return;
-        }
         $file = ProjectOpener::FILE;
         $dirs = [self::ATTACHMENTS, Snapshots::FOLDER];
         $files = [$file, $file . '-wal', $file . '-shm'];
-        $clean = !is_link($folder) && is_dir($folder);
-        $entries = $clean ? self::entries($folder) : null;
-        if ($entries === null) {
-            $clean = false;
-        } else {
-            foreach ($entries as $entry) {
-                $path = $folder . '/' . $entry;
-                if (in_array($entry, $dirs, true)) {
-                    $clean = $clean && !is_link($path) && is_dir($path) && self::entries($path) === [];
-                } elseif (in_array($entry, $files, true)) {
-                    $clean = $clean && !is_link($path) && is_file($path);
-                } else {
-                    $clean = false;
-                }
+        if (!Fs::exists($folder)) {
+            return;
+        }
+        // Fs::isDir is false for a symbolic link, so a linked folder is never entered.
+        $entries = Fs::isDir($folder) ? self::entries($folder) : null;
+        $clean = $entries !== null;
+        foreach ($entries ?? [] as $entry) {
+            $path = $folder . '/' . $entry;
+            if (in_array($entry, $dirs, true)) {
+                $clean = $clean && Fs::isDir($path) && self::entries($path) === [];
+            } elseif (in_array($entry, $files, true)) {
+                $clean = $clean && Fs::isFile($path);
+            } else {
+                $clean = false;
             }
         }
         if (!$clean) {
@@ -354,7 +346,7 @@ final class ProjectOperations
                 Fs::remove($folder . '/' . $name);
             }
             foreach ($dirs as $name) {
-                if (is_dir($folder . '/' . $name)) {
+                if (Fs::isDir($folder . '/' . $name)) {
                     Fs::removeDir($folder . '/' . $name);
                 }
             }
@@ -365,24 +357,18 @@ final class ProjectOperations
     }
 
     /**
-     * The names in a directory, without `.` and `..`; null when it cannot
-     * be read. (Fs has no listing helper yet; this reads under a local
-     * error handler as Fs does.)
+     * The names in a directory (Fs::entries); null when it cannot be listed
+     * (missing, a symbolic link, not a directory, or unreadable).
      *
      * @return list<string>|null
      */
     private static function entries(string $path): ?array
     {
         try {
-            $entries = ErrorTrap::run(static fn (): array|false => scandir($path), 'Cannot read the directory.');
+            return Fs::entries($path);
         } catch (\RuntimeException) {
             return null;
         }
-        if ($entries === false) {
-            return null;
-        }
-
-        return array_values(array_diff($entries, ['.', '..']));
     }
 
     /** @param list<Problem> $problems */

@@ -13,12 +13,19 @@ namespace TiffinDB\Core\Storage;
  * touches the file system (M1 spec section 4.3). Directories are made with
  * mode 0750, files with 0640 (ADR 0011 decision 1). Calls that can warn run
  * under ErrorTrap, never with `@`. No method accepts a path containing a
- * NUL byte.
+ * NUL byte. The listing and stat helpers (entries, exists, isFile, isDir,
+ * size) never follow a symbolic link (T-CF-4).
  */
 final class Fs
 {
     public const DIR_MODE = 0750;
     public const FILE_MODE = 0640;
+
+    /** File-type bits of an lstat() mode (POSIX S_IFMT and its values). */
+    private const TYPE_MASK = 0170000;
+    private const TYPE_FILE = 0100000;
+    private const TYPE_DIR = 0040000;
+    private const TYPE_LINK = 0120000;
 
     private function __construct()
     {
@@ -127,6 +134,76 @@ final class Fs
         }
     }
 
+    /**
+     * The names in a directory, sorted by byte value, without `.` and `..`
+     * (T-CF-4). Names of symbolic links inside are listed but not followed.
+     * Throws \RuntimeException when nothing is at the path, when the path
+     * is a symbolic link (never followed, whatever it points to), when it
+     * is not a directory, or when it cannot be read.
+     *
+     * @return list<string>
+     */
+    public static function entries(string $path): array
+    {
+        self::refuseNul($path);
+        $stat = self::lstat($path);
+        if ($stat === null) {
+            throw new \RuntimeException('Cannot list the directory: nothing is there.');
+        }
+        if (self::type($stat) === self::TYPE_LINK) {
+            throw new \RuntimeException('Cannot list the directory: the path is a symbolic link.');
+        }
+        if (self::type($stat) !== self::TYPE_DIR) {
+            throw new \RuntimeException('Cannot list the directory: the path is not a directory.');
+        }
+        $entries = ErrorTrap::run(static fn (): array|false => scandir($path, SCANDIR_SORT_NONE), 'Cannot read the directory.');
+        if ($entries === false) {
+            throw new \RuntimeException('Cannot read the directory.');
+        }
+        $names = array_values(array_diff($entries, ['.', '..']));
+        sort($names, SORT_STRING);
+
+        return $names;
+    }
+
+    /** Whether anything is at the path, a dangling symbolic link included (never followed); false for a NUL byte. */
+    public static function exists(string $path): bool
+    {
+        return self::lstatOrNull($path) !== null;
+    }
+
+    /** Whether a regular file is at the path; false for a symbolic link (never followed), a NUL byte, or nothing. */
+    public static function isFile(string $path): bool
+    {
+        $stat = self::lstatOrNull($path);
+
+        return $stat !== null && self::type($stat) === self::TYPE_FILE;
+    }
+
+    /** Whether a directory is at the path; false for a symbolic link (never followed), a NUL byte, or nothing. */
+    public static function isDir(string $path): bool
+    {
+        $stat = self::lstatOrNull($path);
+
+        return $stat !== null && self::type($stat) === self::TYPE_DIR;
+    }
+
+    /**
+     * The size in bytes of the regular file at the path. Throws
+     * \RuntimeException when nothing is there or the path is anything but a
+     * regular file, a symbolic link included (never followed).
+     */
+    public static function size(string $path): int
+    {
+        self::refuseNul($path);
+        $stat = self::lstat($path);
+        if ($stat === null || self::type($stat) !== self::TYPE_FILE) {
+            throw new \RuntimeException('Cannot read the size: the path is not a regular file.');
+        }
+
+        return (int) $stat['size'];
+    }
+
     public static function isWritableDir(string $path): bool
     {
         return !str_contains($path, "\0") && is_dir($path) && is_writable($path);
@@ -186,6 +263,45 @@ final class Fs
         }
 
         return str_starts_with($resolvedPath, rtrim($resolvedRoot, '/') . '/');
+    }
+
+    /**
+     * lstat() of the path, fresh (the stat cache is cleared for it), or
+     * null when nothing is there, not even a dangling symbolic link.
+     *
+     * @return array<array-key, int>|null
+     */
+    private static function lstat(string $path): ?array
+    {
+        clearstatcache(true, $path);
+        if (!file_exists($path) && !is_link($path)) {
+            return null;
+        }
+        $stat = ErrorTrap::run(static fn (): array|false => lstat($path), 'Cannot read the file status.');
+        if ($stat === false) {
+            throw new \RuntimeException('Cannot read the file status.');
+        }
+
+        return $stat;
+    }
+
+    /** @return array<array-key, int>|null */
+    private static function lstatOrNull(string $path): ?array
+    {
+        if ($path === '' || str_contains($path, "\0")) {
+            return null;
+        }
+        try {
+            return self::lstat($path);
+        } catch (\RuntimeException) {
+            return null;
+        }
+    }
+
+    /** @param array<array-key, int> $stat */
+    private static function type(array $stat): int
+    {
+        return $stat['mode'] & self::TYPE_MASK;
     }
 
     private static function refuseNul(string $path): void

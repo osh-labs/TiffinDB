@@ -40,6 +40,12 @@ final class CsvReader
     public const CHUNK_BYTES = 65536;
     /** One record at most (IoLimits::MAX_CSV_RECORD_BYTES; this namespace uses only the contract, so the figure is repeated and a test keeps the two equal). */
     public const MAX_RECORD_BYTES = 1048576;
+    /**
+     * The most decoded bytes a checkpoint may skip: one decoded piece is at
+     * most three times CHUNK_BYTES (Windows-1252 and replaced bytes grow to
+     * three bytes each) plus a few held bytes.
+     */
+    public const MAX_SKIP = 4 * self::CHUNK_BYTES;
 
     private const START = 0;
     private const PLAIN = 1;
@@ -93,8 +99,8 @@ final class CsvReader
             $skip = 0;
         } else {
             [$start, $skip] = $from;
-            if ($start < 0 || $skip < 0) {
-                throw new \InvalidArgumentException('A checkpoint is two offsets.');
+            if (!is_int($start) || !is_int($skip) || $start < 0 || $skip < 0 || $skip > self::MAX_SKIP) {
+                throw new \InvalidArgumentException('A checkpoint is an input offset and a bounded skip.');
             }
         }
         if (fseek($handle, $start) !== 0) {

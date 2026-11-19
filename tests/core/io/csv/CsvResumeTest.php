@@ -90,12 +90,114 @@ final class CsvResumeTest extends TestCase
         self::assertSame(iterator_to_array((new CsvFile($path, new CsvDialect('utf-8', ',')))->rows(2500, 3), false), iterator_to_array($first->rows(2500, 3), false));
     }
 
+    /**
+     * Review M3-WP4 item 1: a cache with a valid key but offsets that are
+     * negative, at or past the end of the file, not integers, or with a
+     * skip past one decoded piece is dropped, so reads stay correct and
+     * bounded (an offset at the end of the file would otherwise end the
+     * table early, item 2).
+     */
+    public function testBadOffsetsUnderAValidKeyAreDropped(): void
+    {
+        $cacheDir = $this->dir() . '/temp';
+        mkdir($cacheDir);
+        $path = $this->file(self::text());
+        $dialect = new CsvDialect('utf-8', ',');
+        $expected = [];
+        foreach ([2500, 4100, 6000] as $from) {
+            $expected[$from] = iterator_to_array((new CsvFile($path, $dialect))->rows($from, 3), false);
+        }
+        $key = $this->validKey($path, $dialect, $cacheDir);
+        $size = (int) filesize($path);
+        $cases = [
+            'negative offset' => [-5, 0], 'negative skip' => [0, -1], 'offset at the end' => [$size, 0], 'offset past the end' => [$size + 1, 0],
+            'float offset' => [1.5, 0], 'string offset' => ['0', 0], 'nested offset' => [[1], 0], 'skip just past a piece' => [0, CsvReader::MAX_SKIP + 1],
+            'huge skip' => [0, PHP_INT_MAX], 'three numbers' => [0, 0, 0], 'one number' => [0],
+        ];
+        foreach ($cases as $name => $offsets) {
+            $this->plant($cacheDir, $key, ['2000' => $offsets, '4000' => $offsets, '6000' => $offsets]);
+            $started = hrtime(true);
+            foreach ($expected as $from => $rows) {
+                self::assertSame($rows, iterator_to_array((new CsvFile($path, $dialect, $cacheDir))->rows($from, 3), false), $name . ', from ' . $from);
+            }
+            self::assertLessThan(5.0, (hrtime(true) - $started) / 1e9, $name);
+        }
+    }
+
+    /** The reader itself refuses a checkpoint it could not use safely. */
+    public function testReaderRefusesBadCheckpoints(): void
+    {
+        $path = $this->file("a\nb\n");
+        foreach ([[-1, 0], [0, -1], [0, CsvReader::MAX_SKIP + 1], [0, PHP_INT_MAX]] as $from) {
+            try {
+                new CsvReader($path, new CsvDialect('utf-8', ','), from: $from);
+                self::fail('Accepted ' . json_encode($from));
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        $reader = new CsvReader($path, new CsvDialect('utf-8', ','), from: [2, 0]);
+        self::assertSame(['b'], $reader->next());
+    }
+
+    /**
+     * Review M3-WP4 item 2: the key covers the temporary folder and the
+     * start of the file, so a cache copied from another job, or left from
+     * a file of the same size and time but other bytes, is not used.
+     */
+    public function testKeyCoversFolderAndFileStart(): void
+    {
+        $dialect = new CsvDialect('utf-8', ',');
+        $folderA = $this->dir() . '/a';
+        $folderB = $this->dir() . '/b';
+        mkdir($folderA);
+        mkdir($folderB);
+        $path = $this->file(self::text());
+        $key = $this->validKey($path, $dialect, $folderA);
+        $expected = iterator_to_array((new CsvFile($path, $dialect))->rows(2500, 3), false);
+        // Mid-record offsets that would give wrong rows if used.
+        $wrong = ['2000' => [7, 3]];
+        $this->plant($folderA, $key, $wrong);
+        self::assertNotSame($expected, iterator_to_array((new CsvFile($path, $dialect, $folderA))->rows(2500, 3), false), 'The planted offsets are used under their own key.');
+
+        copy($folderA . '/' . CsvFile::CACHE_FILE, $folderB . '/' . CsvFile::CACHE_FILE);
+        self::assertSame($expected, iterator_to_array((new CsvFile($path, $dialect, $folderB))->rows(2500, 3), false), 'Another job folder.');
+
+        $time = (int) filemtime($path);
+        $text = (string) file_get_contents($path);
+        $changed = 'X' . substr($text, 1);
+        file_put_contents($path, $changed);
+        touch($path, $time);
+        clearstatcache();
+        self::assertSame([(int) strlen($text), $time], [(int) filesize($path), (int) filemtime($path)]);
+        $expected = iterator_to_array((new CsvFile($path, $dialect))->rows(2500, 3), false);
+        self::assertSame($expected, iterator_to_array((new CsvFile($path, $dialect, $folderA))->rows(2500, 3), false), 'Same size and time, other first bytes.');
+    }
+
     public function testAtMostOneChunkPerCall(): void
     {
         $file = new CsvFile($this->file(self::text()), new CsvDialect('utf-8', ','));
         self::assertCount(CsvFile::MAX_ROWS_PER_CALL, iterator_to_array($file->rows(0, 5000), false));
         self::assertSame([], iterator_to_array($file->rows(-1, 5), false));
         self::assertSame([], iterator_to_array($file->rows(0, 0), false));
+    }
+
+    /** The key CsvFile writes for this file, dialect, and folder (read back from a cache it wrote). */
+    private function validKey(string $path, CsvDialect $dialect, string $folder): string
+    {
+        iterator_to_array((new CsvFile($path, $dialect, $folder))->rows(0, 2000), false);
+        iterator_to_array((new CsvFile($path, $dialect, $folder))->rows(2000, 2000), false);
+        $cache = json_decode((string) file_get_contents($folder . '/' . CsvFile::CACHE_FILE), true);
+        self::assertIsArray($cache);
+        self::assertArrayHasKey('2000', $cache['at']);
+
+        return (string) $cache['key'];
+    }
+
+    /** @param array<string, mixed> $at */
+    private function plant(string $folder, string $key, array $at): void
+    {
+        file_put_contents($folder . '/' . CsvFile::CACHE_FILE, json_encode(['key' => $key, 'at' => $at], JSON_THROW_ON_ERROR));
     }
 
     private static function text(): string

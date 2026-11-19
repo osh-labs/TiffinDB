@@ -48,6 +48,8 @@ final class CsvFile
     public const CHECKPOINT_LIMIT = 102000;
     public const CACHE_FILE = 'offsets.json';
     public const CACHE_MAX_BYTES = 65536;
+    /** Bytes of the file's start that the cache key hashes. */
+    public const KEY_HEAD_BYTES = 4096;
 
     /** Generated headings are "Column 1", "Column 2", ... */
     public const COLUMN = 'Column ';
@@ -83,7 +85,8 @@ final class CsvFile
             }
             $columns = [];
             foreach ($first as $index => $heading) {
-                $heading = Charset::cut(Charset::scrub($heading), self::MAX_HEADING_BYTES);
+                // Cut first so that only a bounded piece is scrubbed; scrubbing can lengthen it, so cut again.
+                $heading = Charset::cut(Charset::scrub(substr($heading, 0, self::MAX_HEADING_BYTES)), self::MAX_HEADING_BYTES);
                 $columns[] = trim($heading, " \t\n") === '' ? self::COLUMN . ($index + 1) : $heading;
             }
         } else {
@@ -173,14 +176,28 @@ final class CsvFile
         return new CsvReader($this->path, $this->dialect, $maxFields, $this->maxRecordBytes, $from, true);
     }
 
-    /** The identity of this file and dialect, so a cache made for another one is never used. */
+    /**
+     * The identity of this file, dialect, and temporary folder, so a cache
+     * made for another one is never used: character set, delimiter, size,
+     * modification time, record limit, the temporary folder's real path
+     * (one per import job), and a hash of the first KEY_HEAD_BYTES bytes.
+     */
     private function cacheKey(): string
     {
         clearstatcache(true, $this->path);
         $size = filesize($this->path);
         $time = filemtime($this->path);
+        try {
+            $head = CsvReader::quietly(fn () => file_get_contents($this->path, false, null, 0, self::KEY_HEAD_BYTES), 'The file could not be read.');
+        } catch (\RuntimeException) {
+            $head = false;
+        }
+        $folder = $this->tempFolder === null ? '' : realpath($this->tempFolder);
 
-        return hash('sha256', json_encode([$this->dialect->charset, $this->dialect->delimiter, $size, $time, $this->maxRecordBytes], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode([
+            $this->dialect->charset, $this->dialect->delimiter, $size, $time, $this->maxRecordBytes, $folder,
+            is_string($head) ? hash('sha256', $head) : '',
+        ], JSON_THROW_ON_ERROR));
     }
 
     private function cachePath(): ?string
@@ -222,7 +239,9 @@ final class CsvFile
                 continue;
             }
             [$source, $skip] = $offsets;
-            if (!is_int($source) || !is_int($skip) || $source < 0 || $source > $size || $skip < 0 || $skip > $this->maxRecordBytes + 4 * CsvReader::CHUNK_BYTES) {
+            // A record starts before the end of the file (an offset at or past it would end the
+            // table early), and a skip never spans more than one decoded piece.
+            if (!is_int($source) || !is_int($skip) || $source < 0 || $source >= $size || $skip < 0 || $skip > CsvReader::MAX_SKIP) {
                 continue;
             }
             $cache[$ordinal] = $offsets;

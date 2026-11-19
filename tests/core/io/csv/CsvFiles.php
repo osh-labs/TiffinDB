@@ -50,4 +50,22 @@ trait CsvFiles
 
         return $out;
     }
+
+    /** Runs PHP code (after the autoloader) in a subprocess with the PCRE JIT off; returns its output. */
+    public static function runWithoutJit(string $code): string
+    {
+        $autoload = dirname(__DIR__, 4) . '/vendor/autoload.php';
+        $process = proc_open(
+            [PHP_BINARY, '-d', 'pcre.jit=0', '-d', 'display_errors=1', '-d', 'memory_limit=256M', '-r', 'require ' . var_export($autoload, true) . '; ' . $code],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+        $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        return trim((string) $output);
+    }
 }

@@ -230,3 +230,44 @@ Deviation numbers are per milestone: M2 also has a D-15 to D-19 (`docs/specs/M2-
 | WP11 | `tests/web/EndToEndTest.php`, `ScreenStructureTest.php` (visits every M3 GET route and removes WP3's exclusion list), `KeyboardStructureTest.php` (exists since M2-WP9: extended with M3 test methods, the M2 methods unchanged); plus part 1 section 16 | T-E2E-8 to T-E2E-10, T-SCR-3, T-KBD-2 pass; K-2 and V-15 to V-19 run and reported |
 
 WP9 and WP10 must not change `app.css`, `layout.php`, shared partials, `routes.php`, or another package's strings; missing pieces are reported to the orchestrator and routed to a follow-up on WP3's files (M1 and M2 rule). WP9 and WP10 run in the same wave and share no file except `tests/web/TemplateRulesTest.php`, where each changes only its own pending constant's lines (P141; the orchestrator merges WP9 and WP10 one at a time, and the two edits touch different lines). `RecordListController.php` and `SearchController.php` are WP9's only.
+
+## 12. As-built notes
+
+Recorded at the M3 exit audit (M3-X, 2026-11-19). Where the merged code differs from the text above, the code and the provisional decisions in `docs/build/ledger.md` section 4 (P110 to P145) govern. Part 1 section 19 holds the core notes and the suite totals.
+
+### 12.1 What was built
+
+Every route of section 3, the upload, download and oversized-POST handling of section 2, the shell changes of section 4, the partials and templates of section 5, the strings of section 6, `import-continue.js`, and the tests of section 10.1 (T-WEB-40 to T-WEB-47, T-SCR-3, T-KBD-2, T-E2E-8 to T-E2E-10) are merged. Web test methods at the audit: `ImportScreenTest` 27, `ExportScreenTest` 14, `ArchiveScreenTest` 9, `PluginScreenTest` 8, `EndToEndTest` 10 (M2 and M3 together). Changes from the text above:
+
+- Export (section 2.2, P123): the file is streamed in the response to the export POST; there is no download URL and no GET that serves a file. `ExportController` sends `Content-Disposition` with an ASCII `filename` fallback (each non-ASCII byte replaced by `_`) and a `filename*` UTF-8 name; after the body is sent it calls `ExportOperations::finish`, which checks that the job belongs to the actor and removes the job folder; `ignore_user_abort` keeps that clean-up running; stale export folders are swept after one hour. `docs/design/m3/export.md` is corrected to match.
+- Notices (as built, WP10): `notice.archive_imported`, `notice.archive_imported_changes` (one notice; the change list is part of the same sentence pair), `notice.plugin_enabled`, `notice.plugin_disabled`. The name-taken problem on the archive form is `problem.project_name.taken`. `docs/design/m3/archive.md` and `plugins.md` are corrected to match.
+- A failed commit answers the save POST with a 303 to the job page, which shows the failure page (X-11, fixed in WP11b; T-E2E-9 asserts it).
+- CSV export writes checkbox values as `yes` and `no` (P145).
+- The project size line on the export page (`export.archive.size`) was not built; open gap, not needed for the exit criteria.
+
+### 12.2 Keyboard run at the audit (exit criterion)
+
+Re-run independently by the auditor on the PHP built-in server with a scratch installation built from `IoFixture::project` (data folder in the scratchpad, outside `public/`), as the synthetic Admin, headless Chromium, key presses only after the first load of `/sign-in`: signed in (typing, Tab, Enter), opened "Home Inventory" by Tab and Enter, Tab to the sidebar's "Import a file", Enter; Tab to the file input; the file (`inventory-sample.csv`, 52 rows, from `IoFixture::sampleCsv`) was set with Playwright's `setInputFiles` on the focused input, the one non-keyboard step (a native file dialog is not scriptable headless); Tab to Continue, Enter; on the review page the table name was replaced by typing, "Bring in notes" toggled with Space, the type of "condition" changed with the arrow keys, Tab to "Import 52 rows", Enter; the preparing step advanced by the script; on the save page there was no `data-auto-continue` form and after 4 seconds the page and its enabled "Save the rows" button were unchanged (never auto-submitted); Tab to "Save the rows", Enter; the report showed 52 records added to the new table. Result: PASS. The WP11 run (K-2 steps 5 to 7: without script, opening the table, the export download) is recorded in the ledger; the auditor also stepped a 4,500-row file through every Continue button with JavaScript off.
+
+### 12.3 Visual procedure (V-15 to V-19) at the audit
+
+72 automated screen states (review, step 1, reading and preparing progress without script, report, failure, export with each of CSV, XLSX and JSON chosen, archive import form, plugins list, plugin page) at 1360 px in the light, dark, high-contrast light and high-contrast dark themes, at 390 px light and at 320 px with the Largest text size, plus the archive name-taken page, the archive notice, the enable page, and a report with emptied values at 1360 and 320 px: no page-level sideways scroll, no text under 4.5:1 against its background, no control overflowing the viewport. The fixes of WP3c and WP9b held (24 px mapping checkboxes, unclipped type selects, the report table inside its scroll box at 320 px Largest).
+
+### 12.4 Deviations from `import.html`, ruled at the audit
+
+D-15 to D-21 hold as listed in section 10.3, with D-18 as built: the new-table name input has the id `f-tablename` (from `id('f', 'tablename')`), which the error summary links to. Accepted:
+
+| # | Mock-up | M3 | Reason |
+|---|---|---|---|
+| D-22 | Rows fact "52, ..." | "52 rows, plus a heading row" | Plain sentence; the heading row is said |
+| D-23 | "2 room names ..." | "2 names in "room" ..." | The column is named as the file names it |
+| D-24 | New table "Items" | Named after the file ("inventory-sample") | Section 6.4 of part 1; the fixture already has Items |
+| D-25 | Short type menus | Longer menus (proposed type, types every cell fits, text and long text, every other importable type, a link to every table with a text-like title) | Part 1 section 6.3 as built (WP1d) |
+| D-26 | No "Check again" | "Check again" button and help under the target radios | P137 |
+| D-27 | 24 px between the target fieldset and "Fields" | 20 px | Section rhythm of the shared stylesheet; cosmetic |
+| D-28 | Fields help 18 px with a 4 px margin | 16 px, no margin | The shared `.help` text size; cosmetic |
+| D-29 | Field-name inputs 295 px wide | About 155 to 168 px at 1360 px | The type select takes the width it needs; names up to 60 characters scroll inside the input |
+| D-30 | `purchased` proposed as Date with a warning for 3 unreadable values | Proposed as Text; Date is offered in the menu and choosing it shows the warning | Part 1 section 6.3 rule 4 proposes a date only when every cell reads as one |
+| - | Over-limit warning with a row figure | "The file has more than 50,000 rows. Only the first 50,000 will be imported." | Only the first extra row is read (part 1 section 6.2), so the true count is unknown |
+
+To fix (LOW, not blocking): the report table's "Rows" column (a list of row numbers) is right-aligned like the count column (WP3 stylesheet or WP9 template: align only the count column); "Check again" after switching from a new table to an existing table and back loses a typed table name and shows the proposed one again (X-12; WP8 `ImportOperations::recheck` keeps the stored name when the posted one is empty, or WP9 posts it).

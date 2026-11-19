@@ -1,6 +1,6 @@
 # M1 screen design: installer and requirement check
 
-Status: design for milestone M1 (undesigned screen, ui-design-plan section 6.2). Logic: `docs/specs/M1-foundation.md` section 10; controller: `docs/specs/M1-screens.md` section 3.2. Implemented by M1-WP9.
+Status: design for milestone M1 (undesigned screen, ui-design-plan section 6.2). Logic: `docs/specs/M1-foundation.md` section 10; controller: `docs/specs/M1-screens.md` section 3.2. Implemented by M1-WP9. Amended at the M3 exit audit: M3-WP0 added three warning-only rows (`dom`, `filter`, `libxml`) after `xmlreader` for the XLSX library (ADR 0016 decision 3, P111); without them TiffinDB installs and runs, and the XLSX plugins report themselves unavailable.
 
 ## 1. Purpose and flow
 
@@ -55,6 +55,9 @@ Check names and explanations (runtime keys, prefix `setup.check.`):
 | `sqlite` | `setup.check.sqlite` "SQLite database support" | ok `setup.check.sqlite.ok` "SQLite {version} is available."; `setup.check.sqlite.missing` "PHP's SQLite support (pdo_sqlite) is not turned on. Ask your host to turn it on."; `setup.check.sqlite.old` "SQLite {version} is too old. TiffinDB needs 3.35.5 or later." |
 | `zip` | `setup.check.zip` "Zip archives" | ok `setup.check.zip.ok` "Available. Needed to save and bring in whole projects."; failed `setup.check.zip.failed` "PHP's zip support is not turned on. Ask your host to turn it on." |
 | `xmlreader` | `setup.check.xmlreader` "Reading spreadsheet files" | ok `setup.check.xmlreader.ok` "Available. Needed to bring in XLSX spreadsheets."; failed `setup.check.xmlreader.failed` "PHP's XMLReader support is not turned on. Ask your host to turn it on." |
+| `dom` (M3, warning only) | `setup.check.dom` "XML documents" | ok `setup.check.dom.ok` "Available. Needed to bring in and save XLSX spreadsheets."; warning `setup.check.dom.warning` "PHP's DOM support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on." |
+| `filter` (M3, warning only) | `setup.check.filter` "Data filtering" | ok `setup.check.filter.ok` "Available. Needed to bring in and save XLSX spreadsheets."; warning `setup.check.filter.warning` "PHP's filter support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on." |
+| `libxml` (M3, warning only) | `setup.check.libxml` "XML library" | ok `setup.check.libxml.ok` "Available. Needed to bring in and save XLSX spreadsheets."; warning `setup.check.libxml.warning` "PHP's libxml support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on." |
 | `random` | `setup.check.random` "Secure random numbers" | ok `setup.check.random.ok` "Available."; failed `setup.check.random.failed` "PHP cannot make secure random numbers on this server. TiffinDB cannot run safely without them." |
 | `passwords` | `setup.check.passwords` "Password protection" | ok `setup.check.passwords.argon2id` "Passwords will be stored with Argon2id."; warning `setup.check.passwords.bcrypt` "Passwords will be stored with bcrypt. This is safe. Argon2id is better and is used where PHP offers it." |
 | `https` | `setup.check.https` "Secure connection (HTTPS)" | ok `setup.check.https.ok` "This page was loaded over HTTPS."; warning `setup.check.https.warning` "This page was not loaded over HTTPS, so passwords could be read by others on the network. Ask your host to turn on HTTPS, then open this page with https:// at the start." |

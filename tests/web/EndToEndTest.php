@@ -538,7 +538,7 @@ final class EndToEndTest extends TestCase
         self::assertSame(['Mower', 'Toaster'], $admin->texts('//main//table/tbody/tr/th'));
         self::assertSame(['$329.00', '$29.99'], $admin->texts('//main//table/tbody/tr/td'));
 
-        self::assertSame(2, self::userVersion($file), 'The file is at version 2.');
+        self::assertSame(3, self::userVersion($file), 'The file is at version 3.');
         $snapshots = self::snapshots($folder);
         self::assertCount(1, $snapshots, 'One format-upgrade snapshot.');
         self::assertMatchesRegularExpression('/^\d{8}T\d{6}Z-format-upgrade-[a-z2-7]{4}\.tiffin\z/', $snapshots[0]);

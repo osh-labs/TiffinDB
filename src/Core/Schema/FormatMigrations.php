@@ -18,7 +18,8 @@ use TiffinDB\Core\Storage\Snapshots;
  * `docs/formats/tiffin.md` section 11). STEPS maps a target version to the
  * statements that bring a file from the version before it: version 2
  * (M2) adds `_tiffin_forms` with exactly the statements of section 11.1
- * (T-FMT-1 compares them). Every statement run here comes from a
+ * (T-FMT-1 compares them), version 3 (M3) adds `_tiffin_import_log` with
+ * exactly those of section 11.2 (T-FMT-5). Every statement run here comes from a
  * constant of this class (M1 spec section 3.3): the steps run as
  * functions, and only the test seam supplies functions other than those
  * that run STEPS.
@@ -43,6 +44,28 @@ final class FormatMigrations
             'CREATE INDEX _tiffin_forms_table ON _tiffin_forms (table_key)',
             'CREATE UNIQUE INDEX _tiffin_forms_default ON _tiffin_forms (table_key) WHERE is_default = 1',
         ],
+        3 => [
+            'CREATE TABLE _tiffin_import_log (
+    key            TEXT PRIMARY KEY,
+    imported_at    TEXT NOT NULL,
+    imported_by    TEXT,
+    source         TEXT NOT NULL,
+    plugin         TEXT,
+    file_name      TEXT NOT NULL,
+    file_size      INTEGER NOT NULL,
+    file_sha256    TEXT NOT NULL,
+    table_key      TEXT,
+    new_table      INTEGER NOT NULL DEFAULT 0,
+    rows_read      INTEGER NOT NULL,
+    rows_imported  INTEGER NOT NULL,
+    rows_skipped   INTEGER NOT NULL,
+    values_emptied INTEGER NOT NULL,
+    links_added    INTEGER NOT NULL DEFAULT 0,
+    snapshot       TEXT,
+    report         TEXT NOT NULL DEFAULT \'{}\'
+) WITHOUT ROWID',
+            'CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at)',
+        ],
     ];
 
     /**
@@ -53,6 +76,7 @@ final class FormatMigrations
     public const VERSION_PRAGMAS = [
         1 => 'PRAGMA user_version = 1',
         2 => 'PRAGMA user_version = 2',
+        3 => 'PRAGMA user_version = 3',
     ];
 
     /** @var array<int, \Closure(Database): void> */

@@ -14,6 +14,8 @@ return [
     'projects.title' => 'Your projects',
     'projects.lead' => 'A project is one database: its tables, forms, and files.',
     'projects.new' => 'New project',
+    'projects.import_archive' => 'Import a project archive',
+    'projects.crumb' => 'Projects',
     'projects.fact.tables' => 'Tables',
     'projects.fact.records' => 'Records',
     'projects.fact.changed' => 'Last changed',

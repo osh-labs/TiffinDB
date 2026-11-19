@@ -36,10 +36,25 @@ final class MessageKeysTest extends TestCase
 
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {
-        $listed = self::specKeys();
+        // M1 spec section 12 and M2 spec section 8; the strings file test stays M1-only until M2-WP5.
+        $listed = [...self::specKeys(), ...self::m2Keys()];
         $used = self::coreKeys('src/Core');
         self::assertNotEmpty($used);
-        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from spec section 12.');
+        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12 and M2 spec section 8.');
+    }
+
+    /** @return list<string> keys listed in `docs/specs/M2-records.md` section 8 */
+    private static function m2Keys(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M2-records.md'));
+        $start = strpos($spec, "\n## 8. Message keys produced by the core");
+        $end = strpos($spec, "\n## 9.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', substr($spec, $start, $end - $start), $matches);
+        self::assertNotEmpty($matches[1]);
+
+        return $matches[1];
     }
 
     public function testTheOperationsProduceTheirKeys(): void

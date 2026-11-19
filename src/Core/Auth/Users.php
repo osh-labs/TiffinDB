@@ -209,6 +209,38 @@ final class Users
     }
 
     /**
+     * Writes the person's six user_settings columns (M2 spec section 7.3),
+     * creating the row when it is missing. Callers validate first and
+     * report problems with ValidationFailed; as a last line of defence a
+     * missing column or a value not in SETTINGS is refused with
+     * \InvalidArgumentException. Must run inside the caller's write().
+     *
+     * @param array<string, string|int> $settings column => value, every column of SETTINGS
+     */
+    public function saveSettings(int $id, array $settings): void
+    {
+        $this->system->requireTransaction();
+        $values = [];
+        foreach (self::SETTINGS as $column => $allowed) {
+            if (!array_key_exists($column, $settings) || !in_array($settings[$column], $allowed, true)) {
+                throw new \InvalidArgumentException('A display setting is missing or not allowed; validate before storing.');
+            }
+            $values[] = $settings[$column];
+        }
+        if (count($settings) !== count(self::SETTINGS)) {
+            throw new \InvalidArgumentException('Only the display settings columns can be saved.');
+        }
+        $this->system->db()->run(
+            'INSERT INTO user_settings (user_id, theme, accent, typeface, text_size, line_spacing, reduce_motion)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (user_id) DO UPDATE SET theme = excluded.theme, accent = excluded.accent,
+                 typeface = excluded.typeface, text_size = excluded.text_size,
+                 line_spacing = excluded.line_spacing, reduce_motion = excluded.reduce_motion',
+            [$id, ...$values],
+        );
+    }
+
+    /**
      * @return array{0: string, 1: string} trimmed username and display name
      */
     private static function checked(string $username, string $displayName): array

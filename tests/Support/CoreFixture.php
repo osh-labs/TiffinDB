@@ -34,8 +34,8 @@ use TiffinDB\Core\System\SystemDatabase;
  *
  * Time is a FixedClock; randomness a SeededRandom from the seed given (or
  * DEFAULT_SEED). Passwords are hashed with bcrypt cost 4. Records are
- * inserted with plain SQL (insertRecord), since record operations arrive
- * in M2. All data is synthetic.
+ * added through the core (addRecord, as the Admin) or inserted with plain
+ * SQL (insertRecord). All data is synthetic.
  */
 final class CoreFixture
 {
@@ -58,6 +58,7 @@ final class CoreFixture
     private array $connections = [];
     /** @var list<SystemDatabase> */
     private array $systems = [];
+    private ?Operations $recordWriter = null;
 
     public function __construct(string $seed = self::DEFAULT_SEED)
     {
@@ -175,6 +176,19 @@ final class CoreFixture
         );
 
         return $db->lastInsertId();
+    }
+
+    /**
+     * Adds a record through RecordOperations::create acting as the Admin,
+     * with form text by field key; returns its id.
+     *
+     * @param array<string, string> $text
+     */
+    public function addRecord(string $projectKey, string $tableKey, array $text): int
+    {
+        $this->recordWriter ??= $this->operations();
+
+        return $this->recordWriter->records()->create($this->actor('admin'), $projectKey, $tableKey, $text);
     }
 
     /** Every row of every system-database table, by table name. @return array<string, list<array<string, mixed>>> */

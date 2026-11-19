@@ -21,7 +21,11 @@ use TiffinDB\Core\Auth\UserRecord;
 use TiffinDB\Core\Auth\Users;
 use TiffinDB\Core\Error\AccessDenied;
 use TiffinDB\Core\Error\NotFound;
+use TiffinDB\Core\Forms\FormParser;
+use TiffinDB\Core\Forms\FormStore;
+use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\DataDirectory;
@@ -143,6 +147,10 @@ final class Context
      * A schema editor for a project acting as $actor. Every snapshot it
      * takes is recorded at once as `snapshot.taken`: the snapshot exists
      * from that moment, whether or not the change that follows succeeds.
+     *
+     * Each structural change regenerates the default forms of the tables
+     * it touches inside its own transaction (M2 spec section 5.6): an
+     * exception from the regeneration rolls the whole change back.
      */
     public function editor(ProjectRecord $project, Database $db, Actor $actor): SchemaEditor
     {
@@ -157,7 +165,25 @@ final class Context
             function (SnapshotInfo $info) use ($project, $actor): void {
                 $this->recordSnapshot($project, $actor, $info);
             },
+            function (Database $db, array $tableKeys): void {
+                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys));
+            },
         );
+    }
+
+    /**
+     * The record layer for an opened project (M2 spec section 7.1). The
+     * caller has already authorised $project; $schema must be current.
+     */
+    public function records(ProjectRecord $project, Database $db, Schema $schema): Records
+    {
+        return new Records($db, $schema, $this->types, $this->clock);
+    }
+
+    /** Stored forms of an opened project; the caller has already authorised it. */
+    public function forms(Database $db): FormStore
+    {
+        return new FormStore($db, $this->keys, $this->clock, new FormParser($this->types));
     }
 
     public function recordSnapshot(ProjectRecord $project, Actor $actor, SnapshotInfo $info): void

@@ -18,7 +18,8 @@ use TiffinDB\Core\Io\Csv\CsvWriter;
 /**
  * The shipped CSV export plugin (M3 spec section 8.2, P121 to P123, P135):
  * one table per file, a heading row of field names, then one row per live
- * record in id order, each cell the value's text. Values are exact unless
+ * record in id order, each cell the value's text (checkboxes as yes or
+ * no, P145). Values are exact unless
  * "Protect against spreadsheet formulas" is chosen (off by default).
  */
 final class CsvExporter implements Exporter
@@ -64,10 +65,28 @@ final class CsvExporter implements Exporter
             $cells = $ids ? [(string) $record->id] : [];
             foreach ($table->fields as $field) {
                 $text = isset($record->values[$field->key]) ? $record->values[$field->key]->text : '';
+                if ($field->type === 'checkbox') {
+                    $text = self::checkboxText($text);
+                }
                 $cells[] = $protect[$field->key] ? CsvWriter::spreadsheetSafe($text) : $text;
             }
             $writer->row($cells);
         }
         $writer->close();
+    }
+
+    /**
+     * A checkbox cell as CSV writes it (M3 spec section 8.2, P145): the
+     * core's text is "1" or "0" (section 3.3); the file says "yes" or "no",
+     * which the CSV import reads back as a checkbox. Applied by field type
+     * only, so a text field holding "1" is written as it is.
+     */
+    public static function checkboxText(string $text): string
+    {
+        return match ($text) {
+            '1' => 'yes',
+            '0' => 'no',
+            default => $text,
+        };
     }
 }

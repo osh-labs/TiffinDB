@@ -394,3 +394,7 @@ Independent design-tier exit audit on the integration branch (all M2 packages me
 Open low items (test-only, carried to M3 or later): no test for the class-name pattern in `settings-preview.js`; no test for a symbolic-link `projects/` folder; no test pins which record permission each method checks (needed if a read-only role is added); WP0 abandoned-row recheck mutation not re-checked; cite deviations with their milestone because M3-screens reuses D-15 to D-19.
 
 Not verified in M2: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.
+
+### M3-WP0 merged (review running)
+
+OpenSpout 5.2.2 pinned; shared vendor with OpenSpout is at scratchpad `vendor-m3` (steps in `STEPS.txt`; `vendor/composer/installed.php` merged by hand because dump-autoload does not rebuild it); the main checkout's `vendor/` now includes it, so T-DEP-1 fails in any worktree without it. Orchestrator sign-offs: `tests/web/SetupScreenTest.php` (row ids shifted by the three new setup rows) assigned to WP0 for that change; `ci.yml` tolerates only the exact-pin warning from `composer validate --strict`; the licence check accepts "MIT AND Apache-2.0" only when every operand is allowlisted. Stale: `docs/design/m1/installer.md` lists only the old checks (fix at the M3 audit).

@@ -14,6 +14,7 @@ use TiffinDB\Core\Io\Contract\Importer;
 use TiffinDB\Core\Io\Contract\PluginFailure;
 use TiffinDB\Core\Io\Contract\SourceFile;
 use TiffinDB\Plugin\Import\Xlsx\Limits;
+use TiffinDB\Plugin\Import\Xlsx\SharedStrings;
 use TiffinDB\Plugin\Import\Xlsx\Styles;
 use TiffinDB\Plugin\Import\Xlsx\WorkbookCheck;
 use TiffinDB\Plugin\Import\Xlsx\Xml;
@@ -251,6 +252,110 @@ echo json_encode(["reason" => $reason, "rows" => $rows, "rss" => isset($m[1]) ? 
         self::assertSame([['real']], iterator_to_array($importer->rows($file, $settings, 0, 0, 10), false), 'A changed strings file is not used.');
         file_put_contents($cache, str_repeat(' ', Limits::MAX_CACHE_BYTES + 1));
         self::assertSame([['real']], iterator_to_array($importer->rows($file, $settings, 0, 0, 10), false), 'An oversized cache is not read.');
+    }
+
+    /** A valid cache document for a workbook, taken from what the plugin writes for a good one. */
+    private function cacheTemplate(): array
+    {
+        $good = $this->file((new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['Name']))->write($this->temp->path('good.bin')));
+        $this->importer->inspect($good, $this->importer->detect($good));
+        $data = json_decode((string) file_get_contents($this->temp->path('tmp/xlsx-cache.json')), true);
+        self::assertIsArray($data);
+        array_map('unlink', glob($this->temp->path('tmp') . '/*') ?: []);
+
+        return $data;
+    }
+
+    private static function key(string $path): string
+    {
+        return hash_file('sha256', $path) . ':' . filesize($path);
+    }
+
+    public function testAForgedCacheNeverSkipsACheck(): void
+    {
+        $template = $this->cacheTemplate();
+        $doctype = (new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['Name']));
+        $parts = $doctype->parts();
+        $parts['xl/worksheets/sheet1.xml'] = WorkbookBuilder::HEAD . '<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/hostname">]>'
+            . substr($parts['xl/worksheets/sheet1.xml'], strlen(WorkbookBuilder::HEAD));
+        $doctypePath = $this->temp->path('doctype.bin');
+        WorkbookBuilder::zip($doctypePath, $parts);
+
+        $lie = (new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['Name']))->parts();
+        $real = $lie['xl/worksheets/sheet1.xml'] . str_repeat('<!-- more than declared -->', 100000);
+        $entries = [];
+        foreach ($lie as $name => $bytes) {
+            $entries[] = $name === 'xl/worksheets/sheet1.xml'
+                ? ['name' => $name, 'data' => (string) gzdeflate($real), 'method' => 8, 'size' => 900000, 'crc' => crc32($real)]
+                : ['name' => $name, 'data' => $bytes];
+        }
+        $liePath = $this->temp->path('lie.bin');
+        file_put_contents($liePath, WorkbookBuilder::rawZip($entries));
+
+        $importer = $this->importer;
+        foreach ([$doctypePath => PluginFailure::REASON_UNSUPPORTED, $liePath => PluginFailure::REASON_UNREADABLE] as $path => $reason) {
+            $file = $this->file($path);
+            foreach ([1, $template['v']] as $version) {
+                $forged = ['v' => $version, 'key' => self::key($path), 'checked' => true, 'columns' => ['0:1' => ['Forged']]] + $template;
+                file_put_contents($this->temp->path('tmp/xlsx-cache.json'), (string) json_encode($forged));
+                $settings = XlsxPlugins::defaultSettings();
+                self::assertSame($reason, XlsxPlugins::failure(static fn () => $importer->detect($file)), basename($path) . ' detect');
+                self::assertSame($reason, XlsxPlugins::failure(static fn () => $importer->inspect($file, $settings)), basename($path) . ' inspect');
+                self::assertSame($reason, XlsxPlugins::failure(static fn () => $importer->rows($file, $settings, 0, 0, 10)), basename($path) . ' rows');
+            }
+        }
+    }
+
+    public function testCacheFilesAreNeitherWrittenNorReadThroughLinks(): void
+    {
+        $template = $this->cacheTemplate();
+        $path = (new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['Name']) . '<row r="2"><c r="A2" t="s"><v>0</v></c></row>')
+            ->sharedStrings(['<t>real</t>'])->write($this->temp->path('upload.bin'));
+        $file = $this->file($path);
+        $importer = $this->importer;
+        $settings = $importer->detect($file);
+        $tmp = $this->temp->path('tmp');
+        $victim = $this->temp->path('victim.txt');
+
+        foreach (['xlsx-cache.json.part', 'xlsx-strings.bin.part', 'xlsx-offsets.bin.part'] as $name) {
+            array_map('unlink', glob($tmp . '/*') ?: []);
+            file_put_contents($victim, 'synthetic victim');
+            symlink($victim, $tmp . '/' . $name);
+            self::assertSame(['Name'], $importer->inspect($file, $settings)->tables[0]->columns, $name);
+            self::assertSame([['real']], iterator_to_array($importer->rows($file, $settings, 0, 0, 10), false), $name);
+            self::assertSame('synthetic victim', file_get_contents($victim), $name . ': the link target is not written');
+            self::assertTrue(is_link($tmp . '/' . $name), $name . ': the link is left alone');
+        }
+        array_map('unlink', glob($tmp . '/*') ?: []);
+        mkdir($tmp . '/xlsx-cache.json.part');
+        self::assertSame(['Name'], $importer->inspect($file, $settings)->tables[0]->columns, 'A folder in the way');
+        rmdir($tmp . '/xlsx-cache.json.part');
+        file_put_contents($tmp . '/xlsx-cache.json.part', 'stale');
+        $importer->inspect($file, $settings);
+        self::assertFileDoesNotExist($tmp . '/xlsx-cache.json.part', 'A stale temporary file is replaced.');
+        self::assertFileExists($tmp . '/xlsx-cache.json');
+
+        // A cache file that is a link is not read, even with the right key.
+        array_map('unlink', glob($tmp . '/*') ?: []);
+        $outside = $this->temp->path('outside.json');
+        file_put_contents($outside, (string) json_encode(['key' => self::key($path), 'columns' => ['0:1' => ['Forged']]] + $template));
+        symlink($outside, $tmp . '/xlsx-cache.json');
+        self::assertSame(['Name'], $importer->inspect($file, $settings)->tables[0]->columns);
+        unlink($tmp . '/xlsx-cache.json');
+        copy($outside, $tmp . '/xlsx-cache.json');
+        self::assertSame(['Forged'], $importer->inspect($file, $settings)->tables[0]->columns, 'The same file, not a link, is read (derived data only).');
+    }
+
+    public function testSharedStringOffsetsAreBounded(): void
+    {
+        $strings = SharedStrings::fromParts('abc', pack('V*', 0, 2, 9, 1), 3);
+        self::assertNotNull($strings);
+        self::assertSame('ab', $strings->get(0));
+        self::assertNull($strings->get(1), 'An end past the text.');
+        self::assertNull($strings->get(2), 'An end before the start.');
+        self::assertNull($strings->get(3));
+        self::assertNull($strings->get(-1));
+        self::assertNull(SharedStrings::fromParts('abc', pack('V*', 0, 3), 2), 'Offsets that do not fit the count.');
     }
 
     public function testEveryCallsParsingWorkIsBounded(): void

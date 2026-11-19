@@ -299,6 +299,52 @@ final class XlsxExporterTest extends TestCase
         return array_values(array_filter((array) scandir($folder), static fn ($name): bool => is_string($name) && str_starts_with($name, 'xlsx')));
     }
 
+    public function testCharactersXmlDoesNotAllowNeverReachThePartsXml(): void
+    {
+        $illegal = ["\u{FFFE}", "\u{FFFF}", "\u{FDD0}", "\u{FDEF}", "\u{1FFFE}", "\u{10FFFF}"];
+        $controls = '';
+        for ($c = 0; $c < 32; $c++) {
+            if (!in_array($c, [9, 10, 13], true)) {
+                $controls .= chr($c);
+            }
+        }
+        $controls .= "\x7F";
+        $fields = [new ExportField('t', 'Name ' . implode('', $illegal) . $controls, 'text', [], false, '', null)];
+        $records = [];
+        foreach ([...$illegal, $controls] as $i => $character) {
+            $text = 'a' . $character . 'b';
+            $records[] = self::record($i + 1, ['t' => new ExportValue($text, $text, [])]);
+        }
+        $source = new FakeExportSource([self::table('t', 'Sheet ' . implode('', $illegal) . $controls, $fields, count($records))], static fn (string $key): array => $records);
+        $path = $this->export($source);
+        foreach (self::entries($path) as $name => $bytes) {
+            if (str_ends_with($name, '.xml') || str_ends_with($name, '.rels')) {
+                $previous = libxml_use_internal_errors(true);
+                $document = new \DOMDocument();
+                $loaded = $document->loadXML($bytes, LIBXML_NONET);
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
+                self::assertTrue($loaded, $name . ' is well-formed XML');
+            }
+        }
+        $entries = self::entries($path);
+        $cells = self::cells($entries, 'xl/worksheets/sheet1.xml');
+        foreach ($illegal as $i => $character) {
+            self::assertSame("a\u{FFFD}b", $cells['A' . ($i + 2)][3], bin2hex($character));
+        }
+        $names = [];
+        foreach (self::xpath($entries['xl/workbook.xml'])->query('//m:sheets/m:sheet') as $sheet) {
+            $names[] = $sheet->getAttribute('name');
+        }
+        self::assertSame(['Sheet ' . str_repeat("\u{FFFD}", 6)], $names);
+
+        // The import plugin reads the controls back from the writer's _xHHHH_ escapes.
+        $importer = XlsxPlugins::importer();
+        $file = new SourceFile($path, 'xlsx', (int) filesize($path), $this->temp->path('tmp'));
+        $rows = XlsxPlugins::allRows($importer, $file, $importer->detect($file));
+        self::assertSame('a' . str_replace("\0", "\u{FFFD}", $controls) . 'b', $rows[6][0]);
+    }
+
     public function testInvalidTextControlCharactersAndLargeIntegers(): void
     {
         $fields = [

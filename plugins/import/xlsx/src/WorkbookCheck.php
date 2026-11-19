@@ -14,8 +14,9 @@ use TiffinDB\Core\Io\Contract\PluginFailure;
  * The zip check that runs before any XML of an uploaded workbook is parsed
  * (M3 spec section 9.1, ADR 0016 decision 4). Uses only PHP's ZipArchive.
  * Two parts: directory() reads the zip directory only and runs on every
- * call; contents() reads every entry's bytes and runs once per job (its
- * result is kept in the job cache, JobCache).
+ * call; contents() reads every entry's bytes and also runs on every call
+ * (it is never skipped on the word of the job cache: about 0.65 s for a
+ * 40 MB upload on the build machine, at most one inflate of 512 MiB).
  *
  * directory(). Refused as unreadable: not a zip (an encrypted workbook is
  * an OLE file, not a zip), damaged, `[Content_Types].xml` or

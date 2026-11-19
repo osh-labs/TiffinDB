@@ -52,9 +52,10 @@ use TiffinDB\Core\Io\Csv\Charset;
  * setting (14 significant digits by default). A number or currency amount
  * that would not read back exactly that way, and a whole number of 16 or
  * more digits (spreadsheet programs keep 15), is written as a string cell
- * of its exact text instead. Text with invalid UTF-8 is written with each
- * invalid sequence as U+FFFD (the writer's escaping would otherwise give an
- * empty cell); control characters are removed from sheet names. Dates before 1900-03-01, which the 1900 date
+ * of its exact text instead. Text with invalid UTF-8 or characters XML does
+ * not allow (U+FFFE, U+FFFF, other noncharacters) is written with each as
+ * U+FFFD (the writer would otherwise give an empty cell or a part that is
+ * not well-formed); control characters are removed from sheet names. Dates before 1900-03-01, which the 1900 date
  * system cannot hold (or holds off by one day), are string cells of their
  * text too. Text longer than a spreadsheet cell's 32,767 characters is cut
  * to that length (TiffinDB's own fields are shorter; joined link titles
@@ -229,7 +230,7 @@ final class XlsxExporter implements Exporter
      */
     private static function sheetName(string $name, array &$taken): string
     {
-        $name = (string) preg_replace('/[\x00-\x1F\x7F]+/', '', Charset::scrub($name));
+        $name = (string) preg_replace('/[\x00-\x1F\x7F]+/', '', self::xmlText($name));
         $name = trim(str_replace(['[', ']', ':', '*', '?', '/', '\\'], '', $name));
         $name = trim($name, "'");
         $name = $name === '' ? 'Sheet' : $name;
@@ -247,11 +248,24 @@ final class XlsxExporter implements Exporter
         }
     }
 
+    /**
+     * $text as characters XML 1.0 allows: invalid UTF-8 (which would make
+     * the writer's escaping return an empty string) and the noncharacters
+     * U+FFFE, U+FFFF, U+nFFFE, U+nFFFF and U+FDD0 to U+FDEF (which the
+     * writer would copy into the part, making it not well-formed) become
+     * U+FFFD. Control characters other than tab, line feed, and carriage
+     * return are left to the writer, which escapes them as `_xHHHH_`.
+     */
+    private static function xmlText(string $text): string
+    {
+        // Byte patterns on valid UTF-8: EF B7 90..AF (U+FDD0..U+FDEF), EF BF BE/BF, and the last two code points of planes 1 to 16.
+        return (string) preg_replace('/\xEF\xB7[\x90-\xAF]|\xEF\xBF[\xBE\xBF]|[\xF0-\xF4][\x8F\x9F\xAF\xBF]\xBF[\xBE\xBF]/', "\u{FFFD}", Charset::scrub($text));
+    }
+
     /** Text cut to the 32,767 characters a spreadsheet cell holds. */
     private static function cut(string $text): string
     {
-        // Invalid UTF-8 would make the writer's escaping return an empty string.
-        $text = Charset::scrub($text);
+        $text = self::xmlText($text);
 
         return strlen($text) <= self::CELL_CHARS ? $text : self::chars($text, self::CELL_CHARS);
     }

@@ -12,7 +12,13 @@ This file records every third-party component used by TiffinDB and the licence i
 
 ## Runtime dependencies (shipped)
 
-None.
+Pinned exactly in `composer.json` `require`; there is no `composer.lock` (ADR 0008 decision 12, ADR 0016 decision 2). `tests/repo/DependencyLicenceTest.php` (T-DEP-1, T-DEP-2) fails when an installed non-development package has no row here, when a row names a package that is not installed, or when the installed version or source reference (read from `vendor/composer/installed.json`) differs from the row.
+
+| Name | Version | Commit | Purpose | Licence | Licence files (SHA-256) | Extensions | Verified from | Shipped |
+|---|---|---|---|---|---|---|---|---|
+| `openspout/openspout` | `5.2.2` (pinned exactly); installed v5.2.2 | `95403917927ef252f7ae82d919c55286a642962a` | Streaming XLSX reader and writer, used only by the two XLSX plugins (ADR 0016) | MIT AND Apache-2.0 | `LICENSE` (MIT) `d88ea20fec9e7f33400cbba4b363dbe592d330bc0abcd51607c4388ed75bc21b`; `LICENSE-for-cc42c1d` (Apache-2.0) `c666b2511719a979ae3311021b97e0e8e0a16000946024e7262670dee0615144` | `dom`, `filter`, `libxml`, `xmlreader`, `zip` | `vendor/openspout/openspout/LICENSE`, `LICENSE-for-cc42c1d`, and `README.md` at that commit, 2026-11-19 | Yes, in `vendor/openspout/openspout/` with both licence files |
+
+OpenSpout's package metadata declares only `MIT`. Its README states that code up to and directly descending from upstream commit `cc42c1d` is under the Apache License 2.0, which is the second licence file; both files ship in the package directory, and no `NOTICE` file exists at this commit. The package requires no other packages. `zip` and `xmlreader` are installer requirements; `dom`, `filter`, and `libxml` are installer warnings, and without them the XLSX plugins report themselves unavailable (ADR 0016 decision 3).
 
 ## Bundled font assets (shipped)
 

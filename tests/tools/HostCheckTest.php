@@ -22,7 +22,7 @@ final class HostCheckTest extends TestCase
     private const TOKEN = 'ExampleToken0123456789';
 
     private const REQUIRED_KEYS = [
-        'php.version', 'php.sapi', 'ext.pdo_sqlite', 'ext.zip', 'ext.xmlreader', 'ext.mbstring',
+        'php.version', 'php.sapi', 'ext.pdo_sqlite', 'ext.zip', 'ext.xmlreader', 'ext.dom', 'ext.filter', 'ext.libxml', 'ext.mbstring',
         'ext.fileinfo', 'ext.openssl', 'ext.session', 'crypto.random_bytes', 'crypto.argon2id',
         'sqlite.version', 'sqlite.fts5', 'sqlite.json1',
         'limit.memory_limit', 'limit.max_execution_time', 'limit.upload_max_filesize',

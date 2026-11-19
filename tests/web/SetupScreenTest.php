@@ -306,8 +306,8 @@ final class SetupScreenTest extends TestCase
         // The rows follow the installer's report exactly.
         $report = $this->installer()->requirements(true, $this->publicRoot());
         $ids = array_map(static fn (Requirement $r): string => $r->id, $report->requirements);
-        self::assertSame(['php', 'sqlite', 'zip', 'xmlreader', 'random', 'passwords', 'https', 'data'], $ids);
-        $names = ['PHP version', 'SQLite database support', 'Zip archives', 'Reading spreadsheet files', 'Secure random numbers', 'Password protection', 'Secure connection (HTTPS)', 'A place for the data folder'];
+        self::assertSame(['php', 'sqlite', 'zip', 'xmlreader', 'dom', 'filter', 'libxml', 'random', 'passwords', 'https', 'data'], $ids);
+        $names = ['PHP version', 'SQLite database support', 'Zip archives', 'Reading spreadsheet files', 'XML documents', 'Data filtering', 'XML library', 'Secure random numbers', 'Password protection', 'Secure connection (HTTPS)', 'A place for the data folder'];
         self::assertSame($names, self::texts($html, '//table[@class="data-table"]/tbody/tr/th[@scope="row"]'));
         $strings = new Strings(Fixtures::appRoot() . '/strings/en.php');
         $words = ['ok' => 'Ready', 'warning' => 'Works, with a note', 'failed' => 'Needs fixing'];
@@ -317,8 +317,8 @@ final class SetupScreenTest extends TestCase
             self::assertSame($words[$requirement->status], $results[$i], $requirement->id);
             self::assertSame($strings->get($requirement->key, $requirement->params), $meanings[$i], $requirement->id);
         }
-        self::assertSame('This page was loaded over HTTPS.', $meanings[6]);
-        self::assertSame('TiffinDB will keep its data in ../tiffindb-data, outside the web site.', $meanings[7]);
+        self::assertSame('This page was loaded over HTTPS.', $meanings[9]);
+        self::assertSame('TiffinDB will keep its data in ../tiffindb-data, outside the web site.', $meanings[10]);
         self::assertSame(['Check', 'Result', 'What this means'], self::texts($html, '//table/thead/tr/th'));
         self::assertSame(['Server checks'], self::texts($html, '//table/caption[@class="visually-hidden"]'));
         self::assertSame(['Step 1: Check this server'], self::texts($html, '//section[@aria-labelledby="setup-check-title"]/h2[@id="setup-check-title"][@class="section-title"]'));
@@ -345,10 +345,10 @@ final class SetupScreenTest extends TestCase
         $html = self::assertPage(self::send($services, 'GET', '/setup', [], self::server($this->publicRoot())), 200);
 
         $rows = self::texts($html, '//tbody/tr');
-        self::assertSame('A place for the data folder Needs fixing TiffinDB cannot make its data folder at ../tiffindb-data. Let the web server write to the folder that holds the TiffinDB folder, or set data_dir in config/local.php.', $rows[7]);
+        self::assertSame('A place for the data folder Needs fixing TiffinDB cannot make its data folder at ../tiffindb-data. Let the web server write to the folder that holds the TiffinDB folder, or set data_dir in config/local.php.', $rows[10]);
         self::assertSame(
             'Secure connection (HTTPS) Works, with a note This page was not loaded over HTTPS, so passwords could be read by others on the network. Ask your host to turn on HTTPS, then open this page with https:// at the start.',
-            $rows[6],
+            $rows[9],
         );
         self::assertSame(['Needs fixing'], self::texts($html, '//span[@class="status-word status-failed"]'));
         self::assertSame(['div', 'ol.steps', 'section.section', 'div.notice.notice-warn', 'div.form-actions'], self::mainOutline($html));
@@ -366,12 +366,12 @@ final class SetupScreenTest extends TestCase
         $html = self::send($this->services(InstallState::NeedsDataFolder), 'GET', '/setup', [], self::server($this->publicRoot()))->body;
         self::assertSame(
             'TiffinDB will keep its data in the folder set as data_dir in config/local.php, outside the web site.',
-            self::texts($html, '//tbody/tr/td[2]')[7],
+            self::texts($html, '//tbody/tr/td[2]')[10],
         );
 
         $this->configured = $this->temp->path('missing/deeper/data');
         $html = self::send($this->services(InstallState::NeedsDataFolder), 'GET', '/setup', [], self::server($this->publicRoot()))->body;
-        self::assertStringStartsWith('TiffinDB cannot make its data folder at the path set as data_dir in config/local.php.', self::texts($html, '//tbody/tr/td[2]')[7]);
+        self::assertStringStartsWith('TiffinDB cannot make its data folder at the path set as data_dir in config/local.php.', self::texts($html, '//tbody/tr/td[2]')[10]);
     }
 
     /** @return iterable<string, array{string, string, array<string, string>, string, string}> */
@@ -387,6 +387,12 @@ final class SetupScreenTest extends TestCase
             ['zip', 'failed', 'setup.check.zip.failed', [], 'Zip archives', 'PHP\'s zip support is not turned on. Ask your host to turn it on.'],
             ['xmlreader', 'ok', 'setup.check.xmlreader.ok', [], 'Reading spreadsheet files', 'Available. Needed to bring in XLSX spreadsheets.'],
             ['xmlreader', 'failed', 'setup.check.xmlreader.failed', [], 'Reading spreadsheet files', 'PHP\'s XMLReader support is not turned on. Ask your host to turn it on.'],
+            ['dom', 'ok', 'setup.check.dom.ok', [], 'XML documents', 'Available. Needed to bring in and save XLSX spreadsheets.'],
+            ['dom', 'warning', 'setup.check.dom.warning', [], 'XML documents', 'PHP\'s DOM support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on.'],
+            ['filter', 'ok', 'setup.check.filter.ok', [], 'Data filtering', 'Available. Needed to bring in and save XLSX spreadsheets.'],
+            ['filter', 'warning', 'setup.check.filter.warning', [], 'Data filtering', 'PHP\'s filter support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on.'],
+            ['libxml', 'ok', 'setup.check.libxml.ok', [], 'XML library', 'Available. Needed to bring in and save XLSX spreadsheets.'],
+            ['libxml', 'warning', 'setup.check.libxml.warning', [], 'XML library', 'PHP\'s libxml support is not turned on. TiffinDB works without it, but cannot bring in or save XLSX spreadsheets. Ask your host to turn it on.'],
             ['random', 'ok', 'setup.check.random.ok', [], 'Secure random numbers', 'Available.'],
             ['random', 'failed', 'setup.check.random.failed', [], 'Secure random numbers', 'PHP cannot make secure random numbers on this server. TiffinDB cannot run safely without them.'],
             ['passwords', 'ok', 'setup.check.passwords.argon2id', [], 'Password protection', 'Passwords will be stored with Argon2id.'],

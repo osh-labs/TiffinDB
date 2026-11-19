@@ -122,6 +122,14 @@ final class Installer
                 : new Requirement($extension, Requirement::FAILED, 'setup.check.' . $extension . '.failed');
         }
 
+        // ADR 0016 decision 3: the XLSX library also needs these. Without them
+        // TiffinDB still works and the XLSX plugins report themselves unavailable.
+        foreach (['dom', 'filter', 'libxml'] as $extension) {
+            $rows[] = $env->extensionLoaded($extension)
+                ? new Requirement($extension, Requirement::OK, 'setup.check.' . $extension . '.ok')
+                : new Requirement($extension, Requirement::WARNING, 'setup.check.' . $extension . '.warning');
+        }
+
         $rows[] = $env->randomWorks()
             ? new Requirement('random', Requirement::OK, 'setup.check.random.ok')
             : new Requirement('random', Requirement::FAILED, 'setup.check.random.failed');

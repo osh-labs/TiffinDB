@@ -47,7 +47,7 @@ final class RequirementsTest extends TestCase
         $values = $overrides + [
             'id' => 80312,
             'version' => '8.3.12',
-            'extensions' => ['pdo_sqlite', 'zip', 'xmlreader'],
+            'extensions' => ['pdo_sqlite', 'zip', 'xmlreader', 'dom', 'filter', 'libxml'],
             'sqlite' => '3.45.1',
             'random' => true,
         ];
@@ -117,6 +117,9 @@ final class RequirementsTest extends TestCase
             'sqlite' => ['ok', 'setup.check.sqlite.ok', ['version' => '3.45.1']],
             'zip' => ['ok', 'setup.check.zip.ok', []],
             'xmlreader' => ['ok', 'setup.check.xmlreader.ok', []],
+            'dom' => ['ok', 'setup.check.dom.ok', []],
+            'filter' => ['ok', 'setup.check.filter.ok', []],
+            'libxml' => ['ok', 'setup.check.libxml.ok', []],
             'random' => ['ok', 'setup.check.random.ok', []],
             'passwords' => ['warning', 'setup.check.passwords.bcrypt', []],
             'https' => ['ok', 'setup.check.https.ok', []],
@@ -153,12 +156,16 @@ final class RequirementsTest extends TestCase
     {
         yield 'old PHP' => [['id' => 80230, 'version' => '8.2.30'], 'php', 'failed', 'setup.check.php.failed', ['version' => '8.2.30']];
         yield 'PHP 8.3.0 passes' => [['id' => 80300, 'version' => '8.3.0'], 'php', 'ok', 'setup.check.php.ok', ['version' => '8.3.0']];
-        yield 'no pdo_sqlite' => [['extensions' => ['zip', 'xmlreader'], 'sqlite' => null], 'sqlite', 'failed', 'setup.check.sqlite.missing', []];
+        yield 'no pdo_sqlite' => [['extensions' => ['zip', 'xmlreader', 'dom', 'filter', 'libxml'], 'sqlite' => null], 'sqlite', 'failed', 'setup.check.sqlite.missing', []];
         yield 'pdo_sqlite loaded, no version' => [['sqlite' => null], 'sqlite', 'failed', 'setup.check.sqlite.missing', []];
         yield 'SQLite 3.35.4' => [['sqlite' => '3.35.4'], 'sqlite', 'failed', 'setup.check.sqlite.old', ['version' => '3.35.4']];
         yield 'SQLite 3.35.5' => [['sqlite' => '3.35.5'], 'sqlite', 'ok', 'setup.check.sqlite.ok', ['version' => '3.35.5']];
-        yield 'no zip' => [['extensions' => ['pdo_sqlite', 'xmlreader']], 'zip', 'failed', 'setup.check.zip.failed', []];
-        yield 'no xmlreader' => [['extensions' => ['pdo_sqlite', 'zip']], 'xmlreader', 'failed', 'setup.check.xmlreader.failed', []];
+        yield 'no zip' => [['extensions' => ['pdo_sqlite', 'xmlreader', 'dom', 'filter', 'libxml']], 'zip', 'failed', 'setup.check.zip.failed', []];
+        yield 'no xmlreader' => [['extensions' => ['pdo_sqlite', 'zip', 'dom', 'filter', 'libxml']], 'xmlreader', 'failed', 'setup.check.xmlreader.failed', []];
+        // ADR 0016 decision 3: only the XLSX plugins need these, so they warn and setup continues.
+        yield 'no dom' => [['extensions' => ['pdo_sqlite', 'zip', 'xmlreader', 'filter', 'libxml']], 'dom', 'warning', 'setup.check.dom.warning', []];
+        yield 'no filter' => [['extensions' => ['pdo_sqlite', 'zip', 'xmlreader', 'dom', 'libxml']], 'filter', 'warning', 'setup.check.filter.warning', []];
+        yield 'no libxml' => [['extensions' => ['pdo_sqlite', 'zip', 'xmlreader', 'dom', 'filter']], 'libxml', 'warning', 'setup.check.libxml.warning', []];
         yield 'no random' => [['random' => false], 'random', 'failed', 'setup.check.random.failed', []];
     }
 
@@ -174,6 +181,17 @@ final class RequirementsTest extends TestCase
 
         $this->assertSame([$status, $key, $params], $rows[$id]);
         $this->assertSame($status !== 'failed', $report->canContinue());
+    }
+
+    public function testMissingXlsxExtensionsOnlyWarn(): void
+    {
+        $report = $this->installer()->requirements(true, null, self::environment(['extensions' => ['pdo_sqlite', 'zip', 'xmlreader']]));
+        $rows = self::rows($report);
+
+        $this->assertSame(['warning', 'setup.check.dom.warning', []], $rows['dom']);
+        $this->assertSame(['warning', 'setup.check.filter.warning', []], $rows['filter']);
+        $this->assertSame(['warning', 'setup.check.libxml.warning', []], $rows['libxml']);
+        $this->assertTrue($report->canContinue());
     }
 
     public function testNoPlaceForTheDataFolderFails(): void
@@ -211,7 +229,7 @@ final class RequirementsTest extends TestCase
         $report = $this->installer()->requirements(true, null, self::environment());
 
         $this->assertSame(
-            ['php', 'sqlite', 'zip', 'xmlreader', 'random', 'passwords', 'https', 'data'],
+            ['php', 'sqlite', 'zip', 'xmlreader', 'dom', 'filter', 'libxml', 'random', 'passwords', 'https', 'data'],
             array_map(static fn (Requirement $r): string => $r->id, $report->requirements),
         );
     }

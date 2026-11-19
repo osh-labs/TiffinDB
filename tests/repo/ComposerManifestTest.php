@@ -14,7 +14,8 @@ use TiffinDB\Tests\Support\RepoFiles;
 
 /**
  * T-REPO-2: the Composer manifest has the agreed identity, licence,
- * dependencies, lock setting, and scripts.
+ * dependencies (each package pinned exactly, ADR 0016), lock setting, and
+ * scripts.
  */
 #[CoversNothing]
 final class ComposerManifestTest extends TestCase
@@ -36,14 +37,16 @@ final class ComposerManifestTest extends TestCase
         self::assertSame('AGPL-3.0-or-later', $manifest['license'] ?? null);
     }
 
-    public function testRuntimeRequiresOnlyPhpAndPdoSqlite(): void
+    public function testRuntimeRequiresPhpPdoSqliteAndThePinnedXlsxLibrary(): void
     {
         $require = self::manifest()['require'] ?? null;
 
         self::assertIsArray($require);
-        self::assertSame(['php', 'ext-pdo_sqlite'], array_keys($require));
+        self::assertSame(['php', 'ext-pdo_sqlite', 'openspout/openspout'], array_keys($require));
         // M1 spec section 4.1: the core stores everything in SQLite through PDO.
         self::assertSame('*', $require['ext-pdo_sqlite']);
+        // ADR 0016 decision 2: the only shipped package, pinned exactly.
+        self::assertSame('5.2.2', $require['openspout/openspout']);
     }
 
     public function testDevelopmentRequiresOnlyPhpunit(): void
@@ -52,9 +55,27 @@ final class ComposerManifestTest extends TestCase
 
         self::assertIsArray($requireDev);
         self::assertSame(['phpunit/phpunit'], array_keys($requireDev));
-        // Exact pin (ADR 0008 decision 12): no range, caret, tilde, or wildcard.
-        self::assertIsString($requireDev['phpunit/phpunit']);
-        self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $requireDev['phpunit/phpunit']);
+    }
+
+    public function testEveryPackageIsPinnedExactly(): void
+    {
+        // ADR 0008 decision 12: no lock file, so every package (not platform
+        // requirements such as php or ext-*) names one exact release: no
+        // range, caret, tilde, wildcard, alias, branch, or stability flag.
+        $manifest = self::manifest();
+        $packages = 0;
+        foreach (['require', 'require-dev'] as $section) {
+            self::assertIsArray($manifest[$section] ?? null);
+            foreach ($manifest[$section] as $name => $constraint) {
+                if ($name === 'php' || preg_match('/^(ext|lib|composer)-/', (string) $name) === 1) {
+                    continue;
+                }
+                ++$packages;
+                self::assertIsString($constraint, "{$section}.{$name}");
+                self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $constraint, "{$section}.{$name} must be pinned exactly.");
+            }
+        }
+        self::assertSame(2, $packages);
     }
 
     public function testLockFileIsDisabled(): void

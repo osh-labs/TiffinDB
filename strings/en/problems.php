@@ -95,6 +95,7 @@ return [
     'problem.import.field_twice' => 'Each field can take only one column.',
     'problem.import.too_many_choices' => 'This column has more than {max} different values, so it cannot be a choice.',
     'problem.import.target_changed' => 'The table changed while you were importing. Check the fields again.',
+    'problem.import.too_many_links' => 'This file would add more than {max} records to other tables. Leave a link column out, or link fewer titles.',
     'problem.export.failed' => 'The export could not be made.',
     'problem.archive.entry_name' => 'This archive holds a file that does not belong in a TiffinDB archive.',
     'problem.archive.duplicate' => 'This archive holds the same file twice.',

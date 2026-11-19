@@ -26,6 +26,7 @@ final class SearchResults
         public readonly array $groups,
         public readonly array $tables,
         public readonly int $trashCount,
+        public readonly bool $canImportExport = false,
     ) {
     }
 }

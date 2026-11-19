@@ -134,6 +134,7 @@ final class RecordOperations
             $fields !== [],
             self::filterable($fields) !== [],
             $this->c->authorizer->can($actor, Permission::ChangeSchema, $project),
+            $this->c->authorizer->can($actor, Permission::ImportExport, $project),
         );
     }
 
@@ -231,17 +232,27 @@ final class RecordOperations
     // ------------------------------------------------------------------ writes
 
     /**
-     * Creates a record from text typed in a form; returns its id.
+     * Creates a record from text typed in a form; returns its id. The
+     * table's effective form is bound first: required fields it does not
+     * show are not enforced (a stored edited form may leave one out).
      *
      * @param array<mixed> $input field key => text
      * @throws \TiffinDB\Core\Error\ValidationFailed
      */
     public function create(Actor $actor, string $projectKey, string $tableKey, array $input): int
     {
-        [, , $schema, $records] = $this->open($actor, $projectKey, Permission::EditRecords);
+        [, $db, $schema, $records] = $this->open($actor, $projectKey, Permission::EditRecords);
         $table = $schema->table($tableKey);
+        // ADR 0017 decision 4 (P118): only the required fields the effective form shows are required here.
+        $shown = $this->bind($db, $schema, $table, null, [], [], true)->editableKeys();
+        $required = [];
+        foreach ($schema->fields($table->key) as $field) {
+            if ($field->required && in_array($field->key, $shown, true)) {
+                $required[] = $field->key;
+            }
+        }
 
-        return $records->create($table->key, self::input($input), InputMode::Form, $actor->userKey);
+        return $records->create($table->key, self::input($input), InputMode::Form, $actor->userKey, $required);
     }
 
     /**
@@ -364,7 +375,16 @@ final class RecordOperations
             }
         }
 
-        return new SearchResults($project, $search, $problem, $total, $groups, $this->tables($schema, $records), self::trashCount($schema, $trash));
+        return new SearchResults(
+            $project,
+            $search,
+            $problem,
+            $total,
+            $groups,
+            $this->tables($schema, $records),
+            self::trashCount($schema, $trash),
+            $this->c->authorizer->can($actor, Permission::ImportExport, $project),
+        );
     }
 
     // ------------------------------------------------------------------ internals

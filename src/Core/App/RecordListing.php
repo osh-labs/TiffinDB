@@ -45,6 +45,7 @@ final class RecordListing
         public readonly bool $hasFields,
         public readonly bool $hasFilterable,
         public readonly bool $canChangeSchema,
+        public readonly bool $canImportExport = false,
     ) {
     }
 }

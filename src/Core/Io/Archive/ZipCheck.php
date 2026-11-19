@@ -45,6 +45,7 @@ final class ZipCheck
     private const UNIX_TYPE_MASK = 0170000;
     private const UNIX_FILE = 0100000;
     private const UNIX_DIR = 0040000;
+    private const UNIX_LINK = 0120000;
     private const DOS_DIRECTORY = 0x10;
 
     /**
@@ -142,6 +143,10 @@ final class ZipCheck
         $attributes = 0;
         if (!$zip->getExternalAttributesIndex($index, $system, $attributes, \ZipArchive::FL_UNCHANGED)) {
             throw new ArchiveRefused(ArchiveRefused::ENTRY_NAME, 'unreadable attributes');
+        }
+        // Some tools put Unix mode bits in the high half for any creator system; a link type there is refused whatever the system says.
+        if ((($attributes >> 16) & self::UNIX_TYPE_MASK) === self::UNIX_LINK) {
+            throw new ArchiveRefused(ArchiveRefused::ENTRY_NAME, 'entry type');
         }
         if ($system === \ZipArchive::OPSYS_UNIX) {
             $type = ($attributes >> 16) & self::UNIX_TYPE_MASK;

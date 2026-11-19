@@ -25,7 +25,8 @@ final class ZipBytes
      * the data is deflated only for 8), size and compSize (override the
      * declared sizes in both headers), crc (override), flags (general
      * purpose bits, for example 1 for encryption), mode (Unix mode in the
-     * external attributes, for example 0120777 for a symbolic link), and
+     * external attributes, for example 0120777 for a symbolic link), system
+     * (the creator system in "version made by": 3 Unix, 0 MS-DOS), and
      * localName (a different name in the local header).
      *
      * @param array<string, int|string> $options
@@ -44,6 +45,7 @@ final class ZipBytes
             'compSize' => (int) ($options['compSize'] ?? strlen($stored)),
             'flags' => (int) ($options['flags'] ?? 0),
             'mode' => (int) ($options['mode'] ?? 0100644),
+            'system' => (int) ($options['system'] ?? 3),
         ];
 
         return $this;
@@ -57,7 +59,7 @@ final class ZipBytes
             $offset = strlen($local);
             $local .= pack('VvvvvvVVVvv', 0x04034b50, 20, $entry['flags'], $entry['method'], 0, 0x5b21, $entry['crc'], $entry['compSize'], $entry['size'], strlen($entry['localName']), 0)
                 . $entry['localName'] . $entry['data'];
-            $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 0x0314, 20, $entry['flags'], $entry['method'], 0, 0x5b21, $entry['crc'], $entry['compSize'], $entry['size'], strlen($entry['name']), 0, 0, 0, 0, ($entry['mode'] << 16) & 0xffffffff, $offset)
+            $central .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, ($entry['system'] << 8) | 0x14, 20, $entry['flags'], $entry['method'], 0, 0x5b21, $entry['crc'], $entry['compSize'], $entry['size'], strlen($entry['name']), 0, 0, 0, 0, ($entry['mode'] << 16) & 0xffffffff, $offset)
                 . $entry['name'];
         }
         $count = count($this->entries);

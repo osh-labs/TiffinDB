@@ -243,4 +243,22 @@ final class PreparerTest extends TestCase
         self::assertFalse($whole->partial);
         self::assertSame(40, $whole->rows);
     }
+
+    public function testAWebAddressIsNeverMadeFromPlainText(): void
+    {
+        // M3-WP11 X-13: a file name is not turned into https://<file name>; an explicit scheme or www. is kept.
+        $cells = ['stand-mixer.jpg', 'example.com/x', 'javascript:alert(1)', 'ftp://example.com/f', 'https://example.com/a', 'www.example.com', 'HTTP://EXAMPLE.ORG'];
+        $rows = [];
+        foreach ($cells as $cell) {
+            $rows[] = ['text' => 'Row', 'url' => $cell];
+        }
+        $job = $this->newJob();
+        $this->readAll($job, $this->importer($rows));
+        $this->accept($job, $this->existingMapping());
+        $this->prepareAll($job);
+        $prepared = $this->prepared($job);
+        self::assertSame([null, null, null, null, 'https://example.com/a', 'https://www.example.com', 'http://EXAMPLE.ORG'], array_map(static fn (array $r): mixed => $r['url'], array_values($prepared)));
+        $col = array_search('url', self::TYPES, true);
+        self::assertSame([1, 2, 3, 4], array_map(static fn (array $r): int => (int) $r['n'], $job->db()->all('SELECT n FROM issues WHERE col = ? AND kind = \'unreadable\' ORDER BY n', [$col])));
+    }
 }

@@ -405,3 +405,5 @@ OpenSpout 5.2.2 pinned; shared vendor with OpenSpout is at scratchpad `vendor-m3
 - Open for WP8 (owner of the core operations and strings): add the `problem.import.too_many_links` row to M3-io section 14, its text to `strings/en/problems.php` ("This file would add more than {max} records to other tables. Leave a link column out, or link fewer titles."), and remove it from `MessageKeysTest::PENDING_SPEC_KEYS`; add the `-shm`/header-rewrite note (WAL-mode source) to M3-io section 11.4.
 - WP7 note: rewrite the source header before opening a WAL-mode untrusted file. WP2 review must confirm the plugin include path is validated before `require`.
 - WP3 follow-ups merged (download headers, ini quantity parsing, field-name rule). Routes and the Admin Plugins nav link return 500 until WP9 and WP10.
+
+- P143 (provisional, M3-WP2b): plugins may name `TiffinDB\Core\Io\Csv\` in addition to Contract, their own namespace, PHP built-ins and `OpenSpout\` (T-PLG-8); the core CSV reader and writer are pure. Lower-case SQL detection added to the plugin layer test (a bare `select x from t` with no further clause is deliberately not caught, to keep English labels).

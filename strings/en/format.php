@@ -4,7 +4,8 @@
  * Copyright (C) TiffinDB contributors
  *
  * Strings used by TiffinDB\Web\Format (M1 spec part 2 section 5.3): dates,
- * waiting times, and the last-change line of the project list.
+ * waiting times, and the last-change line of the project list; M2 spec
+ * part 2 section 7: the saved-at line and file sizes.
  */
 
 declare(strict_types=1);
@@ -27,6 +28,13 @@ return [
     'date.month.12' => 'Dec',
     'date.last_change' => '{date}, by {name}',
     'date.last_change_unknown' => '{date}',
+    'date.at' => '{date} at {time}',
+    'date.today_lower' => 'today',
+    'date.yesterday_lower' => 'yesterday',
+
+    'size.bytes' => '{count|# byte|# bytes}',
+    'size.kb' => '{n} KB',
+    'size.mb' => '{n} MB',
 
     'wait.second' => '1 second',
     'wait.seconds' => '{count} seconds',

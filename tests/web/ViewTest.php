@@ -17,6 +17,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Format;
 use TiffinDB\Web\Shell;
@@ -387,6 +388,49 @@ final class ViewTest extends TestCase
             ['displayName' => 'Example Member', 'initials' => 'EM', 'isAdmin' => false, 'nav' => 'account', 'flash' => $flash],
             $shell->toArray(),
         );
+    }
+
+    // M2 helpers (M2 spec part 2 sections 4.2 and 5.2).
+
+    public function testIdHelperEscapesAndValidates(): void
+    {
+        self::assertSame('f-abcdefghijkl', self::scope()->id('f', 'abcdefghijkl'));
+        self::assertSame('group-abc-12', self::scope()->id('group', 'abc', 12));
+        $this->expectException(InvalidArgumentException::class);
+        self::scope()->id('f', '"><b>');
+    }
+
+    public function testNumberHelper(): void
+    {
+        self::assertSame('1,234,567', self::scope()->number(1234567));
+        self::assertSame('-12', self::scope()->number(-12));
+    }
+
+    public function testValueHelpersEscapeOnce(): void
+    {
+        $field = new FieldDef('abcdefghijkl', 'mnopqrstuvwx', 'Name', 'text', [], false, '', 1, true);
+        $time = new FieldDef('abcdefghijkm', 'mnopqrstuvwx', 'At', 'time', [], false, '', 2, true);
+
+        self::assertSame('&lt;b&gt; &amp;amp; &quot;x&quot; {name}', self::scope()->value($field, '<b> &amp; "x" {name}'));
+        self::assertSame('&lt;b&gt;', self::scope()->inputValue($field, '<b>', true));
+        self::assertSame('14:30', self::scope()->inputValue($time, '14:30:00', false));
+        self::assertSame('text', self::scope()->fieldFacts($field)['type']);
+        self::assertTrue(self::scope()->fieldFacts($time)['editable']);
+    }
+
+    public function testShellAcceptsTheSettingsArea(): void
+    {
+        self::assertSame('settings', (new Shell('Example Member', 'EM', false, 'settings', null))->toArray()['nav']);
+    }
+
+    public function testShellKeepsAValidUndoAndDropsAnInvalidOne(): void
+    {
+        $undo = '/projects/abcdefghijkl/tables/mnopqrstuvwx/records/7/restore';
+        $kept = new Shell('Example', 'EX', false, '', ['key' => 'notice.record_trashed', 'params' => ['title' => 'x', 'undo' => $undo]]);
+        self::assertSame(['title' => 'x', 'undo' => $undo], $kept->flash['params'] ?? null);
+
+        $dropped = new Shell('Example', 'EX', false, '', ['key' => 'notice.record_trashed', 'params' => ['undo' => '/projects/x/../restore']]);
+        self::assertSame([], $dropped->flash['params'] ?? null);
     }
 
     public function testFailingTemplateDiscardsPartialOutput(): void

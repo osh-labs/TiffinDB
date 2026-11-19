@@ -997,3 +997,811 @@ textarea.input {
   animation: none !important;
   scroll-behavior: auto !important;
 }
+
+/*
+ * M2 components (docs/design/m2/components.md; M2 spec part 2 section 8).
+ * Design px at the Standard text size, written in rem (px / 18).
+ */
+
+/* 1. Page structure */
+.app-columns {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.page.page-list {
+  flex: 999 1 31.1111rem;
+  gap: 1.1111rem;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: 1.5556rem 1.7778rem 2.2222rem;
+}
+
+.page.page-record {
+  gap: 1.3333rem;
+  max-width: var(--width-wide);
+  padding: 1.1111rem 1.1111rem 2.6667rem;
+}
+
+.page.page-record.page-record-narrow {
+  max-width: var(--width-form);
+}
+
+.page.page-settings {
+  padding: 1.7778rem var(--space-6) 2.6667rem;
+}
+
+.text-multiline {
+  white-space: pre-line;
+}
+
+/* 2. Top bar additions */
+.top-search {
+  flex: 1 1 15.5556rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5556rem;
+  max-width: 28.8889rem;
+  min-height: var(--control-height);
+  margin: 0 0 0 var(--space-3);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: var(--border-control) solid var(--ctl);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+}
+
+.top-search-icon {
+  flex: none;
+  width: 1.1111rem;
+  height: 1.1111rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.top-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.2222rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.top-search-input:focus-visible {
+  outline: var(--focus-ring) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+.top-pill-display {
+  gap: var(--space-2);
+  padding: 0 0.7778rem;
+  font-weight: 700;
+}
+
+.top-pill-icon {
+  flex: none;
+  width: 1.1111rem;
+  height: 1.1111rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.top-pill-icon-half {
+  fill: currentColor;
+}
+
+/* 3. Sidebar */
+.sidebar {
+  flex: 1 1 14.4444rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4444rem;
+  padding: var(--space-6) var(--space-4) 1.7778rem;
+  background: var(--side);
+  color: var(--side-ink);
+}
+
+.sidebar a,
+.sidebar a:hover {
+  color: var(--side-ink);
+}
+
+.sidebar :focus-visible {
+  outline-color: var(--side-ink);
+}
+
+.sidebar-project {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1111rem;
+  padding: 0 var(--space-3);
+}
+
+.sidebar-label {
+  font-size: 0.8333rem;
+  color: var(--side-ink2);
+}
+
+.sidebar-project-name {
+  font-size: 1.3333rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-switch {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+}
+
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sidebar-heading {
+  margin: 0 0 var(--space-1) var(--space-3);
+  font-size: 0.8333rem;
+  font-weight: 700;
+  color: var(--side-ink2);
+}
+
+.sidebar-link,
+.sidebar-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 0.7778rem;
+  border-radius: 0.5556rem;
+  color: var(--side-ink);
+  text-decoration: none;
+}
+
+.sidebar .sidebar-link:hover {
+  color: var(--side-ink);
+  text-decoration: underline;
+}
+
+.sidebar .sidebar-link[aria-current="page"],
+.sidebar .sidebar-link[aria-current="page"]:hover {
+  background: var(--side-on);
+  color: var(--side-on-ink);
+  font-weight: 700;
+}
+
+.sidebar-count {
+  color: var(--side-ink2);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-link[aria-current="page"] .sidebar-count {
+  color: inherit;
+}
+
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: auto;
+  padding-top: var(--space-4);
+  border-top: var(--border-card) solid var(--side-ink2);
+}
+
+/* 4. List view */
+.list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.list-find {
+  flex: 2 1 14.4444rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.list-sort {
+  flex: 1 1 11.1111rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.label.label-small {
+  font-size: var(--text-small);
+}
+
+.input.input-compact {
+  min-height: var(--target-min);
+}
+
+.data-table-plain tbody tr:nth-child(even) {
+  background: transparent;
+}
+
+.data-table-plain tbody tr:hover {
+  background: var(--soft);
+}
+
+.data-table-plain th,
+.data-table-plain td {
+  white-space: nowrap;
+}
+
+.cell-title {
+  font-weight: 700;
+}
+
+.cell-none {
+  color: var(--ink2);
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pager-status {
+  color: var(--ink2);
+}
+
+.pager-links {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.button.pager-link {
+  padding: 0 1rem;
+}
+
+.notice.filter-bar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.filter-bar p {
+  margin: 0;
+}
+
+/* 5. Search results */
+.result-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5556rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result {
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.result-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.result-match {
+  margin: 0;
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.result-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 700;
+}
+
+/* 6. Record form */
+.record-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.3333rem;
+  margin: 0;
+}
+
+.fieldset-card.record-section {
+  gap: 1.1111rem;
+  padding: 1.3333rem;
+}
+
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.6667rem), 1fr));
+  gap: 1.1111rem;
+  align-items: start;
+}
+
+.span-full {
+  grid-column: 1 / -1;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3333rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) 1.1111rem;
+}
+
+.static-value {
+  display: flex;
+  align-items: center;
+  min-height: var(--control-height);
+  margin: 0;
+}
+
+.link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5556rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+li.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+li.link-row a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 700;
+}
+
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--sunk);
+}
+
+.file-row > span:first-child {
+  flex: 1 1 11.1111rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+}
+
+.record-actions-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.record-meta {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink2);
+}
+
+.record-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.trash-form {
+  display: flex;
+  margin: 0;
+}
+
+/* 7. Notices and comparison */
+.notice.notice-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.notice-row p {
+  margin: 0;
+}
+
+.notice-form {
+  display: flex;
+  margin: 0;
+}
+
+.compare-table th,
+.compare-table td {
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 1.7778rem var(--space-6);
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state .empty-state-title {
+  font-size: var(--text-h2);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* 8. Display settings */
+.settings-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+
+.form.settings-form {
+  flex: 3 1 26.6667rem;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.fieldset-card.settings-section {
+  gap: var(--space-3);
+  padding: 1.1111rem var(--space-6);
+}
+
+.fieldset-card.settings-section-tight {
+  gap: var(--space-1);
+}
+
+.radio-grid.radio-grid-210 {
+  grid-template-columns: repeat(auto-fit, minmax(min(11.6667rem, 100%), 1fr));
+}
+
+.radio-grid.radio-grid-150 {
+  grid-template-columns: repeat(auto-fit, minmax(min(8.3333rem, 100%), 1fr));
+}
+
+.swatch {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.4444rem;
+  height: 2.4444rem;
+  border: var(--border-card) solid var(--ctl);
+  border-radius: 0.3333rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.swatch.t-hcl,
+.swatch.t-hcd {
+  border-width: var(--border-control);
+}
+
+.swatch-dot {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: var(--border-control) solid var(--surface);
+  border-radius: 50%;
+  outline: var(--border-card) solid var(--ctl);
+  background: var(--accent);
+}
+
+.size-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) 1.5556rem;
+}
+
+.check.size-option {
+  min-height: 2.8889rem;
+}
+
+.size-small {
+  font-size: 0.8889rem;
+}
+
+.size-standard {
+  font-size: 1rem;
+}
+
+.size-large {
+  font-size: 1.1667rem;
+}
+
+.size-larger {
+  font-size: 1.3333rem;
+}
+
+.size-largest {
+  font-size: 1.5556rem;
+}
+
+.radio-card.face-option {
+  min-height: 4.2222rem;
+  font-family: var(--font-ui);
+}
+
+.face-name {
+  display: block;
+  font-size: var(--text-h2);
+  font-weight: 700;
+}
+
+.face-hint {
+  display: block;
+  color: var(--ink2);
+}
+
+.settings-divider {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-card) solid var(--line);
+}
+
+.settings-preview {
+  flex: 2 1 18.8889rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7778rem;
+  min-width: 0;
+  padding: 1.1111rem var(--space-6);
+  border: var(--border-control) solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.preview-heading {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink2);
+}
+
+/*
+ * The preview body shows the chosen text size whatever the page's own
+ * size step: --pv-size is set per preview class and root size (preview
+ * size / root size, in rem, so 1rem is the root size), and the other
+ * preview lengths are multiples of it (the design's em values).
+ */
+.preview-body {
+  --pv-size: 1rem;
+  --pv-title: calc(var(--pv-size) * 1.5);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--pv-size) * 0.8);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--pv-size);
+  line-height: var(--leading);
+}
+
+.preview-body .preview-title {
+  margin: 0;
+  font-size: var(--pv-title);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.preview-label {
+  font-weight: 700;
+}
+
+.preview-button {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: var(--target-min);
+  padding: 0 var(--pv-size);
+  border: var(--border-control) solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+:root .pv-s-small {
+  --pv-size: 0.8889rem;
+}
+
+:root .pv-s-standard {
+  --pv-size: 1rem;
+}
+
+:root .pv-s-large {
+  --pv-size: 1.1667rem;
+}
+
+:root .pv-s-larger {
+  --pv-size: 1.3333rem;
+}
+
+:root .pv-s-largest {
+  --pv-size: 1.5556rem;
+}
+
+:root.s-small .pv-s-small {
+  --pv-size: 1rem;
+}
+
+:root.s-small .pv-s-standard {
+  --pv-size: 1.125rem;
+}
+
+:root.s-small .pv-s-large {
+  --pv-size: 1.3125rem;
+}
+
+:root.s-small .pv-s-larger {
+  --pv-size: 1.5rem;
+}
+
+:root.s-small .pv-s-largest {
+  --pv-size: 1.75rem;
+}
+
+:root.s-large .pv-s-small {
+  --pv-size: 0.7619rem;
+}
+
+:root.s-large .pv-s-standard {
+  --pv-size: 0.8571rem;
+}
+
+:root.s-large .pv-s-large {
+  --pv-size: 1rem;
+}
+
+:root.s-large .pv-s-larger {
+  --pv-size: 1.1429rem;
+}
+
+:root.s-large .pv-s-largest {
+  --pv-size: 1.3333rem;
+}
+
+:root.s-larger .pv-s-small {
+  --pv-size: 0.6667rem;
+}
+
+:root.s-larger .pv-s-standard {
+  --pv-size: 0.75rem;
+}
+
+:root.s-larger .pv-s-large {
+  --pv-size: 0.875rem;
+}
+
+:root.s-larger .pv-s-larger {
+  --pv-size: 1rem;
+}
+
+:root.s-larger .pv-s-largest {
+  --pv-size: 1.1667rem;
+}
+
+:root.s-largest .pv-s-small {
+  --pv-size: 0.5714rem;
+}
+
+:root.s-largest .pv-s-standard {
+  --pv-size: 0.6429rem;
+}
+
+:root.s-largest .pv-s-large {
+  --pv-size: 0.75rem;
+}
+
+:root.s-largest .pv-s-larger {
+  --pv-size: 0.8571rem;
+}
+
+:root.s-largest .pv-s-largest {
+  --pv-size: 1rem;
+}
+
+.pv-l-standard {
+  --leading: 1.5;
+}
+
+.pv-l-roomy {
+  --leading: 1.75;
+}
+
+.pv-l-very-roomy {
+  --leading: 2;
+}
+
+/*
+ * Narrow phones at large text sizes (M2 spec part 1 section 11): less side
+ * padding, so whole words such as "Temporary" fit on the add-person page.
+ */
+.label {
+  hyphens: manual;
+}
+
+@media (max-width: 22.5em) {
+  .page {
+    padding-inline: var(--space-3);
+  }
+
+  .form-card {
+    padding: var(--space-5) var(--space-3);
+  }
+}

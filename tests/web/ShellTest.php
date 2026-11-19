@@ -21,18 +21,23 @@ use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use TiffinDB\Core\App\TableSummary;
+use TiffinDB\Core\Schema\TableDef;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\RepoFiles;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Format;
 use TiffinDB\Web\Shell;
+use TiffinDB\Web\Sidebar;
 use TiffinDB\Web\Strings;
 use TiffinDB\Web\UrlGenerator;
 use TiffinDB\Web\View;
 
 /**
- * T-WEB-21 (and T-WEB-22's self-checks): both shells rendered through View
- * with the real layout, partials, strings, stylesheet, and configuration.
+ * T-WEB-21 (and T-WEB-22's self-checks), T-WEB-28 (the M2 shell: Display
+ * link, project search, layouts, sidebar, undo notice, scripts): both
+ * shells rendered through View with the real layout, partials, strings,
+ * stylesheet, and configuration.
  *
  * Pages: the real error page, a fixture page that uses every shared
  * partial and form convention (tests/web/fixtures/templates/pages/
@@ -44,6 +49,7 @@ use TiffinDB\Web\View;
  */
 #[CoversClass(View::class)]
 #[CoversClass(Shell::class)]
+#[CoversClass(Sidebar::class)]
 final class ShellTest extends TestCase
 {
     /** Theme setting => expected class on <html> (null: no attribute). */
@@ -555,6 +561,13 @@ final class ShellTest extends TestCase
 
             $other = self::render('components', self::componentData($shell, ['script' => 'other']));
             self::assertStringNotContainsString('<script', $other);
+
+            $preview = self::render('components', self::componentData($shell, ['script' => 'settings-preview']));
+            $xpath = self::xpath($preview);
+            self::assertSame(1, $xpath->query('//script')->length, 'Exactly one script element.');
+            self::assertSame('/assets/js/settings-preview.js?v=' . self::VERSION, self::element($xpath, '/html/head/script')->getAttribute('src'));
+            self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
+            HtmlAssertions::assertNoInlineCode($preview, self::sourceUrl());
         }
     }
 
@@ -843,7 +856,7 @@ final class ShellTest extends TestCase
     public function testMarkGeometryMatchesTheBrandFile(bool $signedIn): void
     {
         $page = self::xpath(self::render('error', self::errorData($signedIn ? self::shell() : null)));
-        $svg = self::element($page, '//header//*[local-name()="svg"]');
+        $svg = self::element($page, '//header//a[contains(@class, "brand")]//*[local-name()="svg"]');
 
         self::assertSame('brand-mark', $svg->getAttribute('class'));
         self::assertSame('0 0 64 64', $svg->getAttribute('viewBox'));
@@ -853,6 +866,10 @@ final class ShellTest extends TestCase
             self::assertFalse($svg->hasAttribute($attribute), "The svg must not set {$attribute}.");
         }
         self::assertSame(0, $page->query('//header//*[local-name()="title"]')->length);
+        foreach ($page->query('//header//*[local-name()="svg"]') as $icon) {
+            /** @var DOMElement $icon */
+            self::assertSame('true', $icon->getAttribute('aria-hidden'), 'Every top-bar icon is hidden from assistive technology.');
+        }
 
         $brand = new DOMDocument();
         self::assertTrue($brand->loadXML(RepoFiles::read('docs/brand/tiffindb-mark.svg'), LIBXML_NONET));
@@ -889,6 +906,221 @@ final class ShellTest extends TestCase
         self::assertSame(1, substr_count($body, '<span class="brand-word"><span class="brand-word-a">Tiffin</span>DB</span>'));
     }
 
+    // M2 shell (T-WEB-28; M2 spec part 2 sections 3 and 4.1).
+
+    /** A synthetic restore path, as RecordController builds it. */
+    private const UNDO = '/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12/restore';
+
+    /** @return array{project: string, projectName: string, q: string|null} */
+    private static function search(?string $q = null): array
+    {
+        return ['project' => 'abcdefghijkl', 'projectName' => self::HOSTILE, 'q' => $q];
+    }
+
+    public function testProjectSearchOnlyWithSearchData(): void
+    {
+        $without = self::xpath(self::render('error', self::errorData(self::shell())));
+        self::assertSame(0, $without->query('//form[contains(@class, "top-search")] | //*[@role="search"]')->length);
+
+        $html = self::render('error', [...self::errorData(self::shell()), 'search' => self::search()]);
+        $xpath = self::xpath($html);
+        $children = [];
+        foreach ($xpath->query('//header/*') as $child) {
+            /** @var DOMElement $child */
+            $children[] = $child->nodeName . '.' . $child->getAttribute('class');
+        }
+        self::assertSame(['a.brand', 'nav.top-nav', 'form.top-search', 'nav.account-nav'], $children, 'Brand, main navigation, search, account (D-1).');
+
+        $form = self::element($xpath, '//header/form[@class="top-search"]');
+        self::assertSame('search', $form->getAttribute('role'));
+        self::assertSame('get', $form->getAttribute('method'));
+        self::assertSame('/projects/abcdefghijkl/search', $form->getAttribute('action'));
+        self::assertSame(0, $xpath->query('.//button', $form)->length, 'Enter submits; no button.');
+        $icon = self::element($xpath, '//header/form/*[local-name()="svg"]');
+        self::assertSame('top-search-icon', $icon->getAttribute('class'));
+        self::assertSame('true', $icon->getAttribute('aria-hidden'));
+
+        $input = self::element($xpath, '//header/form/input');
+        self::assertSame(
+            [
+                'class' => 'top-search-input', 'id' => 'top-search', 'type' => 'search', 'name' => 'q', 'maxlength' => '200',
+                'aria-label' => self::formatted('shell.search.label', ['project' => self::HOSTILE]),
+                'placeholder' => self::formatted('shell.search.placeholder', ['project' => self::HOSTILE]),
+            ],
+            self::attributeMap($input),
+        );
+        self::assertStringNotContainsString('<script>alert', $html);
+        HtmlAssertions::assertForm($html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+
+        $results = self::xpath(self::render('error', [...self::errorData(self::shell()), 'search' => self::search(self::HOSTILE)]));
+        self::assertSame(self::HOSTILE, self::element($results, '//header/form/input')->getAttribute('value'), 'The search text is shown back on the results page.');
+    }
+
+    /** @return iterable<string, array{string|null, string}> */
+    public static function layouts(): iterable
+    {
+        yield 'absent' => [null, 'page'];
+        yield 'record' => ['record', 'page page-record'];
+        yield 'record-narrow' => ['record-narrow', 'page page-record page-record-narrow'];
+        yield 'settings' => ['settings', 'page page-settings'];
+        yield 'unknown' => ['other', 'page'];
+    }
+
+    #[DataProvider('layouts')]
+    public function testLayoutVariants(?string $layout, string $class): void
+    {
+        $data = self::errorData(self::shell());
+        if ($layout !== null) {
+            $data['layout'] = $layout;
+        }
+        $html = self::render('error', $data);
+        $xpath = self::xpath($html);
+
+        self::assertSame($class, self::element($xpath, '/html/body/div[@class="app"]/main')->getAttribute('class'));
+        self::assertSame(0, $xpath->query('//nav[contains(@class, "sidebar")] | //*[contains(@class, "app-columns")]')->length);
+        HtmlAssertions::assertShell($html, self::sourceUrl(), self::string('shell.footer.licence'), self::string('shell.footer.source'));
+    }
+
+    /** @return array<string, mixed> */
+    private static function sidebar(?string $current = 'mnopqrstuvwx'): array
+    {
+        $tables = [
+            new TableSummary(new TableDef('mnopqrstuvwx', 'Items', 'item', 1, null), 3, 1234),
+            new TableSummary(new TableDef('abcdefghijkm', self::HOSTILE, 'room', 2, null), 1, 9),
+        ];
+
+        return Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 3, $current);
+    }
+
+    public function testListLayoutHasTheSidebarBeforeMain(): void
+    {
+        $flash = ['key' => 'notice.password_changed', 'params' => []];
+        $data = [...self::errorData(self::shell(flash: $flash)), 'layout' => 'list', 'sidebar' => self::sidebar(), 'search' => self::search()];
+        $html = self::render('error', $data);
+        $xpath = self::xpath($html);
+
+        $columns = self::element($xpath, '/html/body/div[@class="app"]/div');
+        self::assertSame('app-columns', $columns->getAttribute('class'));
+        $children = [];
+        foreach ($xpath->query('./*', $columns) as $child) {
+            /** @var DOMElement $child */
+            $children[] = $child->nodeName . '.' . $child->getAttribute('class');
+        }
+        self::assertSame(['nav.sidebar', 'main.page page-list'], $children, 'Sidebar before main.');
+        self::assertSame('main', self::element($xpath, '//main')->getAttribute('id'));
+        self::assertSame('notice', self::element($xpath, '//main/*[1]')->getAttribute('class'), 'The flash notice still opens main.');
+        self::assertSame(['header', 'div', 'footer'], array_map(static fn (DOMElement $e): string => $e->nodeName, iterator_to_array($xpath->query('/html/body/div[@class="app"]/*'))));
+        HtmlAssertions::assertShell($html, self::sourceUrl(), self::string('shell.footer.licence'), self::string('shell.footer.source'));
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+
+        $withoutSidebar = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list']));
+        self::assertSame('page', self::element($withoutSidebar, '//main')->getAttribute('class'), 'The list layout needs sidebar data.');
+    }
+
+    public function testSidebarMarkup(): void
+    {
+        $html = self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => self::sidebar()]);
+        $xpath = self::xpath($html);
+
+        $nav = self::element($xpath, '//nav[@class="sidebar"]');
+        self::assertSame(self::string('sidebar.label'), $nav->getAttribute('aria-label'));
+        $parts = [];
+        foreach ($xpath->query('./*', $nav) as $child) {
+            /** @var DOMElement $child */
+            $parts[] = $child->nodeName . '.' . $child->getAttribute('class');
+        }
+        self::assertSame(['div.sidebar-project', 'div.sidebar-group', 'div.sidebar-foot'], $parts);
+
+        self::assertSame(self::string('sidebar.project'), self::text(self::element($xpath, '//span[@class="sidebar-label"]')));
+        self::assertSame('Home Inventory', self::text(self::element($xpath, '//span[@class="sidebar-project-name"]')));
+        $switch = self::element($xpath, '//a[@class="sidebar-switch"]');
+        self::assertSame('/projects', $switch->getAttribute('href'));
+        self::assertSame(self::string('sidebar.switch'), self::text($switch));
+
+        self::assertSame(self::string('sidebar.tables'), self::text(self::element($xpath, '//div[@class="sidebar-group"]/h2[@class="sidebar-heading"]')));
+        $links = [];
+        foreach ($xpath->query('//div[@class="sidebar-group"]/a') as $a) {
+            /** @var DOMElement $a */
+            $links[] = [$a->getAttribute('class'), $a->getAttribute('href'), self::text($a), $a->getAttribute('aria-current')];
+        }
+        self::assertSame(
+            [
+                ['sidebar-link', '/projects/abcdefghijkl/tables/mnopqrstuvwx', 'Items 1,234', 'page'],
+                ['sidebar-link', '/projects/abcdefghijkl/tables/abcdefghijkm', self::HOSTILE . ' 9', ''],
+            ],
+            $links,
+        );
+        self::assertSame('1,234', self::text(self::element($xpath, '//a[@aria-current="page"]/span[@class="sidebar-count"]')));
+
+        $schema = self::element($xpath, '//div[@class="sidebar-foot"]/a');
+        self::assertSame(['sidebar-link', '/projects/abcdefghijkl/tables', self::string('sidebar.schema')], [$schema->getAttribute('class'), $schema->getAttribute('href'), self::text($schema)]);
+        $trash = self::element($xpath, '//div[@class="sidebar-foot"]/div[@class="sidebar-item"]');
+        self::assertSame(self::string('sidebar.trash') . ' 3', self::text($trash));
+        self::assertSame(0, $xpath->query('//div[@class="sidebar-foot"]/div//a')->length, 'The trash count is not a link in M2.');
+        self::assertStringNotContainsString('<script>alert', $html);
+
+        $none = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => self::sidebar(null)]));
+        self::assertSame(0, $none->query('//nav[@class="sidebar"]//*[@aria-current]')->length, 'No table is current on the search page.');
+    }
+
+    public function testSidebarBuildRefusesBadKeys(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Sidebar::build('../etc', 'x', [], 0, null);
+    }
+
+    public function testUndoNoticeForAValidRestorePath(): void
+    {
+        $flash = ['key' => 'notice.signed_out', 'params' => ['title' => self::HOSTILE, 'undo' => self::UNDO]];
+        $html = self::render('error', self::errorData(self::shell(flash: $flash)), 'light', '/sub dir');
+        $xpath = self::xpath($html);
+
+        $notice = self::element($xpath, '//main/*[1]');
+        self::assertSame('notice notice-row', $notice->getAttribute('class'));
+        self::assertSame('status', $notice->getAttribute('role'));
+        self::assertSame(self::string('notice.signed_out'), self::text(self::element($xpath, '//main/div[1]/p')));
+        $form = self::element($xpath, '//main/div[1]/form');
+        self::assertSame('notice-form', $form->getAttribute('class'));
+        self::assertSame('post', $form->getAttribute('method'));
+        self::assertSame('/sub%20dir' . self::UNDO, $form->getAttribute('action'));
+        self::assertSame('_csrf', self::element($xpath, '//main/div[1]/form/*[1]')->getAttribute('name'));
+        $button = self::element($xpath, '//main/div[1]/form/button');
+        self::assertSame(['button', 'submit'], [$button->getAttribute('class'), $button->getAttribute('type')]);
+        self::assertSame(self::string('notice.undo'), self::text($button));
+        self::assertSame(self::formatted('notice.undo_label', ['title' => self::HOSTILE]), $button->getAttribute('aria-label'));
+        self::assertStringNotContainsString('<script>alert', $html);
+        HtmlAssertions::assertForm($html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function badUndoPaths(): iterable
+    {
+        yield 'protocol-relative' => ['//evil.example/projects'];
+        yield 'dot segments' => ['/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12/../12/restore'];
+        yield 'extra segment' => [self::UNDO . '/more'];
+        yield 'trailing newline' => [self::UNDO . "\n"];
+        yield 'query' => [self::UNDO . '?x=1'];
+        yield 'record id zero' => ['/projects/abcdefghijkl/tables/mnopqrstuvwx/records/0/restore'];
+        yield 'other action' => ['/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12/trash'];
+        yield 'upper-case key' => ['/projects/ABCDEFGHIJKL/tables/mnopqrstuvwx/records/12/restore'];
+        yield 'absolute URL' => ['https://evil.example' . self::UNDO];
+        yield 'integer' => [12];
+    }
+
+    #[DataProvider('badUndoPaths')]
+    public function testUndoIsDroppedForAnyOtherValue(mixed $undo): void
+    {
+        $flash = ['key' => 'notice.signed_out', 'params' => ['title' => 'Stand mixer', 'undo' => $undo]];
+        $shell = self::shell(flash: $flash);
+        self::assertSame(['title' => 'Stand mixer'], $shell->flash['params'] ?? null, 'Shell removes the undo parameter.');
+
+        $xpath = self::xpath(self::render('error', self::errorData($shell)));
+        self::assertSame('notice', self::element($xpath, '//main/*[1]')->getAttribute('class'));
+        self::assertSame(0, $xpath->query('//main//form')->length, 'No Undo form.');
+    }
+
     // The stylesheet and the script.
 
     public function testEveryComponentClassExistsInTheStylesheet(): void
@@ -906,6 +1138,76 @@ final class ShellTest extends TestCase
             }
         }
         self::assertSame([], $missing, 'Classes of components.md missing from app.css.');
+    }
+
+    public function testEveryM2ComponentClassExistsInTheStylesheet(): void
+    {
+        $doc = RepoFiles::read('docs/design/m2/components.md');
+        preg_match_all('/^\| `\.([a-z][a-z0-9-]*)`(?:, `\.([a-z][a-z0-9-]*)`)*/m', $doc, $m);
+        preg_match_all('/`\.((?:pv|size|radio-grid)-[a-z0-9-]+)`/', $doc, $extra);
+        $classes = array_values(array_unique([...$m[1], ...$extra[1], 'text-multiline']));
+        self::assertGreaterThan(70, count($classes), 'The M2 component list was read.');
+
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        $missing = [];
+        foreach ($classes as $class) {
+            if (preg_match('/\.' . preg_quote($class, '/') . '(?![a-z0-9_-])[^{}]*\{/', $css) !== 1) {
+                $missing[] = $class;
+            }
+        }
+        self::assertSame([], $missing, 'Classes of docs/design/m2/components.md missing from app.css.');
+    }
+
+    public function testPreviewSizesHaveOneRulePerRootSize(): void
+    {
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        $sizes = ['small' => 16, 'standard' => 18, 'large' => 21, 'larger' => 24, 'largest' => 28];
+        $roots = ['' => 18, '.s-small' => 16, '.s-large' => 21, '.s-larger' => 24, '.s-largest' => 28];
+        $count = 0;
+        foreach ($roots as $root => $rootPx) {
+            foreach ($sizes as $name => $px) {
+                $expected = rtrim(rtrim(sprintf('%.4f', round($px / $rootPx, 4)), '0'), '.') . 'rem';
+                self::assertMatchesRegularExpression(
+                    '/:root' . preg_quote($root, '/') . ' \.pv-s-' . $name . ' \{\s*--pv-size: ' . preg_quote($expected, '/') . ';\s*\}/',
+                    $css,
+                    ":root{$root} .pv-s-{$name}",
+                );
+                $count++;
+            }
+        }
+        self::assertSame(25, $count);
+        self::assertSame(25, preg_match_all('/\.pv-s-[a-z]+ \{/', $css));
+    }
+
+    public function testThePreviewScriptFollowsItsRules(): void
+    {
+        $js = RepoFiles::read('public/assets/js/settings-preview.js');
+
+        self::assertStringStartsWith("// SPDX-License-Identifier: AGPL-3.0-or-later\n// Copyright (C) TiffinDB contributors\n", $js);
+        self::assertMatchesRegularExpression("/^\\(function \\(\\) \\{\n  'use strict';$/m", $js, 'Strict mode inside an IIFE.');
+        self::assertStringEndsWith("}());\n", $js);
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#^\s*//.*$#m'], '', $js);
+        foreach (
+            [
+                'innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval', 'Function(', 'setTimeout', 'setInterval',
+                'requestAnimationFrame', 'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'Storage',
+                'cookie', 'indexedDB', '.style', 'setAttribute', 'className', 'location', 'http', 'src', 'href', 'postMessage',
+                'submit',
+            ] as $forbidden
+        ) {
+            self::assertStringNotContainsString($forbidden, $code, "The script must not use {$forbidden}.");
+        }
+        self::assertStringContainsString("getElementById('settings-form')", $code);
+        self::assertStringContainsString("getElementById('settings-preview')", $code);
+        self::assertStringContainsString("getAttribute('data-preview')", $code);
+        self::assertStringContainsString("['theme', 'accent', 'typeface', 'text_size', 'line_spacing']", $code);
+        self::assertStringContainsString("['hc-light', 'hc-dark']", $code);
+        self::assertSame(1, substr_count($code, "addEventListener('change'"));
+        self::assertSame(0, substr_count($code, 'addEventListener(') - 1, 'One listener only.');
+        // Only the preview's class list is changed.
+        self::assertSame(1, preg_match_all('/classList\.add\(/', $code));
+        self::assertSame(1, preg_match_all('/classList\.remove\(/', $code));
+        self::assertSame(0, preg_match_all('/(?<!preview)\.classList\.(?:add|remove|toggle|replace)\(/', $code));
     }
 
     public function testTheProjectNameLinkIsAFullTarget(): void
@@ -999,6 +1301,7 @@ final class ShellTest extends TestCase
         yield 'protocol-relative script' => [$script('src="//example.org/assets/js/a.js?v=1" defer="defer"')];
         yield 'slash-backslash script' => [$script('src="/\\example.org/assets/js/a.js?v=1" defer="defer"')];
         yield 'data script' => [$script('src="data:text/javascript,alert(1)" defer="defer"')];
+        yield 'other script file' => [$script('src="/assets/js/other.js?v=1" defer="defer"')];
         yield 'script without version' => [$script('src="/assets/js/show-password.js" defer="defer"')];
         yield 'script with content' => [$page('', '<script src="/assets/js/show-password.js?v=1" defer="defer">alert(1)</script>')];
         yield 'two scripts' => [$page('', '<script src="/assets/js/a.js?v=1" defer="defer"></script><script src="/assets/js/b.js?v=1" defer="defer"></script>')];
@@ -1030,8 +1333,10 @@ final class ShellTest extends TestCase
 
     public function testInlineCodeAssertionAcceptsTheScript(): void
     {
-        $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/show-password.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
-        HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
+        foreach (['show-password', 'settings-preview'] as $name) {
+            $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/{$name}.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
+            HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
+        }
         $this->addToAssertionCount(1);
     }
 
@@ -1123,6 +1428,18 @@ final class ShellTest extends TestCase
 
         HtmlAssertions::assertForm($html);
         $this->addToAssertionCount(1);
+    }
+
+    /** @return array<string, string> every attribute of an element, by name */
+    private static function attributeMap(DOMElement $element): array
+    {
+        $map = [];
+        foreach ($element->attributes as $attribute) {
+            /** @var \DOMAttr $attribute */
+            $map[$attribute->nodeName] = (string) $attribute->nodeValue;
+        }
+
+        return $map;
     }
 
     /**

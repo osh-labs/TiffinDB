@@ -208,7 +208,12 @@ final class ImportController
             } elseif ($view->state === ImportJobView::STATE_PREPARING) {
                 $imports->prepareChunk($actor, $projectKey, $jobKey);
             } elseif ($view->state === ImportJobView::STATE_READY && $request->input('step') === 'save') {
-                $logKey = $imports->commit($actor, $projectKey, $jobKey);
+                $result = $imports->save($actor, $projectKey, $jobKey);
+                if ($result->failed() || $result->logKey === null) {
+                    // Rolled back; the job is Failed (`commit-failed`) and its page is the failure page.
+                    return $this->context->redirect($this->jobPath($projectKey, $jobKey));
+                }
+                $logKey = $result->logKey;
                 $report = $imports->report($actor, $projectKey, $logKey);
                 $this->context->flash('notice.import.done', [
                     'count' => $report->report->rowsImported,

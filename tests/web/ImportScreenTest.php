@@ -379,7 +379,7 @@ final class ImportScreenTest extends TestCase
 
         $import = $x->query('//div[@class="io-actions"]/button[@form="import-review"]')->item(0);
         self::assertSame(['submit', 'action', 'import', 'Import 12 rows'], [$import?->getAttribute('type'), $import?->getAttribute('name'), $import?->getAttribute('value'), trim((string) $import?->textContent)]);
-        self::assertSame("{$this->base()}/{$job}/cancel", $x->query('//div[@class="io-actions"]/form')->item(0)?->getAttribute('action'));
+        self::assertSame("{$this->base()}/{$job}/cancel", $x->query('//div[@class="io-actions"]/form[@class="inline-form"]')->item(0)?->getAttribute('action'));
         self::assertSame(0, $x->query('//script')->length);
         self::assertSame(0, $x->query('//*[@data-auto-continue]')->length);
     }
@@ -526,7 +526,7 @@ final class ImportScreenTest extends TestCase
         self::assertSame(1, $x->query('//script[contains(@src, "import-continue.js")]')->length);
         // Item 3: the Continue button follows the live region in reading order.
         self::assertSame(1, $x->query('//p[@role="status"]/ancestor::div[@class="progress"]/following::form[@data-auto-continue]')->length);
-        self::assertSame(1, $x->query('//form[@action="' . "{$this->base()}/{$job}/cancel" . '"]')->length);
+        self::assertSame(1, $x->query('//form[@class="inline-form"][@action="' . "{$this->base()}/{$job}/cancel" . '"]')->length);
 
         $x = $this->continueUntilReady($job);
         $response = $this->send('GET', "{$this->base()}/{$job}");
@@ -699,6 +699,62 @@ final class ImportScreenTest extends TestCase
         self::assertSame(404, $this->send('POST', "{$this->base()}/{$job}/cancel")->status);
     }
 
+    public function testAFailedSaveShowsTheFailurePage(): void
+    {
+        $fail = false;
+        $ops = $this->core->operations(null, null, static function (string $point) use (&$fail): void {
+            if ($fail && $point === 'import.commit.rows') {
+                throw new \RuntimeException('Injected commit failure.');
+            }
+        });
+        $this->services->operations = $ops;
+        $job = $this->upload(self::csv());
+        $post = self::formValues(self::page($this->send('GET', "{$this->base()}/{$job}")));
+        $post['action'] = 'import';
+        $this->send('POST', "{$this->base()}/{$job}", $post);
+        $this->continueUntilReady($job);
+        $file = $this->core->projectFolder($this->project) . '/project.tiffin';
+        $before = hash_file('sha256', $file);
+
+        $fail = true;
+        $response = $this->send('POST', "{$this->base()}/{$job}/continue", ['step' => 'save']);
+        self::assertSame([303, "{$this->base()}/{$job}"], [$response->status, $response->header('Location')], 'A failed save redirects; no 500 page.');
+        self::assertSame($before, hash_file('sha256', $file), 'The project is unchanged.');
+        $fail = false;
+
+        $response = $this->send('GET', "{$this->base()}/{$job}");
+        $x = self::page($response);
+        self::assertSame('The import did not finish - TiffinDB', HtmlAssertions::text($response->body, '//title'));
+        self::assertSame(
+            ['Nothing was saved. The project is exactly as it was before.', 'Saving the rows went wrong.'],
+            self::texts($x, '//main/p'),
+        );
+        self::assertSame(1, $x->query('//form[@class="inline-form"][@action="' . "{$this->base()}/{$job}/cancel" . '"]')->length);
+
+        // A reload or a second press of Save only redirects and saves nothing.
+        foreach ([1, 2] as $press) {
+            $response = $this->send('POST', "{$this->base()}/{$job}/continue", ['step' => 'save']);
+            self::assertSame([303, "{$this->base()}/{$job}"], [$response->status, $response->header('Location')], "Press {$press}.");
+        }
+        self::assertSame($before, hash_file('sha256', $file));
+        self::assertCount(1, $this->ops->schema()->tables($this->core->actor('admin'), $this->project), 'No table was added.');
+        self::assertSame(1, self::page($this->send('GET', "{$this->base()}/{$job}"))->query('//h1[normalize-space()="The import did not finish"]')->length);
+
+        // Members and another Admin are still refused on the failed job.
+        $member = $this->signInAs('member');
+        $member2 = $this->signInAs('member2');
+        $this->ops->projects()->setSharing($this->core->actor('admin'), $this->project, [$this->core->person('member')->key]);
+        $this->core->addPerson('admin2', 'Second Admin', Role::Admin);
+        $other = $this->signInAs('admin2');
+        foreach ([['GET', ''], ['POST', '/continue'], ['POST', '/cancel']] as [$method, $suffix]) {
+            $uri = "{$this->base()}/{$job}{$suffix}";
+            self::assertSame(403, $this->send($method, $uri, ['step' => 'save'], $member)->status, "{$method} {$suffix} granted Member");
+            self::assertSame(404, $this->send($method, $uri, ['step' => 'save'], $member2)->status, "{$method} {$suffix} ungranted Member");
+            self::assertSame(404, $this->send($method, $uri, ['step' => 'save'], $other)->status, "{$method} {$suffix} another Admin");
+        }
+        self::assertSame($before, hash_file('sha256', $file));
+    }
+
     public function testFailurePage(): void
     {
         $job = $this->upload(self::csv((new IoFixture())->itemRows(2100)));
@@ -711,7 +767,7 @@ final class ImportScreenTest extends TestCase
             ['Nothing was saved. The project is exactly as it was before.', 'The format this file was read with is no longer turned on.'],
             self::texts($x, '//main/p'),
         );
-        $form = $x->query('//form[@action="' . "{$this->base()}/{$job}/cancel" . '"]')->item(0);
+        $form = $x->query('//form[@class="inline-form"][@action="' . "{$this->base()}/{$job}/cancel" . '"]')->item(0);
         self::assertSame('Start again', trim((string) $x->query('.//button[@class="button button-primary button-large"]', $form)->item(0)?->textContent));
         // Steps that need another state are not found; Continue only redirects.
         self::assertSame(404, $this->send('GET', "{$this->base()}/{$job}/reading")->status);

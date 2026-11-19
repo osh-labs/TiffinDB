@@ -74,7 +74,7 @@ ADR 0015 decision 5 amends the layer table; `tests/repo/CoreLayerRulesTest.php` 
 | System | Storage, Error (unchanged; `PluginStates` is a repository) |
 | App | Error, Storage, System, Auth, Schema, Query, Forms, Io |
 
-`Core\Io\Contract` uses nothing but PHP and `Core\Io\Contract` itself, so plugins see one small namespace. Files under `plugins/` may name only `TiffinDB\Core\Io\Contract\`, their own namespace (`TiffinDB\Plugin\<Kind>\<Id>\`), PHP built-in classes, and `OpenSpout\` (T-PLG-8, new `tests/repo/PluginLayerRulesTest.php`). The web layer may use the result objects of the new `Core\App` operations and `Core\Error` values only (T-WEB-23 unchanged).
+`Core\Io\Contract` uses nothing but PHP and `Core\Io\Contract` itself, so plugins see one small namespace. Files under `plugins/` may name only `TiffinDB\Core\Io\Contract\`, their own namespace (`TiffinDB\Plugin\<Kind>\<Id>\`), PHP built-in classes, `OpenSpout\`, and `TiffinDB\Core\Io\Csv\` (the core CSV reader and writer of ADR 0015 decision 2, so that the CSV plugins can use them; exactly that prefix, no other part of `Core\Io`; P143, provisional) (T-PLG-8, new `tests/repo/PluginLayerRulesTest.php`). The web layer may use the result objects of the new `Core\App` operations and `Core\Error` values only (T-WEB-23 unchanged).
 
 ### 2.2 SQL rules
 
@@ -769,7 +769,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-PLG-5 | `PluginLoader`: refuses non-Enabled plugins; loads only classes under the plugin's prefix; a class name with path tricks is not loaded; class not final or not implementing the interface fails; loaded once per request |
 | T-PLG-6 | `PluginStates`: set, all, refuses outside a transaction; system schema version 2 migration from version 1 (copy taken, table created, `SystemSchema::VERSION` 2) |
 | T-PLG-7 | `CoreLayerRulesTest` rows of section 2.1 |
-| T-PLG-8 | `PluginLayerRulesTest`: files under `plugins/` name only the allowed namespaces; no network functions (the M0 rule's list), no SQL, no superglobals, no `header()` |
+| T-PLG-8 | `PluginLayerRulesTest`: files under `plugins/` name only the allowed namespaces (section 2.1: the contract, their own, PHP built-ins, `OpenSpout\`, and `TiffinDB\Core\Io\Csv\` by P143; look-alikes such as `TiffinDB\Core\Io\CsvEvil\` and every other `Core` namespace refused); no network functions (the M0 rule's list), no SQL, no superglobals, no `header()` |
 
 ### 15.3 CSV (`tests/core/io/csv/`, `tests/plugins/csv/`, WP4)
 

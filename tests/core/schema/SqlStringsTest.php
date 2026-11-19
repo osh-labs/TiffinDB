@@ -14,11 +14,14 @@ use PHPUnit\Framework\TestCase;
 use TiffinDB\Tests\Support\RepoFiles;
 
 /**
- * Every SQL string in the schema engine and the trash (M1 spec section
- * 3.3, ADR 0010 decision 2) is built only from string literals and from
- * names that come from Identifier. Read with token_get_all, these rules
- * hold in every PHP file under src/Core/Schema/ (except the field types,
- * which build no SQL) and in src/Core/Query/Trash.php:
+ * Every SQL string in the schema engine, the record layer, and the forms
+ * (M1 spec section 3.3, ADR 0010 decision 2, M2 spec section 3.9, ADR
+ * 0013 decision 9.10) is built only from string literals and from names
+ * that come from Identifier. Read with token_get_all, these rules hold in
+ * every PHP file under src/Core/Schema/ (except the field types, which
+ * build no SQL), src/Core/Query/, and src/Core/Forms/, except
+ * src/Core/Query/Sql.php, the one file that joins fragment texts (it is
+ * exempt by name and read by the design-tier review):
  *
  * 0. Default deny: nothing whose call target or variable cannot be
  *    resolved from the tokens: `->`, `?->`, or `::` followed by `$` or
@@ -39,13 +42,22 @@ use TiffinDB\Tests\Support\RepoFiles;
  *    every operand is a string literal; a call `Identifier::<method>(...)`,
  *    `Database::placeholders(...)`, or `ColumnDefinition::of(...)` (class
  *    names resolved through the file's imports); or `$v->sql()` where the
- *    scan shows that $v holds a TableDef, FieldDef, or RelationDef: a
- *    parameter of that type, a by-value capture of one, or a local whose
- *    every assignment is a `new`, a static call, or a `->` chain whose
- *    declared types (read by reflection) lead to that class, and which is
- *    never otherwise written, taken by reference, or passed to a function.
- *    The arguments of the allowed calls are not restricted: Identifier
- *    validates them against the key pattern at run time.
+ *    scan shows that $v holds a TableDef, FieldDef, RelationDef, or an
+ *    Sql fragment (Core\Query\Sql): a parameter of that type, a by-value
+ *    capture of one, or a local whose every assignment is a `new`, a static
+ *    call (Sql::of, Sql::join), a `->` chain (`->wrap()`, a method declared
+ *    to return the class), or a ternary whose two arms are such
+ *    expressions of the same class, with declared types read by
+ *    reflection, and which is never otherwise written, taken by
+ *    reference, or passed to a function. The arguments of the allowed
+ *    calls are not restricted: Identifier validates them against the key
+ *    pattern at run time.
+ *    3a. The first argument of every `Sql::of(` call follows rule 3 (Sql
+ *        checks at run time that it holds one `?` per bound value).
+ *    3b. `Sql::join(` takes as glue exactly one single-quoted literal
+ *        among Sql::GLUES.
+ *    3c. Every `->params()` call is `$v->params()` on a variable shown, as
+ *        in rule 3, to hold an Sql fragment.
  * 4. The only variable that may be the whole SQL argument is a name listed
  *    in ALLOWED_VARIABLES for the file, and only as the loop variable of an
  *    enclosing `foreach (self::<CONST> as ...)` (or `self::<CONST>[...]`)
@@ -79,6 +91,10 @@ final class SqlStringsTest extends TestCase
     private const PDO_METHODS = ['prepare', 'exec', 'query'];
     private const SQL_DEFS = ['TableDef.php', 'FieldDef.php', 'RelationDef.php'];
     private const DEF_CLASSES = ['TiffinDB\Core\Schema\TableDef', 'TiffinDB\Core\Schema\FieldDef', 'TiffinDB\Core\Schema\RelationDef'];
+    /** The fragment class (M2 spec section 3.9); its file is the one exempt file. */
+    public const SQL_CLASS = 'TiffinDB\Core\Query\Sql';
+    public const EXEMPT_FILE = 'src/Core/Query/Sql.php';
+    private const USE_SQL = "use TiffinDB\\Core\\Query\\Sql;\n";
     private const ASSIGN_OPERATORS = [
         T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL, T_CONCAT_EQUAL, T_MOD_EQUAL, T_AND_EQUAL, T_OR_EQUAL,
         T_XOR_EQUAL, T_SL_EQUAL, T_SR_EQUAL, T_POW_EQUAL, T_COALESCE_EQUAL,
@@ -94,7 +110,13 @@ final class SqlStringsTest extends TestCase
                 $files[] = 'src/Core/Schema/' . basename($path);
             }
         }
-        $files[] = 'src/Core/Query/Trash.php';
+        foreach (['src/Core/Query', 'src/Core/Forms'] as $directory) {
+            foreach (glob(RepoFiles::path($directory) . '/*.php') ?: [] as $path) {
+                if ($directory . '/' . basename($path) !== self::EXEMPT_FILE) {
+                    $files[] = $directory . '/' . basename($path);
+                }
+            }
+        }
         sort($files);
 
         return $files;
@@ -114,8 +136,13 @@ final class SqlStringsTest extends TestCase
         foreach (['Identifier.php', 'ProjectFile.php', 'FormatMigrations.php', 'Schema.php', 'SchemaEditor.php', 'ColumnDefinition.php', ...self::SQL_DEFS] as $name) {
             self::assertContains('src/Core/Schema/' . $name, $files);
         }
-        self::assertContains('src/Core/Query/Trash.php', $files);
+        foreach (['Trash.php', 'Records.php', 'ListSql.php', 'RecordVersion.php'] as $name) {
+            self::assertContains('src/Core/Query/' . $name, $files);
+        }
         self::assertNotContains('src/Core/Schema/FieldTypes.php', $files);
+        self::assertNotContains(self::EXEMPT_FILE, $files);
+        $forms = glob(RepoFiles::path('src/Core/Forms') . '/*.php') ?: [];
+        self::assertCount(count($forms), array_filter($files, static fn (string $f): bool => str_starts_with($f, 'src/Core/Forms/')));
         $sqlLiterals = 0;
         foreach ($files as $file) {
             foreach (self::tokens(RepoFiles::read($file)) as $token) {
@@ -131,6 +158,29 @@ final class SqlStringsTest extends TestCase
     public function testSqlIsBuiltOnlyFromLiteralsAndIdentifiers(string $file): void
     {
         self::assertSame([], self::violations(RepoFiles::read($file), self::ALLOWED_VARIABLES[$file] ?? []));
+    }
+
+    public function testTheExemptFileOnlyComposesFragments(): void
+    {
+        // Sql.php is read by the design-tier review, not by the scan. It runs no query, makes no
+        // PDO call, and holds no SQL keyword: it only checks, joins, and wraps fragment texts.
+        $source = RepoFiles::read(self::EXEMPT_FILE);
+        $tokens = self::tokens($source);
+        foreach ($tokens as $i => $token) {
+            if (self::isToken($token, T_STRING) && self::isMethodCall($tokens, $i)) {
+                self::assertNotContains(strtolower($token[1]), [...self::QUERY_METHODS, ...self::PDO_METHODS], self::EXEMPT_FILE);
+            }
+            if (self::isToken($token, T_CONSTANT_ENCAPSED_STRING)) {
+                self::assertDoesNotMatchRegularExpression('/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|PRAGMA|FROM|WHERE)\b/i', $token[1], self::EXEMPT_FILE);
+            }
+        }
+        self::assertSame(1, preg_match_all('/\bimplode\(/', $source), 'One join of fragment texts.');
+        self::assertStringContainsString("public const GLUES = [' AND ', ' OR ', ', ', ' '];", $source);
+        self::assertSame(\TiffinDB\Core\Query\Sql::GLUES, [' AND ', ' OR ', ', ', ' ']);
+        // No other file under src/Core/ is exempt.
+        foreach (glob(RepoFiles::path('src/Core') . '/*/Sql.php') ?: [] as $path) {
+            self::assertSame(RepoFiles::path(self::EXEMPT_FILE), $path);
+        }
     }
 
     public function testOnlyTheDefinitionClassesHaveSqlMethods(): void
@@ -241,6 +291,38 @@ final class SqlStringsTest extends TestCase
         yield 'reflection call' => ['(new \ReflectionMethod($db, \'r\' . \'un\'))->invoke($db, $sql);', 'reflection'];
         yield 'included code' => ['require $path;', 'include'];
         yield 'braced variable variable' => ['function f(TableDef $t, string $k, $x): void { ${$k} = $x; $db->run(\'DROP TABLE \' . $t->sql()); }', 'variable-variable'];
+        // Sql fragments (M2 spec section 3.9, T-REC-14).
+        yield 'Sql::of with a variable' => [self::USE_SQL . 'function f(string $text): void { $s = Sql::of($text); }', 'Sql::of()'];
+        yield 'Sql::of with a variable and values' => [self::USE_SQL . 'function f(string $text): void { $s = Sql::of($text, [1]); }', 'Sql::of()'];
+        yield 'Sql::of with a concatenated variable' => [self::USE_SQL . 'function f(string $name): void { $s = Sql::of(\'SELECT * FROM \' . $name); }', 'Sql::of()'];
+        yield 'Sql::of with a variable and no SQL word' => [self::USE_SQL . 'function f(string $col): void { $s = Sql::of(\'r.\' . $col . \' = ?\', [1]); }', 'Sql::of()'];
+        yield 'Sql::of with a ternary of literals' => [self::USE_SQL . 'function f(bool $d): void { $s = Sql::of($d ? \'DESC\' : \'ASC\'); }', 'Sql::of()'];
+        yield 'Sql::of with a constant' => [self::USE_SQL . 'function f(): void { $s = Sql::of(self::ORDER); }', 'Sql::of()'];
+        yield 'Sql::of with a cast' => [self::USE_SQL . 'function f(int $n): void { $s = Sql::of(\'LIMIT \' . (string) $n); }', 'Sql::of()'];
+        yield 'Sql::of with a string function' => [self::USE_SQL . 'function f(string $n): void { $s = Sql::of(\'LIMIT \' . strtolower($n)); }', 'Sql::of()'];
+        yield 'Sql::of with interpolation' => [self::USE_SQL . 'function f(string $n): void { $s = Sql::of("r.$n = ?", [1]); }', 'interpolated'];
+        yield 'Sql::of with the text of an untyped variable' => [self::USE_SQL . 'function f($q): void { $s = Sql::of(\'(\' . $q->sql() . \')\'); }', 'Sql::of()'];
+        yield 'Sql::of fully qualified' => ['function f(string $t): void { $s = \\TiffinDB\\Core\\Query\\Sql::of($t); }', 'Sql::of()'];
+        yield 'sql() of a non-Sql parameter' => [self::USE_SQL . 'function f(Request $r): void { $this->db->all($r->sql(), []); }', 'variable or expression'];
+        yield 'sql() of an untyped parameter as the whole query' => [self::USE_SQL . 'function f($q): void { $this->db->all($q->sql(), $q->params()); }', 'variable or expression'];
+        yield 'sql() of a fragment property' => [self::USE_SQL . 'function f(): void { $this->db->all($this->where->sql()); }', 'variable or expression'];
+        yield 'sql() of a fragment local reassigned' => [self::USE_SQL . 'function f($x): void { $q = Sql::of(\'1\'); $q = $x; $this->db->all($q->sql()); }', 'variable or expression'];
+        yield 'sql() of a fragment passed to a function' => [self::USE_SQL . 'function f(): void { $q = Sql::of(\'1\'); g($q); $this->db->all($q->sql()); }', 'variable or expression'];
+        yield 'sql() of a fragment loop variable' => [self::USE_SQL . 'function f(array $parts): void { foreach ($parts as $q) { $this->db->all($q->sql()); } }', 'variable or expression'];
+        yield 'sql() of a ternary of a fragment and a variable' => [self::USE_SQL . 'function f(Sql $a, $b, bool $x): void { $q = $x ? $a : $b; $this->db->all($q->sql()); }', 'variable or expression'];
+        yield 'sql() of a short ternary' => [self::USE_SQL . 'function f(Sql $a, Sql $b): void { $q = $a ?: $b; $this->db->all($q->sql()); }', 'variable or expression'];
+        yield 'sql() of a fragment of another class named Sql' => ["use Other\\Fragment as Sql;\nfunction f(): void { \$q = Sql::of('1'); \$this->db->run(\$q->sql()); }", 'variable or expression'];
+        yield 'sql() of a fragment concatenated with a variable' => [self::USE_SQL . 'function f(Sql $q, string $x): void { $this->db->all($q->sql() . $x); }', 'operand'];
+        yield 'params() of another object' => [self::USE_SQL . 'function f(Sql $q, Request $r): void { $this->db->all($q->sql(), $r->params()); }', 'params()'];
+        yield 'params() of an untyped variable' => [self::USE_SQL . 'function f(Sql $q, $r): void { $this->db->all($q->sql(), $r->params()); }', 'params()'];
+        yield 'params() of a property' => [self::USE_SQL . 'function f(Sql $q): void { $this->db->all($q->sql(), $this->q->params()); }', 'params()'];
+        yield 'params() of a call' => [self::USE_SQL . 'function f(Sql $q): void { $this->db->all($q->sql(), $this->where()->params()); }', 'params()'];
+        yield 'params() inside other values' => [self::USE_SQL . 'function f(Sql $q, Request $r): void { $this->db->all($q->sql(), [...$r->params(), 1]); }', 'params()'];
+        yield 'disallowed glue' => [self::USE_SQL . 'function f(array $p): void { $s = Sql::join(\' UNION \', $p); }', 'glue'];
+        yield 'variable glue' => [self::USE_SQL . 'function f(array $p, string $g): void { $s = Sql::join($g, $p); }', 'glue'];
+        yield 'concatenated glue' => [self::USE_SQL . 'function f(array $p): void { $s = Sql::join(\' \' . \'AND \', $p); }', 'glue'];
+        yield 'double-quoted glue' => [self::USE_SQL . 'function f(array $p): void { $s = Sql::join(" AND ", $p); }', 'glue'];
+        yield 'constant glue' => [self::USE_SQL . 'function f(array $p): void { $s = Sql::join(self::GLUE, $p); }', 'glue'];
     }
 
     /** @return iterable<string, array{string, string}> code that holds no SQL, and the rule 0 id that refuses it */
@@ -374,6 +456,17 @@ final class SqlStringsTest extends TestCase
         yield 'index of a column named like a method' => ['$v = $row[\'value\'];'];
         yield 'enum case value like a method' => ['enum Cardinality: string { case One = \'one\'; }'];
         yield 'allowed loop variable over a constant entry' => ['$f = static function (Database $db) use ($version): void { foreach (self::STEPS[$version] as $statement) { $db->run($statement); } };'];
+        // Sql fragments (M2 spec section 3.9).
+        yield 'fragments from literals and names' => [self::USE_SQL . 'function f(TableDef $t, string $k, array $ids): void { $w = Sql::of(\'r.\' . Identifier::column($k) . \' IN (\' . Database::placeholders(count($ids)) . \')\', $ids); $q = Sql::join(\' \', [Sql::of(\'SELECT * FROM \' . $t->sql() . \' AS "r" WHERE\'), $w->wrap()]); $this->db->all($q->sql(), $q->params()); }'];
+        yield 'fragment parameter' => [self::USE_SQL . 'function f(Sql $where): int { return (int) $this->db->value(\'SELECT COUNT(*) FROM t WHERE \' . $where->sql(), $where->params()); }'];
+        yield 'fragment text inside another fragment' => [self::USE_SQL . 'function f(Sql $e): void { $q = Sql::of(\'(\' . $e->sql() . \' IS NULL)\', $e->params()); $this->db->all($q->sql(), $q->params()); }'];
+        yield 'fragment from a definition object' => [self::USE_SQL . 'function f(FieldDef $field, string $label): void { $q = Sql::of(\'r.\' . $field->sql() . \' = ?\', [$label]); }'];
+        yield 'wrapped fragment' => [self::USE_SQL . 'function f(): void { $a = Sql::of(\'1\'); $b = $a->wrap(); $this->db->all($b->sql(), $b->params()); }'];
+        yield 'ternary of fragments' => [self::USE_SQL . 'function f(bool $d): void { $dir = $d ? Sql::of(\'DESC\') : Sql::of(\'ASC\'); $q = Sql::join(\' \', [Sql::of(\'SELECT 1 ORDER BY 1\'), $dir]); $this->db->all($q->sql(), $q->params()); }'];
+        yield 'fragment chosen in if branches' => [self::USE_SQL . 'function f(bool $d): void { if ($d) { $dir = Sql::of(\'DESC\'); } else { $dir = Sql::of(\'ASC\'); } $this->db->all(\'SELECT 1 ORDER BY 1 \' . $dir->sql()); }'];
+        yield 'fragment captured by a closure' => [self::USE_SQL . 'function f(Sql $q): void { $this->db->write(function (Database $db) use ($q): void { $db->run($q->sql(), $q->params()); }); }'];
+        yield 'every glue' => [self::USE_SQL . 'function f(array $p): void { $a = Sql::join(\' AND \', $p); $b = Sql::join(\' OR \', $p); $c = Sql::join(\', \', $p); $d = Sql::join(\' \', $p); }'];
+        yield 'two-element values and parts' => [self::USE_SQL . 'function f(Sql $a, string $x, string $y): void { $q = Sql::join(\' \', [$a, Sql::of(\'= ?\', [$x])]); $r = Sql::of(\'? ?\', [$x, $y]); $j = Sql::join(\' \', [$a, $q]); }'];
     }
 
     #[DataProvider('goodSources')]
@@ -423,6 +516,24 @@ final class SqlStringsTest extends TestCase
             if (self::isToken($token, T_STRING) && in_array(strtolower($token[1]), self::STRING_BUILDERS, true)
                 && ($tokens[$i + 1] ?? null) === '(' && !self::isMemberName($tokens, $i)) {
                 $violations[] = 'line ' . $line($i) . ': string builder ' . strtolower($token[1]) . '()';
+            }
+            if (self::isFragmentFactory($c, $i)) {
+                $factory = strtolower($tokens[$i + 2][1]);
+                if ($factory === 'of') {
+                    // Rule 3a: Sql::of() text follows rule 3.
+                    $problems = ($tokens[$i + 4] ?? null) === ')' ? ['SQL argument of ->%m() is missing'] : self::argumentProblems($c, $i + 4, $allowedVariables);
+                    foreach ($problems as $problem) {
+                        $violations[] = 'line ' . $line($i) . ': ' . str_replace('->%m()', 'Sql::of()', $problem);
+                    }
+                } elseif ($factory === 'join' && !self::isAllowedGlue($tokens, $i + 4)) {
+                    // Rule 3b.
+                    $violations[] = 'line ' . $line($i) . ': Sql::join() glue is not one single-quoted literal among Sql::GLUES';
+                }
+            }
+            if (self::isToken($token, T_STRING) && strtolower($token[1]) === 'params' && self::isMethodCall($tokens, $i)
+                && !self::isProvenCall($c, $i - 2, 'params', [self::SQL_CLASS])) {
+                // Rule 3c.
+                $violations[] = 'line ' . $line($i) . ': params() of an object not shown to be an Sql fragment';
             }
             if (self::isToken($token, T_STRING) && self::isMethodCall($tokens, $i)) {
                 $method = strtolower($token[1]);
@@ -609,14 +720,17 @@ final class SqlStringsTest extends TestCase
             return false;
         }
         // Positions where an array is data, never a callable: the bound parameters of a query
-        // method (its second argument; Database binds each element as a value) and a returned tuple.
+        // method (its second argument; Database binds each element as a value), the second
+        // argument of Sql::of() (bound values, each checked to be a scalar or null) and of
+        // Sql::join() (fragments, each checked to be an Sql), and a returned tuple.
         $p = $c['parent'][$k];
         if (self::isToken($before, T_RETURN) && ($tokens[$close + 1] ?? null) === ';') {
             return false;
         }
-        if ($before === ',' && $p !== null && $tokens[$p] === '(' && in_array($tokens[$close + 1] ?? null, [')', ','], true)
-            && self::isToken($tokens[$p - 1] ?? null, T_STRING) && self::isMethodCall($tokens, $p - 1)
-            && in_array(strtolower($tokens[$p - 1][1]), self::QUERY_METHODS, true)) {
+        $isDataArgument = $p !== null && ((self::isToken($tokens[$p - 1] ?? null, T_STRING) && self::isMethodCall($tokens, $p - 1)
+            && in_array(strtolower($tokens[$p - 1][1]), self::QUERY_METHODS, true))
+            || (self::isFragmentFactory($c, $p - 3) && in_array(strtolower($tokens[$p - 1][1]), ['of', 'join'], true)));
+        if ($before === ',' && $p !== null && $tokens[$p] === '(' && in_array($tokens[$close + 1] ?? null, [')', ','], true) && $isDataArgument) {
             $commas = 0;
             for ($j = $p + 1; $j < $k; $j++) {
                 $commas += ($tokens[$j] === ',' && $c['parent'][$j] === $p) ? 1 : 0;
@@ -739,12 +853,55 @@ final class SqlStringsTest extends TestCase
      */
     private static function isProvenSqlCall(array $c, int $s): bool
     {
+        return self::isProvenCall($c, $s, 'sql', [...self::DEF_CLASSES, self::SQL_CLASS]);
+    }
+
+    /**
+     * `$v-><method>()` at $s, with no arguments, on a plain variable (not a
+     * property or a chain) shown to hold one of $classes.
+     *
+     * @param array<string, mixed> $c
+     * @param list<string> $classes
+     */
+    private static function isProvenCall(array $c, int $s, string $method, array $classes): bool
+    {
         $tokens = $c['tokens'];
+        $before = $tokens[$s - 1] ?? null;
 
         return self::isToken($tokens[$s] ?? null, T_VARIABLE) && self::isToken($tokens[$s + 1] ?? null, T_OBJECT_OPERATOR)
-            && self::isToken($tokens[$s + 2] ?? null, T_STRING) && strtolower($tokens[$s + 2][1]) === 'sql'
+            && self::isToken($tokens[$s + 2] ?? null, T_STRING) && strtolower($tokens[$s + 2][1]) === $method
             && ($tokens[$s + 3] ?? null) === '(' && ($tokens[$s + 4] ?? null) === ')'
-            && in_array(strtolower((string) self::typeOfVariable($c, $tokens[$s][1], $s, 0)), array_map('strtolower', self::DEF_CLASSES), true);
+            && !self::isToken($before, T_OBJECT_OPERATOR) && !self::isToken($before, T_NULLSAFE_OBJECT_OPERATOR) && !self::isToken($before, T_DOUBLE_COLON)
+            && in_array(strtolower((string) self::typeOfVariable($c, $tokens[$s][1], $s, 0)), array_map('strtolower', $classes), true);
+    }
+
+    /**
+     * `Sql::<name>(` at $i, the class resolved through the file's imports.
+     *
+     * @param array<string, mixed> $c
+     */
+    private static function isFragmentFactory(array $c, int $i): bool
+    {
+        $tokens = $c['tokens'];
+
+        return self::isName($tokens[$i] ?? null) && self::isToken($tokens[$i + 1] ?? null, T_DOUBLE_COLON)
+            && self::isToken($tokens[$i + 2] ?? null, T_STRING) && ($tokens[$i + 3] ?? null) === '('
+            && strtolower((string) self::resolveClass($c, $tokens[$i][1], $i)) === strtolower(self::SQL_CLASS);
+    }
+
+    /**
+     * The glue argument at $k is one single-quoted literal (then a comma) whose text is in Sql::GLUES.
+     *
+     * @param list<mixed> $tokens
+     */
+    private static function isAllowedGlue(array $tokens, int $k): bool
+    {
+        $glue = $tokens[$k] ?? null;
+        if (!self::isToken($glue, T_CONSTANT_ENCAPSED_STRING) || ($tokens[$k + 1] ?? null) !== ',' || !str_starts_with($glue[1], "'")) {
+            return false;
+        }
+
+        return in_array(substr($glue[1], 1, -1), [' AND ', ' OR ', ', ', ' '], true);
     }
 
     /**
@@ -908,6 +1065,32 @@ final class SqlStringsTest extends TestCase
     private static function typeOfExpression(array $c, int $s, int $e, int $depth): ?string
     {
         $tokens = $c['tokens'];
+        // `cond ? A : B` at the top level: the class both arms are shown to have.
+        $question = null;
+        $colon = null;
+        for ($k = $s; $k < $e; $k++) {
+            if (self::isOpen($tokens[$k])) {
+                $k = self::matchClose($c, $k);
+            } elseif ($tokens[$k] === '?') {
+                if ($question !== null) {
+                    return null;
+                }
+                $question = $k;
+            } elseif ($tokens[$k] === ':' && $question !== null) {
+                if ($colon !== null) {
+                    return null;
+                }
+                $colon = $k;
+            }
+        }
+        if ($question !== null) {
+            if ($colon === null || $colon === $question + 1) {
+                return null;
+            }
+            $then = self::typeOfExpression($c, $question + 1, $colon, $depth + 1);
+
+            return $then !== null && $then === self::typeOfExpression($c, $colon + 1, $e, $depth + 1) ? $then : null;
+        }
         $t = $tokens[$s] ?? null;
         if (self::isToken($t, T_NEW)) {
             if (!self::isName($tokens[$s + 1] ?? null) || ($tokens[$s + 2] ?? null) !== '(' || self::matchClose($c, $s + 2) !== $e - 1) {

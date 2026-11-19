@@ -90,12 +90,21 @@ final class FormatUpgradeTest extends TestCase
         return array_values(array_filter(array_map('trim', explode(';', $block)), static fn (string $s): bool => $s !== ''));
     }
 
-    /** @return list<string> */
-    private static function sqlBlocks(string $from, string $to): array
+    /**
+     * The SQL blocks between the heading $from and $to, or the next heading
+     * of any level when $to is null (so later sections, such as those of
+     * planned format versions, are never read).
+     *
+     * @return list<string>
+     */
+    private static function sqlBlocks(string $from, ?string $to = null): array
     {
         $doc = RepoFiles::read('docs/formats/tiffin.md');
-        $start = (int) strpos($doc, $from);
-        $section = substr($doc, $start, (int) strpos($doc, $to, $start) - $start);
+        $start = strpos($doc, $from);
+        self::assertIsInt($start, 'Heading not found: ' . $from);
+        $end = $to === null ? strpos($doc, "\n#", $start + strlen($from)) : strpos($doc, $to, $start);
+        self::assertIsInt($end);
+        $section = substr($doc, $start, $end - $start);
         preg_match_all('/```sql\n(.*?)```/s', $section, $blocks);
 
         return $blocks[1];
@@ -105,7 +114,7 @@ final class FormatUpgradeTest extends TestCase
 
     public function testStepTwoEqualsTheDocument(): void
     {
-        $blocks = self::sqlBlocks('### 11.1 Upgrade from version 1 to version 2', '## 12. Forms');
+        $blocks = self::sqlBlocks('### 11.1 Upgrade from version 1 to version 2');
         self::assertCount(1, $blocks);
         $documented = self::statements($blocks[0]);
         self::assertCount(5, $documented);
@@ -121,6 +130,7 @@ final class FormatUpgradeTest extends TestCase
 
         // Section 4's second block is the same three statements (one source for both).
         $section4 = self::sqlBlocks('## 4. Metadata tables', '## 5. User tables');
+        self::assertGreaterThanOrEqual(2, count($section4));
         self::assertSame(array_map([self::class, 'collapse'], self::statements($section4[1])), array_map([self::class, 'collapse'], FormatMigrations::STEPS[2]));
     }
 

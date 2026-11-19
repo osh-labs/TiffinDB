@@ -212,6 +212,14 @@ final class FormParserTest extends TestCase
         yield 'data href' => [self::wrap('<p><a href="data:text/html,x">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'href with tab' => [self::wrap('<p><a href="https://exa&#9;mple.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'href ending in a tab' => [self::wrap('<p><a href="https://example.com/&#9;">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        // The url type trims; FormRules::isHref in FormParser::values refuses at the attribute, before the
+        // script inside the link is reached (without that check the script would be reported instead).
+        yield 'href with leading space, at the attribute' => [self::wrap('<p><a href=" https://example.com/"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with trailing space, at the attribute' => [self::wrap('<p><a href="https://example.com/ "><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with leading line feed, at the attribute' => [self::wrap('<p><a href="&#10;https://example.com/"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with trailing line feed, at the attribute' => [self::wrap('<p><a href="https://example.com/&#10;"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with trailing space' => [self::wrap('<p><a href="https://example.com/ ">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with line feed' => [self::wrap('<p><a href="https://example.com/&#10;">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'href with leading space' => [self::wrap('<p><a href=" https://example.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'scheme-relative href' => [self::wrap('<p><a href="//example.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'empty href' => [self::wrap('<p><a href="">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
@@ -298,46 +306,49 @@ final class FormParserTest extends TestCase
     }
 
     /**
-     * ADR 0014 decision 4 and M2 spec section 14 item 4: with the reader
-     * settings FormParser uses, libxml neither fetches nor expands an
-     * external entity even when a DOCTYPE gets past the pre-scan. The
-     * marker file's content must never appear.
+     * ADR 0014 decision 4 and M2 spec section 14 item 4: FormParser's own
+     * reader settings neither fetch nor expand an external entity even when
+     * a DOCTYPE gets past the pre-scan. The private walk() (the reader
+     * stage, after the pre-scan) is called directly so that only those
+     * settings stand between the document and the marker file, whose
+     * content must never appear in a result or an error.
      */
-    public function testReaderSettingsDoNotExpandExternalEntities(): void
+    public function testReaderStageAloneDoesNotExpandEntities(): void
     {
         $this->temp = TempDir::create();
         $secret = $this->temp->path('marker.txt');
         file_put_contents($secret, 'SYNTHETIC-MARKER-0001');
-        $xml = '<!DOCTYPE div [<!ENTITY x SYSTEM "file://' . $secret . '"><!ENTITY y "inner">]>'
-            . '<div data-tiffin-form="1"><p>&x;&y;</p></div>';
-
-        $previous = libxml_use_internal_errors(true);
-        $seen = '';
-        try {
-            $reader = \XMLReader::XML($xml, 'UTF-8', LIBXML_NONET);
-            self::assertInstanceOf(\XMLReader::class, $reader);
-            $reader->setParserProperty(\XMLReader::LOADDTD, false);
-            $reader->setParserProperty(\XMLReader::DEFAULTATTRS, false);
-            $reader->setParserProperty(\XMLReader::VALIDATE, false);
-            $reader->setParserProperty(\XMLReader::SUBST_ENTITIES, false);
-            $types = [];
-            while ($reader->read()) {
-                $types[] = $reader->nodeType;
-                $seen .= (string) $reader->value;
+        $documents = [
+            'external entity' => '<!DOCTYPE div [<!ENTITY x SYSTEM "file://' . $secret . '">]>' . self::wrap('<p>&x;</p>'),
+            'internal entity' => '<!DOCTYPE div [<!ENTITY y "<script>alert(1)</script>">]>' . self::wrap('<p>&y;</p>'),
+            'billion laughs' => '<!DOCTYPE div [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">'
+                . '<!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">]>' . self::wrap('<p>&c;</p>'),
+            'external DTD' => '<!DOCTYPE div SYSTEM "file://' . $secret . '">' . self::wrap(''),
+        ];
+        $parser = self::parser();
+        $walk = new \ReflectionMethod(FormParser::class, 'walk');
+        foreach ($documents as $name => $xml) {
+            $previous = libxml_use_internal_errors(true);
+            try {
+                $walk->invoke($parser, $xml);
+                self::fail($name . ': the reader stage accepted a document type.');
+            } catch (FormRejected $rejected) {
+                self::assertContains($rejected->reason, [FormRejected::NODE_TYPE, FormRejected::MALFORMED], $name);
+                self::assertStringNotContainsString('SYNTHETIC-MARKER', $rejected->getMessage(), $name);
+            } finally {
+                foreach (libxml_get_errors() as $error) {
+                    self::assertStringNotContainsString('SYNTHETIC-MARKER', $error->message, $name);
+                }
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
             }
-            $reader->close();
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
-        }
-        self::assertStringNotContainsString('SYNTHETIC-MARKER', $seen);
-        // The parser refuses the document type and entity-reference nodes outright.
-        self::assertContains(\XMLReader::DOC_TYPE, $types);
-        try {
-            self::parser()->parse($xml);
-            self::fail('The form was accepted.');
-        } catch (FormRejected $rejected) {
-            self::assertSame(FormRejected::DECLARATION, $rejected->reason);
+            // Through parse(), the pre-scan refuses it first.
+            try {
+                $parser->parse($xml);
+                self::fail($name . ': the form was accepted.');
+            } catch (FormRejected $rejected) {
+                self::assertSame(FormRejected::DECLARATION, $rejected->reason, $name);
+            }
         }
     }
 }

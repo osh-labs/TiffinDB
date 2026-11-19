@@ -335,7 +335,7 @@ Measurements at 1360 px (from `docs/design/m2/components.md` section 9 and M1 se
 | Sidebar | at least 260 wide; padding 24 16 32; links 48 high | none | none |
 | Main | padding 28 32 40 | max 1120, padding 20 20 48 | max 1120, padding 32 24 48 |
 | `h1` | 34 | 34 | 34 |
-| Controls | find box, sort, Apply, Filter 44 high | inputs 48 high, border 2, radius 8 | radio cards 64 (colours, accents), 76 (lettering) |
+| Controls | find box, sort, Apply, Filter 44 high | inputs 48 high, border 2, radius 8 | radio cards at least 64 (colours, accents), at least 76 (lettering) |
 | Cards | controls panel and table radius 12, border 1 | fieldsets padding 24, radius 12, legend 22 | fieldsets padding 20 24, radius 12 |
 | Table | cells padding 14 16; header 16 | | |
 | Buttons | Add item 44; pager 44 | Save, Back to list, Move to trash 48 | Save settings, Back to standard 48 |
@@ -412,3 +412,39 @@ For each: 1360 px and 390 px light with the measurements of 11.1; one pass in ea
 | WP9 | `tests/web/EndToEndTest.php`, `tests/web/ScreenStructureTest.php`, `tests/web/KeyboardStructureTest.php` (new), `tests/Support/M2Fixture.php` (new) | T-E2E-5 to T-E2E-7, T-SCR-2, T-KBD-1 pass; K-1 and V-9 to V-14 run and reported |
 
 WP6, WP7, and WP8 must not change `app.css`, `layout.php`, shared partials, `routes.php`, or another package's strings; a missing class, partial, string, or route is reported to the orchestrator, who routes it to a follow-up on WP5's files (M1 rule).
+
+## 14. As-built notes
+
+Recorded at the M2 exit audit (M2-X, 2026-11-19). Where the merged code differs from the text above, the code and the provisional decisions in `docs/build/ledger.md` section 4 govern.
+
+### 14.1 What was built
+
+Every route of section 2, every template and partial of sections 4 and 13, the stylesheet and `settings-preview.js`, and the tests of section 12 (T-WEB-24 to T-WEB-32, T-SCR-2, T-KBD-1, T-E2E-5 to T-E2E-7) are merged. Suite totals are in part 1 section 15.1. The layout fixes from the WP9 visual run (WP5b: X-1 top-bar search and pager shrink at 320 px Largest; X-2 settings cards stack when narrow; X-3 "Graphite" fits its accent card; X-4 `p.label` has no margin; X-5 less side padding on list and search below 22.5em) held at the audit.
+
+### 14.2 Keyboard run (K-1) at the audit
+
+Re-run by the auditor against the built-in server on a scratch installation built from `tests/Support/M2Fixture.php` (data folder outside `public/`), with key presses only after the first load of `/sign-in`: steps 1 to 6 passed (signed in, opened Home Inventory, added an item filling text, choice by arrow keys, date by digits, currency, rating by arrow keys, checkbox by Space, web address, notes; "The item has been added."; found by the list find box, one row; edited and saved, "Your changes have been saved." with the new value; moved to the trash and restored with Undo). Step 7: no focus trap; the focus ring was visible on every focused control (a native date input reports focus on its date parts, with the ring drawn on the input). A manual screen-reader pass remains not verified, as in M0 and M1.
+
+### 14.3 Visual procedure (V-9 to V-14) at the audit
+
+31 screen states (V-9 list as Admin and Member, empty table as Admin and Member, no matches, filtered, invalid filter, undo notice; V-10 "Stand mixer", new record, with errors (422), trashed, conflict (409); V-11 settings, preview after a change with script; V-12 filter steps 1 and 2 for choice, checkbox, relation, date; V-13 search across three tables, no matches, no text; V-14 projects, tables, fields, people, add person, sharing, password; a nonexistent record (404)) in six passes: 1360 px light, 390 px light, 1360 px dark, high-contrast light, high-contrast dark, and 320 px Largest. No page scrolls sideways in any of the 186 renderings; no request left the server's origin; no CSP or script error in the console. Measured at 1360 px light: top bar 68; sidebar 260.5 wide; `h1` 34; list `main` padding 28 32 40; find box, Add item 44; record `main` padding 20 20 48, inputs 48, Save 48; settings `main` padding 32 24 48. Settings preview without script was checked for mid-word breaks only (none).
+
+### 14.4 Deviations accepted in M2 (section 11.3, extended)
+
+D-1 to D-14 hold as listed. Added from the WP9 report and confirmed at the audit:
+
+| # | Screen | Mock-up | M2 | Reason |
+|---|---|---|---|---|
+| D-15 | Record | Condition (rating) and Notes in one grid column | Both span the full row | Generator rule (part 1 section 5.4: `full` span for `long_text` and `rating`) |
+| D-16 | List | Room cells are plain text | Room cells link to the linked record (Tab visits title, then room, in each row) | Section 5.2 allows links to linked records |
+| D-17 | List | Find placeholder "Type a name, room, or category" | "Type part of a name or other text" | `lists.find.placeholder` |
+| D-18 | Record | "Manual (web address)" | "Manual" | Section 5.1 defines a label suffix for currency only |
+| D-19 | Record | No "Not rated" option | "Not rated" after "5, highest" | As D-9 |
+
+Note: `docs/specs/M3-screens.md` section 11 also numbers its deviations D-15 to D-19 (import screens). The numbers are per milestone; cite them with the milestone (M2 D-15, M3 D-15).
+
+Other differences seen at the audit, none blocking: with the Largest text size at 320 px, long file names (attachments) and the hyphenated "sans-serif" in a lettering hint break inside the token, which is unavoidable for a token wider than its line; the high-contrast theme cards measure 74 px at 1360 px because their names take two lines.
+
+### 14.5 Wording corrected
+
+Section 11.1, measurement table, Controls row for settings (corrected in place): the radio cards are **at least** 64 high (colours, accents) and **at least** 76 high (lettering), as `docs/design/m2/components.md` section 9 says; measured 64 to 74 and 107 to 140 at 1360 px. The heights are minimums, not exact values.

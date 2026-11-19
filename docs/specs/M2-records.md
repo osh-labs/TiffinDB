@@ -731,7 +731,7 @@ All tests under `tests/`, run by `composer test`, offline and deterministic, wit
 | ID | Asserts |
 |---|---|
 | T-CF-1 | `Request` reads `HTTP_ORIGIN` into a new `origin` property (a string of at most 2,048 printable ASCII characters, else null). `Kernel`: a POST with no `Sec-Fetch-Site` whose `Origin` is present and is not the request's own origin (`http://` or `https://` from `Request::secure`, then `Request::host`, default ports 80 and 443 omitted on both sides, compared ignoring ASCII case) is refused with the M1 CSRF 403 page before the CSRF check; `Origin: null` is refused; a matching `Origin` goes on to the CSRF check; a POST with neither header goes on to the CSRF check; with `Sec-Fetch-Site` present the M1 rules apply and `Origin` is not consulted; GET and HEAD are never checked |
-| T-CF-2 | `UrlType`: the hexadecimal-host rule looks at the last label only and needs hexadecimal digits after `0x`: `https://0xford.example/` accepted; `https://0x7f000001/` and `https://a.0x7f/` refused; every M1 numeric-host case (T-TYP-7, P72) still refused |
+| T-CF-2 | `UrlType` (wording corrected at M2-X, section 15.3): a label that is `0x` followed only by hexadecimal digits is refused wherever it stands, and a label that merely starts with `0x` is an ordinary name: `https://0xford.example/` accepted; `https://0x7f000001/` and `https://a.0x7f/` refused; every M1 numeric-host case (T-TYP-7, P72) still refused |
 | T-CF-3 | `SetupController::admin`: when `createFirstAdmin` throws because the first Admin already exists, the response is 303 to `/sign-in` (no 500) |
 | T-CF-4 | `Fs::entries` (names in a directory, sorted, without `.` and `..`, never following links, `\RuntimeException` for a missing directory) and the stat helpers (`isFile`, `isDir`, `size`, each not following links); `ProjectRegistry::abandoned(string $before)` returns `creating` rows older than the given time; `ProjectOperations` step 0 of project creation uses them, with no direct file-system call or literal system-database SQL left in it (P78) and T-APP-10 unchanged |
 
@@ -943,3 +943,42 @@ Each was chosen as the option cheapest to reverse (orchestration guide section 5
 7. The record mock-up orders Category before Room while the list mock-up shows Room first; with one field order for both screens, the synthetic visual-check data follows the list (part 2 section 11.3).
 8. Missing information: whether the maintainer wants the record screen to return to the list after Save (mock-up) or stay (P86); whether search should cover numbers and dates (P87); whether the trash count should become a link before M4 (P103). Each has a provisional answer above.
 9. Behind a reverse proxy that changes the `Host` header, the `Origin` check (P109) can refuse legitimate POSTs that carry `Origin` but not `Sec-Fetch-Site`. Modern browsers send `Sec-Fetch-Site`, so the check rarely applies; the host check (maintainer task) should include one POST through the reference host.
+
+## 15. As-built notes
+
+Recorded at the M2 exit audit (M2-X, 2026-11-19). Where the merged code differs from the text above, the code and the provisional decisions in `docs/build/ledger.md` section 4 govern; the sections above are left as designed except where this section says the wording was corrected.
+
+### 15.1 What was built
+
+Every work package of section 12 (WP0 to WP9, with follow-ups WP2b, WP3b, WP4b, WP5b, WP6b, WP7b) is merged. The suite at the audit: `composer test` 6,310 tests, 423,766 assertions, OK with 1 skip (the locale test of M1, no comma-decimal locale installed); `composer lint` 474 files, 0 failed. At M1 close the suite had 4,777 tests and lint 348 files. `composer.json`, `.gitignore`, and `docs/dependencies.md` are unchanged since M1 close; no dependency was added.
+
+### 15.2 Exit criteria (section 1.3)
+
+| Criterion | Result at the audit |
+|---|---|
+| A Member can add, find, and edit records by keyboard only | Met. T-APP-70 to T-APP-73, T-E2E-5, T-KBD-1 pass; K-1 re-run by the auditor with key presses only (part 2 section 10.2, steps 1 to 7): every step passed, no focus trap, focus ring visible on every focused control. Mutations adding a positive `tabindex` and removing a control's label link fail T-KBD-1 (`KeyboardStructureTest`), so the structural checks are not vacuous |
+| Contrast over all 10 combinations with the ui 4.2 and 4.5 figures | Met. T-DES-7 asserts all 100 cells exactly against `tokens.css` and the published table; an independent recomputation from both token files matched all 100 cells (lowest text pair 7.09, dark indigo accent on its tint). Mutating a token or a published figure fails the test |
+| Light-theme warning token at 7:1 or better | Met. `--warn` `#703D00` in both token files; 7.61:1 on `--warn-soft` |
+| Scope | Met; every screen reachable on a live installation (built-in server, data folder outside `public/`) |
+| Data portability | Met. A version 2 file opens with the plain SQLite library: `application_id`, `user_version` 2, `format_version` 2, every `_tiffin_*` statement equal to `docs/formats/tiffin.md` section 4 (13 of 13), names per section 3, `integrity_check` ok, `foreign_key_check` empty. A version 1 project created by the M1 code (commit `ca93166`) opened through the list route: one `format-upgrade` snapshot at version 1, file at version 2 with `_tiffin_forms` empty, records, trashed rows, and links unchanged, no second snapshot |
+| Security baseline | Met; see the M2-X evidence table recorded with the ledger |
+
+### 15.3 Differences from the text above
+
+| Section | As built | Decision |
+|---|---|---|
+| 3.2, 3.3 | `Records` takes its `Schema` in the constructor; a table created earlier in the same transaction is not visible to it. `RecordOperations::create` does not build the record screen before creating | M3-R1 finding, for M3-D2 |
+| 3.3 | `Import` mode refuses auto-number values and `Canonical` mode refuses duplicates as problems (no raw `PDOException`) | M3-R1 fix |
+| 5.5, 5.6 | `FormStore::regenerate` extends only each table's default form | M3-R1 finding |
+| 7.4 | Every record permission (`records.view`, `records.edit`, `records.trash`) is open to every granted Member, so a record operation checking a different record permission behaves identically; T-APP-74 cannot tell them apart (two equivalent mutants at the audit). A later read-only role would need a per-method permission test | ADR 0002 |
+| 7.5 | The schema confirmation accepts any posted count at or above the number of values to be cleared | WP8 review, accepted |
+| 10.5 T-CF-1 | An `Origin` value that is malformed (over 2,048 characters, a tab, non-ASCII bytes) is read as absent and goes on to the CSRF check | WP0 review, Low |
+| 10.5 T-CF-2 | Wording corrected in place: `UrlType` refuses a host when **any** label is `0x` followed only by hexadecimal digits (including `0x` alone), and when the last label (ignoring one trailing dot) is all decimal digits unless the host is four plain decimal labels of 0 to 255. A label that merely starts with `0x` (`0xford.example`) is an ordinary name. Stored values that no longer pass (for example `https://example.123/`) read back as empty | WP0 review |
+| 11 | Email values are shown as escaped text, not as `mailto:` links, so the `rawurlencode` rule has no call site yet; it applies when a link is added | as built |
+| `docs/formats/tiffin.md` | The format document now describes version 3 (M3-D1); M2 code writes and upgrades to version 2. T-SCH-1 and T-FMT-1 read the version 1 and version 2 blocks and section 11.1 and still pass | M3-D1 |
+
+### 15.4 Carried-forward items (section 11) at the audit
+
+Closed: plural strings (`{name|singular|plural}`, markup in plural text tested); `Fs::entries`, stat helpers, `ProjectRegistry::abandoned` (T-CF-4); P82 bound confirmation (T-APP-80, T-WEB-32); `Origin` check (T-CF-1, confirmed live: foreign and `null` origins refused on every new POST route); hex-host rule (T-CF-2, with the wording above); losing first-Admin POST gives 303 (T-CF-3); attributes escaped with `ENT_QUOTES`; `assertForm` accepts `aria-label`; "Temporary" no longer breaks mid-word at 320 px Largest (V-14).
+
+Still open, carried to the ledger: no test for `ProjectOperations::create` with a symbolic-link `projects/` folder (the WP0 review found it fails closed); the WP0 review's mutation survivor in the abandoned-row recheck inside the write transaction (not re-checked at the audit); no static test pins the class-name pattern in `settings-preview.js` (WP5 review mutation M7); `ValueText::cut` loses its length cap on invalid UTF-8 (output safe); right-to-left override characters are escaped but not isolated.

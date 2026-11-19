@@ -38,6 +38,7 @@ final class Operations
     private ?SnapshotOperations $snapshots = null;
     private ?AuditOperations $audit = null;
     private ?RecordOperations $records = null;
+    private ?SettingsOperations $settings = null;
 
     /**
      * @param (\Closure(string): void)|null $seam Test seam (T-APP-30), not for
@@ -95,6 +96,11 @@ final class Operations
     public function records(): RecordOperations
     {
         return $this->records ??= new RecordOperations($this->context);
+    }
+
+    public function settings(): SettingsOperations
+    {
+        return $this->settings ??= new SettingsOperations($this->context);
     }
 
     /** Closes every project database this instance opened. The system database is the caller's. */

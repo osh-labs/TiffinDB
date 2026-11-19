@@ -33,7 +33,7 @@ use TiffinDB\Core\System\ProjectRecord;
  * Exports and the project archive download (M3 spec sections 10 and 13.2).
  *
  * Authorization as ImportOperations: `io.use` on the project through
- * Context::project, then an active Admin. Each export is written into its
+ * Context::project, then Context::requireCurrentActor. Each export is written into its
  * own `exports` job folder, whose owner file names the Admin and the
  * project; finish() removes only a folder owned by the actor for that
  * project, and ignores anything else without saying whether it exists.
@@ -227,7 +227,7 @@ final class ExportOperations
     private function authorise(Actor $actor, string $projectKey): ProjectRecord
     {
         $project = $this->c->project($actor, Permission::ImportExport, $projectKey);
-        $this->c->requireActiveAdmin($actor);
+        $this->c->requireCurrentActor($actor);
 
         return $project;
     }

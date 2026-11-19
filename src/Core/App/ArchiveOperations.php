@@ -142,7 +142,7 @@ final class ArchiveOperations
     private function authorise(Actor $actor): void
     {
         $this->c->authorizer->require($actor, Permission::CreateProject);
-        $this->c->requireActiveAdmin($actor);
+        $this->c->requireCurrentActor($actor);
     }
 
     /**

@@ -147,17 +147,19 @@ final class Context
 
     /**
      * Outside a transaction: the acting person, read now, must still exist,
-     * be active, and be an Admin (AccessDenied otherwise). Every import,
-     * export, archive, and plugin operation calls it after its permission
-     * check, so a deactivated or demoted Admin whose session has not been
-     * ended yet, or an Actor naming nobody, is refused before anything is
-     * read or written.
+     * be active, and hold the key and the role the Actor was built with
+     * (AccessDenied otherwise). Every import, export, archive, and plugin
+     * operation calls it after its permission check, so an Admin who has
+     * been deactivated or made a Member since the session was resumed, and
+     * an Actor naming nobody, are refused before anything is read or
+     * written. The permission check decides on the role; this check makes
+     * sure that role is still the person's.
      */
-    public function requireActiveAdmin(Actor $actor): UserRecord
+    public function requireCurrentActor(Actor $actor): UserRecord
     {
         $current = $this->users->byId($actor->userId);
-        if ($current === null || !$current->active || $current->role !== Role::Admin || $current->key !== $actor->userKey) {
-            throw new AccessDenied('The acting person is no longer an active Admin.');
+        if ($current === null || !$current->active || $current->role !== $actor->role || $current->key !== $actor->userKey) {
+            throw new AccessDenied('The acting person is not who the session says.');
         }
 
         return $current;

@@ -60,7 +60,7 @@ final class PluginOperations
     private function authorise(Actor $actor): void
     {
         $this->c->authorizer->require($actor, Permission::ManagePlugins);
-        $this->c->requireActiveAdmin($actor);
+        $this->c->requireCurrentActor($actor);
     }
 
     private function find(string $kind, string $id): PluginInfo

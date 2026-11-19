@@ -54,7 +54,8 @@ use TiffinDB\Core\System\ProjectRecord;
  * Authorization: every method first checks `io.use` on the project
  * through Context::project (an ungranted Member, an unknown key, and a
  * project that is not active are NotFound; a granted Member AccessDenied),
- * then that the actor is still an active Admin (Context::requireActiveAdmin).
+ * then that the actor is still the active person, with the role, the session
+ * names (Context::requireCurrentActor).
  * Job keys that are not keys, absent jobs, and jobs of another project or
  * another person are NotFound (P134); the owner is checked before the job
  * lock is tried, so another Admin cannot even learn that the job is busy.
@@ -583,11 +584,11 @@ final class ImportOperations
 
     // ------------------------------------------------------------------ internals
 
-    /** The permission check of every method: `io.use` on the project, then an active Admin. */
+    /** The permission check of every method: `io.use` on the project, then the current person (Context::requireCurrentActor). */
     private function authorise(Actor $actor, string $projectKey): ProjectRecord
     {
         $project = $this->c->project($actor, Permission::ImportExport, $projectKey);
-        $this->c->requireActiveAdmin($actor);
+        $this->c->requireCurrentActor($actor);
 
         return $project;
     }

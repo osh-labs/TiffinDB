@@ -36,6 +36,9 @@ final class ArchiveController
     /** The longest uploaded name kept for the "has been checked" sentence. */
     private const MAX_FILE_NAME = 255;
 
+    /** Characters never shown in a file name: as IoSupport::clientName removes them. */
+    private const HIDDEN_CHARACTERS = '/(?![\x{200C}\x{200D}])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u';
+
     public function __construct(private readonly Context $context)
     {
     }
@@ -139,15 +142,20 @@ final class ArchiveController
 
     /**
      * The uploaded file's name as plain text for the page: valid UTF-8,
-     * no control characters, at most MAX_FILE_NAME characters; '' when it
-     * cannot be shown.
+     * at most MAX_FILE_NAME characters, with the characters the core
+     * removes from client names (IoSupport::clientName) removed too:
+     * controls (Cc), format characters (Cf: bidi overrides and isolates,
+     * zero-width space, byte order mark, soft hyphen, tag characters) other
+     * than the zero-width joiner and non-joiner, and line and paragraph
+     * separators (Zl, Zp). So a forged `file_name` cannot show reversed or
+     * hidden text. '' when it cannot be shown.
      */
     private static function fileName(string $name): string
     {
         if (preg_match('//u', $name) !== 1) {
             return '';
         }
-        $clean = (string) preg_replace('/[\x00-\x1F\x7F\x{80}-\x{9F}]/u', '', $name);
+        $clean = (string) preg_replace(self::HIDDEN_CHARACTERS, '', $name);
 
         return trim(mb_substr($clean, 0, self::MAX_FILE_NAME, 'UTF-8'));
     }

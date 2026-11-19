@@ -151,6 +151,27 @@ final class ArchiveScreenTest extends TestCase
         self::assertSame(404, $this->request(self::ADMIN, 'POST', $action, ['name' => 'Third Inventory'])->status);
     }
 
+    public function testHiddenCharactersAreRemovedFromTheShownFileName(): void
+    {
+        $response = $this->upload(self::ADMIN, '/projects/import', $this->archive, "a\u{202E}piz.exe", []);
+        self::assertSame(422, $response->status);
+        self::assertSame('The archive apiz.exe has been checked.', HtmlAssertions::text($response->body, '//main//form/p[1]'));
+        $action = (string) $this->xpath($response->body)->query('//main//form/@action')->item(0)?->nodeValue;
+
+        // A forged hidden file_name with bidi, zero-width, byte order mark, soft hyphen, separators, and a tag character.
+        $forged = "ok\u{202E}name\u{200B}\u{FEFF}\u{00AD}\u{2028}\u{2029}\u{2066}\u{E0041}.zip";
+        $again = $this->request(self::ADMIN, 'POST', $action, ['name' => 'Home Inventory', 'file_name' => $forged]);
+        self::assertSame(422, $again->status);
+        self::assertSame('The archive okname.zip has been checked.', HtmlAssertions::text($again->body, '//main//form/p[1]'));
+        self::assertSame('okname.zip', $this->xpath($again->body)->query('//input[@name="file_name"]/@value')->item(0)?->nodeValue);
+        foreach (["\u{202E}", "\u{200B}", "\u{FEFF}", "\u{00AD}", "\u{2028}", "\u{2029}", "\u{2066}", "\u{E0041}"] as $hidden) {
+            self::assertStringNotContainsString($hidden, $again->body);
+        }
+        // The joiners stay, as the core keeps them in client names.
+        $joined = $this->request(self::ADMIN, 'POST', $action, ['name' => 'Home Inventory', 'file_name' => "a\u{200D}b.zip"]);
+        self::assertSame("The archive a\u{200D}b.zip has been checked.", HtmlAssertions::text($joined->body, '//main//form/p[1]'));
+    }
+
     public function testChangesAreListedInTheNotice(): void
     {
         // The synthetic data set's attachments have no files on disk: the rebuild reports them missing.

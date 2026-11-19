@@ -4,7 +4,7 @@ Standing rules for the agent that coordinates the v1 build. `CLAUDE.md` override
 
 ## 1. Role
 
-The orchestrator delivers milestones M1 to M5 and then M7 of `docs/plan.md` by delegating design, coding, and review to subagents, integrating their work, and keeping the ledger current. It does not write application code or read large files itself. M6 is deferred until the maintainer returns discovery output. M8 and M9 are post-v1 and need an explicit maintainer instruction.
+The orchestrator delivers milestones M2 to M5 and then M7 of `docs/plan.md` (M0 and M1 are closed; see the ledger) by delegating design, coding, and review to subagents, integrating their work, and keeping the ledger current. It does not write application code or read large files itself. M6 is deferred until the maintainer returns discovery output. M8 and M9 are post-v1 and need an explicit maintainer instruction.
 
 ## 2. Tiers
 
@@ -25,11 +25,11 @@ Rules:
 
 ## 3. Per-milestone workflow
 
-1. Design: `docs/specs/M<n>-<topic>.md` with interfaces, layout, data structures, test plan mapped to exit criteria, and work packages (owned files disjoint between concurrent packages, dependencies, tier, acceptance tests, security-critical flag). New decisions go in `docs/decisions/` as numbered ADRs before code. Undesigned screens are designed under `docs/design/` first.
+1. Design: `docs/specs/M<n>-<topic>.md` with interfaces, layout, data structures, test plan mapped to exit criteria, and work packages (owned files disjoint between concurrent packages, dependencies, tier, acceptance tests, security-critical flag). State assumptions explicitly and list missing information where uncertain. New decisions go in `docs/decisions/` as numbered ADRs before code. Undesigned screens are designed under `docs/design/` first.
 2. Spec review by a second design-tier agent, who may fix clear defects in the spec directly and reports judgement calls.
-3. Implement in isolated worktrees, at most three agents at once. Each agent commits on its local branch and runs the full suite before reporting.
+3. Implement in isolated worktrees, at most three agents at once. Each agent commits on its local branch in small, descriptive, imperative-mood commits, and runs `composer test` and `composer lint` before committing and again before reporting.
 4. Review per section 2. Send findings back to the author (resume the same agent). After two failed rounds on the same class of defect, require a root-cause redesign rather than another patch.
-5. Integrate: merge one branch at a time into the session's assigned branch with a merge commit, run `composer test` and `composer lint`, push. Only the orchestrator pushes.
+5. Integrate: merge one branch at a time into the session's assigned branch with a merge commit, run `composer test` and `composer lint`, push. Only the orchestrator pushes, and only to the assigned branch; any other branch (for example a side branch preserving unreviewed work) needs the maintainer's explicit permission, recorded in the ledger.
 6. Exit audit by an independent design-tier agent against plan section 8 and ui-design-plan section 11; record pass, fail, or deferred per criterion with evidence in the ledger. The auditor also appends as-built notes to the spec.
 
 Verify claims with cheap commands (test run, `git log`, `php -l`, a curl smoke test), not agent summaries.
@@ -40,7 +40,7 @@ See `docs/build/context-brief.md` sections 1, 4, and 11, and ADR 0008. In short:
 
 ## 5. Decisions without asking
 
-Adopt the provisional resolutions in ADR 0009 and ledger section 4. For new open points, choose the option that is cheapest to reverse, record it as provisional in the ledger and the relevant ADR or spec, and continue.
+Adopt the provisional resolutions in ADR 0009 and ledger section 4. For new open points, choose the option that is cheapest to reverse, record it as provisional in the ledger and in an ADR under `docs/decisions/` before implementing it (`CLAUDE.md` requires this; a spec note alone is not enough), and continue.
 
 ## 6. Usage windows
 

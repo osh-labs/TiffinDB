@@ -276,8 +276,8 @@ Order (`<e>` is the sort expression; empty values last in both directions; ties 
 |---|---|
 | text, long_text, url, email, phone | `(<e> IS NULL), <e> COLLATE NOCASE ASC|DESC, r."id" ASC` with `<e>` = `r.<f>` |
 | number, currency, rating, duration, auto_number, date, time, date_time, checkbox | `(<e> IS NULL), <e> ASC|DESC, r."id" ASC` |
-| choice | `<e>` = `CASE r.<f> WHEN ? THEN 0 WHEN ? THEN 1 ... ELSE <n> END` over the labels in list order (bound), with `(r.<f> IS NULL)` first |
-| relation | `<e>` = `(SELECT MIN("o".<title column>) FROM <j> AS "jj" JOIN <other> AS "o" ON "o"."id" = "jj".<other side> WHERE "jj".<this side> = r."id" AND "o"."_trashed_at" IS NULL)`, with `COLLATE NOCASE` when the title type is text-like |
+| choice | `<e>` = `CASE r.<f> WHEN ? THEN ? WHEN ? THEN ? ... ELSE ? END` with each label and its list position, and the label count for `ELSE`, all bound (the scanner admits no number built at run time into SQL text), with `(r.<f> IS NULL)` first |
+| relation | `<e>` = `(SELECT MIN("o".<title column>) FROM <j> AS "jj" JOIN <other> AS "o" ON "o"."id" = "jj".<other side> WHERE "jj".<this side> = r."id" AND "o"."_trashed_at" IS NULL)`; when the title type is text-like, `COLLATE NOCASE` both inside `MIN(...)` (so the lowest title is chosen ignoring ASCII case) and on the `ORDER BY` term |
 | `added` | `r."id" ASC|DESC` |
 | `changed` | `r."_updated_at" DESC, r."id" DESC` |
 
@@ -335,7 +335,7 @@ final class Sql
 }
 ```
 
-Rules for every file under `src/Core/Query/` and `src/Core/Forms/` (and still under `src/Core/Schema/`): the M1 rules 0 to 6 of `SqlStringsTest`, with these additions: (3a) the first argument of every `Sql::of(` call follows rule 3; (3b) `$v->sql()` is also allowed where the scan shows `$v` holds an `Sql` (a parameter of that type, or a local assigned only from `Sql::of`, `Sql::join`, or `->wrap()`); (3c) the second argument of `->run(`, `->all(`, `->one(`, `->value(` may be `$v->params()` for such a `$v`. `Sql.php` itself is the one file allowed to concatenate a variable into SQL text (inside `join` and `wrap`); the scanner exempts it by name and the design-tier review reads it. Values are always bound.
+Rules for every file under `src/Core/Query/` and `src/Core/Forms/` (and still under `src/Core/Schema/`): the M1 rules 0 to 6 of `SqlStringsTest`, with these additions: (3a) the first argument of every `Sql::of(` call follows rule 3; (3b) `$v->sql()` is also allowed where the scan shows `$v` holds an `Sql` (a parameter of that type, or a local assigned only from `Sql::of`, `Sql::join`, or `->wrap()`); (3c) the second argument of `->run(`, `->all(`, `->one(`, `->value(` may be `$v->params()` for such a `$v`. `Sql.php` itself is the one file allowed to concatenate a variable into SQL text (inside `join` and `wrap`); the scanner exempts it by name and the design-tier review reads it. Values are always bound. Rule 2 forbids the global functions `implode` and `join`; the static call `Sql::join(` is not that function and is allowed. Choices between literal fragments (`ASC` or `DESC`, `COLLATE NOCASE` or none) are made by choosing between whole `Sql::of('...')` calls (in `if` branches or a ternary whose both arms are `Sql::of` calls with literal text), never by choosing a string that is then concatenated; a local assigned that way counts as assigned only from `Sql::of` for rule 3b.
 
 ## 4. View state (`TiffinDB\Core\App\ListRequest`)
 
@@ -704,7 +704,7 @@ All tests under `tests/`, run by `composer test`, offline and deterministic, wit
 | ID | Asserts |
 |---|---|
 | T-SCH-1 (updated) | `ProjectFile::create` writes version 2; the `sqlite_master` SQL of every `_tiffin_*` object equals the statements of the first and second SQL blocks of `docs/formats/tiffin.md` section 4, white space collapsed |
-| T-FMT-1 | The upgrade statements of section 11.1, read from the document, equal `FormatMigrations::STEPS[2]` (white space collapsed) |
+| T-FMT-1 | The statements of section 11.1, read from the document: the first three (the `CREATE TABLE` and two `CREATE INDEX`) equal `FormatMigrations::STEPS[2]`, the fourth equals `VERSION_PRAGMAS[2]`, and the fifth is the meta update the upgrade mechanism runs (white space and identifier quotes normalised) |
 | T-FMT-2 | A version 1 file built from the first SQL block (with a table, fields, records, a relation, and trashed rows) opened by `ProjectFile::open`: a `format-upgrade` snapshot exists and opens at version 1; the file is version 2 with `_tiffin_forms` empty; every record and link unchanged; `PRAGMA integrity_check` and `foreign_key_check` pass; a second open takes no snapshot |
 | T-FMT-3 | A failing step 2 (test seam) leaves the file at version 1 with no `_tiffin_forms` |
 
@@ -865,7 +865,7 @@ Waves (at most three agents at once; the M3 design agent holds one slot from wav
 | Tier | implementation |
 | Depends on | WP4, WP5 |
 | Security-critical | Yes (templates; schema confirmation) |
-| Owned files | Part 2 section 13, WP8 row; and `src/Core/Schema/SchemaEditor.php`, `src/Core/App/SchemaOperations.php`, `tests/core/app/ConfirmationCountTest.php` (new), `tests/core/schema/UpdateFieldTest.php`, `tests/core/schema/ChangeTypeTest.php`, `tests/core/app/SchemaOperationsTest.php` (only for the `acceptedLoss` signature) |
+| Owned files | Part 2 section 13, WP8 row; and `src/Core/Schema/SchemaEditor.php`, `src/Core/App/SchemaOperations.php`, `tests/core/app/ConfirmationCountTest.php` (new), `tests/core/schema/UpdateFieldTest.php`, `tests/core/schema/ChangeTypeTest.php`; and, only to change the last argument of `updateField`, `changeType`, or `changeFieldType` calls from `bool` to the accepted count, `tests/core/app/SchemaOperationsTest.php`, `tests/core/app/AuditTrailTest.php`, `tests/core/schema/MetaTouchTest.php`, and any test under `tests/core/forms/`, `tests/core/app/`, or `tests/Support/` written by WP3 or WP4 that calls them (all merged before wave 3; with `strict_types`, a `bool` passed to the new `int` parameter is a `TypeError`, so every caller must change in the same commit) |
 | Scope | `docs/design/m2/settings.md` sections 1, 2, 4; section 7.5 of this part |
 | Acceptance | Part 2 section 13, WP8 row; T-APP-80 passes |
 

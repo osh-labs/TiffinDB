@@ -65,7 +65,7 @@ WCAG 2 contrast ratios computed from the token values during the design session.
 
 Alternative accents, lowest text ratio in each (accent text on selected tint): Indigo 8.10 light, 7.09 dark; Plum 8.54 light, 7.26 dark; Graphite 10.97 light, 9.18 dark.
 
-The design session measured warning text on the warning tint in the light theme at 6.81:1, the one pair below the 7:1 target. The M2 design corrected it by darkening the light-theme `--warn` from `#7A4300` to `#703D00` (same hue), giving 7.61:1; `--warn` takes part in no other pair in this table, so no other figure changed, and warning text on the page ground and on surfaces rises from 7.29 and 7.98 to 8.14 and 8.91 (`docs/specs/M2-screens.md` section 9). The mock-ups in `docs/design/model-ui/` keep the old value. These figures must be reproduced by the automated token contrast tests planned in section 5 of the plan; section 4.5 gives the same pairs for all ten theme and accent combinations.
+The design session measured warning text on the warning tint in the light theme at 6.81:1, the one pair below the 7:1 target. The M2 design corrected it by darkening the light-theme `--warn` from `#7A4300` to `#703D00` (same hue), giving 7.61:1; `--warn` takes part in no other pair in this table, so no other figure changed, and warning text on the page ground and on surfaces rises from 7.29 and 7.98 to 8.14 and 8.91 (`docs/specs/M2-records.md` section 9). The mock-ups in `docs/design/model-ui/` keep the old value. These figures must be reproduced by the automated token contrast tests planned in section 5 of the plan; section 4.5 gives the same pairs for all ten theme and accent combinations.
 
 ### 4.3 Type
 

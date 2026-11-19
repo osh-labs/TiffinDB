@@ -71,7 +71,7 @@ The page data key `layout` selects the shape of the area between the top bar and
 | `record-narrow` | `main#main.page.page-record.page-record-narrow` | Other record screens (trashed, conflict, forms without a grid) |
 | `settings` | `main#main.page.page-settings` | Display settings |
 
-Breadcrumb, flash notice, and error summary are printed by the layout at the top of `main` in that order, as in M1. The `sidebar` data is built by `TiffinDB\Web\Sidebar::build(ProjectRecord $project, array $tables, int $trashCount, ?string $currentTableKey): array` (WP5), from the `tables` and `trashCount` of `RecordListing`, `SearchResults`, or `FilterOptions` (M2-records section 7.2).
+Breadcrumb, flash notice, and error summary are printed by the layout at the top of `main` in that order, as in M1. The `sidebar` data is built by `TiffinDB\Web\Sidebar::build(string $projectKey, string $projectName, array $tables, int $trashCount, ?string $currentTableKey): array` (WP5), from the `project` (read through its `key` and `name` properties), `tables`, and `trashCount` of `RecordListing` or `SearchResults` (M2-records section 7.2; the filter page has no sidebar). It takes strings rather than `ProjectRecord` because the web layer may not name `Core\System` classes (T-WEB-23, M2-records section 2.1).
 
 ### 3.3 Scripts
 

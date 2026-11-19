@@ -343,3 +343,10 @@ Brief notes for later M1 packages (from M1-WP8):
 
 
 XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first needing 8.4. Pinned openspout 5.2.2 (ADR 0016).
+
+### M2 review findings carried (WP0 review: APPROVE)
+
+- Origin: a value over 2048 characters, with a tab, or with non-ASCII bytes is read as absent and passes to the CSRF check (Low; add a third "malformed, refuse" state later). Residual behind-proxy risk is documented only in the `Kernel::originAllowed()` docblock: add it to the deployment documentation at M7.
+- UrlType: hexadecimal labels are refused anywhere in the host (stricter than spec 10.5 "last label only"; amend the spec wording at M2-X). Hosts whose last label is all digits (e.g. `example.123`) were accepted in M1 and are now refused; stored values read back as empty (behaviour change, recorded here).
+- `ProjectOperations::create` with a symbolic-link `projects/` folder now fails closed; no test covers it (add at M2-X). `Fs::entries` lstat-then-scandir race is out of the threat model. Mutation survivor: the abandoned-row recheck inside the write transaction.
+- M2-WP1 (mechanical tier) merged before its implementation-tier review; review pending, to be done with the M2-X audit at the latest.

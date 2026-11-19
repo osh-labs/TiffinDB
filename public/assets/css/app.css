@@ -1932,8 +1932,11 @@ li.link-row a {
   padding-left: 1.2222rem;
 }
 
-/* 5. Mapping table */
-.table-scroll {
+/* 5. Mapping table; div.table-scroll also holds the report table, so a
+   narrow page never scrolls sideways */
+div.table-scroll {
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   border: var(--border-card) solid var(--line);
   border-radius: var(--radius-card);
@@ -1978,10 +1981,24 @@ li.link-row a {
   overflow-wrap: anywhere;
 }
 
-.mapping-table .input,
-.mapping-table select {
+.mapping-table .input {
   width: 100%;
   min-width: 0;
+}
+
+/* The Type and Field menus take the width of their longest choice, as in the mock-up. */
+.mapping-table select,
+.mapping-table select.input {
+  width: auto;
+  max-width: none;
+}
+
+.mapping-table input[type="checkbox"] {
+  width: 1.3333rem;
+  height: 1.3333rem;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
 }
 
 /* 6. Inline choice row (target table) */
@@ -2014,6 +2031,18 @@ li.link-row a {
   flex: 1 1 17.7778rem;
   margin: 0;
   color: var(--ink2);
+}
+
+/* Secondary large buttons on these pages ("Start again", "Cancel"): 0 20 (components.md section 10). */
+.io-actions .button-large:not(.button-primary),
+.inline-form .button-large:not(.button-primary) {
+  padding: 0 1.1111rem;
+}
+
+/* A form holding one button, placed in a row of actions (the "Start again" forms). */
+.inline-form {
+  display: inline-flex;
+  margin: 0;
 }
 
 /* 8. Progress */
@@ -2082,6 +2111,8 @@ li.link-row a {
   vertical-align: middle;
 }
 
+.report-table td,
+.report-table thead th + th,
 .report-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;

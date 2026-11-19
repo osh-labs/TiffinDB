@@ -46,12 +46,14 @@ Contrast: `--warn` on `--warn-soft` is 7.61:1 in the light theme after P99; text
 
 | Class | Properties |
 |---|---|
-| `.table-scroll` | `overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12` (focusable: `tabindex` is not used; the table's controls receive focus and scroll it into view) |
+| `.table-scroll` | on a `div`, around the mapping table and the report table: `max-width: 100%; min-width: 0; overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12` (focusable: `tabindex` is not used; the table's controls receive focus and scroll it into view) |
 | `.mapping-table` | `width: 100%; min-width: 860; border-collapse: collapse`; cells `padding: 12 16; border-bottom: 1px solid var(--line); vertical-align: middle; text-align: left`; `thead th` as the M2 `record-table` header |
 | `.mapping-table th[scope="row"]` | `background: transparent; color: var(--ink); font-size: 18; font-weight: 700; overflow-wrap: anywhere` |
 | `.mapping-left-out` | on a row whose "Bring in" is unticked when the page is drawn: `th[scope="row"]` colour `var(--ink2)` |
 | `.mapping-first` | `color: var(--ink2); overflow-wrap: anywhere` (First values) |
-| `.mapping-table .input`, `.mapping-table select` | `width: 100%; min-width: 0` |
+| `.mapping-table .input` | `width: 100%; min-width: 0` (the field name input) |
+| `.mapping-table select` | `width: auto` (the Type and Field menus take the width of their longest choice, as the mock-up; never clipped) |
+| `.mapping-table input[type="checkbox"]` | `width: 24; height: 24; margin: 0; accent-color: var(--accent)` (mock-up "Bring in") |
 
 ## 6. Inline choice row (target table)
 
@@ -67,6 +69,8 @@ Contrast: `--warn` on `--warn-soft` is 7.61:1 in the light theme after P99; text
 |---|---|
 | `.io-actions` | `display: flex; flex-wrap: wrap; align-items: center; gap: 12 20` |
 | `.io-note` | `flex: 1 1 320; color: var(--ink2)` (mock-up "Nothing is saved until you choose Import...") |
+| `.io-actions .button-large` (not primary) | `padding: 0 20` ("Start again", "Cancel", "Import another file"; section 10) |
+| `.inline-form` | `display: inline-flex; margin: 0`: a form holding one button inside a row of actions (the "Start again" forms) |
 
 ## 8. Progress
 
@@ -81,7 +85,7 @@ Contrast: `--warn` on `--warn-soft` is 7.61:1 in the light theme after P99; text
 
 | Class | Properties |
 |---|---|
-| `.report-table` | the M2 `record-table` look without links: `width: 100%; border-collapse: collapse`, cells `padding: 12 16`, numbers right-aligned with `font-variant-numeric: tabular-nums` |
+| `.report-table` | the M2 `record-table` look without links: `width: 100%; border-collapse: collapse`, cells `padding: 12 16`; the number cells (every `td`) and their column headings right-aligned with `font-variant-numeric: tabular-nums`; inside `div.table-scroll` |
 | `.plugin-list` | `ul`: `list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12` |
 | `.plugin-row` | `.panel` layout with `flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12 24` |
 | `.plugin-status` | `display: inline-flex; align-items: center; min-height: 32; padding: 0 12; border: 1px solid var(--line); border-radius: var(--radius-pill); font-weight: 700` |

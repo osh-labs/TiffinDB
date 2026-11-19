@@ -11,8 +11,10 @@ namespace TiffinDB\Tests\Web;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\PasswordHasher;
+use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -25,7 +27,8 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
 require_once __DIR__ . '/EndToEndTest.php';
 
 /**
- * T-SCR-1 (M1 spec part 2 section 9): every GET route of the real route
+ * T-SCR-1 (M1 spec part 2 section 9) and T-SCR-2 (M2 spec part 2
+ * section 12, testEveryM2ScreenInEveryState): every GET route of the real route
  * table, in each state its design document under docs/design/m1/ lists
  * that a GET can reach, served through the kernel with the real
  * CoreServices over a temporary installation built through the screens.
@@ -321,7 +324,147 @@ final class ScreenStructureTest extends TestCase
         self::assertSame($patterns, $visited, 'Every GET route is visited.');
     }
 
+    /**
+     * T-SCR-2 (M2 spec part 2 section 12): every GET route M2 added, in each
+     * state its design document under docs/design/m2/ lists that a GET can
+     * reach, over the M2 synthetic data set (M2Fixture) with the real
+     * CoreServices, as the Admin and as the Member. States reached only by
+     * a POST response (422, the 409 conflict page) are covered by
+     * KeyboardStructureTest and EndToEndTest.
+     */
+    public function testEveryM2ScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $ops = $core->operations();
+            $m2 = M2Fixture::build($core, $ops);
+            $actor = $core->actor('admin');
+            $loans = $ops->schema()->createTable($actor, $m2->project, 'Loans', 'loan', true)->key;
+            $blank = $ops->schema()->createTable($actor, $m2->project, 'Notes', 'note', false)->key;
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m2-seed'), $core->hasher));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+
+            $project = $m2->projectPath();
+            $items = $m2->tablePath($m2->items);
+            $f = $m2->itemFields;
+
+            // /projects/{p} opens the first table.
+            self::assertSame($items, $this->visit($project, 303, $member)->header('Location'));
+
+            // List view (list-and-search.md section 2), Admin with the mock-up data, then each state.
+            foreach ([$admin, $member] as $client) {
+                $this->screen($client, $items, 'Items, Home Inventory', 'Items');
+                self::assertSame('48 records, sorted by Name, A to Z', HtmlAssertions::text($client->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            }
+            self::assertCount(48, $admin->texts('//main//table/tbody/tr'));
+            $this->screen($admin, $items . '?sort=' . $f['Purchased'] . '.desc', 'Items, Home Inventory', 'Items');
+            self::assertSame('48 records, sorted by Purchased, newest first', HtmlAssertions::text($admin->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $items . '?q=machine', 'Items, Home Inventory', 'Items');
+            self::assertSame('3 records match out of 48, sorted by Name, A to Z', HtmlAssertions::text($member->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $items . '?filter=' . $f['Under warranty'] . '&op=is&v=1', 'Items, Home Inventory', 'Items');
+            self::assertSame('Showing only records where Under warranty is ticked. Remove the filter', HtmlAssertions::text($member->page(), '//main//div[contains(@class, "filter-bar")]'));
+            self::assertCount(12, $member->texts('//main//table/tbody/tr'));
+            $this->screen($member, $items . '?filter=' . $f['Purchased'] . '&op=between&v=&v2=', 'Items, Home Inventory', 'Items');
+            self::assertStringStartsWith('The filter could not be used, so every record is shown.', HtmlAssertions::text($member->page(), '//main//div[contains(@class, "notice-warn")]'));
+            $this->screen($member, $items . '?q=' . str_repeat('x', 201), 'Items, Home Inventory', 'Items');
+            self::assertSame(1, $member->xpath()->query('//main//p[@id="find-error"][@class="error-text"]')->length);
+            $this->screen($member, $items . '?q=zzzz', 'Items, Home Inventory', 'Items');
+            self::assertSame('Nothing matches', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($member, $items . '?q=zzzz&filter=' . $f['Under warranty'] . '&op=is&v=1', 'Items, Home Inventory', 'Items');
+            $this->screen($member, $m2->tablePath($loans), 'Loans, Home Inventory', 'Loans');
+            self::assertSame('No records yet', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($admin, $m2->tablePath($blank), 'Notes, Home Inventory', 'Notes');
+            self::assertSame(['Add a field'], $admin->texts('//main//div[@class="empty-state"]//a'));
+            $this->screen($member, $m2->tablePath($blank), 'Notes, Home Inventory', 'Notes');
+            self::assertSame(0, $member->xpath()->query('//main//div[@class="empty-state"]//a')->length);
+
+            // Filter (section 3): no filterable field, step 1, step 2 for each filterable type in the data.
+            $this->screen($member, $m2->tablePath($loans) . '/filter', 'Filter Loans', 'Filter Loans');
+            $this->screen($member, $items . '/filter', 'Filter Items', 'Filter Items');
+            foreach (['Category', 'Under warranty', 'Room', 'Purchased'] as $name) {
+                $this->screen($member, $items . '/filter?field=' . $f[$name], 'Filter Items', 'Filter Items');
+                self::assertSame('Show records where ' . $name, HtmlAssertions::text($member->page(), '//main//form//legend'));
+            }
+            $this->screen($member, $items . '/filter?field=' . $f['Notes'], 'Filter Items', 'Filter Items');
+            self::assertSame(1, $member->xpath()->query('//main//select[@name="field"]')->length, 'A field that cannot filter gives step 1.');
+
+            // Search results (section 4).
+            $this->screen($member, $project . '/search?q=machine', 'Search results, Home Inventory', 'Search results');
+            self::assertSame(['Items: 3 matches', 'Rooms: 2 matches', 'Warranties: 3 matches'], $member->texts('//main//section[@class="result-group"]/h2'));
+            $this->screen($member, $project . '/search?q=e', 'Search results, Home Inventory', 'Search results');
+            self::assertNotSame([], $member->texts('//main//a[@class="result-more"]'), 'A "Show all" link.');
+            $this->screen($member, $project . '/search?q=zzzz', 'Search results, Home Inventory', 'Search results');
+            self::assertSame('Nothing found', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($member, $project . '/search', 'Search results, Home Inventory', 'Search results');
+            $this->screen($member, $project . '/search?q=' . str_repeat('x', 201), 'Search results, Home Inventory', 'Search results');
+            self::assertSame(1, $member->xpath()->query('//main//div[contains(@class, "notice-warn")]')->length);
+
+            // Record screens (record.md sections 2 to 6), as the Member.
+            $mixer = $m2->itemPath('Stand mixer');
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer');
+            self::assertSame('Item 9 of 48. Last saved today at 10:00.', HtmlAssertions::text($member->page(), '//div[@class="page-head"]//p[@class="lead"]'));
+            self::assertSame(
+                'Added 14 Mar 2025 by Example Admin. Last changed today by Example Member. Records in the trash can be restored.',
+                HtmlAssertions::text($member->page(), '//main//p[@class="record-meta"]'),
+            );
+            $this->screen($member, $mixer . '?q=mixer', 'Stand mixer', 'Stand mixer');
+            self::assertSame('Item 1 of 1. Last saved today at 10:00.', HtmlAssertions::text($member->page(), '//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $m2->itemPath('Bookshelf, oak'), 'Bookshelf, oak', 'Bookshelf, oak');
+            $this->screen($member, $items . '/records/new', 'New item', 'New item');
+            $this->screen($member, $items . '/records/new?q=mixer', 'New item', 'New item');
+            $this->screen($member, $m2->itemPath('Old kettle'), 'Old kettle', 'This item is in the trash');
+            $member->get($mixer);
+            self::assertSame(303, $member->submit($mixer)->status);
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer', 'Your changes have been saved.');
+            self::assertSame(303, $member->submit($mixer . '/trash')->status);
+            $this->screen($member, $items, 'Items, Home Inventory', 'Items', 'Stand mixer has been moved to the trash. Undo');
+            $this->screen($member, $mixer, 'Stand mixer', 'This item is in the trash');
+            self::assertSame(303, $member->submit($mixer . '/restore')->status);
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer', 'Stand mixer has been restored.');
+            $this->visit($items . '/records/0', 404, $member);
+            $this->visit($items . '/records/999', 404, $member);
+
+            // Display settings (settings.md): standard, saved, back to standard.
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display');
+            self::assertSame(303, $member->submit('/settings', ['theme' => 'dark', 'accent' => 'indigo'])->status);
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings have been saved.');
+            self::assertSame('t-dark a-indigo', HtmlAssertions::rootClass($member->page()));
+            self::assertSame(303, $member->post('/settings/reset', ['_csrf' => (string) $member->xpath()->query('//form[@id="settings-form"]/input[@name="_csrf"]/@value')->item(0)?->nodeValue])->status);
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings are back to standard.');
+            $this->screen($admin, '/settings', 'Reading and display', 'Reading and display');
+        } finally {
+            $core->remove();
+        }
+
+        $m2Patterns = [
+            '/projects/{project}',
+            '/projects/{project}/search',
+            '/projects/{project}/tables/{table}',
+            '/projects/{project}/tables/{table}/filter',
+            '/projects/{project}/tables/{table}/records/new',
+            '/projects/{project}/tables/{table}/records/{record}',
+            '/settings',
+        ];
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m2Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
     // Helpers.
+
+    private function signIn(Kernel $kernel, string $username): EndToEndClient
+    {
+        $client = new EndToEndClient($kernel);
+        $client->get('/sign-in');
+        $signedIn = $client->submit('/sign-in', ['username' => $username, 'password' => CoreFixture::PASSWORD]);
+        self::assertSame(303, $signedIn->status, $signedIn->body);
+
+        return $client;
+    }
 
     /**
      * GETs a screen and asserts its structure, title, `h1`, and the notice

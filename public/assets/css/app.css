@@ -848,9 +848,23 @@ textarea.input {
 }
 
 .project-card {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 0.7778rem;
+}
+
+/* A narrow card (a phone at a large text size): each fact's value goes
+   under its name, so words are not squeezed into a sliver. */
+@container (max-width: 14rem) {
+  .project-card .facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .project-card .facts dd + dt {
+    margin-top: var(--space-2);
+  }
 }
 
 .project-name {
@@ -1044,6 +1058,7 @@ textarea.input {
   display: flex;
   align-items: center;
   gap: 0.5556rem;
+  min-width: 0;
   max-width: 28.8889rem;
   min-height: var(--control-height);
   margin: 0 0 0 var(--space-3);
@@ -1065,6 +1080,7 @@ textarea.input {
 
 .top-search-input {
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   min-height: 2.2222rem;
   border: 0;
@@ -1227,6 +1243,11 @@ textarea.input {
   gap: var(--space-1);
 }
 
+/* A label that names a group without a control (record form relation and attachment slots). */
+p.label {
+  margin: 0;
+}
+
 .label.label-small {
   font-size: var(--text-small);
 }
@@ -1270,6 +1291,7 @@ textarea.input {
 
 .pager-links {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
 }
 
@@ -1510,6 +1532,7 @@ li.link-row a {
 }
 
 .form.settings-form {
+  container-type: inline-size;
   flex: 3 1 26.6667rem;
   gap: var(--space-6);
   min-width: 0;
@@ -1530,6 +1553,28 @@ li.link-row a {
 
 .radio-grid.radio-grid-150 {
   grid-template-columns: repeat(auto-fit, minmax(min(8.3333rem, 100%), 1fr));
+}
+
+/* Accent cards: a little less padding and gap, so "Graphite" fits its 150 px track. */
+.radio-grid-150 .radio-card {
+  gap: var(--space-2);
+  padding-inline: 0.5556rem;
+}
+
+/* A narrow settings form (a phone at a large text size): the cards stack
+   their radio, swatch, and name, as the narrow M1 forms do. */
+@container (max-width: 12.5rem) {
+  .fieldset-card.settings-section {
+    padding-inline: var(--space-3);
+  }
+
+  .radio-grid-150 .radio-card {
+    padding-inline: var(--space-2);
+  }
+
+  .radio-card .face-name {
+    font-size: var(--text-base);
+  }
 }
 
 .swatch {
@@ -1797,8 +1842,13 @@ li.link-row a {
 }
 
 @media (max-width: 22.5em) {
-  .page {
+  .page,
+  .page.page-list {
     padding-inline: var(--space-3);
+  }
+
+  .result {
+    padding-inline: var(--space-2);
   }
 
   .form-card {

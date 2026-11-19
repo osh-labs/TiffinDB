@@ -115,6 +115,34 @@ final class CsvExporterTest extends TestCase
         self::assertSame("'=Name", $safe[0][$i], 'Headings are protected too.');
     }
 
+    /** P145: checkbox cells are written yes or no, by field type; a text field holding 1 or 0 is not changed. */
+    public function testCheckboxesAsYesAndNo(): void
+    {
+        $fields = [
+            new ExportField('k_box', 'In use', 'checkbox', [], false, '', null),
+            new ExportField('k_text', 'Code', 'text', [], false, '', null),
+            new ExportField('k_number', 'Count', 'number', [], false, '', null),
+        ];
+        $records = [];
+        foreach ([[true, '1'], [false, '0']] as $i => [$value, $text]) {
+            $records[] = new ExportRecord($i + 1, '2026-01-01T00:00:00Z', null, '2026-01-01T00:00:00Z', null, [
+                'k_box' => new ExportValue($value, $text, []),
+                'k_text' => new ExportValue($text, $text, []),
+                'k_number' => new ExportValue((int) $text, $text, []),
+            ]);
+        }
+        $table = new ExportTable('t1', 'Things', 'thing', null, $fields, 2);
+        foreach ([[], ['spreadsheet_safe' => '1', 'record_ids' => '1']] as $options) {
+            $rows = self::read($this->write($table, $records, $options));
+            $offset = $options === [] ? 0 : 1;
+            self::assertSame(['yes', '1', '1'], array_slice($rows[1], $offset), json_encode($options));
+            self::assertSame(['no', '0', '0'], array_slice($rows[2], $offset), json_encode($options));
+        }
+        self::assertSame('', CsvExporter::checkboxText(''));
+        self::assertSame('yes', CsvExporter::checkboxText('1'));
+        self::assertSame('no', CsvExporter::checkboxText('0'));
+    }
+
     public function testOneTableOnly(): void
     {
         $exporter = CsvPlugins::exporter();

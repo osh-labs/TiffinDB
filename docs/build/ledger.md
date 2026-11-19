@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M2 CLOSED; M3 design reconciliation next (was: M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | Phase 5: M3 implementation. M2 CLOSED; M3-D1, M3-R1, M3-D2 merged (P110 to P141 recorded). Waves per `docs/specs/M3-io.md` section 16: wave 1 WP1, WP3, then WP0; wave 1b WP2 (after WP1), WP7; wave 2 WP4, WP6, then WP5; wave 3 WP8; wave 4 WP9, WP10 (merge one at a time: both edit `TemplateRulesTest.php` pending lists); wave 5 WP11 |
+| Phase | M3 implementation complete and merged (all packages WP0 to WP11 and their review follow-ups); M3-X exit audit dispatched. Suite 8393 tests OK (1 skipped), lint 682 files 0 failed |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Dispatch M3 wave 1; merge each package, run its security review (every package except WP6 and WP11 is security-critical); stage OpenSpout 5.2.2 for WP0 (scratchpad `openspout-install/vendor`; rebuild per orchestration 9 if reclaimed). End with M3-X audit and the single end-of-session notification (plan 11). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+| Next action | Merge M3-X (as-built notes, doc corrections), record M3 CLOSED with exit results in the ledger, fix any audit findings via the owning authors, then send the single end-of-session notification (plan section 11) and stop; M4 needs a new instruction. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt) |
 
 ### Phase 0 record (2026-11-19)
 

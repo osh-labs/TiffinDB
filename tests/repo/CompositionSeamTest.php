@@ -39,6 +39,8 @@ final class CompositionSeamTest extends TestCase
 
     /** The one file allowed one computed `new`: the kernel's controller dispatch. */
     public const DISPATCHER = 'src/Web/Kernel.php';
+    /** The second file allowed one computed `new`: the plugin loader (M3 spec section 4.3). */
+    public const PLUGIN_LOADER = 'src/Core/Io/Plugin/PluginLoader.php';
     public const COMPUTED = 'new with a computed class name';
 
     /**
@@ -158,10 +160,12 @@ final class CompositionSeamTest extends TestCase
                 if ($file->isFile() && $file->getExtension() === 'php') {
                     $relative = substr($file->getPathname(), strlen($root) + 1);
                     $problems = self::problems((string) file_get_contents($file->getPathname()));
-                    if ($relative === self::DISPATCHER) {
+                    if ($relative === self::DISPATCHER || $relative === self::PLUGIN_LOADER) {
                         // The kernel builds the routed controller from the
                         // static route table (`new $class($context)`, after
-                        // class_exists): exactly that one computed `new`.
+                        // class_exists), and the plugin loader instantiates
+                        // the validated manifest class (`new $class()`):
+                        // exactly that one computed `new` in each.
                         $index = array_search(self::COMPUTED, $problems, true);
                         if ($index !== false) {
                             unset($problems[$index]);
@@ -188,6 +192,14 @@ final class CompositionSeamTest extends TestCase
 
         self::assertSame([self::COMPUTED], self::problems($source));
         self::assertSame(1, preg_match_all('/new \$class\(\$context\)/', $source));
+    }
+
+    public function testThePluginLoaderHasExactlyOneComputedNew(): void
+    {
+        $source = RepoFiles::read(self::PLUGIN_LOADER);
+
+        self::assertSame([self::COMPUTED], self::problems($source));
+        self::assertSame(1, preg_match_all('/new \$class\(\)/', $source));
     }
 
     public function testTheScanSeesTheCompositionRoot(): void

@@ -1,0 +1,14 @@
+{
+    "api": 1,
+    "id": "json",
+    "kind": "export",
+    "name": "JSON",
+    "version": "1.0.0",
+    "class": "TiffinDB\\Plugin\\Export\\Json\\JsonExporter",
+    "licence": "AGPL-3.0-or-later",
+    "extensions": ["json"],
+    "media_type": "application/json",
+    "scopes": ["project"],
+    "requires_extensions": [],
+    "description": "Writes a whole project as one JSON document in the documented TiffinDB export format."
+}

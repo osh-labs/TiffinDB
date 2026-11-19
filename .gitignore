@@ -5,6 +5,9 @@
 .env*
 /local/
 /data/
+# Project archives downloaded from TiffinDB (M3, ExportOperations::ARCHIVE_SUFFIX).
+# Staging folders live under the data folder (<data>/staging/), covered by /data/.
+*.tiffindb.zip
 # Installer exposure-probe control files written at runtime (spec 10.4, P75)
 /public/probe-*.txt
 # Installation-specific settings (M1 spec part 2 section 2.9)

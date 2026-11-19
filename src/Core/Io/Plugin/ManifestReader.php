@@ -109,6 +109,11 @@ final class ManifestReader
         if (!Text::isUtf8($bytes)) {
             throw new ManifestInvalid(ManifestInvalid::NOT_UTF8);
         }
+        // A manifest is never PHP: refused when it holds a PHP open tag anywhere, so that even a
+        // mistaken include of plugin.json could not run code (JSON escapes `<` as \u003c when needed).
+        if (str_contains($bytes, '<?')) {
+            throw new ManifestInvalid(ManifestInvalid::PHP_TAG);
+        }
         try {
             $data = json_decode($bytes, true, self::MAX_DEPTH, JSON_THROW_ON_ERROR);
         } catch (\JsonException $error) {
@@ -127,8 +132,66 @@ final class ManifestReader
         if ($data === [] && !str_starts_with(ltrim($bytes, " \t\n\r"), '{')) {
             throw new ManifestInvalid(ManifestInvalid::NOT_AN_OBJECT);
         }
+        // json_decode keeps the last of two equal member names; a manifest with both is refused.
+        if (self::hasDuplicateMember($bytes)) {
+            throw new ManifestInvalid(ManifestInvalid::DUPLICATE_MEMBER);
+        }
 
         return $data;
+    }
+
+    /**
+     * Whether any object in the (valid) JSON text has two members with the
+     * same name after unescaping (`"class"` and `"cl\u0061ss"` are equal).
+     * Strings are skipped as a whole, so brackets inside them do not count.
+     */
+    private static function hasDuplicateMember(string $bytes): bool
+    {
+        /** @var list<array<array-key, true>|null> $stack one entry per open object (names) or array (null) */
+        $stack = [];
+        $length = strlen($bytes);
+        for ($i = 0; $i < $length; $i++) {
+            $c = $bytes[$i];
+            if ($c === '{') {
+                $stack[] = [];
+                continue;
+            }
+            if ($c === '[') {
+                $stack[] = null;
+                continue;
+            }
+            if ($c === '}' || $c === ']') {
+                array_pop($stack);
+                continue;
+            }
+            if ($c !== '"') {
+                continue;
+            }
+            $end = $i + 1;
+            while ($end < $length && $bytes[$end] !== '"') {
+                $end += $bytes[$end] === '\\' ? 2 : 1;
+            }
+            $raw = substr($bytes, $i, $end - $i + 1);
+            $i = $end;
+            $next = $end + 1;
+            while ($next < $length && in_array($bytes[$next], [' ', "\t", "\n", "\r"], true)) {
+                $next++;
+            }
+            $top = array_key_last($stack);
+            if ($next >= $length || $bytes[$next] !== ':' || $top === null || $stack[$top] === null) {
+                continue;
+            }
+            $name = json_decode($raw, true, 2, JSON_THROW_ON_ERROR);
+            if (!is_string($name)) {
+                continue;
+            }
+            if (isset($stack[$top][$name])) {
+                return true;
+            }
+            $stack[$top][$name] = true;
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed> $data */

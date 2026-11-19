@@ -6,11 +6,11 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | Phase 2, M2 implementation. Merged and pushed on `claude/gifted-archimedes-ix5bwy`: M2-WP0, WP2 (+WP2b scanner fixes), WP3 (+WP3b), WP4 (+WP4b), WP5; M3-D1. Suite 5927 tests OK (1 skipped), lint 450 files 0 failed. Reviews: WP2 and WP3 and WP4 approved after fixes; WP0 and WP5 security reviews and WP1 running. Wave 3 (WP6, WP7, WP8) is next; M3-R1 not yet dispatched. Agent commit trailers are corrected to the session attribution before merge (agents write the wrong model name) |
+| Milestone | M2 CLOSED; M3 design reconciliation next (was: M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
+| Phase | M2 CLOSED. Next: M3-D2 (resume the M3 design author with the M2 as-built notes and M3-R1 mismatches), then M3 waves per `docs/specs/M3-io.md` section 16. Suite 6310 tests OK (1 skipped), lint 474 files 0 failed. All work pushed on `claude/gifted-archimedes-ix5bwy` |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | On WP0, WP5 reviews: fix findings via the author, merge WP1; dispatch WP6, WP7, WP8 (spec `docs/specs/M2-records.md` section 12 and `M2-screens.md` section 13; max three agents; WP8 owns the P82 count-bound confirmation call sites); then WP9; then M2-X audit; M3-R1 then M3-D2 before any M3 package. If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+| Next action | M3-D2: resume the M3-D1 author to reconcile M3 specs (as-built notes: `docs/specs/M2-records.md` section 15, `M2-screens.md` section 14; M3-R1 mismatches in M3-io section 18; rulings in ledger section 5 end). Review the reconciliation, record new P numbers from P135, stage OpenSpout 5.2.2 for WP0 (trimmed install at scratchpad `openspout-install/vendor`, rebuild per orchestration 9 if reclaimed), then dispatch M3 wave 1 (WP1, WP3, then WP0) and wave 1b (WP2, WP7). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 
@@ -24,7 +24,7 @@ XLSX dependency probe (metadata read from Packagist; no code installed): `opensp
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
-| M2 | not started | |
+| M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
 | M3 | not started | |
 | M4 | not started | |
 | M5 | not started | |
@@ -367,3 +367,23 @@ XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first n
 - M2-as-built mismatches for M3-D2: `RecordOperations::create` does not get the screen first; `Records` takes its Schema in the constructor so `within()` cannot see a table created earlier in the same transaction; real `Sidebar::build` and `addRelation` signatures differ (exact in M3-io section 18); `FormStore::regenerate` extends only each table's default form; WP9 files not yet in the tree at review time.
 - Orchestrator rulings on the open judgement calls (provisional, cheapest to reverse; M3-D2 records them as P135 onward): CSV formula protection stays off by default and the export screen points to XLSX for spreadsheets; the 64 MiB upload cap stays and larger archives are restored by hand (documented); two-decimal columns propose currency only when the column header or sample suggests money, else number (M3-D2 to define the cheapest rule); cap total rows returned per XLSX chunk read; add a core "check again" method for import step 1.
 - Hard gate for M3-WP0: the shared offline `vendor/` must hold OpenSpout 5.2.2 (obtain by the orchestration 9 method) before any M3 package is dispatched, because the dependency guard test needs listed packages installed.
+
+### M2 exit results
+
+Independent design-tier exit audit on the integration branch (all M2 packages merged). Suite: `composer test` OK (6310 tests, 1 skipped: no comma-decimal locale); `composer lint` 474 files, 0 failed. Full evidence in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above |
+| A Member can add, find, and edit records by keyboard only | PASS | Auditor's own key-presses-only headless run (add, find, edit and save, trash, Undo) with focus ring visible and no focus trap; builders' run K-1 (7 of 7 steps) agrees; `KeyboardStructureTest` fails on a planted positive `tabindex` or a removed textarea id. Manual screen-reader pass: not verified, as in M0 and M1 |
+| Contrast tests cover all 10 combinations; light warn token at 7:1 or better | PASS | 100 cells recomputed independently, 0 mismatches; lowest text pair 7.09; light warn 7.61:1; five mutations fail the test. Low gap: only the Light column of ui 4.2 is checked against the tokens. M2-WP1 (mechanical tier) implementation-tier review done here |
+| Scope | PASS | 31 screen states respond on the built-in server, data folder outside `public/` |
+| Security baseline (new surface) | PASS | Ungranted Member 404 byte-identical to a nonexistent project on 6 GET and 4 POST routes; all 6 new POST routes refuse missing or bad CSRF, foreign or `null` Origin, and cross-site fetch with 403; hostile values escaped; stored form with a script falls back to the generated layout; headers present, no inline code, no outbound requests, dependencies unchanged |
+| Data portability | PASS | Version 2 file read with plain SQLite matches `docs/formats/tiffin.md` (13 `_tiffin_*` statements, names, integrity checks, `user_version`); a version 1 file built with the M1 code upgrades on first open with one snapshot, records and links unchanged |
+| Visual V-9 to V-14 | PASS | 186 renderings (1360 px four themes, 390 px, 320 px Largest), no sideways scroll; X-1 to X-5 held; D-15 to D-19 confirmed. Remaining: long file names and "sans-serif" break inside the word at 320 px Largest; high-contrast theme cards 74 px tall |
+| Repository rules | PASS | SPDX, names, `.gitignore`, layer tests, no `@` suppression |
+| Tests not vacuous | PASS | 15 mutations, 13 caught; the 2 survivors are equivalent (ADR 0002: a granted Member has every record permission) |
+
+Open low items (test-only, carried to M3 or later): no test for the class-name pattern in `settings-preview.js`; no test for a symbolic-link `projects/` folder; no test pins which record permission each method checks (needed if a read-only role is added); WP0 abandoned-row recheck mutation not re-checked; cite deviations with their milestone because M3-screens reuses D-15 to D-19.
+
+Not verified in M2: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.

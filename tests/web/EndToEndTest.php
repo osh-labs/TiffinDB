@@ -42,7 +42,8 @@ use TiffinDB\Web\Services;
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
 /**
- * T-E2E-1 to T-E2E-4 (M1 spec part 2 section 9): the application driven
+ * T-E2E-1 to T-E2E-4 (M1 spec part 2 section 9) and T-E2E-5 to T-E2E-7
+ * (M2 spec part 2 section 12): the application driven
  * through the kernel with the real route table, templates, strings, and the
  * real CoreServices (a FixedClock, a SeededRandom, and a bcrypt cost 4
  * PasswordHasher) over an empty temporary data folder. DOCUMENT_ROOT is the
@@ -379,7 +380,314 @@ final class EndToEndTest extends TestCase
         self::assertSame(200, $guest->follow($signedIn)->status);
     }
 
+    // T-E2E-5 (M2): a Member can add, find, and edit records.
+
+    public function testMemberAddsFindsAndEditsARecord(): void
+    {
+        $admin = $this->install();
+        [$projectPath, $fieldsPath] = $this->homeInventory($admin);
+        $this->addField($admin, $fieldsPath, 'choice', ['name' => 'Category', 'opt_choices' => "Appliance\nCookware\nTool"]);
+        $this->addField($admin, $fieldsPath, 'date', ['name' => 'Purchased']);
+        $this->addField($admin, $fieldsPath, 'currency', ['name' => 'Value', 'opt_code' => 'USD']);
+        $this->addField($admin, $fieldsPath, 'checkbox', ['name' => 'Under warranty']);
+        $member = $this->member($admin, $projectPath);
+        $listPath = substr($fieldsPath, 0, -strlen('/fields'));
+
+        // The project opens on its first table, empty.
+        $open = $member->get($projectPath);
+        self::assertSame(303, $open->status);
+        self::assertSame($listPath, $open->header('Location'));
+        $empty = $member->follow($open);
+        self::assertSame(200, $empty->status);
+        self::assertSame('Items', HtmlAssertions::text($empty->body, '//main//h1'));
+        self::assertSame('No records yet', HtmlAssertions::text($empty->body, '//main//p[@class="empty-state-title"]'));
+        self::assertScreen($empty->body);
+
+        // Add two records through the new-record form.
+        $new = $member->get($listPath . '/records/new');
+        self::assertSame(200, $new->status);
+        self::assertScreen($new->body);
+        self::assertSame('New item', HtmlAssertions::text($new->body, '//h1'));
+        $fields = $this->controlNames($member, ['Name', 'Category', 'Purchased', 'Value (US dollars)', 'Under warranty']);
+        $added = $member->submit($listPath . '/records', [
+            $fields['Name'] => 'Stand mixer',
+            $fields['Category'] => 'Appliance',
+            $fields['Purchased'] => '2025-03-14',
+            $fields['Value (US dollars)'] => '329.00',
+            $fields['Under warranty'] => '1',
+        ]);
+        self::assertSame(303, $added->status, $added->body);
+        $recordPath = (string) $added->header('Location');
+        self::assertMatchesRegularExpression('#^' . preg_quote($listPath, '#') . '/records/1\z#', $recordPath);
+        $record = $member->follow($added);
+        self::assertSame(200, $record->status);
+        self::assertScreen($record->body);
+        self::assertSame('The item has been added.', HtmlAssertions::text($record->body, '//main//*[@role="status"]'));
+        self::assertSame('Stand mixer', HtmlAssertions::text($record->body, '//h1'));
+        self::assertSame('Item 1 of 1. Last saved today at 10:00.', HtmlAssertions::text($record->body, '//div[@class="page-head"]//p[@class="lead"]'));
+        $member->get($listPath . '/records/new');
+        self::assertSame(303, $member->submit($listPath . '/records', [$fields['Name'] => 'Dutch oven', $fields['Category'] => 'Cookware'])->status);
+
+        // Find it with q.
+        $found = $member->get($listPath . '?q=mixer');
+        self::assertSame(200, $found->status);
+        self::assertScreen($found->body);
+        self::assertSame('1 record matches out of 2, sorted by Name, A to Z', HtmlAssertions::text($found->body, '//main//div[@class="page-head"]//p[@class="lead"]'));
+        self::assertSame(['Stand mixer'], $member->texts('//main//table/tbody/tr/th'));
+        $link = (string) $member->xpath()->query('//main//table/tbody/tr/th/a/@href')->item(0)?->nodeValue;
+        self::assertSame($recordPath . '?q=mixer', $link, 'The title link carries the search.');
+
+        // Open it and edit it with its version.
+        $opened = $member->get($link);
+        self::assertSame(200, $opened->status);
+        self::assertScreen($opened->body);
+        self::assertSame('Item 1 of 1. Last saved today at 10:00.', HtmlAssertions::text($opened->body, '//div[@class="page-head"]//p[@class="lead"]'));
+        self::assertMatchesRegularExpression('/^[0-9a-f]{16}\z/', (string) $member->xpath()->query('//form[@id="record-form"]/input[@name="version"]/@value')->item(0)?->nodeValue);
+        $saved = $member->submit($link, [$fields['Value (US dollars)'] => '299.00']);
+        self::assertSame(303, $saved->status, $saved->body);
+        self::assertSame($link, $saved->header('Location'), 'Back to the record with the list state.');
+        $after = $member->follow($saved);
+        self::assertSame('Your changes have been saved.', HtmlAssertions::text($after->body, '//main//*[@role="status"]'));
+        self::assertSame('299.00', (string) $member->xpath()->query('//input[@name="' . $fields['Value (US dollars)'] . '"]/@value')->item(0)?->nodeValue);
+        self::assertSame('Stand mixer', (string) $member->xpath()->query('//input[@name="' . $fields['Name'] . '"]/@value')->item(0)?->nodeValue, 'Fields not changed are kept.');
+
+        // The list shows the change.
+        $list = $member->get($listPath);
+        self::assertSame(200, $list->status);
+        self::assertScreen($list->body);
+        self::assertSame('2 records, sorted by Name, A to Z', HtmlAssertions::text($list->body, '//main//div[@class="page-head"]//p[@class="lead"]'));
+        self::assertSame(['Dutch oven', 'Stand mixer'], $member->texts('//main//table/tbody/tr/th'));
+        self::assertSame(['Name (A to Z)', 'Room', 'Category', 'Purchased', 'Value', 'Under warranty'], $member->texts('//main//table/thead/tr/th'));
+        self::assertSame(['None', 'Appliance', '14 Mar 2025', '$299.00', 'Yes'], $member->texts('//main//table/tbody/tr[2]/td'));
+    }
+
+    // T-E2E-6 (M2): two sessions edit the same record.
+
+    public function testSecondSaveOfTheSameRecordGetsTheConflictPage(): void
+    {
+        $admin = $this->install();
+        [$projectPath, $fieldsPath] = $this->homeInventory($admin);
+        $this->addField($admin, $fieldsPath, 'currency', ['name' => 'Value', 'opt_code' => 'USD']);
+        $member = $this->member($admin, $projectPath);
+        $listPath = substr($fieldsPath, 0, -strlen('/fields'));
+        $member->get($listPath . '/records/new');
+        $fields = $this->controlNames($member, ['Name', 'Value (US dollars)']);
+        $added = $member->submit($listPath . '/records', [$fields['Name'] => 'Stand mixer', $fields['Value (US dollars)'] => '329.00']);
+        self::assertSame(303, $added->status, $added->body);
+        $recordPath = (string) $added->header('Location');
+
+        // Both open the record; the Admin saves first.
+        self::assertSame(200, $member->get($recordPath)->status);
+        self::assertSame(200, $admin->get($recordPath)->status);
+        self::assertSame(303, $admin->submit($recordPath, [$fields['Value (US dollars)'] => '250.00'])->status);
+
+        $conflict = $member->submit($recordPath, [$fields['Value (US dollars)'] => '199.00']);
+        self::assertSame(409, $conflict->status, $conflict->body);
+        self::assertScreen($conflict->body);
+        self::assertSame('This item was changed while you were editing it', HtmlAssertions::text($conflict->body, '//h1'));
+        self::assertSame(
+            'Example Admin saved a change today at 10:00, after you opened it. What you typed has not been saved yet.',
+            HtmlAssertions::text($conflict->body, '//main/p[1] | //main/div/p[1]'),
+        );
+        self::assertSame(['Value', '$250.00', '199.00'], $member->texts('//table[contains(@class, "compare-table")]/tbody/tr/*'));
+        self::assertSame([$recordPath], $member->texts('//main//a[normalize-space(.)="Keep the saved version"]/@href'));
+        $x = $member->xpath();
+        self::assertSame(
+            (string) $x->query('//form[@action="/sign-out"]/input[@name="_csrf"]/@value')->item(0)?->nodeValue,
+            (string) $x->query('//form[@action="' . $recordPath . '"]/input[@name="_csrf"]/@value')->item(0)?->nodeValue,
+            'The re-post form carries the current session token.',
+        );
+        self::assertSame(['Save my version anyway'], $member->texts('//form[@action="' . $recordPath . '"]//button'));
+
+        // "Save my version anyway" saves through the normal path.
+        $overwrite = $member->submit($recordPath);
+        self::assertSame(303, $overwrite->status, $overwrite->body);
+        $after = $member->follow($overwrite);
+        self::assertSame('Your changes have been saved.', HtmlAssertions::text($after->body, '//main//*[@role="status"]'));
+        self::assertSame('199.00', (string) $member->xpath()->query('//input[@name="' . $fields['Value (US dollars)'] . '"]/@value')->item(0)?->nodeValue);
+        $admin->get($recordPath);
+        self::assertSame('199.00', (string) $admin->xpath()->query('//input[@name="' . $fields['Value (US dollars)'] . '"]/@value')->item(0)?->nodeValue, 'The Admin sees the saved version.');
+    }
+
+    // T-E2E-7 (M2): a version 1 project file is upgraded when first opened.
+
+    public function testVersionOneProjectFileIsUpgradedThroughTheListRoute(): void
+    {
+        $admin = $this->install();
+        $admin->get('/projects/new');
+        $made = $admin->submit('/projects', ['name' => 'Home Inventory', 'first_table' => '']);
+        self::assertSame(303, $made->status, $made->body);
+        $projectPath = substr((string) $made->header('Location'), 0, -strlen('/tables'));
+        $projectKey = substr($projectPath, strlen('/projects/'));
+        $folder = $this->temp->path('projects/' . $projectKey);
+        $file = $folder . '/project.tiffin';
+        foreach (['', '-wal', '-shm'] as $suffix) {
+            if (is_file($file . $suffix)) {
+                self::assertTrue(unlink($file . $suffix));
+            }
+        }
+        self::buildVersionOne($file, $projectKey);
+        self::assertSame(1, self::userVersion($file));
+        self::assertSame([], self::snapshots($folder));
+
+        $list = $admin->get($projectPath . '/tables/' . self::V1_ITEMS);
+        self::assertSame(200, $list->status, $list->body);
+        self::assertScreen($list->body);
+        self::assertSame('Items', HtmlAssertions::text($list->body, '//main//h1'));
+        self::assertSame('2 records, sorted by Name, A to Z', HtmlAssertions::text($list->body, '//main//div[@class="page-head"]//p[@class="lead"]'));
+        self::assertSame(['Mower', 'Toaster'], $admin->texts('//main//table/tbody/tr/th'));
+        self::assertSame(['$329.00', '$29.99'], $admin->texts('//main//table/tbody/tr/td'));
+
+        self::assertSame(2, self::userVersion($file), 'The file is at version 2.');
+        $snapshots = self::snapshots($folder);
+        self::assertCount(1, $snapshots, 'One format-upgrade snapshot.');
+        self::assertMatchesRegularExpression('/^\d{8}T\d{6}Z-format-upgrade-[a-z2-7]{4}\.tiffin\z/', $snapshots[0]);
+        self::assertSame(1, self::userVersion($folder . '/snapshots/' . $snapshots[0]), 'The snapshot holds the version 1 file.');
+
+        // A second open takes no snapshot.
+        self::assertSame(200, $admin->get($projectPath . '/tables/' . self::V1_ITEMS)->status);
+        self::assertCount(1, self::snapshots($folder));
+    }
+
     // Helpers.
+
+    /** The table key of the version 1 file's Items table (docs/formats/tiffin.md section 5). */
+    private const V1_ITEMS = 'h3kq7vn2xbma';
+
+    /**
+     * Writes a version 1 project file from the first SQL block of
+     * docs/formats/tiffin.md section 4 and the user-table statements of
+     * section 5, with the document's synthetic keys: Items with Name (the
+     * title) and Value (currency USD), two live records and one trashed.
+     */
+    private static function buildVersionOne(string $file, string $projectKey): void
+    {
+        $time = '2026-11-03T09:00:00Z';
+        $doc = (string) file_get_contents(Fixtures::appRoot() . '/docs/formats/tiffin.md');
+        $block = static function (string $from, string $to) use ($doc): string {
+            $start = strpos($doc, $from);
+            $end = strpos($doc, $to, (int) $start);
+            Assert::assertIsInt($start);
+            Assert::assertIsInt($end);
+            Assert::assertSame(1, preg_match('/```sql\n(.*?)```/s', substr($doc, $start, $end - $start), $match));
+
+            return $match[1];
+        };
+        $statements = static fn (string $sql): array => array_values(array_filter(array_map('trim', explode(';', $sql)), static fn (string $s): bool => $s !== ''));
+        $ddl = $statements($block('## 4. Metadata tables', '## 5. User tables'));
+        $userDdl = $statements($block('## 5. User tables', '## 6. Field types'));
+        Assert::assertCount(10, $ddl);
+        Assert::assertCount(2, $userDdl);
+
+        $pdo = new \PDO('sqlite:' . $file);
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('PRAGMA application_id = 1413891138');
+        $pdo->exec('PRAGMA user_version = 1');
+        $pdo->beginTransaction();
+        foreach ([...$ddl, ...$userDdl] as $statement) {
+            $pdo->exec($statement);
+        }
+        $insert = static function (string $sql, array $params) use ($pdo): void {
+            $pdo->prepare($sql)->execute($params);
+        };
+        $meta = ['format' => 'tiffindb-project', 'format_version' => '1', 'project_key' => $projectKey, 'project_name' => 'Home Inventory',
+            'created_at' => $time, 'created_by' => 'm2kq7vn3xbpa', 'created_with' => '0.1.0-dev', 'updated_at' => $time, 'updated_by' => 'm2kq7vn3xbpa'];
+        foreach ($meta as $key => $value) {
+            $insert('INSERT INTO "_tiffin_meta" ("key", "value") VALUES (?, ?)', [$key, $value]);
+        }
+        $pdo->exec('ALTER TABLE "t_h3kq7vn2xbma" ADD COLUMN "f_m4pz7k2qsw3n" TEXT');
+        $pdo->exec('ALTER TABLE "t_h3kq7vn2xbma" ADD COLUMN "f_b7xk2mq4nz3p" INTEGER');
+        $insert('INSERT INTO "_tiffin_tables" VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [self::V1_ITEMS, 't_' . self::V1_ITEMS, 'Items', 'item', 1, 'm4pz7k2qsw3n', $time, $time]);
+        foreach ([['m4pz7k2qsw3n', 'Name', 'text', '{"max_length":500}', 1], ['b7xk2mq4nz3p', 'Value', 'currency', '{"code":"USD","minor_digits":2}', 2]] as [$key, $name, $type, $options, $position]) {
+            $insert(
+                'INSERT INTO "_tiffin_fields" ("key", "table_key", "sql_name", "name", "type", "options", "position", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [$key, self::V1_ITEMS, 'f_' . $key, $name, $type, $options, $position, $time, $time],
+            );
+        }
+        foreach ([['Toaster', 2999, null], ['Mower', 32900, null], ['Old kettle', null, $time]] as [$name, $value, $trashed]) {
+            $insert('INSERT INTO "t_h3kq7vn2xbma" ("_created_at", "_updated_at", "_trashed_at", "f_m4pz7k2qsw3n", "f_b7xk2mq4nz3p") VALUES (?, ?, ?, ?, ?)', [$time, $time, $trashed, $name, $value]);
+        }
+        $pdo->commit();
+        $pdo = null;
+    }
+
+    private static function userVersion(string $file): int
+    {
+        $pdo = new \PDO('sqlite:' . $file);
+        $version = (int) $pdo->query('PRAGMA user_version')?->fetchColumn();
+        $pdo = null;
+
+        return $version;
+    }
+
+    /** @return list<string> */
+    private static function snapshots(string $folder): array
+    {
+        if (!is_dir($folder . '/snapshots')) {
+            return [];
+        }
+
+        return array_values(array_filter((array) scandir($folder . '/snapshots'), static fn ($name): bool => is_string($name) && str_ends_with($name, '.tiffin')));
+    }
+
+    /** @param array<string, string> $values */
+    private function addField(EndToEndClient $admin, string $fieldsPath, string $type, array $values): void
+    {
+        self::assertSame(200, $admin->get($fieldsPath . '/new?type=' . $type)->status);
+        $added = $admin->submit($fieldsPath, $values);
+        self::assertSame(303, $added->status, $added->body);
+    }
+
+    /**
+     * Adds "Example Member", shares the project with them, and returns
+     * their client, signed in with their own password.
+     */
+    private function member(EndToEndClient $admin, string $projectPath): EndToEndClient
+    {
+        $admin->get('/admin/people/new');
+        $added = $admin->submit('/admin/people', [
+            'display_name' => 'Example Member',
+            'username' => 'member',
+            'role' => 'member',
+            'temporary_password' => self::MEMBER_TEMPORARY,
+        ]);
+        self::assertSame(303, $added->status, $added->body);
+        $admin->get($projectPath . '/sharing');
+        $memberKey = (string) $admin->xpath()->query('//input[@name="members[]"]/@value')->item(0)?->nodeValue;
+        self::assertSame(303, $admin->submit($projectPath . '/sharing', ['members' => [$memberKey]])->status);
+
+        $member = $this->client();
+        $member->get('/sign-in');
+        self::assertSame(303, $member->submit('/sign-in', ['username' => 'member', 'password' => self::MEMBER_TEMPORARY])->status);
+        $member->get('/account/password');
+        self::assertSame(303, $member->submit('/account/password', [
+            'current' => self::MEMBER_TEMPORARY,
+            'password' => self::MEMBER_PASSWORD,
+            'repeat' => self::MEMBER_PASSWORD,
+        ])->status);
+
+        return $member;
+    }
+
+    /**
+     * The `name` of the control each label names on the last page.
+     *
+     * @param list<string> $labels
+     * @return array<string, string>
+     */
+    private function controlNames(EndToEndClient $client, array $labels): array
+    {
+        $names = [];
+        $x = $client->xpath();
+        foreach ($labels as $label) {
+            $for = (string) $x->query('//label[normalize-space(.)="' . $label . '"]/@for')->item(0)?->nodeValue;
+            $query = $for !== '' ? '//*[@id="' . $for . '"]/@name' : '//label[normalize-space(.)="' . $label . '"]//input/@name';
+            $names[$label] = (string) $x->query($query)->item(0)?->nodeValue;
+            self::assertMatchesRegularExpression('/^f_[a-z2-7]{12}\z/', $names[$label], "The control labelled {$label}.");
+        }
+
+        return $names;
+    }
 
     private function client(): EndToEndClient
     {
@@ -621,11 +929,13 @@ final class EndToEndClient
         Assert::assertInstanceOf(DOMElement::class, $form);
 
         $fields = [];
+        $present = [];
         foreach ($xpath->query('.//input[@name] | .//select[@name] | .//textarea[@name]', $form) as $control) {
             /** @var DOMElement $control */
             $name = $control->getAttribute('name');
             $list = str_ends_with($name, '[]');
             $key = $list ? substr($name, 0, -2) : $name;
+            $present[$key] = true;
             $value = self::controlValue($control);
             if ($value === null) {
                 if ($list) {
@@ -641,7 +951,8 @@ final class EndToEndClient
             }
         }
         foreach ($values as $name => $value) {
-            Assert::assertArrayHasKey($name, $fields, "The form posting to {$action} has a field {$name}.");
+            // A control that sends nothing as served (an unticked box) can still be set.
+            Assert::assertArrayHasKey($name, $present, "The form posting to {$action} has a field {$name}.");
             $fields[$name] = $value;
         }
 

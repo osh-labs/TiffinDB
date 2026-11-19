@@ -46,8 +46,8 @@ final class JsonExporter implements Exporter
 
     public function write(ExportSource $source, Settings $settings, string $targetPath): void
     {
-        $handle = @fopen($targetPath, 'wb');
-        if ($handle === false) {
+        $handle = self::quietly(static fn (): mixed => fopen($targetPath, 'wb'));
+        if (!is_resource($handle)) {
             throw new PluginFailure(PluginFailure::REASON_FAILED, 'The export file cannot be created.');
         }
         $this->handle = $handle;
@@ -62,7 +62,7 @@ final class JsonExporter implements Exporter
         }
         $this->handle = null;
         if (!fclose($handle)) {
-            @unlink($targetPath);
+            self::remove($targetPath);
             throw new PluginFailure(PluginFailure::REASON_FAILED, 'The export file could not be completed.');
         }
     }
@@ -178,17 +178,42 @@ final class JsonExporter implements Exporter
 
     private function put(string $bytes): void
     {
-        if ($this->handle === null || @fwrite($this->handle, $bytes) !== strlen($bytes)) {
+        $handle = $this->handle;
+        if ($handle === null || self::quietly(static fn (): mixed => fwrite($handle, $bytes)) !== strlen($bytes)) {
             throw new PluginFailure(PluginFailure::REASON_FAILED, 'The export file could not be written.');
         }
     }
 
     private function abandon(string $targetPath): void
     {
-        if ($this->handle !== null) {
-            @fclose($this->handle);
-            $this->handle = null;
+        if (is_resource($this->handle)) {
+            fclose($this->handle);
         }
-        @unlink($targetPath);
+        $this->handle = null;
+        self::remove($targetPath);
+    }
+
+    private static function remove(string $path): void
+    {
+        if (is_file($path)) {
+            self::quietly(static fn (): mixed => unlink($path));
+        }
+    }
+
+    /**
+     * Runs $work with PHP warnings turned off for its duration (a failed
+     * fopen, fwrite, or unlink warns; the caller checks the result instead).
+     * The repository has no `@` operator (ADR 0008 decision 6).
+     *
+     * @param \Closure(): mixed $work
+     */
+    private static function quietly(\Closure $work): mixed
+    {
+        set_error_handler(static fn (int $level, string $message): bool => true);
+        try {
+            return $work->__invoke();
+        } finally {
+            restore_error_handler();
+        }
     }
 }

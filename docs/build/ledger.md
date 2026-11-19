@@ -355,3 +355,8 @@ XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first n
 
 - Low: `ValueText::cut` loses its length cap on invalid UTF-8 (output is safe). Add tests at M2-X: markup in plural text (mutation M5 survived: escaping around the plural result in `Strings::format`) and a static check for the class-name check in `settings-preview.js` (M7 survived; no JS test).
 - Info: right-to-left override characters in values are printed escaped but not isolated (visual spoofing possible); `HtmlAssertions::assertNoInlineCode` flags `value="javascript:..."` inputs, which WP7 hostile-value tests may trip.
+
+### M2-WP6 and WP8 review results (both APPROVE)
+
+- WP6: 650 hostile requests clean; three escape-test gaps closed in WP6b (all 10 reviewer mutations now killed). No existence oracle; the relation-filter title lookup discloses nothing (grants are per project).
+- WP8: 9 of 9 mutations killed. Low: the schema confirmation accepts any count at or above the number to be cleared (spec 7.5 says "more than"), so a client with a valid CSRF token can skip the confirmation page by posting a large `confirm` on the first POST, as `confirm=1` could before; a lower count than shown is also accepted. Accepted as specified; a maintainer change to an exact match needs a spec change.

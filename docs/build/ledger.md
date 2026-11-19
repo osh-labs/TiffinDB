@@ -7,7 +7,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | Phase 2: M2-D1 and M2-R1 merged (READY FOR IMPLEMENTATION); wave 1 (WP2, WP3) and M3-D1 dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
+| Phase | Phase 2: M2-D1 and M2-R1 merged (READY FOR IMPLEMENTATION); WP2 and WP3 merged (WP3 security review and WP2 Sql review pending); WP5 and WP4 dispatched; M3-D1 merged (P110 to P134 recorded; M3-R1 review pending, runs before M3-D2). Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
 | Next action | Merge wave 1 packages as they report (review each with a different agent), then WP5, WP0, WP1 as slots free; M3-D1 starts after this; see `docs/specs/M2-records.md` section 12 for waves. Wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
@@ -181,6 +181,31 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P107 | SQL composition | `Core\Query\Sql` fragments plus an extended scanner; `Sql.php` the only file joining variables into SQL text | ADR 0013 d9.10 |
 | P108 | Work-package changes from the session plan | Plural strings moved from WP0 to WP5; P82 fix moved to WP8; the token value changed in the design, so WP1 is mechanical (tests only) | this spec 12 (process; ledger only) |
 | P109 | `Origin` check | With no `Sec-Fetch-Site`, a POST whose `Origin` is present and not the request's own origin (or is `null`) is refused; requests with no `Origin` pass | ADR 0013 d9.11 |
+| P110 | XLSX library (settles P6, ADR 0009 B5) | `openspout/openspout` 5.2.2, pinned exactly, no lock file; licence `MIT AND Apache-2.0` (two licence files at the tag; package metadata says MIT only); v5.3.0 also admits PHP 8.3 but was not chosen; v5.4 and later need PHP 8.4 | ADR 0016 d1, d2 |
+| P111 | Extensions for XLSX | `dom`, `filter`, `libxml` reported as installer warnings; XLSX plugins unavailable without them; host check extended | ADR 0016 d3 |
+| P112 | Import commit model (settles E1) | Read and prepare in chunks (2,000 rows or 5 s) into a per-job SQLite file under `<data>/staging/imports/`; one final transaction after an `import` snapshot; Continue button with an auto-submit script; no staging table in the project format | ADR 0015 d1 |
+| P113 | Plugin layout and loading | `plugins/<kind>/<id>/plugin.json` plus `src/` under `TiffinDB\Plugin\<Kind>\<Id>\`; manifests never execute; enabled plugins loaded by a per-plugin autoloader on use; contract `Core\Io\Contract` API 1; CSV reader and writer in core | ADR 0015 d2, d3 |
+| P114 | Plugin state | System schema version 2 table `plugins`; the five shipped plugins enabled by default, others disabled until an Admin enables them through a confirmation page | ADR 0015 d4 |
+| P115 | Project format version 3 | `_tiffin_import_log` with a JSON `report` (counts and row numbers, never values); snapshot reason `import` | ADR 0015 d1; `docs/formats/tiffin.md` 4.7, 11.2 |
+| P116 | Import limits | 50,000 rows, 200 columns, 20,000 characters per cell, uploads at most 64 MiB or the PHP limits, whichever is smaller | this spec 6.8 |
+| P117 | Type inference | Rules of section 6.3: ISO dates only (as the M1 types), checkbox only for yes/no/true/false, currency by symbol or two decimals, choice for at most 20 repeated short values, link by a heading naming an existing table; rating offered, never proposed (deviation from the mock-up); new table item name is the lower-cased table name | this spec 6.3, 6.6 |
+| P118 | Requiredness | Imports enforce no required fields (counted in the report); `Records::create` gains `requiredKeys`; record creation from a form requires only the required fields that form shows (reviewer-flagged point) | ADR 0017 d4 |
+| P119 | Appending to an existing table | Columns map to existing fields only; no new fields; choice values not in the list emptied and reported; fields not mapped stay empty | this spec 6.4, 6.5 |
+| P120 | Review warnings | Counted over the first 5,000 rows, labelled as such; the report has exact counts | this spec 6.4 |
+| P121 | CSV dialects | Export: UTF-8 with BOM, comma, CRLF, heading row of field names, optional record-number column. Import: UTF-8, UTF-16 with BOM, Windows-1252 by TiffinDB's own decoder; delimiters comma, semicolon, tab, bar | this spec 8 |
+| P122 | Formula-like cells | CSV keeps exact values by default; "Protect against spreadsheet formulas" prefixes `'` on text-like cells starting `= + - @`, tab, CR. XLSX always writes text as string cells and reads cached formula results | ADR 0016 d4; this spec 8.2 |
+| P123 | Exports | Streamed from a staged file in the POST response; live records only; relation and attachment cells as `; `-joined titles and names; CSV one table, XLSX one table or all, JSON whole project | this spec 10 |
+| P124 | Project archive | Zip with manifest, `VACUUM INTO` copy, attachments; no snapshots; import verifies, then rebuilds into a new project (keys and ids kept, new project key, no grants, source import log dropped, invalid values emptied, invalid forms dropped, forms regenerated so edited forms gain missing slots) | ADR 0017 d1 to d3 |
+| P125 | JSON export format 1 | Whole project, live records, values per type with currency as a decimal string, relation and attachment values as id arrays | ADR 0017 d5 |
+| P126 | Uploads | `Request::$files` from PHP's upload array, single files only, checked with `is_uploaded_file`; a POST larger than `post_max_size` gets a 413 page before the CSRF check | part 2 section 2 |
+| P127 | Staging area | `<data>/staging/{imports,exports,archives}/<key>/`; recursive removal allowed only there (amends P64); swept after 24 h (imports) or 1 h | this spec 5.1 |
+| P128 | Audit actions | `import.completed`, `export.created`, `archive.exported`, `archive.imported`, `plugin.enabled`, `plugin.disabled` (amends ADR 0012 d4) | this spec 13.6 |
+| P129 | M3 routes | Part 2 section 3 | part 2 |
+| P130 | Joined mode and DDL | `SchemaEditor::within()`, `Records::within()`; DDL text in one class `Core\Schema\Ddl` shared by the editor and the archive rebuild | this spec 6.6, 7 |
+| P131 | Layers | `Core\Io` may use Schema, Query, Forms, Storage, Error; plugins only `Core\Io\Contract`, their namespace, PHP, `OpenSpout\` | ADR 0015 d5 |
+| P132 | Navigation | Sidebar Import and Export for people with `io.use`; Plugins tab for Admins; "Import a project archive" on the project list | part 2 section 4 |
+| P133 | Plugin text | Names, setting labels, `readAs`, descriptions supplied by plugins are escaped plain text, not message keys (built-in plugins write English) | this spec 3 |
+| P134 | Import jobs | Bound to the project and the Admin who started them; anyone else gets "not found" | this spec 5.2 |
 
 ## 5. Blockers
 
@@ -315,3 +340,6 @@ Brief notes for later M1 packages (from M1-WP8):
 | A losing concurrent first-Admin POST gets 500 (core `LogicException` "The first Admin already exists") instead of a 303 to `/setup` or `/sign-in` | `src/Core/Install/Installer.php` near line 302, `SetupController` (M1-WP9 round 2 review) |
 | "Temporary" breaks mid-word on the add-person page at 320 px, Largest text | `public/assets/css/app.css`, `templates/pages/people/new.php` (M1-WP8d report) |
 | When a request has no `Sec-Fetch-Site` header, a POST with a foreign `Origin` and a valid `_csrf` is accepted; checking `Origin` against the request host would add defence in depth (care needed behind proxies) | `src/Web/Kernel.php` near lines 73 and 207 (M1 exit audit F-2) |
+
+
+XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first needing 8.4. Pinned openspout 5.2.2 (ADR 0016).

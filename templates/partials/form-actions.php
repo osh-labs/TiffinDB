@@ -18,7 +18,9 @@
  * - `block` (bool: adds `button-block`, full width).
  * - `cancel` (application path for Cancel, or null for none), and
  *   optionally `cancelLabel` (string key of the link text instead of
- *   `form.cancel`, as for "Go back without saving") with `cancelParams`.
+ *   `form.cancel`, as for "Go back without saving") with `cancelParams`,
+ *   and optionally `cancelQuery` (string map added to the Cancel link;
+ *   default none).
  *
  * Each button class list is a literal alternative (no class is built at
  * run time). With only `submit`, `danger`, and `cancel`, the output is
@@ -62,9 +64,9 @@ declare(strict_types=1);
 <?php endif; ?>
 <?php if (is_string($data['cancel'] ?? null)) : ?>
 <?php if (is_string($data['cancelLabel'] ?? null)) : ?>
-<a class="form-cancel" href="<?= $this->url($data['cancel']) ?>"><?= $this->t($data['cancelLabel'], $data['cancelParams'] ?? []) ?></a>
+<a class="form-cancel" href="<?= $this->url($data['cancel'], $data['cancelQuery'] ?? []) ?>"><?= $this->t($data['cancelLabel'], $data['cancelParams'] ?? []) ?></a>
 <?php else : ?>
-<a class="form-cancel" href="<?= $this->url($data['cancel']) ?>"><?= $this->t('form.cancel') ?></a>
+<a class="form-cancel" href="<?= $this->url($data['cancel'], $data['cancelQuery'] ?? []) ?>"><?= $this->t('form.cancel') ?></a>
 <?php endif; ?>
 <?php endif; ?>
 </div>

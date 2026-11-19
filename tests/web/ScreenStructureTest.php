@@ -231,6 +231,9 @@ final class ScreenStructureTest extends TestCase
         $this->screen($admin, $home . '/tables', 'Home Inventory', 'Home Inventory');
         $this->screen($admin, $home . '/tables/new', 'New table', 'New table');
         $this->screen($admin, $items . '/fields', 'Items', 'Items');
+        $this->screen($admin, $items, 'Items, Home Inventory', 'Items');
+        $this->screen($admin, $items . '/filter', 'Filter Items', 'Filter Items');
+        $this->screen($admin, $home . '/search?q=x', 'Search results, Home Inventory', 'Search results');
         $this->screen($admin, $rooms . '/fields', 'Rooms', 'Rooms');
         $this->screen($admin, $rooms . '/delete', 'Delete the table Rooms?', 'Delete the table Rooms?');
         $this->screen($admin, $items . '/fields/new', 'Add a field to Items', 'Add a field to Items');

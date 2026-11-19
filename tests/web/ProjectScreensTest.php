@@ -253,13 +253,27 @@ final class ProjectScreensTest extends TestCase
         self::assertSame('Items', $tables[0]->table->name);
     }
 
-    public function testOpenRedirectsToTheTables(): void
+    public function testOpenWithoutTablesRedirectsToTheTables(): void
     {
         $key = $this->project('Recipes');
 
         self::assertSame('/projects/' . $key . '/tables', $this->request(self::ADMIN, 'GET', '/projects/' . $key)->header('Location'));
         self::assertSame(404, $this->request(self::MEMBER, 'GET', '/projects/' . $key)->status, 'Not shared: not found.');
         self::assertSame(404, $this->request(self::ADMIN, 'GET', '/projects/NOSUCHKEY000')->status);
+    }
+
+    public function testOpenRedirectsToTheFirstTableList(): void
+    {
+        $key = $this->project('Home Inventory', 'Items');
+        $admin = $this->core->actor('admin');
+        $this->ops->schema()->createTable($admin, $key, 'Rooms', 'room', true);
+        $first = $this->ops->schema()->tables($admin, $key)[0]->table;
+        self::assertSame('Items', $first->name);
+
+        $response = $this->request(self::ADMIN, 'GET', '/projects/' . $key . '?sort=added.desc');
+        self::assertSame(303, $response->status);
+        self::assertSame('/projects/' . $key . '/tables/' . $first->key, $response->header('Location'), 'No list state is carried.');
+        self::assertSame(404, $this->request(self::MEMBER, 'GET', '/projects/' . $key)->status, 'Not shared: not found.');
     }
 
     // Project settings.

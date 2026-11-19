@@ -7,7 +7,7 @@
  * `main` when the page data has `breadcrumb`.
  *
  * Data: `items`, a list of {label: plain text, path: application path or
- * null}. Items before the last are links when they have a path; the last
+ * null, optional query: string map added to the link (default none)}. Items before the last are links when they have a path; the last
  * item is the current page, never a link. Separators are hidden from
  * assistive technology.
  */
@@ -23,7 +23,7 @@ declare(strict_types=1);
 <?php if ($i === count($data['items']) - 1) : ?>
 <span aria-current="page"><?= $this->e($item['label']) ?></span>
 <?php elseif (is_string($item['path'] ?? null)) : ?>
-<a href="<?= $this->url($item['path']) ?>"><?= $this->e($item['label']) ?></a>
+<a href="<?= $this->url($item['path'], $item['query'] ?? []) ?>"><?= $this->e($item['label']) ?></a>
 <?php else : ?>
 <span><?= $this->e($item['label']) ?></span>
 <?php endif; ?>

@@ -122,14 +122,14 @@ final class SchemaEditorHookTest extends TestCase
         $this->assertHook([$tags->key], static function () use ($editor, $tags, &$self): void {
             $self = $editor->addRelation($tags->key, 'Parent', $tags->key, Cardinality::One, Cardinality::Many, 'Children', false, '');
         });
-        $this->assertHook([$items->key], static fn () => $editor->changeType($notes->key, 'long_text', [], false));
+        $this->assertHook([$items->key], static fn () => $editor->changeType($notes->key, 'long_text', [], 0));
         $this->assertHook([$items->key], static fn () => $editor->moveField($notes->key, -1));
         $this->assertHook([$items->key, $rooms->key], static fn () => $editor->moveField($relation->key, -1));
-        $this->assertHook([$items->key], static fn () => $editor->updateField($notes->key, 'Remarks', [], false, '', false));
-        $this->assertHook([$items->key, $rooms->key], static fn () => $editor->updateField($relation->key, 'Place', ['links' => 'one'], false, '', false));
+        $this->assertHook([$items->key], static fn () => $editor->updateField($notes->key, 'Remarks', [], false, '', 0));
+        $this->assertHook([$items->key, $rooms->key], static fn () => $editor->updateField($relation->key, 'Place', ['links' => 'one'], false, '', 0));
         $reverse = $this->schema()->relationOf($relation)->otherField($relation->key);
-        $this->assertHook([$rooms->key, $items->key], static fn () => $editor->updateField($reverse, 'Things', ['links' => 'many'], false, '', false));
-        $this->assertHook([$tags->key], static fn () => $editor->updateField($self->key, 'Up', ['links' => 'one'], false, '', false));
+        $this->assertHook([$rooms->key, $items->key], static fn () => $editor->updateField($reverse, 'Things', ['links' => 'many'], false, '', 0));
+        $this->assertHook([$tags->key], static fn () => $editor->updateField($self->key, 'Up', ['links' => 'one'], false, '', 0));
         $this->assertHook([$items->key], static fn () => $editor->deleteField($notes->key));
         $this->assertHook([$tags->key], static fn () => $editor->deleteField($self->key));
         $this->assertHook([$items->key, $rooms->key], static fn () => $editor->deleteField($relation->key));
@@ -165,10 +165,10 @@ final class SchemaEditorHookTest extends TestCase
             'deleteTable' => static fn () => $editor->deleteTable($rooms->key),
             'addField' => static fn () => $editor->addField($items->key, 'More', 'number', [], false, ''),
             'addRelation' => static fn () => $editor->addRelation($rooms->key, 'Owner', $items->key, Cardinality::Many, Cardinality::Many, 'Owned', false, ''),
-            'changeType' => static fn () => $editor->changeType($notes->key, 'long_text', [], false),
+            'changeType' => static fn () => $editor->changeType($notes->key, 'long_text', [], 0),
             'moveField' => static fn () => $editor->moveField($notes->key, -1),
-            'updateField' => static fn () => $editor->updateField($notes->key, 'Remarks', [], true, 'Help', false),
-            'updateField of a relation' => static fn () => $editor->updateField($relation->key, 'Place', ['links' => 'many'], false, '', false),
+            'updateField' => static fn () => $editor->updateField($notes->key, 'Remarks', [], true, 'Help', 0),
+            'updateField of a relation' => static fn () => $editor->updateField($relation->key, 'Place', ['links' => 'many'], false, '', 0),
             'deleteField' => static fn () => $editor->deleteField($notes->key),
             'deleteField of a relation' => static fn () => $editor->deleteField($relation->key),
         ];

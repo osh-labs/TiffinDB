@@ -173,11 +173,11 @@ final class SchemaOperations
         array $options,
         bool $required,
         string $help,
-        bool $confirmLoss,
+        int $acceptedLoss,
     ): FieldDef {
         [$project, $db, $schema] = $this->open($actor, $projectKey, Permission::ChangeSchema);
         self::fieldOf($schema, $tableKey, $fieldKey);
-        $field = $this->c->editor($project, $db, $actor)->updateField($fieldKey, $name, $options, $required, $help, $confirmLoss);
+        $field = $this->c->editor($project, $db, $actor)->updateField($fieldKey, $name, $options, $required, $help, $acceptedLoss);
         $this->record(AuditAction::FIELD_CHANGED, $actor, $project, 'field', $field->key, ['type' => $field->type]);
 
         return $field;
@@ -200,11 +200,11 @@ final class SchemaOperations
         string $fieldKey,
         string $newType,
         array $options,
-        bool $confirmLoss,
+        int $acceptedLoss,
     ): Impact {
         [$project, $db, $schema] = $this->open($actor, $projectKey, Permission::ChangeSchema);
         $before = self::fieldOf($schema, $tableKey, $fieldKey);
-        $impact = $this->c->editor($project, $db, $actor)->changeType($fieldKey, $newType, $options, $confirmLoss);
+        $impact = $this->c->editor($project, $db, $actor)->changeType($fieldKey, $newType, $options, $acceptedLoss);
         $this->record(AuditAction::FIELD_CHANGED, $actor, $project, 'field', $fieldKey, [
             'type' => $newType,
             'type_from' => $before->type,

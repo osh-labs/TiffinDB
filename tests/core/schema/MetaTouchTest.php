@@ -61,9 +61,9 @@ final class MetaTouchTest extends TestCase
         $expectChange(fn (SchemaEditor $e) => $e->updateTable($rooms->key, 'Places', 'place', null));
         $stars = $expectChange(fn (SchemaEditor $e) => $e->addField($items->key, 'Stars', 'rating', [], false, ''));
         $link = $expectChange(fn (SchemaEditor $e) => $e->addRelation($items->key, 'Place', $rooms->key, Cardinality::Many, Cardinality::Many, 'Items', false, ''));
-        $expectChange(fn (SchemaEditor $e) => $e->updateField($stars->key, 'Score', ['max' => 7], false, '', false));
-        $expectChange(fn (SchemaEditor $e) => $e->updateField($link->key, 'Place', ['links' => 'one'], false, '', false));
-        $expectChange(fn (SchemaEditor $e) => $e->changeType($stars->key, 'number', [], false));
+        $expectChange(fn (SchemaEditor $e) => $e->updateField($stars->key, 'Score', ['max' => 7], false, '', 0));
+        $expectChange(fn (SchemaEditor $e) => $e->updateField($link->key, 'Place', ['links' => 'one'], false, '', 0));
+        $expectChange(fn (SchemaEditor $e) => $e->changeType($stars->key, 'number', [], 0));
         $expectChange(fn (SchemaEditor $e) => $e->moveField($stars->key, -1));
         $expectChange(fn (SchemaEditor $e) => $e->deleteField($link->key));
         $expectChange(fn (SchemaEditor $e) => $e->deleteTable($rooms->key));

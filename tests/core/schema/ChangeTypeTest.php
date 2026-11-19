@@ -85,13 +85,13 @@ final class ChangeTypeTest extends TestCase
         $before = $this->dump();
 
         self::assertEquals(new Impact(2, 2), $this->editor()->previewTypeChange($this->notes->key, 'number', ['decimals' => 1]));
-        $confirmation = $this->confirmationOf(fn () => $this->editor()->changeType($this->notes->key, 'number', ['decimals' => 1], false));
+        $confirmation = $this->confirmationOf(fn () => $this->editor()->changeType($this->notes->key, 'number', ['decimals' => 1], 0));
         self::assertSame([2, 2], [$confirmation->records, $confirmation->values]);
         self::assertSame($before, $this->dump());
         self::assertSame([], $this->snapshotFiles());
         self::assertSame('TEXT', $this->declaredType());
 
-        $impact = $this->editor()->changeType($this->notes->key, 'number', ['decimals' => 1], true);
+        $impact = $this->editor()->changeType($this->notes->key, 'number', ['decimals' => 1], 2);
         self::assertEquals(new Impact(2, 2), $impact);
         self::assertSame([12, null, 3.5, null, 1234, null], $this->column($this->items->key, $this->notes->key));
         self::assertSame('NUMERIC', $this->declaredType());
@@ -107,7 +107,7 @@ final class ChangeTypeTest extends TestCase
     public function testCleanConversionNeedsNoConfirmation(): void
     {
         $this->fill(['2026-03-14', '2026-03-15T10:00', null]);
-        self::assertEquals(new Impact(0, 0), $this->editor()->changeType($this->notes->key, 'date', [], false));
+        self::assertEquals(new Impact(0, 0), $this->editor()->changeType($this->notes->key, 'date', [], 0));
         self::assertSame(['2026-03-14', '2026-03-15', null], $this->column($this->items->key, $this->notes->key));
         self::assertCount(1, $this->taken);
     }
@@ -115,7 +115,7 @@ final class ChangeTypeTest extends TestCase
     public function testTextToChoiceDerivesSortedChoices(): void
     {
         $this->fill(['Tool', ' Appliance ', 'tool', null, 'Book', 'TOOL', 'appliance']);
-        self::assertEquals(new Impact(0, 0), $this->editor()->changeType($this->notes->key, 'choice', [], false));
+        self::assertEquals(new Impact(0, 0), $this->editor()->changeType($this->notes->key, 'choice', [], 0));
         self::assertSame(['Appliance', 'Book', 'Tool'], $this->labels());
         self::assertSame(['Tool', 'Appliance', 'Tool', null, 'Book', 'Tool', 'Appliance'], $this->column($this->items->key, $this->notes->key));
         foreach ($this->schema()->field($this->notes->key)->options['choices'] as $choice) {
@@ -127,9 +127,9 @@ final class ChangeTypeTest extends TestCase
     public function testGivenChoicesAreUsedInsteadOfDerived(): void
     {
         $this->fill(['Tool', 'Plant']);
-        $confirmation = $this->confirmationOf(fn () => $this->editor()->changeType($this->notes->key, 'choice', ['choices' => ['Tool', 'Book']], false));
+        $confirmation = $this->confirmationOf(fn () => $this->editor()->changeType($this->notes->key, 'choice', ['choices' => ['Tool', 'Book']], 0));
         self::assertSame([1, 1], [$confirmation->records, $confirmation->values]);
-        $this->editor()->changeType($this->notes->key, 'choice', ['choices' => ['Tool', 'Book']], true);
+        $this->editor()->changeType($this->notes->key, 'choice', ['choices' => ['Tool', 'Book']], 1);
         self::assertSame(['Tool', 'Book'], $this->labels());
         self::assertSame(['Tool', null], $this->column($this->items->key, $this->notes->key));
     }
@@ -145,7 +145,7 @@ final class ChangeTypeTest extends TestCase
         $this->insert($this->items->key, [$long->key => $second]);
         $this->insert($this->items->key, [$long->key => 'short']);
 
-        $editor->changeType($long->key, 'choice', [], false);
+        $editor->changeType($long->key, 'choice', [], 0);
         $label = $base . "\u{2026}";
         self::assertSame([$label, 'short'], array_column($this->schema()->field($long->key)->options['choices'], 'label'));
         self::assertSame([$label, $label, 'short'], $this->column($this->items->key, $long->key));
@@ -159,7 +159,7 @@ final class ChangeTypeTest extends TestCase
             $values[] = 'Value ' . $i;
         }
         $this->fill($values);
-        self::assertSame([['options.choices', 'problem.options.choices_too_many', ['max' => 200]]], self::problems(fn () => $this->editor()->changeType($this->notes->key, 'choice', [], true)));
+        self::assertSame([['options.choices', 'problem.options.choices_too_many', ['max' => 200]]], self::problems(fn () => $this->editor()->changeType($this->notes->key, 'choice', [], 0)));
         self::assertSame('text', $this->schema()->field($this->notes->key)->type);
         self::assertSame([], $this->snapshotFiles());
     }
@@ -168,7 +168,7 @@ final class ChangeTypeTest extends TestCase
     {
         $this->fill(['Tool', "\x01\x02"]);
         $before = $this->dump();
-        self::assertSame([['options.choices', 'problem.options.choices_unconvertible', []]], self::problems(fn () => $this->editor()->changeType($this->notes->key, 'choice', [], true)));
+        self::assertSame([['options.choices', 'problem.options.choices_unconvertible', []]], self::problems(fn () => $this->editor()->changeType($this->notes->key, 'choice', [], 0)));
         self::assertSame([['options.choices', 'problem.options.choices_unconvertible', []]], self::problems(fn () => $this->editor()->previewTypeChange($this->notes->key, 'choice', [])));
         self::assertSame($before, $this->dump());
         self::assertSame([], $this->snapshotFiles());
@@ -184,7 +184,7 @@ final class ChangeTypeTest extends TestCase
                 ['42'],
             ));
         });
-        self::assertEquals(new Impact(0, 0), $editor->changeType($this->notes->key, 'number', [], false));
+        self::assertEquals(new Impact(0, 0), $editor->changeType($this->notes->key, 'number', [], 0));
         self::assertSame([1, 42], $this->column($this->items->key, $this->notes->key));
     }
 
@@ -197,7 +197,7 @@ final class ChangeTypeTest extends TestCase
                 ['two'],
             ));
         });
-        $confirmation = $this->confirmationOf(fn () => $editor->changeType($this->notes->key, 'number', [], false));
+        $confirmation = $this->confirmationOf(fn () => $editor->changeType($this->notes->key, 'number', [], 0));
         self::assertSame([1, 1], [$confirmation->records, $confirmation->values]);
         self::assertSame('TEXT', $this->declaredType());
         self::assertSame('text', $this->schema()->field($this->notes->key)->type);
@@ -214,14 +214,14 @@ final class ChangeTypeTest extends TestCase
         $this->insert($this->items->key, [$name->key => 'no']);
         $this->insert($this->items->key);
 
-        $this->editor()->changeType($name->key, 'checkbox', [], false);
+        $this->editor()->changeType($name->key, 'checkbox', [], 0);
         self::assertNull($this->schema()->table($this->items->key)->titleFieldKey);
         self::assertSame([1, 0, 0], $this->column($this->items->key, $name->key));
 
         // A title-capable target keeps the title field.
-        $this->editor()->changeType($this->notes->key, 'long_text', [], false);
+        $this->editor()->changeType($this->notes->key, 'long_text', [], 0);
         $this->editor()->updateTable($this->items->key, 'Items', 'item', $this->notes->key);
-        $this->editor()->changeType($this->notes->key, 'email', [], true);
+        $this->editor()->changeType($this->notes->key, 'email', [], 0);
         self::assertSame($this->notes->key, $this->schema()->table($this->items->key)->titleFieldKey);
     }
 
@@ -229,12 +229,12 @@ final class ChangeTypeTest extends TestCase
     {
         $this->insert($this->items->key, [$this->notes->key => 'true']);
         $this->insert($this->items->key, [$this->notes->key => 'off']);
-        $this->editor()->changeType($this->notes->key, 'checkbox', [], false);
+        $this->editor()->changeType($this->notes->key, 'checkbox', [], 0);
         $field = $this->schema()->field($this->notes->key);
         self::assertFalse($field->required);
         self::assertSame([1, 0], $this->column($this->items->key, $this->notes->key));
 
-        $this->editor()->changeType($this->notes->key, 'text', [], false);
+        $this->editor()->changeType($this->notes->key, 'text', [], 0);
         self::assertSame(['1', null], $this->column($this->items->key, $this->notes->key));
     }
 
@@ -244,7 +244,7 @@ final class ChangeTypeTest extends TestCase
         $this->insert($this->items->key);
         $number = $this->editor()->addField($this->items->key, 'Number', 'auto_number', [], false, '');
         self::assertArrayHasKey('x_f_' . $number->key . '_u', $this->masterNames());
-        $this->editor()->changeType($number->key, 'number', [], false);
+        $this->editor()->changeType($number->key, 'number', [], 0);
         self::assertArrayNotHasKey('x_f_' . $number->key . '_u', $this->masterNames());
         self::assertSame([1, 2], $this->column($this->items->key, $number->key));
     }
@@ -265,7 +265,7 @@ final class ChangeTypeTest extends TestCase
     public function testRefusedPairs(string $from, string $to, string $problem): void
     {
         $field = $from === 'text' ? $this->notes : $this->editor()->addField($this->items->key, 'Other', $from, [], false, '');
-        self::assertSame([['type', $problem, []]], self::problems(fn () => $this->editor()->changeType($field->key, $to, [], true)));
+        self::assertSame([['type', $problem, []]], self::problems(fn () => $this->editor()->changeType($field->key, $to, [], 0)));
         self::assertSame([], $this->snapshotFiles());
     }
 
@@ -273,14 +273,14 @@ final class ChangeTypeTest extends TestCase
     {
         $rooms = $this->editor()->createTable('Rooms', 'room', true);
         $field = $this->editor()->addRelation($this->items->key, 'Room', $rooms->key, \TiffinDB\Core\Schema\Cardinality::Many, \TiffinDB\Core\Schema\Cardinality::Many, 'Items', false, '');
-        self::assertSame([['type', 'problem.type.not_convertible', []]], self::problems(fn () => $this->editor()->changeType($field->key, 'text', [], true)));
+        self::assertSame([['type', 'problem.type.not_convertible', []]], self::problems(fn () => $this->editor()->changeType($field->key, 'text', [], 0)));
     }
 
     public function testTargetOptionsAreValidated(): void
     {
         self::assertSame(
             [['options.max', 'problem.options.range', ['min' => 3, 'max' => 10]]],
-            self::problems(fn () => $this->editor()->changeType($this->notes->key, 'rating', ['max' => 11], true)),
+            self::problems(fn () => $this->editor()->changeType($this->notes->key, 'rating', ['max' => 11], 0)),
         );
     }
 
@@ -293,7 +293,7 @@ final class ChangeTypeTest extends TestCase
         );
         self::assertSame(
             [[null, 'problem.table.too_large_to_convert', ['max' => 50000]]],
-            self::problems(fn () => $this->editor()->changeType($this->notes->key, 'long_text', [], true)),
+            self::problems(fn () => $this->editor()->changeType($this->notes->key, 'long_text', [], 0)),
         );
         self::assertSame([], $this->snapshotFiles());
     }

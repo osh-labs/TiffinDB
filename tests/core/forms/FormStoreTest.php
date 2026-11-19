@@ -228,11 +228,11 @@ final class FormStoreTest extends TestCase
         $check($items->key);
         $check($rooms->key);
         self::assertStringContainsString('<legend>Places</legend>', $this->stored('html', $items->key));
-        $editor->updateField($links->key, 'Locations', ['links' => 'many'], false, '', false);
+        $editor->updateField($links->key, 'Locations', ['links' => 'many'], false, '', 0);
         $check($items->key);
         self::assertStringContainsString('<legend>Locations</legend>', $this->stored('html', $items->key));
 
-        $editor->changeType($notes->key, 'long_text', [], false);
+        $editor->changeType($notes->key, 'long_text', [], 0);
         $check($items->key);
         self::assertStringContainsString('<div data-tiffin-field="' . $notes->key . '" data-tiffin-span="full"></div>', $this->stored('html', $items->key));
 

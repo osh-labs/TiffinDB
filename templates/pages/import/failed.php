@@ -13,7 +13,7 @@ declare(strict_types=1);
 <h1><?= $this->t('import.failed.title') ?></h1>
 <p><?= $this->t('import.failed.body') ?></p>
 <p><?= $this->e($data['reason']) ?></p>
-<form method="post" action="<?= $this->url($data['cancel']) ?>">
+<form class="inline-form" method="post" action="<?= $this->url($data['cancel']) ?>">
 <?= $this->partial('csrf') ?>
 <button class="button button-primary button-large" type="submit"><?= $this->t('import.failed.again') ?></button>
 </form>

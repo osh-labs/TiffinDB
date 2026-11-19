@@ -373,7 +373,7 @@ final class ShellTest extends TestCase
             /** @var DOMElement $child */
             $parts[] = $child->nodeName . '.' . $child->getAttribute('class');
         }
-        self::assertSame(['a.user-chip', 'form.sign-out'], $parts);
+        self::assertSame(['a.top-pill top-pill-display', 'a.user-chip', 'form.sign-out'], $parts);
 
         $chip = self::element($xpath, '//a[@class="user-chip"]');
         self::assertSame('/account/password', $chip->getAttribute('href'));
@@ -910,6 +910,49 @@ final class ShellTest extends TestCase
 
     /** A synthetic restore path, as RecordController builds it. */
     private const UNDO = '/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12/restore';
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function displayLinkAreas(): iterable
+    {
+        foreach (['projects', 'people', 'account', 'settings', ''] as $nav) {
+            foreach ([true, false] as $admin) {
+                yield ($nav === '' ? 'none' : $nav) . ($admin ? ', Admin' : ', Member') => [$nav, $admin];
+            }
+        }
+    }
+
+    #[DataProvider('displayLinkAreas')]
+    public function testDisplayLinkOnEverySignedInShell(string $nav, bool $admin): void
+    {
+        $xpath = self::xpath(self::render('error', self::errorData(self::shell($admin, $nav))));
+
+        $link = self::element($xpath, '//nav[@class="account-nav"]/*[1]');
+        self::assertSame('a', $link->nodeName);
+        self::assertSame('top-pill top-pill-display', $link->getAttribute('class'));
+        self::assertSame('/settings', $link->getAttribute('href'));
+        self::assertSame(self::string('shell.nav.display'), self::text($link));
+        $icon = self::element($xpath, '//nav[@class="account-nav"]/a[1]/*[local-name()="svg"]');
+        self::assertSame('top-pill-icon', $icon->getAttribute('class'));
+        self::assertSame('true', $icon->getAttribute('aria-hidden'));
+        self::assertSame('false', $icon->getAttribute('focusable'));
+        if ($nav === 'settings') {
+            self::assertSame('page', $link->getAttribute('aria-current'));
+        } else {
+            self::assertFalse($link->hasAttribute('aria-current'));
+        }
+        self::assertSame(0, self::xpath(self::render('error', self::errorData(null)))->query('//a[@href="/settings"]')->length, 'No Display link before sign-in.');
+    }
+
+    public function testSettingsIsCurrentOnlyOnTheDisplayLink(): void
+    {
+        $xpath = self::xpath(self::render('error', self::errorData(self::shell(true, 'settings'))));
+        $current = [];
+        foreach ($xpath->query('//header//*[@aria-current]') as $element) {
+            /** @var DOMElement $element */
+            $current[] = $element->getAttribute('href');
+        }
+        self::assertSame(['/settings'], $current);
+    }
 
     /** @return array{project: string, projectName: string, q: string|null} */
     private static function search(?string $q = null): array

@@ -6,8 +6,9 @@
  * Top bar of the signed-in shell (M1 spec part 2 section 4.2; M2 spec
  * part 2 section 3.1): the brand link, the main navigation (Projects;
  * People for Admins), the project search when the page has `search`, and
- * the account navigation (the user chip, a link to the password page, and
- * the Sign out form).
+ * the account navigation (the Display link to the reading and display
+ * settings, the user chip, a link to the password page, and the Sign out
+ * form).
  *
  * The wordmark is live text split for colouring; with the lockup partial
  * it is the one place a template writes the product name itself (ADR 0008
@@ -41,6 +42,14 @@ declare(strict_types=1);
 <?= $this->partial('top-search', ['search' => $data['search']]) ?>
 <?php endif; ?>
 <nav class="account-nav" aria-label="<?= $this->t('shell.nav.account') ?>">
+<?php if ($data['shell']['nav'] === 'settings') : ?>
+<a class="top-pill top-pill-display" href="<?= $this->url('/settings') ?>" aria-current="page">
+<?php else : ?>
+<a class="top-pill top-pill-display" href="<?= $this->url('/settings') ?>">
+<?php endif; ?>
+<svg class="top-pill-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="8" /><path class="top-pill-icon-half" d="M10 2a8 8 0 0 1 0 16z" /></svg>
+<span><?= $this->t('shell.nav.display') ?></span>
+</a>
 <?php if ($data['shell']['nav'] === 'account') : ?>
 <a class="user-chip" href="<?= $this->url('/account/password') ?>" aria-label="<?= $this->t('shell.account.label', ['name' => $data['shell']['displayName']]) ?>" aria-current="page">
 <?php else : ?>

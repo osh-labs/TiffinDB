@@ -125,8 +125,6 @@ final class TemplateRulesTest extends TestCase
     public const PENDING_KEYS = [
         'input.duration.help', 'input.duration.help_seconds', 'input.currency.label', 'input.auto_number_new',
         'input.links.none', 'input.links.help', 'input.files.none', 'input.file.facts',
-        // The top bar's Display link (M2 spec part 2 section 3.1), held back with the M2 routes.
-        'shell.nav.display',
     ];
 
     /** The show-password script element (M1 spec part 2 section 4.1). */

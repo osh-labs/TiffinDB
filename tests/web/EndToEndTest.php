@@ -277,7 +277,7 @@ final class EndToEndTest extends TestCase
         self::assertSame(0, $member->xpath()->query('//main//form | //main//div[@class="page-actions"] | //main//tbody//a')->length, 'No editing controls.');
         self::assertStringNotContainsString('/fields', $tables->body);
         self::assertStringNotContainsString('/sharing', $tables->body);
-        self::assertStringNotContainsString('/settings', $tables->body);
+        self::assertStringNotContainsString($projectPath . '/settings', $tables->body);
 
         // The fields editor refuses the Member: a POST that passes the CSRF
         // check (the Member's own session token, read from the page) reaches

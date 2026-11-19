@@ -122,10 +122,7 @@ final class TemplateRulesTest extends TestCase
      * testPendingKeysAreStillPending fails once a template uses one, so the
      * entry is then removed.
      */
-    public const PENDING_KEYS = [
-        'input.duration.help', 'input.duration.help_seconds', 'input.currency.label', 'input.auto_number_new',
-        'input.links.none', 'input.links.help', 'input.files.none', 'input.file.facts',
-    ];
+    public const PENDING_KEYS = [];
 
     /** The show-password script element (M1 spec part 2 section 4.1). */
     public const SCRIPT_ELEMENT = '<script src="<?= $this->asset(\'js/show-password.js\') ?>" defer="defer"></script>';

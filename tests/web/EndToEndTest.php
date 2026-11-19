@@ -1242,7 +1242,7 @@ final class EndToEndClient
             if (str_contains($name, '[')) {
                 unset($fields[$name]);
                 parse_str(http_build_query([$name => $value]), $nested);
-                $fields = array_merge_recursive($fields, $nested);
+                $fields = array_replace_recursive($fields, $nested);
             }
         }
 

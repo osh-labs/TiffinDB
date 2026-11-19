@@ -14,6 +14,7 @@ use TiffinDB\Core\Auth\PasswordHasher;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
@@ -27,8 +28,9 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
 require_once __DIR__ . '/EndToEndTest.php';
 
 /**
- * T-SCR-1 (M1 spec part 2 section 9) and T-SCR-2 (M2 spec part 2
- * section 12, testEveryM2ScreenInEveryState): every GET route of the real route
+ * T-SCR-1 (M1 spec part 2 section 9), T-SCR-2 (M2 spec part 2
+ * section 12, testEveryM2ScreenInEveryState), and T-SCR-3 (M3 spec part 2
+ * section 10.1: m3Screens and testPluginScreensWithAddedPlugins): every GET route of the real route
  * table, in each state its design document under docs/design/m1/ lists
  * that a GET can reach, served through the kernel with the real
  * CoreServices over a temporary installation built through the screens.
@@ -303,26 +305,21 @@ final class ScreenStructureTest extends TestCase
         $this->visit($garden . '/tables', 503, $admin);
         $this->visit('/projects/aaaaaaaaaaaa/tables', 404, $admin);
 
+        // M3 screens (T-SCR-3), on Home Inventory.
+        $this->m3Screens($admin, $home, $items);
+
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
         $this->screen($admin, '/sign-in?signed-out=1', 'Sign in', 'Sign in', 'You have signed out.');
         $this->visit('/', 303, $admin);
         $this->visit('/projects', 303, $admin);
 
-        // Every GET route was visited. Routes of controllers that do not
-        // exist yet (M2 spec part 2 section 2: WP6 to WP8) are counted once
-        // their controller lands. The M3 controllers are left out until
-        // M3-WP11 visits their routes and removes this list (M3 spec part 2
-        // section 11).
-        $notYetVisited = [
-            'TiffinDB\\Web\\Controller\\ImportController',
-            'TiffinDB\\Web\\Controller\\ExportController',
-            'TiffinDB\\Web\\Controller\\ArchiveController',
-            'TiffinDB\\Web\\Controller\\PluginController',
-        ];
+        // Every GET route was visited, the M3 ones included (T-SCR-3). Routes
+        // of controllers that do not exist yet are counted once their
+        // controller lands.
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0]) && !in_array($route[2][0], $notYetVisited, true)) {
+            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
                 $patterns[] = (string) $route[1];
             }
         }
@@ -462,6 +459,173 @@ final class ScreenStructureTest extends TestCase
         }
     }
 
+    /**
+     * T-SCR-3 (M3 spec part 2 section 10.1): every M3 GET route in each
+     * state its design document under docs/design/m3/ lists that a GET can
+     * reach, and the pages a POST answers with (422 review problems, the
+     * archive name taken), on a project with Items (with a Rooms link and a
+     * Bought on date) and an empty Rooms. Files are uploaded through the
+     * Request test seam (EndToEndClient::upload).
+     */
+    private function m3Screens(EndToEndClient $admin, string $home, string $items): void
+    {
+        $itemsKey = substr($items, strrpos($items, '/') + 1);
+        $upload = function (string $name, string $contents): string {
+            $path = $this->temp->path('upload-' . $name);
+            file_put_contents($path, $contents);
+
+            return $path;
+        };
+
+        // Step 1 (import.md 2).
+        $this->screen($admin, $home . '/import', 'Import a file', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//form[@enctype="multipart/form-data"]//input[@type="file"][@name="file"]')->length);
+
+        // Step 2, new table with a warning (the rooms are not in Rooms yet).
+        $rows = (new IoFixture())->itemRows(12);
+        $uploaded = $admin->upload($home . '/import', 'file', $upload('inventory.csv', IoFixture::csv(IoFixture::HEADINGS, $rows)), 'inventory.csv');
+        self::assertSame(303, $uploaded->status, $uploaded->body);
+        $job = (string) $uploaded->header('Location');
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//section[contains(@class, "warning-panel")]')->length, 'With warnings.');
+        self::assertSame(1, $admin->xpath()->query('//table[contains(@class, "mapping-table")]')->length);
+
+        // Reading options (section 5).
+        $this->screen($admin, $job . '/reading', 'How the file is read', 'How the file is read');
+
+        // Step 2 for an existing table, then a 422 with every problem linked, then back to a new table.
+        $admin->get($job);
+        self::assertSame(303, $admin->submit($job, ['action' => 'recheck', 'target' => 'existing', 'table' => $itemsKey])->status);
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame('Goes into', HtmlAssertions::text($admin->page(), '//table[contains(@class, "mapping-table")]//thead/tr/th[3]'));
+        // The existing-table page shows the new table's name empty, so it is typed again (reported).
+        self::assertSame('', (string) $admin->xpath()->query('//input[@name="table_name"]/@value')->item(0)?->nodeValue);
+        self::assertSame(303, $admin->submit($job, ['action' => 'recheck', 'target' => 'new', 'table_name' => 'inventory'])->status);
+        $admin->get($job);
+        $refused = $admin->submit($job, ['action' => 'import', 'table_name' => 'Items', 'name[0]' => '']);
+        self::assertSame(422, $refused->status, $refused->body);
+        $this->structure($refused->body, 'Error: Check the fields', 'Import a file', 'review 422');
+        self::assertGreaterThanOrEqual(2, $admin->xpath()->query('//div[@class="error-summary"]//a')->length);
+
+        // Step 3: preparing (with the script), then saving (without), then the report.
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame(303, $admin->submit($job, ['action' => 'import'])->status);
+        $this->screen($admin, $job, 'Import a file', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//form[@data-auto-continue="1"]')->length, 'Preparing continues by itself with the script.');
+        for ($i = 0; $i < 10 && $admin->xpath()->query('//input[@name="step"][@value="save"]')->length === 0; $i++) {
+            self::assertSame(303, $admin->submit($job . '/continue')->status);
+            $this->screen($admin, $job, 'Import a file', 'Import a file');
+        }
+        self::assertSame(0, $admin->xpath()->query('//script')->length, 'The saving page loads no script.');
+        $saved = $admin->submit($job . '/continue', ['step' => 'save']);
+        self::assertSame(303, $saved->status);
+        $this->screen($admin, $job . '/report', 'Import report', 'Import a file', '12 rows were imported into inventory.');
+        $this->screen($admin, $job . '/report', 'Import report', 'Import a file');
+
+        // A report with values left empty: dates that cannot be read, into Items' Bought on.
+        $dates = "Name,Bought on\r\nKettle,2025-03-14\r\nLadder,soon\r\nLamp,unknown\r\n";
+        $admin->get($home . '/import');
+        $second = $admin->upload($home . '/import', 'file', $upload('dates.csv', $dates), 'dates.csv');
+        $job2 = (string) $second->header('Location');
+        $admin->get($job2);
+        self::assertSame(303, $admin->submit($job2, ['action' => 'recheck', 'target' => 'existing', 'table' => $itemsKey])->status);
+        $admin->get($job2);
+        self::assertSame(303, $admin->submit($job2, ['action' => 'import'])->status);
+        $admin->get($job2);
+        for ($i = 0; $i < 10 && $admin->xpath()->query('//input[@name="step"][@value="save"]')->length === 0; $i++) {
+            $admin->submit($job2 . '/continue');
+            $admin->get($job2);
+        }
+        self::assertSame(303, $admin->submit($job2 . '/continue', ['step' => 'save'])->status);
+        $this->screen($admin, $job2 . '/report', 'Import report', 'Import a file', '3 rows were imported into Items.');
+        self::assertSame(1, $admin->xpath()->query('//table[contains(@class, "report-table")]')->length, 'The values left empty are listed.');
+
+        // Reading a large file in parts, and the failure page (the format turned off meanwhile).
+        $admin->get($home . '/import');
+        $large = $admin->upload($home . '/import', 'file', $upload('large.csv', IoFixture::csv(IoFixture::HEADINGS, (new IoFixture())->itemRows(2100))), 'large.csv');
+        $job3 = (string) $large->header('Location');
+        $this->screen($admin, $job3, 'Import a file', 'Import a file');
+        self::assertStringStartsWith('Reading large.csv', HtmlAssertions::text($admin->page(), '//div[@class="progress"]/p[1]'));
+        $admin->get('/admin/plugins/import/csv');
+        self::assertSame(303, $admin->submit('/admin/plugins/import/csv/disable')->status);
+        $this->screen($admin, '/admin/plugins/import/csv', 'CSV', 'CSV', 'CSV is turned off.');
+        $this->visit('/admin/plugins/import/csv/enable', 303, $admin);
+        $admin->get($job3);
+        self::assertSame(303, $admin->submit($job3 . '/continue')->status);
+        $this->screen($admin, $job3, 'The import did not finish', 'The import did not finish');
+        $admin->get('/admin/plugins/import/csv');
+        self::assertSame(303, $admin->submit('/admin/plugins/import/csv/enable')->status);
+        $this->screen($admin, '/admin/plugins/import/csv', 'CSV', 'CSV', 'CSV is turned on.');
+
+        // Export (export.md).
+        $this->screen($admin, $home . '/export', 'Export', 'Export');
+
+        // Plugins (plugins.md 2 and 3).
+        $this->screen($admin, '/admin/plugins', 'Plugins', 'Plugins');
+        foreach (['import/csv' => 'CSV', 'import/xlsx' => 'Excel workbook', 'export/csv' => 'CSV', 'export/json' => 'JSON', 'export/xlsx' => 'Excel workbook'] as $ref => $name) {
+            $this->screen($admin, '/admin/plugins/' . $ref, $name, $name);
+        }
+        $this->visit('/admin/plugins/export/nothing', 404, $admin);
+
+        // Import a project archive (archive.md 2 to 4): form, name taken (422), result.
+        $admin->get($home . '/export');
+        $archive = $admin->submit($home . '/export/archive');
+        self::assertSame(200, $archive->status);
+        $zip = $upload('home.tiffindb.zip', $archive->body());
+        $this->screen($admin, '/projects/import', 'Import a project archive', 'Import a project archive');
+        $taken = $admin->upload('/projects/import', 'file', $zip, 'home.tiffindb.zip', ['name' => 'Home Inventory']);
+        self::assertSame(422, $taken->status, $taken->body);
+        $this->structure($taken->body, 'Error: Import a project archive', 'Import a project archive', 'name taken');
+        $nameForm = (string) $admin->xpath()->query('//main//form[@method="post"]/@action')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#^/projects/import/[A-Za-z0-9_-]+\z#', $nameForm);
+        $made = $admin->submit($nameForm, ['name' => 'Home Inventory copy']);
+        self::assertSame(303, $made->status, $made->body);
+        $this->screen($admin, (string) $made->header('Location'), 'Home Inventory copy', 'Home Inventory copy', 'The project Home Inventory copy has been made from the archive.');
+        $admin->cleanUp();
+    }
+
+    /**
+     * The structure assertions of screen() for a page a POST answered with.
+     */
+    private function structure(string $html, string $title, string $h1, string $where): void
+    {
+        HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
+        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        HtmlAssertions::assertForm($html);
+        self::assertSame($title . ' - TiffinDB', HtmlAssertions::text($html, '//title'), "Title of {$where}");
+        self::assertSame($h1, HtmlAssertions::text($html, '//h1'), "h1 of {$where}");
+    }
+
+    /**
+     * T-SCR-3, the plugin states that need plugins not shipped with
+     * TiffinDB: the list with every status, the page of a disabled added
+     * plugin, of one that cannot be used, and of a damaged one, and the
+     * confirmation for turning on an added plugin. The real CoreServices
+     * with the plugins directory of CoreFixture::pluginsRoot() (a copy of
+     * plugins/ plus three synthetic plugins); only scanning happens here,
+     * no plugin is loaded.
+     */
+    public function testPluginScreensWithAddedPlugins(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $services = new PluginsRootServices(new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m3-seed'), $core->hasher), $core->pluginsRoot());
+            $admin = $this->signIn(new Kernel($config, Fixtures::appRoot(), null, $services), 'admin');
+            $this->screen($admin, '/admin/plugins', 'Plugins', 'Plugins');
+            self::assertSame(['On', 'Off', 'Cannot be used', 'Damaged'], array_values(array_unique($admin->texts('//main//span[contains(@class, "plugin-status")]'))));
+            $this->screen($admin, '/admin/plugins/import/example', 'Example format', 'Example format');
+            $this->screen($admin, '/admin/plugins/import/example/enable', 'Turn on Example format?', 'Turn on Example format?');
+            self::assertSame(['Turn it on'], $admin->texts('//main//form//button[contains(@class, "button-danger")]'));
+            $this->screen($admin, '/admin/plugins/import/needs', 'Needs an extension', 'Needs an extension');
+            $broken = HtmlAssertions::text($this->visit('/admin/plugins/export/broken', 200, $admin)->body, '//h1');
+            $this->screen($admin, '/admin/plugins/export/broken', $broken, $broken);
+            self::assertSame(1, $admin->xpath()->query('//main//p[contains(@class, "notice")]')->length, 'A damaged plugin says so.');
+        } finally {
+            $core->remove();
+        }
+    }
+
     // Helpers.
 
     private function signIn(Kernel $kernel, string $username): EndToEndClient
@@ -577,5 +741,92 @@ final class ScreenStructureTest extends TestCase
         $added = $admin->submit($table . '/fields', $values);
         self::assertSame(303, $added->status, $added->body);
         self::assertSame(200, $admin->follow($added)->status);
+    }
+}
+
+/**
+ * The real CoreServices with another plugins directory: every call is
+ * delegated, and the first Operations it hands out is pointed at $root
+ * before any plugin is scanned (Operations::usePluginsRoot).
+ */
+final class PluginsRootServices implements \TiffinDB\Web\Services
+{
+    /** @var \WeakMap<\TiffinDB\Core\App\Operations, true> */
+    private \WeakMap $rooted;
+
+    public function __construct(private readonly CoreServices $inner, private readonly string $root)
+    {
+        $this->rooted = new \WeakMap();
+    }
+
+    public function installState(): \TiffinDB\Core\Install\InstallState
+    {
+        return $this->inner->installState();
+    }
+
+    public function installer(): \TiffinDB\Core\Install\Installer
+    {
+        return $this->inner->installer();
+    }
+
+    public function operations(): \TiffinDB\Core\App\Operations
+    {
+        $operations = $this->inner->operations();
+        if (!isset($this->rooted[$operations])) {
+            $operations->usePluginsRoot($this->root);
+            $this->rooted[$operations] = true;
+        }
+
+        return $operations;
+    }
+
+    public function probe(): \TiffinDB\Core\Install\HttpProbe
+    {
+        return $this->inner->probe();
+    }
+
+    public function resume(#[\SensitiveParameter] string $token): ?\TiffinDB\Core\Auth\SignedIn
+    {
+        return $this->inner->resume($token);
+    }
+
+    public function endSession(#[\SensitiveParameter] string $token): void
+    {
+        $this->inner->endSession($token);
+    }
+
+    public function takeFlash(#[\SensitiveParameter] string $token): ?array
+    {
+        return $this->inner->takeFlash($token);
+    }
+
+    public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void
+    {
+        $this->inner->setFlash($token, $key, $params);
+    }
+
+    public function userSettings(int $userId): array
+    {
+        return $this->inner->userSettings($userId);
+    }
+
+    public function newCsrfToken(): string
+    {
+        return $this->inner->newCsrfToken();
+    }
+
+    public function now(): \DateTimeImmutable
+    {
+        return $this->inner->now();
+    }
+
+    public function uploadLimits(): \TiffinDB\Web\UploadLimits
+    {
+        return $this->inner->uploadLimits();
+    }
+
+    public function close(): void
+    {
+        $this->inner->close();
     }
 }

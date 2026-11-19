@@ -18,6 +18,7 @@ use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -26,8 +27,16 @@ use TiffinDB\Web\Kernel;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 require_once __DIR__ . '/EndToEndTest.php';
+require_once __DIR__ . '/ScreenStructureTest.php';
 
 /**
+ * T-KBD-2 (M3 spec part 2 section 9.1) is in the methods after
+ * testUndoNoticeOnTheList: the M3 screens as the Admin (a second client
+ * signed in through the form), with the same seven rules and the four M3
+ * items (mapping controls named after their column, radio groups in
+ * fieldsets, the progress status a live region before the Continue
+ * button, and the file input's label and help).
+ *
  * T-KBD-1 (M2 spec part 2 section 10.1): the keyboard structure of every M2
  * screen, rendered through the kernel with the real route table, templates,
  * strings, and the real CoreServices over a CoreFixture instance holding
@@ -86,6 +95,7 @@ final class KeyboardStructureTest extends TestCase
     /** @var array<string, string> Samples field name => key. */
     private array $sample = [];
     private int $sampleId;
+    private Kernel $kernel;
 
     protected function setUp(): void
     {
@@ -119,7 +129,8 @@ final class KeyboardStructureTest extends TestCase
 
         $config = Fixtures::config(false) + ['data_dir' => $this->core->temp->path('data'), 'timezone' => 'UTC'];
         $services = new CoreServices($config, Fixtures::appRoot(), $this->core->clock, new SeededRandom('tiffindb-keyboard-structure-seed'), $this->core->hasher);
-        $this->member = new EndToEndClient(new Kernel($config, Fixtures::appRoot(), null, $services));
+        $this->kernel = new Kernel($config, Fixtures::appRoot(), null, $services);
+        $this->member = new EndToEndClient($this->kernel);
         $this->member->get('/sign-in');
         $signedIn = $this->member->submit('/sign-in', ['username' => 'member', 'password' => CoreFixture::PASSWORD]);
         self::assertSame(303, $signedIn->status, $signedIn->body);
@@ -328,6 +339,309 @@ final class KeyboardStructureTest extends TestCase
         ], 'list with undo');
     }
 
+    // T-KBD-2 (M3 spec part 2 section 9.1): the M3 screens, as the Admin.
+
+    /** The top bar for the Admin (People and Plugins). */
+    private const ADMIN_TOP = [
+        'Skip to main content', 'TiffinDB, all projects', 'Projects', 'People', 'Plugins',
+        'Display', 'Example Admin, change your password', 'Sign out',
+    ];
+
+    public function testImportStepOneEmptyAndWithAnUploadProblem(): void
+    {
+        $admin = $this->admin();
+        $start = $this->m2->projectPath() . '/import';
+        $formats = ['Decide from the file name', 'CSV .csv, .tsv, .txt', 'Excel workbook .xlsx'];
+        $expected = [...self::ADMIN_TOP, 'Home Inventory', 'File', ...$formats, 'Continue', 'Cancel', ...self::FOOTER];
+        $this->checkAs($admin, $start, $expected);
+        $this->assertFileInput($admin->page());
+
+        $refused = $admin->submit($start);
+        self::assertSame(422, $refused->status, $refused->body);
+        $this->assertStructure($refused->body, [...self::ADMIN_TOP, 'Home Inventory', 'Choose a file.', 'File', ...$formats, 'Continue', 'Cancel', ...self::FOOTER], 'step 1 with a problem');
+        $this->assertFileInput($refused->body);
+        self::assertSame(1, $admin->xpath()->query('//input[@type="file"][@aria-invalid="true"]')->length);
+    }
+
+    public function testImportReadingProgressAndReadingOptions(): void
+    {
+        $admin = $this->admin();
+        $job = $this->startJob(IoFixture::csv(IoFixture::HEADINGS, (new IoFixture())->itemRows(2100)), 'large.csv');
+        $path = $this->jobPath($job);
+        $this->checkAs($admin, $path, [...self::ADMIN_TOP, 'Home Inventory', 'Continue', 'Start again', ...self::FOOTER]);
+        $this->assertProgress($admin->page());
+
+        $this->checkAs($admin, $path . '/reading', [
+            ...self::ADMIN_TOP, 'Home Inventory',
+            'UTF-8', 'UTF-16 little-endian', 'UTF-16 big-endian', 'Windows Latin 1',
+            'Comma', 'Semicolon', 'Tab', 'Vertical bar',
+            'The first row holds the column names',
+            'Read the file again', 'Back',
+            ...self::FOOTER,
+        ]);
+    }
+
+    public function testImportReviewForANewTableWithWarnings(): void
+    {
+        $admin = $this->admin();
+        $rows = (new IoFixture())->sampleRows();
+        $job = $this->startJob(IoFixture::csv(IoFixture::SAMPLE_HEADINGS, $rows), 'inventory-sample.csv');
+        $path = $this->jobPath($job);
+        $mapping = [];
+        foreach (IoFixture::SAMPLE_HEADINGS as $heading) {
+            array_push($mapping, 'Bring in ' . $heading, 'Field name for ' . $heading, 'Type for ' . $heading);
+        }
+        $this->checkAs($admin, $path, [
+            ...self::ADMIN_TOP, 'Home Inventory', 'Change how the file is read',
+            'A new table called', 'Name of the new table', 'Add to an existing table', 'Existing table', 'Check again',
+            ...$mapping,
+            'Import 52 rows', 'Start again',
+            ...self::FOOTER,
+        ]);
+        $this->assertMapping($admin->page(), IoFixture::SAMPLE_HEADINGS, 'Type for ');
+        self::assertSame(1, $admin->xpath()->query('//section[contains(@class, "warning-panel")][@aria-labelledby]/h2')->length, 'The warnings are a region with a heading.');
+    }
+
+    public function testImportReviewForAnExistingTableAndWithProblems(): void
+    {
+        $admin = $this->admin();
+        $job = $this->startJob("Name,Serial number,Notes\r\nKettle,EX-000-11111,Synthetic\r\nLadder,EX-000-22222,\r\n", 'items.csv');
+        $this->ops->imports()->recheck($this->core->actor('admin'), $this->m2->project, $job, ['target' => 'existing', 'table' => $this->m2->items]);
+        $path = $this->jobPath($job);
+        $headings = ['Name', 'Serial number', 'Notes'];
+        $mapping = [];
+        foreach ($headings as $heading) {
+            array_push($mapping, 'Bring in ' . $heading, 'Field for ' . $heading);
+        }
+        $expected = [
+            ...self::ADMIN_TOP, 'Home Inventory', 'Change how the file is read',
+            'A new table called', 'Name of the new table', 'Add to an existing table', 'Existing table', 'Check again',
+            ...$mapping,
+            'Import 2 rows', 'Start again',
+            ...self::FOOTER,
+        ];
+        $this->checkAs($admin, $path, $expected);
+        $this->assertMapping($admin->page(), $headings, 'Field for ');
+
+        // 422: a field chosen twice and nothing else; every problem is linked from the summary.
+        $refused = $admin->submit($path, ['action' => 'import', 'field[1]' => $this->m2->itemFields['Name']]);
+        self::assertSame(422, $refused->status, $refused->body);
+        $this->assertStructure($refused->body, [...self::ADMIN_TOP, 'Home Inventory'], 'review 422');
+        self::assertGreaterThan(0, $admin->xpath()->query('//div[@class="error-summary"]//a')->length);
+    }
+
+    public function testImportPreparingSavingReportsAndFailure(): void
+    {
+        $admin = $this->admin();
+        $actor = $this->core->actor('admin');
+        $imports = $this->ops->imports();
+        $p = $this->m2->project;
+        $csv = IoFixture::csv(IoFixture::SAMPLE_HEADINGS, (new IoFixture())->sampleRows());
+        $job = $this->startJob($csv, 'inventory-sample.csv');
+        // "purchased" as a date, as in the mock-up's warning: the three dates that cannot be read are left empty.
+        $input = self::reviewInput($imports->review($actor, $p, $job, null, []));
+        $input['type'][3] = 'date';
+        $imports->saveMapping($actor, $p, $job, $input);
+        $path = $this->jobPath($job);
+
+        $this->checkAs($admin, $path, [...self::ADMIN_TOP, 'Home Inventory', 'Continue', 'Start again', ...self::FOOTER]);
+        $this->assertProgress($admin->page());
+        while (!$imports->prepareChunk($actor, $p, $job)->finished) {
+        }
+        $this->checkAs($admin, $path, [...self::ADMIN_TOP, 'Home Inventory', 'Save the rows', ...self::FOOTER]);
+        $this->assertProgress($admin->page());
+        $saved = $admin->submit($path . '/continue', ['step' => 'save']);
+        self::assertSame(303, $saved->status);
+        $report = [...self::ADMIN_TOP, 'Home Inventory', 'inventory-sample', 'Open the table', 'Import another file', ...self::FOOTER];
+        $this->checkAs($admin, $path . '/report', $report);
+        self::assertSame(1, $admin->xpath()->query('//table[contains(@class, "report-table")]/caption')->length, 'Values left empty, with a caption.');
+
+        // A report without issues.
+        $clean = $this->startJob("Name\r\nKettle\r\nLadder\r\n", 'clean.csv');
+        $imports->saveMapping($actor, $p, $clean, self::reviewInput($imports->review($actor, $p, $clean, null, [])));
+        while (!$imports->prepareChunk($actor, $p, $clean)->finished) {
+        }
+        $imports->commit($actor, $p, $clean);
+        $this->checkAs($admin, $this->jobPath($clean) . '/report', [...self::ADMIN_TOP, 'Home Inventory', 'clean', 'Open the table', 'Import another file', ...self::FOOTER]);
+        self::assertSame(0, $admin->xpath()->query('//table[contains(@class, "report-table")]')->length);
+
+        // The failure page.
+        $failing = $this->startJob(IoFixture::csv(IoFixture::HEADINGS, (new IoFixture())->itemRows(2100)), 'large.csv');
+        $this->ops->plugins()->disable($actor, 'import', 'csv');
+        $imports->readChunk($actor, $p, $failing);
+        $this->checkAs($admin, $this->jobPath($failing), [...self::ADMIN_TOP, 'Home Inventory', 'Start again', ...self::FOOTER]);
+    }
+
+    public function testExportWithEachFormatChosenByDefault(): void
+    {
+        $admin = $this->admin();
+        $actor = $this->core->actor('admin');
+        $path = $this->m2->projectPath() . '/export';
+        $formats = ['CSV one table per file', 'Excel workbook one table, or every table as separate sheets', 'JSON the whole project in one file'];
+        $options = ['Add a column with each record\'s number', 'Protect against spreadsheet formulas', 'Add a column with each record\'s number'];
+        foreach ([['CSV', 0], ['Excel workbook', 1], ['JSON', 2]] as [$name, $first]) {
+            $this->checkAs($admin, $path, [
+                ...self::ADMIN_TOP, 'Home Inventory', 'Download the project archive',
+                ...array_slice($formats, $first),
+                'One table:', 'Table to export', 'Every table',
+                ...array_slice($options, $first === 0 ? 0 : 2, $first === 2 ? 0 : 3),
+                'Download',
+                ...self::FOOTER,
+            ]);
+            $checked = $admin->xpath()->query('//input[@name="format"][@checked]/following-sibling::span')->item(0);
+            self::assertStringStartsWith($name, trim((string) $checked?->textContent), "{$name} is chosen by default.");
+            foreach (['format', 'scope'] as $group) {
+                self::assertSame(1, $admin->xpath()->query('//fieldset[legend][.//input[@name="' . $group . '"]]')->length, "The {$group} radios are a fieldset with a legend.");
+            }
+            if ($first === 0) {
+                $this->ops->plugins()->disable($actor, 'export', 'csv');
+            } elseif ($first === 1) {
+                $this->ops->plugins()->disable($actor, 'export', 'xlsx');
+            }
+        }
+    }
+
+    public function testArchiveImportFormNameTakenAndResult(): void
+    {
+        $admin = $this->admin();
+        $actor = $this->core->actor('admin');
+        $expected = [...self::ADMIN_TOP, 'Projects', 'Archive file', 'Name for the new project (optional)', 'Import', 'Cancel', ...self::FOOTER];
+        $this->checkAs($admin, '/projects/import', $expected);
+        $this->assertFileInput($admin->page());
+
+        $file = $this->ops->exports()->archive($actor, $this->m2->project);
+        $zip = $this->core->temp->path('home.tiffindb.zip');
+        copy($file->path, $zip);
+        $this->ops->exports()->finish($actor, $this->m2->project, $file->jobKey);
+        $taken = $admin->upload('/projects/import', 'file', $zip, 'home.tiffindb.zip', ['name' => 'Home Inventory']);
+        self::assertSame(422, $taken->status, $taken->body);
+        $this->assertStructure($taken->body, [...self::ADMIN_TOP, 'Projects', 'Another project already has this name.', 'Name for the new project (optional)', 'Import', 'Cancel', ...self::FOOTER], 'name taken');
+        $form = (string) $admin->xpath()->query('//main//form[@method="post"]/@action')->item(0)?->nodeValue;
+        $made = $admin->submit($form, ['name' => 'Home Inventory copy']);
+        self::assertSame(303, $made->status);
+        $result = $admin->follow($made);
+        self::assertSame(200, $result->status);
+        $this->assertStructure($result->body, [...self::ADMIN_TOP], 'archive result');
+        self::assertStringContainsString('Home Inventory copy', HtmlAssertions::text($result->body, '//main//*[@role="status"]'));
+        $admin->cleanUp();
+    }
+
+    public function testPluginsListPluginPageAndEnableConfirmation(): void
+    {
+        $admin = $this->admin();
+        $this->checkAs($admin, '/admin/plugins', [
+            ...self::ADMIN_TOP, 'CSV', 'Excel workbook', 'CSV', 'JSON', 'Excel workbook', ...self::FOOTER,
+        ]);
+        $this->checkAs($admin, '/admin/plugins/export/json', [...self::ADMIN_TOP, 'Plugins', 'Turn off', 'All plugins', ...self::FOOTER]);
+        $this->ops->plugins()->disable($this->core->actor('admin'), 'export', 'json');
+        $this->checkAs($admin, '/admin/plugins/export/json', [...self::ADMIN_TOP, 'Plugins', 'Turn on', 'All plugins', ...self::FOOTER]);
+
+        // A plugin that did not come with TiffinDB: its page and the confirmation (scanned only, never loaded).
+        $config = Fixtures::config(false) + ['data_dir' => $this->core->temp->path('data'), 'timezone' => 'UTC'];
+        $services = new PluginsRootServices(new CoreServices($config, Fixtures::appRoot(), $this->core->clock, new SeededRandom('tiffindb-keyboard-structure-m3-seed'), $this->core->hasher), $this->core->pluginsRoot());
+        $added = new EndToEndClient(new Kernel($config, Fixtures::appRoot(), null, $services));
+        $added->get('/sign-in');
+        self::assertSame(303, $added->submit('/sign-in', ['username' => 'admin', 'password' => CoreFixture::PASSWORD])->status);
+        $this->checkAs($added, '/admin/plugins/import/example', [...self::ADMIN_TOP, 'Plugins', 'Turn on', 'All plugins', ...self::FOOTER]);
+        $this->checkAs($added, '/admin/plugins/import/example/enable', [...self::ADMIN_TOP, 'Plugins', 'Turn it on', 'Cancel', ...self::FOOTER]);
+    }
+
+    // M3 helpers.
+
+    /** A client signed in as the Admin through the sign-in form. */
+    private function admin(): EndToEndClient
+    {
+        $admin = new EndToEndClient($this->kernel);
+        $admin->get('/sign-in');
+        self::assertSame(303, $admin->submit('/sign-in', ['username' => 'admin', 'password' => CoreFixture::PASSWORD])->status);
+
+        return $admin;
+    }
+
+    /** GETs $uri as $client (200) and asserts the seven rules with the expected names. */
+    private function checkAs(EndToEndClient $client, string $uri, array $names): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        $this->assertStructure($response->body, $names, $uri);
+    }
+
+    /** An import job of $csv in Home Inventory, started by the Admin through the core (the job page is the Admin's). */
+    private function startJob(string $csv, string $name): string
+    {
+        return $this->ops->imports()->start($this->core->actor('admin'), $this->m2->project, $this->core->upload($csv), $name, null);
+    }
+
+    private function jobPath(string $job): string
+    {
+        return $this->m2->projectPath() . '/import/' . $job;
+    }
+
+    /** @return array<string, mixed> the review form as posted with nothing changed */
+    private static function reviewInput(\TiffinDB\Core\App\ImportReview $review): array
+    {
+        $input = ['target' => $review->target, 'table_name' => (string) $review->newTableName, 'table' => (string) $review->tableKey, 'include' => [], 'name' => [], 'type' => [], 'field' => []];
+        foreach ($review->columns as $column) {
+            if ($column->include) {
+                $input['include'][$column->index] = '1';
+            }
+            $input['name'][$column->index] = $column->fieldName;
+            $input['type'][$column->index] = $column->type;
+            $input['field'][$column->index] = (string) $column->fieldKey;
+        }
+
+        return $input;
+    }
+
+    /** Item 4: the file input has a visible label and its help (formats and size limit) through aria-describedby. */
+    private function assertFileInput(string $html): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $input = $x->query('//input[@type="file"]')->item(0);
+        self::assertInstanceOf(DOMElement::class, $input);
+        $label = $x->query('//label[@for="' . $input->getAttribute('id') . '"][not(contains(@class, "visually-hidden"))]')->item(0);
+        self::assertNotNull($label, 'A visible label.');
+        self::assertNotSame('', trim((string) $label->textContent));
+        $help = '';
+        foreach (preg_split('/\s+/', $input->getAttribute('aria-describedby')) ?: [] as $id) {
+            $help .= ' ' . trim((string) $x->query('//*[@id="' . $id . '"]')->item(0)?->textContent);
+        }
+        self::assertMatchesRegularExpression('/\.(csv|xlsx|zip)\b/i', $help, 'The help names the formats.');
+        self::assertMatchesRegularExpression('/up to \d[\d.,]* ?(bytes|KB|MB|GB)/', $help, 'The help gives the size limit.');
+    }
+
+    /** Item 3: the status is a live region and the Continue button follows it in reading order. */
+    private function assertProgress(string $html): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        self::assertSame(1, $x->query('//div[@class="progress"]//p[@role="status"]')->length, 'The status is a live region.');
+        self::assertSame(1, $x->query('//div[@class="progress"]//p[@role="status"]/following::form[contains(@class, "continue-form")]//button')->length, 'The button follows the status.');
+        self::assertSame(0, $x->query('//form[contains(@class, "continue-form")]//button/following::p[@role="status"]')->length);
+    }
+
+    /**
+     * Item 1: each control of the mapping table names its column, through
+     * aria-label built from the heading.
+     *
+     * @param list<string> $headings
+     */
+    private function assertMapping(string $html, array $headings, string $last): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        foreach ($headings as $n => $heading) {
+            $row = $x->query('//table[contains(@class, "mapping-table")]/tbody/tr')->item($n);
+            self::assertInstanceOf(DOMElement::class, $row);
+            self::assertSame($heading, trim((string) $x->query('th[@scope="row"]', $row)->item(0)?->textContent));
+            $labels = [];
+            foreach ($x->query('.//input[not(@type="hidden")] | .//select', $row) as $control) {
+                /** @var DOMElement $control */
+                $labels[] = $control->getAttribute('aria-label');
+            }
+            $expected = $last === 'Type for ' ? ['Bring in ' . $heading, 'Field name for ' . $heading, 'Type for ' . $heading] : ['Bring in ' . $heading, 'Field for ' . $heading];
+            self::assertSame($expected, $labels, "The controls of {$heading}.");
+        }
+    }
+
     // Helpers.
 
     /** GETs $uri as the Member (200) and asserts the seven rules with the expected names. */
@@ -395,12 +709,19 @@ final class KeyboardStructureTest extends TestCase
             $id = $form->getAttribute('id');
             $outside = $id === '' ? null : $x->query('//button[@form="' . $id . '"]');
             if ($outside !== null && $outside->length > 0) {
-                self::assertSame('record-form', $id, "{$where}: only the record form is submitted from outside.");
-                self::assertSame(0, $submits->length, "{$where}: the record form's buttons are outside it.");
-                $submits = $outside;
-                self::assertSame(1, $x->query('.//input[@type="text"]', $form)->length > 0 ? 1 : 0, "{$where}: the record form holds a one-line text input.");
+                // M3: the import review form's Import button sits after the form, as the record form's Save does (import.md 4.5).
+                self::assertContains($id, ['record-form', 'import-review'], "{$where}: only the record form and the import review are submitted from outside.");
+                if ($id === 'record-form') {
+                    self::assertSame(0, $submits->length, "{$where}: the record form's buttons are outside it.");
+                    $submits = $outside;
+                } else {
+                    $submits = $x->query('.//button[not(@type) or @type="submit"] | //button[@form="' . $id . '"]', $form);
+                }
+                self::assertSame(1, $x->query('.//input[@type="text"]', $form)->length > 0 ? 1 : 0, "{$where}: the form holds a one-line text input.");
             }
-            if ($action === '/sign-out' || str_contains($class, 'trash-form') || str_contains($class, 'notice-form')) {
+            // M3: the import's "Start again" form (`.../cancel`) and a plugin's "Turn off" form (`.../disable`) are a single
+            // secondary button by design (import.md 3, 4, 6, 8; plugins.md 3).
+            if ($action === '/sign-out' || str_contains($class, 'trash-form') || str_contains($class, 'notice-form') || preg_match('#/(cancel|disable)\z#', $action) === 1) {
                 self::assertSame(1, $submits->length, "{$where}: one button in {$action}.");
                 continue;
             }

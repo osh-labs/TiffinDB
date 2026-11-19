@@ -42,6 +42,14 @@ use UnexpectedValueException;
  *  8. a person who must change their password, on any user route except
  *     the password form, its POST, and sign-out: 303 to /account/password;
  *  9. CSRF for every POST (section 2.5): 403 `error.csrf.*` on failure;
+ *     first, when the POST carries no `Sec-Fetch-Site`, an `Origin` that
+ *     is present and is not the request's own origin (`null` included) is
+ *     refused with the same page (T-CF-1, ADR 0013 9.11; see
+ *     originAllowed()); then, before the token check, a POST whose
+ *     declared length exceeds post_max_size (Services::uploadLimits(),
+ *     when PHP sets one) gets the 413 page and nothing else runs: PHP has
+ *     emptied the form by then, so the token check would give a
+ *     misleading 403 (M3 spec part 2 section 2.3, P126);
  * 10. the controller, as `new Controller(Context $context)` and
  *     `$controller->method(Request $request, array $params)` (the M0 call
  *     shape, kept);
@@ -310,6 +318,14 @@ final class Kernel
 
         // Step 9.
         if ($request->isPost()) {
+            if ($request->secFetchSite === null && !self::originAllowed($request)) {
+                return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
+            }
+            $limits = $this->services->uploadLimits();
+            $postMax = $limits->postMaxBytes();
+            if ($postMax !== null && $request->contentLength !== null && $request->contentLength > $postMax) {
+                return $this->tooLargePage($view, $context, $limits);
+            }
             $expected = $signedIn !== null ? $signedIn->session->csrfToken : $anonymousExpected;
             if ($expected === null || !Csrf::matches($expected, $request->post['_csrf'] ?? null)) {
                 return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
@@ -395,6 +411,25 @@ final class Kernel
         ], $status);
     }
 
+    /**
+     * The 413 page (M3 spec part 2 section 2.3): `error.too_large.*`, the
+     * body naming the largest file PHP accepts, and the link to the start
+     * page, in the shell the error pages use.
+     */
+    private function tooLargePage(View $view, Context $context, UploadLimits $limits): Response
+    {
+        $signedIn = $context->signedIn();
+
+        return $view->page('error', [
+            'status' => 413,
+            'title' => $view->text('error.too_large.title'),
+            'titleKey' => 'error.too_large.title',
+            'bodyKey' => 'error.too_large.body',
+            'bodyParams' => ['max' => $view->format()->fileSize($limits->effective())],
+            'shell' => $signedIn === null ? null : Context::shell($signedIn, '', null),
+        ], 413);
+    }
+
     /** The 500 page, or a fixed plain-text 500 if that cannot be rendered either. */
     private function serverError(): Response
     {
@@ -436,6 +471,46 @@ final class Kernel
         }
 
         return $response;
+    }
+
+    /**
+     * T-CF-1 (M1 exit audit F-2): true when the request has no Origin, or
+     * its Origin is the request's own origin: `http://` or `https://` from
+     * Request::secure, then Request::host, with the scheme's default port
+     * (80 or 443) left out on both sides, compared ignoring ASCII case.
+     * Without a Host there is no own origin, so any Origin is refused.
+     *
+     * Residual risk: behind a proxy that rewrites the Host header or ends
+     * TLS, the origin seen here differs from the browser's and legitimate
+     * POSTs are refused with the CSRF page; forwarding headers are never
+     * trusted to correct it. Browsers that send Sec-Fetch-Site skip this
+     * check, and a POST with neither header still relies on the CSRF token.
+     */
+    private static function originAllowed(Request $request): bool
+    {
+        if ($request->origin === null) {
+            return true;
+        }
+        if ($request->host === null) {
+            return false;
+        }
+        $scheme = $request->secure ? 'https' : 'http';
+        $own = self::withoutDefaultPort($scheme . '://' . $request->host);
+
+        return strcasecmp(self::withoutDefaultPort($request->origin), $own) === 0;
+    }
+
+    /** `scheme://host` with `:80` removed after `http` and `:443` after `https` (ASCII case-insensitive). */
+    private static function withoutDefaultPort(string $origin): string
+    {
+        if (preg_match('~^(https?)(://.+):(\d+)\z~i', $origin, $m) === 1) {
+            $default = strcasecmp($m[1], 'https') === 0 ? '443' : '80';
+            if ($m[3] === $default) {
+                return $m[1] . $m[2];
+            }
+        }
+
+        return $origin;
     }
 
     private static function wellFormedCsrf(?string $value): ?string

@@ -64,11 +64,12 @@ final class SnapshotsTest extends TestCase
     public function testReasonValues(): void
     {
         self::assertSame(
-            ['format-upgrade', 'table-delete', 'field-delete', 'field-type-change', 'field-options', 'empty-trash', 'manual'],
+            ['format-upgrade', 'table-delete', 'field-delete', 'field-type-change', 'field-options', 'empty-trash', 'import', 'manual'],
             array_map(static fn (SnapshotReason $r): string => $r->value, SnapshotReason::cases()),
         );
         self::assertFalse(SnapshotReason::Manual->isAutomatic());
         self::assertTrue(SnapshotReason::EmptyTrash->isAutomatic());
+        self::assertTrue(SnapshotReason::Import->isAutomatic());
         self::assertSame(20, Snapshots::KEEP_AUTOMATIC);
     }
 

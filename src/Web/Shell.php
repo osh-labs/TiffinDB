@@ -20,30 +20,47 @@ use InvalidArgumentException;
  */
 final class Shell
 {
-    /** Areas of the top bar that can be current ('' for none). */
-    public const NAVS = ['projects', 'people', 'account', ''];
+    /** Areas of the top bar that can be current ('' for none); `plugins` from M3 (spec part 2 section 4). */
+    public const NAVS = ['projects', 'people', 'plugins', 'account', 'settings', ''];
 
     private const FLASH_KEY = '/^notice\.[a-z0-9_]+(?:[.-][a-z0-9_]+)*\z/';
 
     /**
+     * The only Undo target a flash notice may carry (M2 spec part 2
+     * section 3.4): the restore action of one record, as an application
+     * path without base path or query.
+     */
+    public const UNDO_PATH = '/^\/projects\/[a-z2-7]{12}\/tables\/[a-z2-7]{12}\/records\/[1-9][0-9]{0,18}\/restore\z/';
+
+    /** @var array{key: string, params: array<string, string|int>}|null */
+    public readonly ?array $flash;
+
+    /**
      * @param string                                                 $displayName Plain text; escaped on output.
      * @param string                                                 $initials    Plain text; escaped on output.
-     * @param 'projects'|'people'|'account'|''                       $nav
+     * @param 'projects'|'people'|'plugins'|'account'|'settings'|'' $nav
      * @param array{key: string, params: array<string, string|int>}|null $flash  A `notice.*` string key and its parameters.
+     *                                                                            An `undo` parameter that is not a restore
+     *                                                                            path (UNDO_PATH) is removed.
      */
     public function __construct(
         public readonly string $displayName,
         public readonly string $initials,
         public readonly bool $isAdmin,
         public readonly string $nav,
-        public readonly ?array $flash,
+        ?array $flash,
     ) {
         if (!in_array($nav, self::NAVS, true)) {
             throw new InvalidArgumentException('Unknown top bar area.');
         }
         if ($flash !== null) {
             self::checkFlash($flash);
+            $undo = $flash['params']['undo'] ?? null;
+            if ($undo !== null && (!is_string($undo) || preg_match(self::UNDO_PATH, $undo) !== 1)) {
+                unset($flash['params']['undo']);
+            }
         }
+        $this->flash = $flash;
     }
 
     /**

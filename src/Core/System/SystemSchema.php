@@ -31,12 +31,16 @@ use TiffinDB\Core\Storage\SystemClock;
  * Amended from the M1 spec section 5.1 DDL by P65: login_throttle has a
  * last_failure_at column (the reset rule is measured from it).
  *
+ * Version 2 (M3 spec section 12.2, ADR 0015 decision 4, P114) adds the
+ * plugins table: one row per plugin whose enabled state an Admin has
+ * changed (Core\System\PluginStates).
+ *
  * Enumerated values are validated in code, not with CHECK constraints
  * (ADR 0011 decision 2, P44).
  */
 final class SystemSchema
 {
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     /** @var array<int, list<string>> target version => statements */
     public const STEPS = [
@@ -117,6 +121,16 @@ final class SystemSchema
 )",
             'CREATE INDEX audit_log_at ON audit_log (at)',
             'CREATE INDEX audit_log_action ON audit_log (action, at)',
+        ],
+        2 => [
+            'CREATE TABLE plugins (
+    kind       TEXT NOT NULL,
+    id         TEXT NOT NULL,
+    enabled    INTEGER NOT NULL,
+    changed_at TEXT NOT NULL,
+    changed_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    PRIMARY KEY (kind, id)
+) WITHOUT ROWID',
         ],
     ];
 

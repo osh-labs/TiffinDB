@@ -17,6 +17,7 @@ enum SnapshotReason: string
     case FieldTypeChange = 'field-type-change';
     case FieldOptions = 'field-options';
     case EmptyTrash = 'empty-trash';
+    case Import = 'import';
     case Manual = 'manual';
 
     /** Automatic snapshots are pruned to the newest Snapshots::KEEP_AUTOMATIC; manual ones never. */

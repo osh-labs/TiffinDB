@@ -10,6 +10,7 @@ namespace TiffinDB\Web;
 
 use InvalidArgumentException;
 use OutOfBoundsException;
+use TiffinDB\Core\Schema\FieldDef;
 
 /**
  * The `$this` of every template: the only helpers a template may use, each
@@ -18,6 +19,12 @@ use OutOfBoundsException;
  * - e(), t(), url(), asset() escape what they return.
  * - csrf() returns the escaped CSRF token, count() the escaped text of
  *   Format::count() (M1 spec part 2 section 4.3).
+ * - value() and inputValue() return the escaped display text and input
+ *   value of a field value (M2 spec part 2 section 5.2), id() an escaped
+ *   generated id (section 4.2, P96).
+ * - fieldFacts() returns plain values about a field for the field-input
+ *   partial's decisions; it is never printed (the template rules refuse it
+ *   after `<?=`), and what a template prints from it goes through e().
  * - partial() and slot() return markup produced by templates.
  * - rootClassAttribute() (layout only) returns markup built solely from
  *   Appearance::rootClasses(), which are server-side constants.
@@ -29,6 +36,8 @@ final class ViewScope
 
     /** @var array<string, string> */
     private array $slots = [];
+
+    private ?ValueText $valueText = null;
 
     public function __construct(
         private readonly View $view,
@@ -97,6 +106,45 @@ final class ViewScope
         return $this->e($this->view->format()->count($keyBase, $n));
     }
 
+    /** The escaped display text of a field value, in `text` or `cell` mode. */
+    public function value(FieldDef $field, mixed $value, string $mode = 'text'): string
+    {
+        return $this->e($this->valueText()->display($field, $value, $mode));
+    }
+
+    /** The escaped `value` of a record form input (M2 spec part 2 section 5.1). */
+    public function inputValue(FieldDef $field, string $text, bool $submitted): string
+    {
+        return $this->e($this->valueText()->input($field, $text, $submitted));
+    }
+
+    /** An escaped generated id (Ids::make()). */
+    public function id(string $prefix, string|int ...$parts): string
+    {
+        return $this->e(Ids::make($prefix, ...$parts));
+    }
+
+    /**
+     * Plain facts about a field (ValueText::facts()), for decisions in the
+     * field-input partial. Never printed directly.
+     *
+     * @return array{type: string, editable: bool, maxLength: int, decimals: int, seconds: bool, choices: list<string>, max: int, code: string}
+     */
+    public function fieldFacts(FieldDef $field): array
+    {
+        return $this->valueText()->facts($field);
+    }
+
+    /**
+     * A whole number with thousands separators ("1,234"). The result holds
+     * only digits, commas, and a minus sign, so it is the same escaped or
+     * not and may also be passed as a parameter of t().
+     */
+    public function number(int $n): string
+    {
+        return $this->e(number_format($n));
+    }
+
     /** An escaped static asset address. */
     public function asset(string $file): string
     {
@@ -135,6 +183,11 @@ final class ViewScope
         }
 
         return ' class="' . $this->e(implode(' ', $classes)) . '"';
+    }
+
+    private function valueText(): ValueText
+    {
+        return $this->valueText ??= new ValueText($this->strings, $this->view->format());
     }
 
     /** @internal Used by View. */

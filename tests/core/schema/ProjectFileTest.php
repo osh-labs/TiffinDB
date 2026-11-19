@@ -22,7 +22,7 @@ use TiffinDB\Tests\Support\RepoFiles;
 
 require_once __DIR__ . '/ProjectFixture.php';
 
-/** T-SCH-1, T-SCH-2, T-SCH-3: creating, opening, and upgrading project files. */
+/** T-SCH-1 and T-FMT-4 (format version 3), T-SCH-2, T-SCH-3: creating, opening, and upgrading project files. */
 #[CoversClass(ProjectFile::class)]
 #[CoversClass(FormatMigrations::class)]
 final class ProjectFileTest extends TestCase
@@ -39,16 +39,54 @@ final class ProjectFileTest extends TestCase
         $this->tearDownProject();
     }
 
-    /** The statements of the first SQL block in section 4 of the format document. */
-    private static function documentedDdl(): array
+    /**
+     * The SQL blocks of section 4 of the format document that make up the
+     * current format version, in order: the version 1 block, then the
+     * "Version N adds" block of each version up to ProjectFile::VERSION.
+     * Blocks for later, planned versions are not read, so the document may
+     * describe them before the code writes them.
+     *
+     * @return list<string> one entry per version
+     */
+    private static function documentedBlocks(): array
     {
         $doc = file_get_contents(RepoFiles::path('docs/formats/tiffin.md'));
         self::assertIsString($doc);
-        $section = substr($doc, (int) strpos($doc, '## 4. Metadata tables'));
-        self::assertSame(1, preg_match('/```sql\n(.*?)```/s', $section, $match));
-        $statements = array_values(array_filter(array_map('trim', explode(';', $match[1])), static fn (string $s): bool => $s !== ''));
+        $start = (int) strpos($doc, '## 4. Metadata tables');
+        $section = substr($doc, $start, (int) strpos($doc, '## 5. User tables') - $start);
+        self::assertGreaterThanOrEqual(ProjectFile::VERSION, preg_match_all('/```sql\n(.*?)```/s', $section, $blocks, PREG_OFFSET_CAPTURE));
+        $result = [];
+        $previousEnd = 0;
+        for ($version = 1; $version <= ProjectFile::VERSION; $version++) {
+            [$sql, $offset] = $blocks[1][$version - 1];
+            $intro = substr($section, $previousEnd, $offset - $previousEnd);
+            if ($version > 1) {
+                self::assertStringContainsString('Version ' . $version . ' adds', $intro, 'Block ' . $version . ' of section 4 is not the version ' . $version . ' block.');
+            }
+            $result[] = $sql;
+            $previousEnd = $offset + strlen($sql);
+        }
+
+        return $result;
+    }
+
+    /** @return list<string> the statements of a block, white space collapsed */
+    private static function statementsOf(string $block): array
+    {
+        $statements = array_values(array_filter(array_map('trim', explode(';', $block)), static fn (string $s): bool => $s !== ''));
 
         return array_map([self::class, 'collapse'], $statements);
+    }
+
+    /** @return list<string> the documented DDL of the current version, in order */
+    private static function documentedDdl(): array
+    {
+        $statements = [];
+        foreach (self::documentedBlocks() as $block) {
+            $statements = [...$statements, ...self::statementsOf($block)];
+        }
+
+        return $statements;
     }
 
     private static function collapse(string $sql): string
@@ -63,8 +101,8 @@ final class ProjectFileTest extends TestCase
         self::assertSame(ProjectFile::APPLICATION_ID, $this->db->value('PRAGMA application_id'));
         self::assertSame(1413891138, ProjectFile::APPLICATION_ID);
         self::assertSame(0x54464442, ProjectFile::APPLICATION_ID);
-        self::assertSame(1, $this->db->value('PRAGMA user_version'));
-        self::assertSame(1, ProjectFile::VERSION);
+        self::assertSame(3, $this->db->value('PRAGMA user_version'));
+        self::assertSame(3, ProjectFile::VERSION);
         self::assertSame(1, $this->db->value('PRAGMA foreign_keys'));
     }
 
@@ -79,7 +117,7 @@ final class ProjectFileTest extends TestCase
             'created_by' => self::USER_KEY,
             'created_with' => '0.2.0-dev',
             'format' => 'tiffindb-project',
-            'format_version' => '1',
+            'format_version' => '3',
             'project_key' => self::PROJECT_KEY,
             'project_name' => 'Example Project',
             'updated_at' => self::START,
@@ -90,7 +128,11 @@ final class ProjectFileTest extends TestCase
     public function testMetadataDdlEqualsTheFormatDocument(): void
     {
         $documented = self::documentedDdl();
-        self::assertCount(10, $documented);
+        $blocks = self::documentedBlocks();
+        // Versions 1, 2, and 3 hold 10, 3, and 2 statements; later versions only add.
+        self::assertCount(10, self::statementsOf($blocks[0]));
+        self::assertCount(3, self::statementsOf($blocks[1]));
+        self::assertCount(2, self::statementsOf($blocks[2]));
         self::assertSame($documented, array_map([self::class, 'collapse'], ProjectFile::DDL));
 
         $stored = [];
@@ -106,7 +148,8 @@ final class ProjectFileTest extends TestCase
         sort($names);
         $expected = [
             '_tiffin_attachment_links', '_tiffin_attachments', '_tiffin_attachments_sha256', '_tiffin_fields',
-            '_tiffin_fields_name', '_tiffin_fields_order', '_tiffin_meta', '_tiffin_relations', '_tiffin_tables',
+            '_tiffin_fields_name', '_tiffin_fields_order', '_tiffin_forms', '_tiffin_forms_default', '_tiffin_forms_table',
+            '_tiffin_import_log', '_tiffin_import_log_at', '_tiffin_meta', '_tiffin_relations', '_tiffin_tables',
             '_tiffin_tables_name', 'sqlite_sequence',
         ];
         $names = array_values(array_filter($names, static fn (string $n): bool => !str_starts_with($n, 'sqlite_autoindex_')));
@@ -188,7 +231,7 @@ final class ProjectFileTest extends TestCase
 
     public function testOpenRefusesANewerVersion(): void
     {
-        $this->db->run('PRAGMA user_version = 2');
+        $this->db->run('PRAGMA user_version = 4');
         $this->assertUnavailable('newer', fn () => ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots));
         self::assertSame([], $this->snapshotFiles());
     }
@@ -205,6 +248,18 @@ final class ProjectFileTest extends TestCase
 
     // ------------------------------------------------------------ T-SCH-3
 
+    /** Turns the new file back into a version 1 file (no `_tiffin_forms`, no `_tiffin_import_log`). */
+    private function makeVersionOne(): void
+    {
+        $this->db->run('PRAGMA user_version = 1');
+        $this->db->write(static function (Database $db): void {
+            $db->run('DROP TABLE "_tiffin_import_log"');
+            $db->run('DROP TABLE "_tiffin_forms"');
+            $db->run('UPDATE "_tiffin_meta" SET "value" = \'1\' WHERE "key" = \'format_version\'');
+        });
+        $this->db->close();
+    }
+
     private function makeVersionZero(): void
     {
         $this->db->run('PRAGMA user_version = 0');
@@ -214,33 +269,35 @@ final class ProjectFileTest extends TestCase
 
     public function testInjectedStepRunsAfterAFormatUpgradeSnapshot(): void
     {
-        $this->makeVersionZero();
-        $steps = new FormatMigrations([1 => static function (Database $db): void {
+        $this->makeVersionOne();
+        $steps = new FormatMigrations([2 => static function (Database $db): void {
             $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
             $db->run('INSERT INTO "_tiffin_example" ("x") VALUES (\'synthetic\')');
+        }, 3 => static function (Database $db): void {
         }]);
         $this->db = ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
 
-        self::assertSame(1, $this->db->value('PRAGMA user_version'));
-        self::assertSame('1', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(3, $this->db->value('PRAGMA user_version'));
+        self::assertSame('3', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertSame('synthetic', $this->db->value('SELECT "x" FROM "_tiffin_example"'));
 
         $snapshots = $this->snapshots->list($this->folder);
         self::assertCount(1, $snapshots);
         self::assertSame(SnapshotReason::FormatUpgrade, $snapshots[0]->reason);
-        // The snapshot was taken before the step: it still has version 0 and no new table.
+        // The snapshot was taken before the step: it still has version 1 and no new table.
         $copy = Sqlite::open($this->folder . '/snapshots/' . $snapshots[0]->file);
-        self::assertSame(0, $copy->value('PRAGMA user_version'));
+        self::assertSame(1, $copy->value('PRAGMA user_version'));
         self::assertNull($copy->value('SELECT 1 FROM "sqlite_master" WHERE "name" = \'_tiffin_example\''));
         $copy->close();
     }
 
     public function testAFailingStepRollsBack(): void
     {
-        $this->makeVersionZero();
-        $steps = new FormatMigrations([1 => static function (Database $db): void {
+        $this->makeVersionOne();
+        $steps = new FormatMigrations([2 => static function (Database $db): void {
             $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
             $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
+        }, 3 => static function (Database $db): void {
         }]);
         try {
             ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
@@ -249,23 +306,49 @@ final class ProjectFileTest extends TestCase
             $this->addToAssertionCount(1);
         }
         $this->db = Sqlite::open($this->path());
-        self::assertSame(0, $this->db->value('PRAGMA user_version'));
-        self::assertSame('0', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(1, $this->db->value('PRAGMA user_version'));
+        self::assertSame('1', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertNull($this->db->value('SELECT 1 FROM "sqlite_master" WHERE "name" = \'_tiffin_example\''));
+        self::assertCount(1, $this->snapshotFiles());
+    }
+
+    public function testEachStepRunsInItsOwnTransaction(): void
+    {
+        $this->makeVersionZero();
+        $steps = new FormatMigrations([
+            1 => static fn (Database $db) => $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)'),
+            2 => static fn (Database $db) => $db->run('INSERT INTO "_tiffin_missing" VALUES (1)'),
+            3 => static fn (Database $db) => $db->run('SELECT 1'),
+        ]);
+        try {
+            ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
+            self::fail('The failing step was not reported.');
+        } catch (PDOException) {
+            $this->addToAssertionCount(1);
+        }
+        // Step 1 stays applied: the file is left at the last completed version.
+        $this->db = Sqlite::open($this->path());
+        self::assertSame(1, $this->db->value('PRAGMA user_version'));
+        self::assertSame('1', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(1, $this->db->value('SELECT 1 FROM "sqlite_master" WHERE "name" = \'_tiffin_example\''));
         self::assertCount(1, $this->snapshotFiles());
     }
 
     public function testAMissingStepRefusesWithoutASnapshot(): void
     {
+        // Version 0 files do not exist: no step 1 is defined.
         $this->makeVersionZero();
         $this->assertUnavailable('not-project', fn () => ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots));
         self::assertSame([], $this->snapshotFiles());
         $this->db = Sqlite::open($this->path());
     }
 
-    public function testEveryVersionHasItsPragmaAndM1HasNoSteps(): void
+    public function testEveryVersionHasItsPragmaAndStepsStartAtVersionTwo(): void
     {
-        self::assertSame([], FormatMigrations::STEPS);
+        self::assertSame([2, 3], array_keys(FormatMigrations::STEPS));
+        self::assertCount(3, FormatMigrations::STEPS[2]);
+        self::assertCount(2, FormatMigrations::STEPS[3]);
+        self::assertSame(range(1, ProjectFile::VERSION), array_keys(FormatMigrations::VERSION_PRAGMAS));
         for ($version = 1; $version <= ProjectFile::VERSION; $version++) {
             self::assertSame('PRAGMA user_version = ' . $version, FormatMigrations::VERSION_PRAGMAS[$version]);
         }

@@ -6,11 +6,17 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M1 CLOSED; M2 not started |
-| Phase | Stopped at the end of M1 by maintainer instruction; no agents running. Integration branch `claude/exciting-maxwell-l2yieq` holds all of M0 and M1 |
-| Window start | 2026-11-17T11:06Z (window 4) |
-| Resume reminder | none (deleted at the M1 stop; the maintainer resumes the build) |
-| Next action | Stopped. On the maintainer's instruction to continue: design M2 (`docs/specs/M2-*.md`) per orchestration section 3, starting with the carried-forward items in section 7 that are mapped to M2. If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9); everything is pushed. Brief every agent with its own scratch subfolder and port |
+| Milestone | M3 CLOSED; M4 not started (needs a new maintainer instruction) |
+| Phase | Stopped at the end of M3 per the session plan (section 11); no agents running. Integration branch `claude/gifted-archimedes-ix5bwy` holds all of M0 to M3, pushed. Suite 8414 tests OK (1 skipped), lint 684 files 0 failed |
+| Window start | 2026-11-19 (window 5) |
+| Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
+| Next action | Stopped. On the maintainer's instruction to continue: design M4 (relation picker, attachment upload and serving, trash screen, saved collections) per orchestration section 3, starting with the carried-forward items in the M2 and M3 sections below. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt); everything is pushed |
+
+### Phase 0 record (2026-11-19)
+
+Baseline on the integration branch: `composer test` OK (4777 tests, 1 skipped), `composer lint` 348 files 0 failed, as at M1 close.
+
+XLSX dependency probe (metadata read from Packagist; no code installed): `openspout/openspout` declares licence MIT. Releases v5.3 and later that were checked (v5.4.1, v5.5.0, v5.10.0, v5.15.x) require PHP `~8.4.0` or newer and do NOT admit PHP 8.3. Releases that admit 8.3: v5.0.0, v5.1.1, v5.2.2 (PHP `~8.3.0 || ~8.4.0 || ~8.5.0`) and v4.32.0. Required extensions: `dom`, `filter`, `libxml`, `xmlreader`, `zip` (v4.x also `fileinfo`). Not checked: v5.3.0 and v5.4.0 floors, transitive packages (none declared), the licence file at a tag. Consequence for M3-D1: ADR 0016 must pin a release admitting 8.3 (candidate v5.2.2 or v4.32.0, subject to a tag-level licence check) and note the extension additions (`dom`, `filter`, `libxml`) for the installer check and `tools/host-check/`. No download blocker was seen.
 
 ## 2. Milestones
 
@@ -18,8 +24,8 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
-| M2 | not started | |
-| M3 | not started | |
+| M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
+| M3 | CLOSED 2026-11-19 (independent exit audit; no blocking findings; MEDIUM repository-rule finding fixed) | See M3 exit results below |
 | M4 | not started | |
 | M5 | not started | |
 | M6 | deferred (awaiting maintainer discovery output) | |
@@ -149,6 +155,64 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P81 | Add-person project list | Built from `people()->projectAccess($actor, $actor->userKey)` (relies on P78: an Admin's list holds every project); display only, core validates keys | M1-WP10 review ruling |
 | P82 | Schema confirmation scope | Confirmation is a yes/no flag, not bound to the count shown; if records change between the confirmation page and the re-post, more values can be cleared than shown (Admin's own data, CSRF-bound). Later fix: post back the expected count and have the core ask again when the real impact is larger. Confirmation strings use plain numbers with a singular body (departs from spec 11 `count.records.*` wording) | M1-WP11 review |
 | P83 | Visual deviations from the mock-ups accepted in M1 (add to M1-screens 8.3) | Project-name links and footer links keep a 44 px minimum height (touch-target accessibility; cards 14 px and footer 20 px taller than the mock-up); project cards are sorted by name per `sign-in-and-projects.md` 3.1, not in the mock-up's order; sign-in content sits at the top per `components.md` section 1, not vertically centred; the sign-in wordmark uses Atkinson per the brand README, not the mock-up's Inter. Installer step 2 "exposed" cannot be produced on the PHP built-in server; verified only on the Apache host check | M1-WP12 visual check (D2 to D6) |
+| P84 | Paging | 50 records per page; record Previous and Next follow the list's sort, filter, and search carried in the query string; out-of-range pages clamp | ADR 0013 d2 |
+| P85 | Lost-update guard | Hidden version token (16 hex characters of SHA-256 over the row and its link ids) instead of `_updated_at`; mismatch gives a 409 conflict page with both versions and a re-post | ADR 0013 d6 |
+| P86 | Autosave | Not built; explicit Save; "Last saved {when}" replaces "All changes saved"; after Save the record page reloads with a notice (the mock-up's Save went to the list) | ADR 0013 d7 |
+| P87 | Search | ASCII case-insensitive substring (`LIKE`) over text, long text, choice, web address, email, phone, and linked titles one level deep; 1 to 200 characters; across tables 10 hits per table; no full-text index | ADR 0013 d5 |
+| P88 | Sort | Every type but attachment; empties last both ways; ties by id; choice by list order; relation by lowest linked title; default title A to Z else order added; plus newest, oldest, recently changed | ADR 0013 d3 |
+| P89 | Filter | One condition from the query string; choice, checkbox, relation, date, date-time; condition object reused by M4 collections; invalid filters reported, list unfiltered | ADR 0013 d4 |
+| P90 | List columns | Title field first, then up to six more fields in field order, skipping long text; no column configuration in M2 | ADR 0013 d9.1 |
+| P91 | Form format 1 | Vocabulary of `docs/formats/tiffin.md` 12.1; XML syntax parsed with `XMLReader`; images by attachment reference only; links parsed, shown as text until M5; form CSS reserved and ignored | ADR 0014 d1 |
+| P92 | Showing stored forms | Default-deny parse into a node model rendered by templates; rejected forms replaced by the generated layout; no safe-HTML type in M2 (deviates from the session plan) | ADR 0014 d4 |
+| P93 | Generated forms | Details, Files, one section per many-link relation; long text and rating full width; English legends as data; regenerated in the schema transaction while `generated` is 1; edited forms gain and lose slots only | ADR 0014 d3 |
+| P94 | Version 2 upgrade | Adds `_tiffin_forms` only; tables have no stored form until their fields next change | ADR 0014 d2 |
+| P95 | Columns on wide screens (A1) | `Details` laid out as a 300 px minimum auto-fit grid; record page 1120 wide | ADR 0014 d6 |
+| P96 | Generated ids in templates | New scope helper `id(prefix, part...)` producing validated tokens for `id`, `for`, `aria-describedby`, `aria-labelledby`, `form`, and fragment links; amends the M1 rule that ids are literal | ADR 0013 d9.2 |
+| P97 | Plural strings | Placeholder `{name | plural}` with `#` for the formatted number, English one/other only; `Format::count` stays |
+| P98 | Move to trash | Immediate, with an Undo button in the next page's notice; no confirmation page; a trashed record's address shows a Restore page | ADR 0013 d8 |
+| P99 | Warning token | Light `--warn` `#703D00` (7.61:1 on the tint); no other published figure changes | ADR 0013 d9.4 |
+| P100 | Display link and settings route | Display link on every signed-in page (reverses that part of P41); `/settings` with Save and "Back to standard" (a `formaction` reset); live preview script; mock-up wording about black-and-white strong contrast changed | ADR 0013 d9.5 |
+| P101 | Record form controls | Required fields marked "(required)"; choice as a select with "Not chosen"; rating as radios with "Not rated"; numbers and money as text inputs with `inputmode`; currency label adds the currency name or code | ADR 0013 d9.6 |
+| P102 | List controls | Visible Apply button; the sort menu never submits on change | ADR 0013 d9.7 |
+| P103 | Sidebar in M2 | Collections, Import, Export left out; trash count shown as text; "Tables and fields" link added; `/projects/{p}` opens the first table's list (completes P43) | ADR 0013 d9.8 |
+| P104 | Record ids from URLs | Passed to the core as strings; anything but `^[1-9][0-9]{0,18}$` is not found | ADR 0013 d9.9 |
+| P105 | Required and links | Requiredness not enforced for relation and attachment fields until they can be edited (M4) | ADR 0013 d7 |
+| P106 | Record writes touch project meta | Create, update, links, trash, and restore update `updated_at` and `updated_by` | ADR 0013 d7 |
+| P107 | SQL composition | `Core\Query\Sql` fragments plus an extended scanner; `Sql.php` the only file joining variables into SQL text | ADR 0013 d9.10 |
+| P108 | Work-package changes from the session plan | Plural strings moved from WP0 to WP5; P82 fix moved to WP8; the token value changed in the design, so WP1 is mechanical (tests only) | this spec 12 (process; ledger only) |
+| P109 | `Origin` check | With no `Sec-Fetch-Site`, a POST whose `Origin` is present and not the request's own origin (or is `null`) is refused; requests with no `Origin` pass | ADR 0013 d9.11 |
+| P110 | XLSX library (settles P6, ADR 0009 B5) | `openspout/openspout` 5.2.2, pinned exactly, no lock file; licence `MIT AND Apache-2.0` (two licence files at the tag; package metadata says MIT only); v5.3.0 also admits PHP 8.3 but was not chosen; v5.4 and later need PHP 8.4 | ADR 0016 d1, d2 |
+| P111 | Extensions for XLSX | `dom`, `filter`, `libxml` reported as installer warnings; XLSX plugins unavailable without them; host check extended | ADR 0016 d3 |
+| P112 | Import commit model (settles E1) | Read and prepare in chunks (2,000 rows or 5 s) into a per-job SQLite file under `<data>/staging/imports/`; one final transaction after an `import` snapshot; Continue button with an auto-submit script; no staging table in the project format | ADR 0015 d1 |
+| P113 | Plugin layout and loading | `plugins/<kind>/<id>/plugin.json` plus `src/` under `TiffinDB\Plugin\<Kind>\<Id>\`; manifests never execute; enabled plugins loaded by a per-plugin autoloader on use; contract `Core\Io\Contract` API 1; CSV reader and writer in core | ADR 0015 d2, d3 |
+| P114 | Plugin state | System schema version 2 table `plugins`; the five shipped plugins enabled by default, others disabled until an Admin enables them through a confirmation page | ADR 0015 d4 |
+| P115 | Project format version 3 | `_tiffin_import_log` with a JSON `report` (counts and row numbers, never values); snapshot reason `import` | ADR 0015 d1; `docs/formats/tiffin.md` 4.7, 11.2 |
+| P116 | Import limits | 50,000 rows, 200 columns, 20,000 characters per cell, uploads at most 64 MiB or the PHP limits, whichever is smaller | this spec 6.8 |
+| P117 | Type inference | Rules of section 6.3: ISO dates only (as the M1 types), checkbox only for yes/no/true/false, currency by symbol or two decimals, choice for at most 20 repeated short values, link by a heading naming an existing table; rating offered, never proposed (deviation from the mock-up); new table item name is the lower-cased table name | this spec 6.3, 6.6 |
+| P118 | Requiredness | Imports enforce no required fields (counted in the report); `Records::create` gains `requiredKeys`; record creation from a form requires only the required fields that form shows (reviewer-flagged point) | ADR 0017 d4 |
+| P119 | Appending to an existing table | Columns map to existing fields only; no new fields; choice values not in the list emptied and reported; fields not mapped stay empty | this spec 6.4, 6.5 |
+| P120 | Review warnings | Counted over the first 5,000 rows, labelled as such; the report has exact counts | this spec 6.4 |
+| P121 | CSV dialects | Export: UTF-8 with BOM, comma, CRLF, heading row of field names, optional record-number column. Import: UTF-8, UTF-16 with BOM, Windows-1252 by TiffinDB's own decoder; delimiters comma, semicolon, tab, bar | this spec 8 |
+| P122 | Formula-like cells | CSV keeps exact values by default; "Protect against spreadsheet formulas" prefixes `'` on text-like cells starting `= + - @`, tab, CR. XLSX always writes text as string cells and reads cached formula results | ADR 0016 d4; this spec 8.2 |
+| P123 | Exports | Streamed from a staged file in the POST response; live records only; relation and attachment cells as `; `-joined titles and names; CSV one table, XLSX one table or all, JSON whole project | this spec 10 |
+| P124 | Project archive | Zip with manifest, `VACUUM INTO` copy, attachments; no snapshots; import verifies, then rebuilds into a new project (keys and ids kept, new project key, no grants, source import log dropped, invalid values emptied, invalid forms dropped, forms regenerated so edited forms gain missing slots) | ADR 0017 d1 to d3 |
+| P125 | JSON export format 1 | Whole project, live records, values per type with currency as a decimal string, relation and attachment values as id arrays | ADR 0017 d5 |
+| P126 | Uploads | `Request::$files` from PHP's upload array, single files only, checked with `is_uploaded_file`; a POST larger than `post_max_size` gets a 413 page before the CSRF check | part 2 section 2 |
+| P127 | Staging area | `<data>/staging/{imports,exports,archives}/<key>/`; recursive removal allowed only there (amends P64); swept after 24 h (imports) or 1 h | this spec 5.1 |
+| P128 | Audit actions | `import.completed`, `export.created`, `archive.exported`, `archive.imported`, `plugin.enabled`, `plugin.disabled` (amends ADR 0012 d4) | this spec 13.6 |
+| P129 | M3 routes | Part 2 section 3 | part 2 |
+| P130 | Joined mode and DDL | `SchemaEditor::within()`, `Records::within()`; DDL text in one class `Core\Schema\Ddl` shared by the editor and the archive rebuild | this spec 6.6, 7 |
+| P131 | Layers | `Core\Io` may use Schema, Query, Forms, Storage, Error; plugins only `Core\Io\Contract`, their namespace, PHP, `OpenSpout\` | ADR 0015 d5 |
+| P132 | Navigation | Sidebar Import and Export for people with `io.use`; Plugins tab for Admins; "Import a project archive" on the project list | part 2 section 4 |
+| P133 | Plugin text | Names, setting labels, `readAs`, descriptions supplied by plugins are escaped plain text, not message keys (built-in plugins write English) | this spec 3 |
+| P134 | Import jobs | Bound to the project and the Admin who started them; anyone else gets "not found" | this spec 5.2 |
+| P135 | CSV formula protection (ruling) | "Protect against spreadsheet formulas" stays off by default; the export page tells people who will open the file in a spreadsheet program to choose XLSX, whose text cells are never formulas | this spec 8.2; `docs/design/m3/export.md` |
+| P136 | Archives over the upload cap (ruling) | The 64 MiB upload cap stays; a larger archive is restored by hand into a project created in TiffinDB, by the documented procedure (`docs/formats/tiffin.md` section 13.4); no command-line tool in v1 | ADR 0017 d2; format 13.4 |
+| P137 | "Check again" on the review page (ruling) | Core method `ImportOperations::recheck` stores the posted target and shape-checked column values without `MappingCheck`, so switching the target table never shows errors for the old table | this spec 13.1 |
+| P138 | Currency proposal (ruling) | A symbol in any cell, or a heading containing a money word (price, cost, value, amount, total, paid, spent, fee, budget, balance, money, salary, wage), proposes currency; two decimals alone propose number with 2 decimals | this spec 6.3.1 |
+| P139 | XLSX rows per chunk (ruling) | Every row a plugin yields, empty or not, counts towards the chunk (at most 2,000 per `rows()` call) and towards a cap of 100,000 yielded rows per import | this spec 6.8, 9.2 |
+| P140 | Records after a schema change in one transaction | The committer builds a new `Schema` and `Records` inside the transaction after creating the table (as built, `Records` keeps the `Schema` it was given); `SchemaEditor`'s joined copy reads a fresh `Schema` per call | this spec 6.6 |
+| P141 | Pending strings for wave-4 screens | `TemplateRulesTest` gains two lists, `PENDING_IMPORT` and `PENDING_EXPORT`, merged into `PENDING_KEYS`; WP3 fills them with the shared keys only WP9 or WP10 templates print, and WP9 and WP10 each empty only their own list (separate lines, so their edits do not conflict) | part 2 sections 6, 11 |
 
 ## 5. Blockers
 
@@ -283,3 +347,123 @@ Brief notes for later M1 packages (from M1-WP8):
 | A losing concurrent first-Admin POST gets 500 (core `LogicException` "The first Admin already exists") instead of a 303 to `/setup` or `/sign-in` | `src/Core/Install/Installer.php` near line 302, `SetupController` (M1-WP9 round 2 review) |
 | "Temporary" breaks mid-word on the add-person page at 320 px, Largest text | `public/assets/css/app.css`, `templates/pages/people/new.php` (M1-WP8d report) |
 | When a request has no `Sec-Fetch-Site` header, a POST with a foreign `Origin` and a valid `_csrf` is accepted; checking `Origin` against the request host would add defence in depth (care needed behind proxies) | `src/Web/Kernel.php` near lines 73 and 207 (M1 exit audit F-2) |
+
+
+XLSX probe correction (M3-D1): v5.3.0 also admits PHP 8.3; v5.4.0 is the first needing 8.4. Pinned openspout 5.2.2 (ADR 0016).
+
+### M2 review findings carried (WP0 review: APPROVE)
+
+- Origin: a value over 2048 characters, with a tab, or with non-ASCII bytes is read as absent and passes to the CSRF check (Low; add a third "malformed, refuse" state later). Residual behind-proxy risk is documented only in the `Kernel::originAllowed()` docblock: add it to the deployment documentation at M7.
+- UrlType: hexadecimal labels are refused anywhere in the host (stricter than spec 10.5 "last label only"; amend the spec wording at M2-X). Hosts whose last label is all digits (e.g. `example.123`) were accepted in M1 and are now refused; stored values read back as empty (behaviour change, recorded here).
+- `ProjectOperations::create` with a symbolic-link `projects/` folder now fails closed; no test covers it (add at M2-X). `Fs::entries` lstat-then-scandir race is out of the threat model. Mutation survivor: the abandoned-row recheck inside the write transaction.
+- M2-WP1 (mechanical tier) merged before its implementation-tier review; review pending, to be done with the M2-X audit at the latest.
+
+### M2-WP5 review findings carried (APPROVE)
+
+- Low: `ValueText::cut` loses its length cap on invalid UTF-8 (output is safe). Add tests at M2-X: markup in plural text (mutation M5 survived: escaping around the plural result in `Strings::format`) and a static check for the class-name check in `settings-preview.js` (M7 survived; no JS test).
+- Info: right-to-left override characters in values are printed escaped but not isolated (visual spoofing possible); `HtmlAssertions::assertNoInlineCode` flags `value="javascript:..."` inputs, which WP7 hostile-value tests may trip.
+
+### M2-WP6 and WP8 review results (both APPROVE)
+
+- WP6: 650 hostile requests clean; three escape-test gaps closed in WP6b (all 10 reviewer mutations now killed). No existence oracle; the relation-filter title lookup discloses nothing (grants are per project).
+- WP8: 9 of 9 mutations killed. Low: the schema confirmation accepts any count at or above the number to be cleared (spec 7.5 says "more than"), so a client with a valid CSRF token can skip the confirmation page by posting a large `confirm` on the first POST, as `confirm=1` could before; a lower count than shown is also accepted. Accepted as specified; a maintainer change to an exact match needs a spec change.
+
+### M3-R1 spec review (merged; READY FOR IMPLEMENTATION once M3-D2 applies the M2 as-built mismatches)
+
+- Fixes made by the reviewer (in the specs): WP2 now depends on WP1 (wave 1b with WP7); five test files added to package ownership; archive problem keys snake_case; import job lock and duplicate-commit check; archive jobs bound to the starting Admin; DOCTYPE/ENTITY in XLSX parts refused before OpenSpout opens the file; JSON numbers written from the field type's text; Records refuses auto-number values in Import mode and duplicates in Canonical mode (closes the raw PDOException from the M2-WP2 review).
+- M2-as-built mismatches for M3-D2: `RecordOperations::create` does not get the screen first; `Records` takes its Schema in the constructor so `within()` cannot see a table created earlier in the same transaction; real `Sidebar::build` and `addRelation` signatures differ (exact in M3-io section 18); `FormStore::regenerate` extends only each table's default form; WP9 files not yet in the tree at review time.
+- Orchestrator rulings on the open judgement calls (provisional, cheapest to reverse; M3-D2 records them as P135 onward): CSV formula protection stays off by default and the export screen points to XLSX for spreadsheets; the 64 MiB upload cap stays and larger archives are restored by hand (documented); two-decimal columns propose currency only when the column header or sample suggests money, else number (M3-D2 to define the cheapest rule); cap total rows returned per XLSX chunk read; add a core "check again" method for import step 1.
+- Hard gate for M3-WP0: the shared offline `vendor/` must hold OpenSpout 5.2.2 (obtain by the orchestration 9 method) before any M3 package is dispatched, because the dependency guard test needs listed packages installed.
+
+### M2 exit results
+
+Independent design-tier exit audit on the integration branch (all M2 packages merged). Suite: `composer test` OK (6310 tests, 1 skipped: no comma-decimal locale); `composer lint` 474 files, 0 failed. Full evidence in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above |
+| A Member can add, find, and edit records by keyboard only | PASS | Auditor's own key-presses-only headless run (add, find, edit and save, trash, Undo) with focus ring visible and no focus trap; builders' run K-1 (7 of 7 steps) agrees; `KeyboardStructureTest` fails on a planted positive `tabindex` or a removed textarea id. Manual screen-reader pass: not verified, as in M0 and M1 |
+| Contrast tests cover all 10 combinations; light warn token at 7:1 or better | PASS | 100 cells recomputed independently, 0 mismatches; lowest text pair 7.09; light warn 7.61:1; five mutations fail the test. Low gap: only the Light column of ui 4.2 is checked against the tokens. M2-WP1 (mechanical tier) implementation-tier review done here |
+| Scope | PASS | 31 screen states respond on the built-in server, data folder outside `public/` |
+| Security baseline (new surface) | PASS | Ungranted Member 404 byte-identical to a nonexistent project on 6 GET and 4 POST routes; all 6 new POST routes refuse missing or bad CSRF, foreign or `null` Origin, and cross-site fetch with 403; hostile values escaped; stored form with a script falls back to the generated layout; headers present, no inline code, no outbound requests, dependencies unchanged |
+| Data portability | PASS | Version 2 file read with plain SQLite matches `docs/formats/tiffin.md` (13 `_tiffin_*` statements, names, integrity checks, `user_version`); a version 1 file built with the M1 code upgrades on first open with one snapshot, records and links unchanged |
+| Visual V-9 to V-14 | PASS | 186 renderings (1360 px four themes, 390 px, 320 px Largest), no sideways scroll; X-1 to X-5 held; D-15 to D-19 confirmed. Remaining: long file names and "sans-serif" break inside the word at 320 px Largest; high-contrast theme cards 74 px tall |
+| Repository rules | PASS | SPDX, names, `.gitignore`, layer tests, no `@` suppression |
+| Tests not vacuous | PASS | 15 mutations, 13 caught; the 2 survivors are equivalent (ADR 0002: a granted Member has every record permission) |
+
+Open low items (test-only, carried to M3 or later): no test for the class-name pattern in `settings-preview.js`; no test for a symbolic-link `projects/` folder; no test pins which record permission each method checks (needed if a read-only role is added); WP0 abandoned-row recheck mutation not re-checked; cite deviations with their milestone because M3-screens reuses D-15 to D-19.
+
+Not verified in M2: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass.
+
+### M3-WP0 merged (review running)
+
+OpenSpout 5.2.2 pinned; shared vendor with OpenSpout is at scratchpad `vendor-m3` (steps in `STEPS.txt`; `vendor/composer/installed.php` merged by hand because dump-autoload does not rebuild it); the main checkout's `vendor/` now includes it, so T-DEP-1 fails in any worktree without it. Orchestrator sign-offs: `tests/web/SetupScreenTest.php` (row ids shifted by the three new setup rows) assigned to WP0 for that change; `ci.yml` tolerates only the exact-pin warning from `composer validate --strict`; the licence check accepts "MIT AND Apache-2.0" only when every operand is allowlisted. Stale: `docs/design/m1/installer.md` lists only the old checks (fix at the M3 audit).
+
+### M3-WP1 and WP3 merged and reviewed (APPROVE, follow-ups merged)
+
+- P142 (provisional): at most 10,000 new records in linked tables per import (`IoLimits::MAX_NEW_LINK_RECORDS`); over the cap the commit is refused with `problem.import.too_many_links {max}`, nothing is committed, the job returns to Review. Cheapest to reverse: a constant.
+- Open for WP8 (owner of the core operations and strings): add the `problem.import.too_many_links` row to M3-io section 14, its text to `strings/en/problems.php` ("This file would add more than {max} records to other tables. Leave a link column out, or link fewer titles."), and remove it from `MessageKeysTest::PENDING_SPEC_KEYS`; add the `-shm`/header-rewrite note (WAL-mode source) to M3-io section 11.4.
+- WP7 note: rewrite the source header before opening a WAL-mode untrusted file. WP2 review must confirm the plugin include path is validated before `require`.
+- WP3 follow-ups merged (download headers, ini quantity parsing, field-name rule). Routes and the Admin Plugins nav link return 500 until WP9 and WP10.
+
+- P143 (provisional, M3-WP2b): plugins may name `TiffinDB\Core\Io\Csv\` in addition to Contract, their own namespace, PHP built-ins and `OpenSpout\` (T-PLG-8); the core CSV reader and writer are pure. Lower-case SQL detection added to the plugin layer test (a bare `select x from t` with no further clause is deliberately not caught, to keep English labels).
+
+### M3-WP2 review outcome (REQUEST CHANGES, fixed in WP2c)
+
+Registry held up; gaps were in the plugin layer rules (T-PLG-8) and manifest strictness. Fixed: `use function` aliasing, code-execution constructs, PHP in non-`.php` files (only `plugin.json`, `src/**/*.php` and README/LICENSE/NOTICE/COPYING/`*.md`/`*.txt` allowed under `plugins/`; manifests with `<?` are Broken `php-tag`), request-data access, SQL and URL detection, duplicate manifest keys (Broken `duplicate-member`). P143 narrowed to five named classes (`Charset`, `CsvDetector`, `CsvReader`, `CsvWriter`, `CsvDialect`); core rule: `Core\Io\Csv` may use only `Core\Io\Contract` and `Core\Error\Text`. Plugin authoring constraints (for WP4, WP5, WP6): no `eval`, `include`, `call_user_func`, `Reflection`, `unserialize`, variable calls, `new $x`, computed member names; closures in variables are called as `$f->__invoke()`; string literals naming a denied function (e.g. 'system', 'mail') are refused even as text. WP10 needs strings for Broken reasons `php-tag` and `duplicate-member`. Accepted informational: a fatal or `exit` in an enabled plugin ends the request; the `final` check can be bypassed with `eval`; a stale enabled row enables a re-dropped plugin with the same id.
+
+- M3-WP6 merged (implementation-tier review pending). Defects reported in `docs/formats/json-export.md` for the design-tier fix: (1) it does not say what happens to invalid stored UTF-8 (the exporter writes U+FFFD via JSON_INVALID_UTF8_SUBSTITUTE, added to the 10.3 flags); (2) section 6 says "one object per attached file" but only attachments linked from live records are exported; (3) section 4 says numbers have "at most 15 significant digits" but a float stored before `decimals` was lowered can print up to 17, and values keep the field's decimals ("12.00") unlike the doc's "12" example. An unknown field type fails as `unsupported` and the partial file is removed.
+
+- M3-WP4 review outcome (REQUEST CHANGES, fixed in WP4b): offset-cache bounds now tested with a valid key (negative, at or past end, non-integer, huge skip); an offset at the file end falls back to the start; `CsvReader::MAX_SKIP` 256 KiB; cache key adds the folder real path and SHA-256 of the first 4 KiB; Charset converts in 64 KiB pieces; failed conversion is `PluginFailure(unreadable)`. Open: replacement counts for UTF-16 and Windows-1252 cannot reach the review warning because the contract has no channel (WP1 contract change: carry to the M3 audit as a known limitation, or add a field in WP9's review step if cheap); `docs/design/m3/export.md` still quotes the old help text (update at the M3 audit); `CsvWriter::fileName` is not yet called by anything: WP10's download must use it.
+
+- M3-WP6 review: APPROVE (12 of 12 mutations caught; 200k-record export streams at constant memory; output validated with an independent strict JSON parser). json-export.md and M3-io 10.3 corrected (invalid UTF-8 as U+FFFD, only attachments linked from live records listed, number values keep the field's decimals and an older float prints up to 17 significant digits). MEDIUM (core, WP1 file): `ProjectExportSource::linksOf` is quadratic (EXPLAIN shows a scan of the other table's trash index ahead of the join table per 500-record page; 20k records took 25.4 s, 200k about 40 minutes; affects CSV export too): fix by WP1 author (WP1c). LOW test gaps for the WP6 author: fixture lacks Unicode table/field names, an empty table beside non-empty ones, control characters other than newline, and a number stored before `decimals` was lowered.
+
+- M3-WP1c merged: export link and attachment queries use a forced join order (`CROSS JOIN`); 20k records with a self-relation 69.7 s to 0.15 s, output hash unchanged; also fixed in `Records` (`setLinks` existing-links query, `linksOf`, attachments query). T-IO-15 regression test (its EXPLAIN runs on a copy of the SQL, so drift between code and copy is not caught by that part; the file scan is the backstop). Open (M2 file, not owned by an M3 package): `src/Core/Query/ListSql.php` has the same JOIN pattern in four subqueries (relation sort title and the link filters, lines ~160, 167, 224, 316): check with EXPLAIN QUERY PLAN on a 20k-record fixture and fix in a small follow-up before the M3 exit audit.
+
+- P144 (provisional, M3-WP5; amends ADR 0016 decision 4 and M3-io 9.2): the XLSX importer reads with PHP's `XMLReader` over `zip://` and does not use OpenSpout's Reader; OpenSpout is used only for export. Reasons (v5.2.2 source read and timed by the author): a formula with no cached value reads as 0; a text cell starting with "=" becomes a formula cell; one out-of-range date stops the whole read; a hostile `spans` attribute can exhaust memory; rows are rebuilt cell by cell (quadratic in width); one pass over 50,000 x 20 took about 8 s and every chunk repeats it. Consequence: our own parser of untrusted XML is the attack surface (security review in progress); the manifests still require dom and filter (needed by OpenSpout for export). Plugin-only limits in `plugins/import/xlsx/src/Limits.php`: 255 sheets; shared strings up to 2,000,000 and 32 MiB. Contract limitation: plugin issues cannot be carried, so formula-no-value and error cells come back as null with no issue. Exporter writes text cells for numbers the writer would round (14 significant digits) and for dates before 1900-03-01. Macro workbooks refused as unsupported; prolog (DOCTYPE/ENTITY) check runs on every zip entry. ADR 0016 and M3-io 9.2 to be amended at the M3 audit.
+
+### M3-WP8 review (APPROVE; 21 of 22 mutations killed)
+
+Another Admin gets the same NotFound for an existing, absent, malformed or lock-held job (no Busy leak); archive reason codes all map to `problem.archive.*` keys with strings. Low: `ImportOperations::commit` does not re-read the actor inside the project write (an Admin deactivated during the snapshot copy still commits; M2 record writes behave the same); survivor: the LogicException in `Context::usePluginsRoot` has no test (not reachable from web input). Info: spec 11.6 says `problem.name.taken` but code uses `problem.project_name.taken` (amend spec at the M3 audit); download names keep non-ASCII letters so the web layer must send `Content-Disposition` with `filename*` and an ASCII fallback (WP10 review item); a commit refused for `too_many_links`, `target_changed` or Busy has already taken and audited its `import` snapshot; `ImportJob::open` opens a foreign job's database (WAL files) before the owner check.
+
+### M3 screens and XLSX fixes (state)
+
+- M3-WP9 merged; security review APPROVE (12 of 12 mutations killed; live server with four accounts: 40,000-row import with 5 parallel saves gave 1 commit, 4 Busy; exactly one import-log row). Lows: a tampered `table` key with `target=existing` returns a 404 page instead of a 422 review (same body for every value, no oracle); the file name in the review facts and report is escaped but not cut to 200 characters (shown at the core's 255 cap); bidi controls are escaped but kept in `th`/aria-label text. Wording oddities: "Choose at least one column" links to the table-name input.
+- M3-WP10 merged (review running). Stale doc: `docs/design/m3/export.md` quotes the old CSV help text and old notice key names (`notice.archive_imported`, `notice.archive_imported_changes`, `notice.plugin_enabled`, `notice.plugin_disabled`); gaps: no project size on the export screen; name-taken problem does not return the stored name.
+- M3-WP5b merged (round-2 review running): readString/expand banned on untrusted subtrees; real bytes counted once per job; per-call step budget; job caches `xlsx-cache.json`, `xlsx-strings.bin`, `xlsx-offsets.bin` in the job `tmp/` re-checked as untrusted; ADR 0016 decision 4 and M3-io 9.1, 9.2, 18 amended. Residual: skipping to a late `from` has no work limit (late chunks up to 5.3 s for the 2M-string workbook, 4.1 s for 12k x 200).
+
+- M3-WP10 review: APPROVE (12 of 14 mutations killed; real built-in server: downloads, tampered export requests, forged plugin confirmations all handled). Low: `ArchiveController::fileName` strips C0/C1 controls but keeps bidi and format characters (U+202E, U+200B, U+FEFF); a forged hidden `file_name` shows reversed in the archive-checked sentence (WP10 follow-up, core name rules reject invisible characters). Survivor: accepting a disabled plugin id on the export POST has no web test (core tests kill it). Info: export is streamed from the POST with no download URL (owner check in `ExportOperations::finish`, stale files swept, `ignore_user_abort` set) while the design says download URL: amend `docs/design/m3/export.md` at the audit; the ASCII fallback name replaces each non-ASCII byte with `_`.
+
+### M3-WP11 merged (round trips, E2E, keyboard, visual)
+
+T-RT-1..6, T-E2E-8..10, T-SCR-3, T-KBD-2 pass; K-2 keyboard-only run passes (file choice set by the script: the single non-keyboard step; "Save the rows" never pressed automatically). Round trips: CSV byte-identical; XLSX equal cell for cell (hand parser); JSON matches the format doc and plain SQL; archive equal table by table. Failed-import test (3 failure points): project checksum unchanged (failure injected with a trigger in the project file because `ImportOperations::commit` has no core seam). T-RT-6 timings, 20k / 50k self-relation records, seconds: archive export 0.58/1.48, archive import 1.70/6.97, JSON 0.42/1.03, XLSX export 1.49/3.93, CSV export 0.46/1.09; CSV import read 2.10/5.22, prepare 0.58/1.63, commit 1.47/3.34; XLSX read 3.74/12.03. Visual: 118 of 120 automated passes. Deviations to fix before the M3 audit: WP9: report table scrolls sideways at 320 Largest (wrap in `div.table-scroll`), "Change how the file is read" button outside the panel, fields section gap, repeated "Check again" empties the new table name; WP3: mapping checkboxes 13 px not 24, Type select clipped (`width:auto`), "Start again" padding 0 28 not 0 20, report numbers not right-aligned; WP8: a failed commit gives a 500 on the save POST instead of a 303 to the failure page (T-E2E-9 tolerates it), warning reads "new room" instead of "rooms"; WP1: first values cut to 60 characters without an ellipsis, a file-name column proposed as Web address and rewritten to "https://stand-mixer.jpg"; spec 6.3: Date choice for a column with unreadable dates not selectable, Phone never offered, checkbox and currency default to Number. Proposed accepted deviations M3 D-22 to D-26. Full report: scratchpad `M3-WP11/M3-WP11-report.md`.
+
+- M3-WP5 round-3 review: APPROVE (export noncharacters and controls fixed; forged `checked:true` refused on detect, inspect and rows; `.part` symlink writes safe; G14, G15, G20, G21, G22 killed; G11 (NONET) untestable, accepted). Whole-file check now runs on every call: slowest chunk 5.84 s (2M-string workbook), 4.53 s (12k x 200), 1.94 s (100k x 20); worst-case 256 MiB sheet estimated under 8 s here (about 1 s check plus 6.5 s skip): over the 5-second chunk budget but bounded and under a 30 s request limit; recorded as a known limitation for shared hosts (host check pending).
+- M3-WP9b and M3-WP3c merged (visual fixes). Residual (WP3): Fields section heading and help sit tight (16 px, no margin; mock-up 18 px with 4 px margin); the 24 px gap between review sections needs a WP3 rule; field-name input 168 px (mock-up 295 px, not fixed). Residual (WP8): a name typed before switching to an existing target falls back to the proposed name (core does not store it); failed save shows the 500 page (X-11). Accept (propose): M3 D-22..D-26 as WP11 proposed plus the `f-tablename` id, unclassed cancel forms (now `.inline-form` exists: WP9 may use it), and the over-limit line without a row figure.
+
+- M3-WP1d merged: first values over 60 characters are cut to 59 plus an ellipsis; Web address is proposed only when every cell starts with http://, https:// or www.; importing into a URL field leaves a non-URL cell empty with an "unreadable" issue instead of rewriting it; the type menu lists the proposed type, then types every cell fits, then text and long text, then every other importable type (phone and date included), then links; a money word in the heading proposes currency for plain amounts (P138; spec 6.3.1 still also says two decimals: align to P138); 1/0 still proposes Number with Checkbox in the menu (P117).
+- P145 (provisional, orchestrator ruling): CSV export writes checkbox values as yes/no per M3-io spec 8.2 (the core text is 1/0 per spec 3.3), mapped in `plugins/export/csv/src/CsvExporter.php`; CSV import proposes Checkbox for yes/no columns, so the round trip holds. JSON and XLSX keep their own documented forms. Cheapest to reverse: one mapping. To do (WP4 author), with the round-trip tests adjusted.
+- Spec text to update at the M3 audit: M3-io 6.3 (type menu offers every importable type; Web address needs an explicit scheme or www.) and 6.3.1 (P138 wording).
+
+### M3 exit results
+
+Independent design-tier exit audit on the integration branch (all M3 packages and review follow-ups merged). Suite: `composer test` OK (8414 tests, 1 skipped: no comma-decimal locale); `composer lint` 684 files, 0 failed. Evidence in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above |
+| Round-trip tests on seeded synthetic fixtures | PASS | Auditor's own seed (424242): CSV byte-identical; XLSX equal cell for cell (read with openpyxl); JSON checked against `docs/formats/json-export.md` with an independent decoder; archive equal table by table. No binary fixtures committed; mutating any of the five writers fails the tests |
+| Import flow usable by keyboard only | PASS | Auditor's own key-presses-only run on the live server (data folder outside `public/`); the file choice is the one non-keyboard step; "Save the rows" never auto-submits. Manual screen-reader pass: not verified |
+| Import that fails part-way leaves the target unchanged | PASS | 10 injection points; project checksum unchanged; one `import` snapshot each |
+| Admin only; authorization in core | PASS | A Member refused on all 27 core methods; no job-existence oracle; CSRF 403 on every M3 POST; 0 outbound connect calls under strace |
+| Hostile corpus (CSV, XLSX, archive) | PASS | 71 files: every refusal a 422, no 500s, no leftover jobs, read memory at most 11 MiB |
+| Plugins | PASS | Hostile folders show Broken or are not listed; no plugin code ran during discovery |
+| Dependencies | PASS | OpenSpout 5.2.2 at `95403917927ef252f7ae82d919c55286a642962a`, MIT and Apache-2.0 licence hashes match, no `composer.lock` |
+| Data portability | PASS | Version 3 file matches `docs/formats/tiffin.md`; an M2-made version 2 file upgrades after a snapshot; JSON and CSV open without TiffinDB |
+| Visual V-15 to V-19 | PASS | 72 states; deviations M3 D-22 to D-30, `f-tablename` id and the over-limit line without a row figure accepted |
+| Repository rules | FAIL then fixed | Five `@` operators in `plugins/export/json/src/JsonExporter.php` (ADR 0008 decision 6): removed in WP6b; new `tests/repo/NoErrorSuppressionTest.php` scans src, plugins, templates; `.gitignore` gained `*.tiffindb.zip` (WP0c) |
+| Tests not vacuous | PASS | 16 of 18 mutations killed; survivors: XLSX early stop on entries holding more bytes than declared (time only), archive trigger/view check (equivalent) |
+
+Open low items carried forward (none blocking): "Check again" loses a table name typed before switching to an existing target and back (WP9/WP8); the report's "Rows" column is right-aligned like the count column (WP3/WP9); a CSV over 200 columns or with a record over 1 MiB shows "uses something TiffinDB cannot read yet" instead of the column-limit message (WP1/WP4); no test pins the XLSX early stop on size lies (WP5); `@` operators remain outside the rule's scope in `tools/host-check/host-check.php` (22, M0/M3-WP0 tool) and `tools/discovery/discover-structure.php` (15, M0 discovery tool deferred to the maintainer); replacement counts for UTF-16 and Windows-1252 do not reach the review warning (contract limitation); XLSX late-skip timing (a worst-case chunk can exceed the 5-second budget, bounded by the verified sheet size and the 100,000-row cap) deferred to the maintainer's host check.
+
+Not verified in M3: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass; commit and archive-rebuild times on a shared host.

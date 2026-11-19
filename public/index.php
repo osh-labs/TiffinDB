@@ -65,7 +65,7 @@ try {
         $config = TiffinDB\Web\Kernel::withLocalConfig($config, require __DIR__ . '/../config/local.php');
     }
     $kernel = new TiffinDB\Web\Kernel($config, dirname(__DIR__));
-    $request = TiffinDB\Web\Request::fromGlobals($server, $_GET, $_POST, $_COOKIE);
+    $request = TiffinDB\Web\Request::fromGlobals($server, $_GET, $_POST, $_COOKIE, $_FILES);
     $response = $kernel->handle($request);
 } catch (Throwable $e) {
     TiffinDB\Web\Fallback::log($e);

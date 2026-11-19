@@ -27,7 +27,7 @@ use TiffinDB\Core\Install\InstallState;
  * Beyond the methods in section 2.8, four were added for the kernel
  * (recorded in the WP7 report): endSession(), userSettings(),
  * newCsrfToken(), and now(). They keep `Core\Storage` and `Core\System`
- * names out of every other web class.
+ * names out of every other web class. M3 adds uploadLimits().
  */
 interface Services
 {
@@ -74,6 +74,12 @@ interface Services
 
     /** The current time from the core clock. */
     public function now(): DateTimeImmutable;
+
+    /**
+     * PHP's upload limits (M3 spec part 2 section 2.3): the kernel's 413
+     * check and the size limit upload screens state.
+     */
+    public function uploadLimits(): UploadLimits;
 
     /** Closes the databases and forgets everything built for this request. */
     public function close(): void;

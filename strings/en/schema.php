@@ -38,12 +38,9 @@ return [
     'notice.type_changed' => '{field} is now a {type} field.',
 
     'schema.confirm.back' => 'Go back without saving',
-    'schema.confirm.body' => 'With this change, {values} values in {records} records no longer fit and will be cleared. TiffinDB saves a copy of the project first.',
-    'schema.confirm.body_one' => 'With this change, 1 value in 1 record no longer fits and will be cleared. TiffinDB saves a copy of the project first.',
-    'schema.confirm.submit_one' => 'Clear 1 value and save',
-    'schema.confirm.submit' => 'Clear {values} values and save',
-    'schema.confirm.title_one' => 'Clear 1 value?',
-    'schema.confirm.title' => 'Clear {values} values?',
+    'schema.confirm.body' => 'This change clears {values|# value|# values} in {records|# record|# records}.',
+    'schema.confirm.submit' => 'Clear {values|# value|# values} and save',
+    'schema.confirm.title' => 'Clear {values|# value|# values}?',
 
     'schema.delete.confirm_required' => 'Tick the box to confirm.',
     'schema.delete.copy' => 'TiffinDB saves a copy of the project before deleting. The person who looks after this TiffinDB can restore it from that copy.',

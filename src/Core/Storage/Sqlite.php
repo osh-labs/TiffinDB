@@ -73,6 +73,46 @@ final class Sqlite
         }
     }
 
+    /**
+     * Opens a file that did not come from TiffinDB (a project inside an
+     * uploaded archive; M3 spec section 11.4 step 2) for reading only: PDO
+     * with SQLITE_OPEN_READONLY and exceptions on, then `trusted_schema`
+     * off (functions in the file's schema are not run), `query_only` on,
+     * `cell_size_check` on, and `mmap_size` 0. It sets no journal mode, no
+     * foreign keys, and nothing else that writes. The path must be an
+     * absolute plain path to a regular file, not a symbolic link
+     * (Unavailable('missing') otherwise). A PDOException from SQLite
+     * reaches the caller, which treats it as a damaged file.
+     *
+     * The read-only flag is what keeps the file as it arrived: with it, a
+     * hot rollback journal beside the file is never rolled back into it
+     * (the read fails instead). A file whose header says WAL (bytes 18 and
+     * 19 are 2) may still make SQLite create a `-shm` file beside it, and
+     * reads of it depend on a `-wal` file; the archive import (M3 spec
+     * section 11.4 step 1) therefore rewrites both header bytes to 1 in its
+     * own copy before calling this, so the copy opens as a rollback-journal
+     * file with no side files.
+     */
+    public static function openUntrusted(string $path): Database
+    {
+        self::checkPath($path);
+        if (!Fs::isFile($path)) {
+            throw new Unavailable(Unavailable::MISSING);
+        }
+        $pdo = new \PDO('sqlite:' . $path, null, null, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            \PDO::ATTR_STRINGIFY_FETCHES => false,
+            \PDO::SQLITE_ATTR_OPEN_FLAGS => \PDO::SQLITE_OPEN_READONLY,
+        ]);
+        $pdo->exec('PRAGMA trusted_schema = OFF');
+        $pdo->exec('PRAGMA query_only = ON');
+        $pdo->exec('PRAGMA cell_size_check = ON');
+        $pdo->exec('PRAGMA mmap_size = 0');
+
+        return new Database($pdo, $path, 'untrusted');
+    }
+
     /** A private in-memory database, for tests and the requirement check. */
     public static function memory(): Database
     {

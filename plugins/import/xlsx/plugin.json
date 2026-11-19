@@ -1,0 +1,12 @@
+{
+    "api": 1,
+    "id": "xlsx",
+    "kind": "import",
+    "name": "Excel workbook",
+    "version": "1.0.0",
+    "class": "TiffinDB\\Plugin\\Import\\Xlsx\\XlsxImporter",
+    "licence": "AGPL-3.0-or-later",
+    "extensions": ["xlsx"],
+    "requires_extensions": ["zip", "xmlreader", "dom", "filter", "libxml"],
+    "description": "Reads the worksheets of Excel workbooks (.xlsx)."
+}

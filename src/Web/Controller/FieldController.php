@@ -30,7 +30,9 @@ use TiffinDB\Web\Response;
  * to element id `opt-<name with _ as ->`. A change the core reports as
  * clearing values (ConfirmationRequired) gives the confirmation page
  * (status 409), which posts every submitted field again with `confirm`
- * (P59).
+ * (P59) set to the number of values it showed. The core is given that
+ * number as the accepted loss and asks again when the real count is
+ * larger (P82, M2 spec part 1 section 7.5).
  */
 final class FieldController
 {
@@ -174,7 +176,7 @@ final class FieldController
                 $this->options($field->type, $values, $field),
                 $values['required'] === '1',
                 $values['help'],
-                $request->input('confirm') === '1',
+                self::acceptedLoss($request),
             );
         } catch (ValidationFailed $failed) {
             return $this->editPage($project, $table, $design, $values, $failed->problems, 422);
@@ -213,7 +215,7 @@ final class FieldController
                 $field->key,
                 $type,
                 [],
-                $request->input('confirm') === '1',
+                self::acceptedLoss($request),
             );
         } catch (ValidationFailed $failed) {
             return $this->typePage($project, $table, $design, $failed->problems, 422);
@@ -727,9 +729,22 @@ final class FieldController
     }
 
     /**
+     * The number of values the person accepted on the confirmation page:
+     * the posted `confirm` when it is a plain non-negative integer, else 0
+     * (P82). The core compares it with the real count.
+     */
+    private static function acceptedLoss(Request $request): int
+    {
+        $confirm = $request->input('confirm');
+
+        return preg_match('/^(?:0|[1-9][0-9]{0,17})\z/', $confirm) === 1 ? (int) $confirm : 0;
+    }
+
+    /**
      * Screen 11: the change would clear values. Every submitted field is
      * posted again as a hidden input, except `_csrf` (the form prints the
-     * current token) and `confirm` (P59).
+     * current token) and `confirm` (P59), which carries the number of
+     * values shown (P82).
      *
      * @param array{key: string, name: string}                                 $project
      * @param array{key: string, name: string, itemName: string, path: string} $table
@@ -745,7 +760,6 @@ final class FieldController
         string $back,
     ): Response {
         $view = $this->context->view();
-        $format = $view->format();
         $hidden = [];
         foreach ($request->post as $name => $value) {
             if (is_string($name) && is_string($value) && $name !== '_csrf' && $name !== 'confirm') {
@@ -756,18 +770,12 @@ final class FieldController
         if ($lastCrumb !== null) {
             $crumbs[] = ['label' => $lastCrumb, 'path' => null];
         }
-        $values = $format->number($needed->values);
-        $one = $needed->values === 1;
 
         return $this->context->page('fields/confirm', [
-            'title' => $one ? $view->text('schema.confirm.title_one') : $view->text('schema.confirm.title', ['values' => $values]),
+            'title' => $view->text('schema.confirm.title', ['values' => $needed->values]),
             'breadcrumb' => $this->crumbs($project, $table, $crumbs),
-            'one' => $one,
-            'values' => $values,
-            // The body says "values" and "records" itself, so plain numbers
-            // go in, with a singular body for one value in one record.
-            'bodyKey' => $one && $needed->records === 1 ? 'schema.confirm.body_one' : 'schema.confirm.body',
-            'records' => $format->number($needed->records),
+            'values' => $needed->values,
+            'records' => $needed->records,
             'hidden' => $hidden,
             'action' => $action,
             'back' => $back,

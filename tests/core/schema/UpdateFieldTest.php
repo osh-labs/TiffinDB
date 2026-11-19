@@ -73,7 +73,7 @@ final class UpdateFieldTest extends TestCase
         $editor = $this->editor();
         $field = $editor->addField($this->items->key, 'Notes', 'text', [], false, '');
         $this->clock->advance(10);
-        $updated = $editor->updateField($field->key, '  Remarks ', ['max_length' => 80], true, ' Short notes ', false);
+        $updated = $editor->updateField($field->key, '  Remarks ', ['max_length' => 80], true, ' Short notes ', 0);
         self::assertSame('Remarks', $updated->name);
         self::assertSame('Short notes', $updated->help);
         self::assertTrue($updated->required);
@@ -84,10 +84,10 @@ final class UpdateFieldTest extends TestCase
 
         self::assertSame(
             [['name', 'problem.field_name.taken', []], ['help', 'problem.name.too_long', ['max' => 200]], ['options.max_length', 'problem.options.range', ['min' => 1, 'max' => 10000]]],
-            self::problems(fn () => $editor->updateField($field->key, 'name', ['max_length' => 'many'], false, str_repeat('h', 201), false)),
+            self::problems(fn () => $editor->updateField($field->key, 'name', ['max_length' => 'many'], false, str_repeat('h', 201), 0)),
         );
         // Keeping its own name in another case is allowed.
-        self::assertSame('REMARKS', $editor->updateField($field->key, 'REMARKS', [], false, '', false)->name);
+        self::assertSame('REMARKS', $editor->updateField($field->key, 'REMARKS', [], false, '', 0)->name);
     }
 
     public function testChoiceRenameRewritesRowsWithoutConfirmation(): void
@@ -108,7 +108,7 @@ final class UpdateFieldTest extends TestCase
         ]];
         self::assertEquals(new Impact(0, 0), $this->editor()->previewUpdate($field->key, $options));
 
-        $updated = $this->editor()->updateField($field->key, 'Colour', $options, false, '', false);
+        $updated = $this->editor()->updateField($field->key, 'Colour', $options, false, '', 0);
         self::assertSame(['Crimson', 'Green', 'Navy', 'Crimson', null], $this->column($this->items->key, $field->key));
         self::assertSame([$red['key'], $green['key'], $blue['key']], array_column(self::choices($updated), 'key'));
         self::assertCount(1, $this->taken);
@@ -126,7 +126,7 @@ final class UpdateFieldTest extends TestCase
             ['key' => $red['key'], 'label' => 'Green'],
             ['key' => $green['key'], 'label' => 'Red'],
             ['key' => $blue['key'], 'label' => 'Blue'],
-        ]], false, '', false);
+        ]], false, '', 0);
         self::assertSame(['Green', 'Red'], $this->column($this->items->key, $field->key));
     }
 
@@ -142,14 +142,14 @@ final class UpdateFieldTest extends TestCase
 
         self::assertEquals(new Impact(2, 2), $this->editor()->previewUpdate($field->key, $options));
         $before = $this->dump();
-        $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($field->key, 'Paint', $options, false, '', false));
+        $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($field->key, 'Paint', $options, false, '', 0));
         self::assertSame([2, 2], [$confirmation->records, $confirmation->values]);
         self::assertSame(['Red', 'Blue', 'Blue', 'Green'], $this->column($this->items->key, $field->key));
         self::assertSame('Colour', $this->schema()->field($field->key)->name);
         self::assertSame([], $this->snapshotFiles());
         self::assertSame($before, $this->dump());
 
-        $updated = $this->editor()->updateField($field->key, 'Paint', $options, false, '', true);
+        $updated = $this->editor()->updateField($field->key, 'Paint', $options, false, '', 2);
         self::assertSame(['Red', null, null, 'Lime'], $this->column($this->items->key, $field->key));
         self::assertSame(['Red', 'Lime'], array_column(self::choices($updated), 'label'));
         self::assertCount(1, $this->taken);
@@ -162,7 +162,7 @@ final class UpdateFieldTest extends TestCase
         $field = $this->colourField();
         [$red] = self::choices($field);
         $this->insert($this->items->key, [$field->key => 'Red']);
-        $this->editor()->updateField($field->key, 'Colour', ['choices' => [['key' => $red['key'], 'label' => 'Red'], 'Purple']], false, '', false);
+        $this->editor()->updateField($field->key, 'Colour', ['choices' => [['key' => $red['key'], 'label' => 'Red'], 'Purple']], false, '', 0);
         self::assertSame(['Red', 'Purple'], array_column(self::choices($this->schema()->field($field->key)), 'label'));
         self::assertSame([], $this->taken);
     }
@@ -171,7 +171,7 @@ final class UpdateFieldTest extends TestCase
     {
         $field = $this->colourField();
         $this->insert($this->items->key, [$field->key => 'Red']);
-        $this->editor()->updateField($field->key, 'Colour', ['choices' => ['red', 'Green']], false, '', false);
+        $this->editor()->updateField($field->key, 'Colour', ['choices' => ['red', 'Green']], false, '', 0);
         self::assertSame(['red'], $this->column($this->items->key, $field->key));
     }
 
@@ -186,17 +186,17 @@ final class UpdateFieldTest extends TestCase
 
         self::assertEquals(new Impact(0, 0), $editor->previewUpdate($field->key, ['max' => 10]));
         self::assertEquals(new Impact(3, 3), $editor->previewUpdate($field->key, ['max' => 4]));
-        $confirmation = $this->confirmationOf(fn () => $editor->updateField($field->key, 'Stars', ['max' => 4], false, '', false));
+        $confirmation = $this->confirmationOf(fn () => $editor->updateField($field->key, 'Stars', ['max' => 4], false, '', 0));
         self::assertSame([3, 3], [$confirmation->records, $confirmation->values]);
         self::assertSame([1, 4, 5, 9, 10, null], $this->column($this->items->key, $field->key));
 
-        $editor->updateField($field->key, 'Stars', ['max' => 4], false, '', true);
+        $editor->updateField($field->key, 'Stars', ['max' => 4], false, '', 3);
         self::assertSame([1, 4, null, null, null, null], $this->column($this->items->key, $field->key));
         self::assertSame(['max' => 4], $this->schema()->field($field->key)->options);
         self::assertSame([SnapshotReason::FieldOptions], array_map(static fn (SnapshotInfo $i): SnapshotReason => $i->reason, $this->taken));
 
         // Raising it again changes no values and takes no snapshot.
-        $editor->updateField($field->key, 'Stars', ['max' => 8], false, '', false);
+        $editor->updateField($field->key, 'Stars', ['max' => 8], false, '', 0);
         self::assertCount(1, $this->taken);
     }
 
@@ -218,21 +218,21 @@ final class UpdateFieldTest extends TestCase
 
         self::assertSame(
             [['options.links', 'problem.relation.cardinality_conflict', ['count' => 2]]],
-            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'one'], false, '', true)),
+            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'one'], false, '', 0)),
         );
         self::assertSame(
             [['options.links', 'problem.options.invalid', []]],
-            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'several'], false, '', true)),
+            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'several'], false, '', 0)),
         );
 
         $this->db->run('DELETE FROM ' . Identifier::joinTable($relation->key) . ' WHERE "left_id" = ? AND "right_id" = ?', [$a, $r2]);
         self::assertSame(
             [['options.links', 'problem.relation.cardinality_conflict', ['count' => 1]]],
-            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'one'], false, '', true)),
+            self::problems(fn () => $editor->updateField($field->key, 'Rooms', ['links' => 'one'], false, '', 0)),
         );
         $this->db->run('DELETE FROM ' . Identifier::joinTable($relation->key) . ' WHERE "left_id" = ? AND "right_id" = ?', [$b, $r3]);
 
-        $updated = $editor->updateField($field->key, 'Room', ['links' => 'one', 'relation' => 'aaaaaaaaaaaa', 'side' => 'right'], true, 'Where', false);
+        $updated = $editor->updateField($field->key, 'Room', ['links' => 'one', 'relation' => 'aaaaaaaaaaaa', 'side' => 'right'], true, 'Where', 0);
         self::assertSame(['relation' => $relation->key, 'side' => 'left'], $updated->options);
         self::assertSame('Room', $updated->name);
         self::assertTrue($updated->required);
@@ -243,20 +243,20 @@ final class UpdateFieldTest extends TestCase
         self::assertSame([], $this->taken);
 
         // Back to many drops the index; the other side is changed through its own field.
-        $editor->updateField($field->key, 'Room', ['links' => 'many'], false, '', false);
+        $editor->updateField($field->key, 'Room', ['links' => 'many'], false, '', 0);
         self::assertArrayNotHasKey('x_j_' . $relation->key . '_l1', $this->masterNames());
         // Room r1 is still linked by two items.
         self::assertSame(
             [['options.links', 'problem.relation.cardinality_conflict', ['count' => 1]]],
-            self::problems(fn () => $editor->updateField($relation->rightField, 'Items', ['links' => 'one'], false, '', false)),
+            self::problems(fn () => $editor->updateField($relation->rightField, 'Items', ['links' => 'one'], false, '', 0)),
         );
         $this->db->run('DELETE FROM ' . Identifier::joinTable($relation->key) . ' WHERE "left_id" = ? AND "right_id" = ?', [$b, $r1]);
-        $editor->updateField($relation->rightField, 'Items', ['links' => 'one'], false, '', false);
+        $editor->updateField($relation->rightField, 'Items', ['links' => 'one'], false, '', 0);
         self::assertArrayHasKey('x_j_' . $relation->key . '_r1', $this->masterNames());
         self::assertSame(Cardinality::One, $this->schema()->relation($relation->key)->rightMax);
-        $editor->updateField($relation->rightField, 'Items', [], false, '', false);
+        $editor->updateField($relation->rightField, 'Items', [], false, '', 0);
         self::assertSame(Cardinality::One, $this->schema()->relation($relation->key)->rightMax);
-        $editor->updateField($relation->rightField, 'Items', ['links' => 'many'], false, '', false);
+        $editor->updateField($relation->rightField, 'Items', ['links' => 'many'], false, '', 0);
         self::assertArrayNotHasKey('x_j_' . $relation->key . '_r1', $this->masterNames());
     }
 
@@ -274,19 +274,19 @@ final class UpdateFieldTest extends TestCase
 
         self::assertSame(
             [['options.minor_digits', 'problem.options.minor_digits_fixed', []]],
-            self::problems(fn () => $editor->updateField($price->key, 'Price', ['code' => 'EUR', 'minor_digits' => 3], false, '', true)),
+            self::problems(fn () => $editor->updateField($price->key, 'Price', ['code' => 'EUR', 'minor_digits' => 3], false, '', 0)),
         );
-        self::assertSame('EUR', $editor->updateField($price->key, 'Price', ['code' => 'EUR', 'minor_digits' => 2], false, '', false)->options['code']);
+        self::assertSame('EUR', $editor->updateField($price->key, 'Price', ['code' => 'EUR', 'minor_digits' => 2], false, '', 0)->options['code']);
 
         self::assertSame(
             [['options.start', 'problem.options.start_fixed', []]],
-            self::problems(fn () => $editor->updateField($number->key, 'Number', ['start' => 1], false, '', true)),
+            self::problems(fn () => $editor->updateField($number->key, 'Number', ['start' => 1], false, '', 0)),
         );
-        $updated = $editor->updateField($number->key, 'No.', ['start' => 5, 'next' => 1], true, '', false);
+        $updated = $editor->updateField($number->key, 'No.', ['start' => 5, 'next' => 1], true, '', 0);
         self::assertSame(['start' => 5, 'next' => 8], $updated->options);
         self::assertFalse($updated->required);
         self::assertSame(['start' => 5, 'next' => 8], $this->schema()->field($number->key)->options);
-        self::assertSame(['start' => 5, 'next' => 8], $editor->updateField($number->key, 'No.', ['start' => 5], false, '', false)->options);
+        self::assertSame(['start' => 5, 'next' => 8], $editor->updateField($number->key, 'No.', ['start' => 5], false, '', 0)->options);
         self::assertSame(['start' => 5, 'next' => 8], $this->schema()->field($number->key)->options);
     }
 
@@ -396,7 +396,7 @@ final class UpdateFieldTest extends TestCase
             $atSnapshot = $this->dump();
         });
 
-        $updated = $editor->updateField($stars->key, 'Stars', ['max' => 3], false, '', true);
+        $updated = $editor->updateField($stars->key, 'Stars', ['max' => 3], false, '', 1);
 
         // Check (nothing), transaction (a value: back out), check again (snapshot), transaction (apply).
         self::assertSame(4, $calls[0]);
@@ -418,7 +418,7 @@ final class UpdateFieldTest extends TestCase
         $before = $this->dump();
         $this->clock->advance(60);
 
-        $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($stars->key, 'Stars', ['max' => 3], false, '', false));
+        $confirmation = $this->confirmationOf(fn () => $this->editor()->updateField($stars->key, 'Stars', ['max' => 3], false, '', 0));
 
         self::assertSame(2, $calls[0]);
         self::assertSame([1, 1], [$confirmation->records, $confirmation->values]);

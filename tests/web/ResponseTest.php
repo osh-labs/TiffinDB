@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Web;
 
 use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -17,7 +18,10 @@ use TiffinDB\Web\Fallback;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\SecurityHeaders;
 
-/** T-WEB-14: response values, header and cookie validation, redirects, send(), and the fallback reply. */
+/**
+ * T-WEB-14: response values, header and cookie validation, redirects, send(), and the fallback reply.
+ * T-WEB-40 (M3 spec part 2 section 2.2): downloads, their headers, streaming, HEAD, and the after-send callback.
+ */
 #[CoversClass(Response::class)]
 #[CoversClass(Fallback::class)]
 final class ResponseTest extends TestCase
@@ -277,5 +281,306 @@ final class ResponseTest extends TestCase
 
         self::assertSame(Fallback::BODY, self::runChild('$_SERVER["REQUEST_METHOD"] = "GET"; ' . $fatal));
         self::assertSame('', self::runChild('$_SERVER["REQUEST_METHOD"] = "HEAD"; ' . $fatal));
+    }
+
+    // T-WEB-40: downloads (M3 spec part 2 section 2.2).
+
+    /** @var list<string> Temporary files and folders, removed in tearDown(). */
+    private array $made = [];
+
+    protected function tearDown(): void
+    {
+        foreach (array_reverse($this->made) as $path) {
+            if (is_link($path) || is_file($path)) {
+                unlink($path);
+            } elseif (is_dir($path)) {
+                rmdir($path);
+            }
+        }
+        $this->made = [];
+    }
+
+    private function file(string $contents): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'tiffindb-download-');
+        self::assertIsString($path);
+        file_put_contents($path, $contents);
+        $this->made[] = $path;
+
+        return $path;
+    }
+
+    public function testDownloadHeadersForAnAsciiName(): void
+    {
+        $path = $this->file("name,room\nExample lamp,Hall\n");
+        $response = Response::download($path, 'text/csv', 'Items.csv', true);
+
+        self::assertSame(200, $response->status);
+        self::assertSame([
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Length' => '28',
+            'Content-Disposition' => 'attachment; filename="Items.csv"; filename*=UTF-8\'\'Items.csv',
+            'Cache-Control' => 'no-store',
+        ], $response->headers);
+        self::assertSame('', $response->body);
+        self::assertSame("name,room\nExample lamp,Hall\n", $response->body());
+        self::assertTrue($response->isDownload());
+        self::assertTrue($response->removesAfterSend());
+        self::assertFalse(Response::download($path, 'text/csv', 'Items.csv', false)->removesAfterSend());
+        self::assertFalse((new Response(200))->isDownload());
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function mediaTypes(): iterable
+    {
+        yield 'csv' => ['text/csv', 'text/csv; charset=utf-8'];
+        yield 'json' => ['application/json', 'application/json; charset=utf-8'];
+        yield 'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+        yield 'zip' => ['application/zip', 'application/zip'];
+    }
+
+    #[DataProvider('mediaTypes')]
+    public function testDownloadContentTypes(string $mediaType, string $header): void
+    {
+        self::assertSame($header, Response::download($this->file('x'), $mediaType, 'a', false)->header('Content-Type'));
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function downloadNames(): iterable
+    {
+        yield 'non-ASCII' => ['Küche – Möbel.csv', 'K__che ___ M__bel.csv', 'K%C3%BCche%20%E2%80%93%20M%C3%B6bel.csv'];
+        yield 'quotes' => ['say "hi".csv', 'say _hi_.csv', 'say%20%22hi%22.csv'];
+        yield 'semicolons' => ['a; filename=evil.exe', 'a_ filename=evil.exe', 'a%3B%20filename%3Devil.exe'];
+        yield 'slashes' => ['../../etc/passwd', '.._.._etc_passwd', '..%2F..%2Fetc%2Fpasswd'];
+        yield 'back-slashes' => ['C:\\x\\y.csv', 'C:_x_y.csv', 'C%3A%5Cx%5Cy.csv'];
+        yield 'line break' => ["a\r\nSet-Cookie: x=1.csv", 'a__Set-Cookie: x=1.csv', 'a%0D%0ASet-Cookie%3A%20x%3D1.csv'];
+        yield 'NUL and DEL' => ["a\0b\x7Fc", 'a_b_c', 'a%00b%7Fc'];
+        yield 'percent' => ['100%.csv', '100%.csv', '100%25.csv'];
+        yield 'markup' => ['<b>.zip', '<b>.zip', '%3Cb%3E.zip'];
+        yield 'emoji' => ["\u{1F4E6}.zip", '____.zip', '%F0%9F%93%A6.zip'];
+    }
+
+    #[DataProvider('downloadNames')]
+    public function testContentDispositionIsBuiltSafely(string $name, string $ascii, string $encoded): void
+    {
+        $expected = 'attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . $encoded;
+        self::assertSame($expected, Response::contentDisposition($name));
+
+        $header = Response::download($this->file('x'), 'application/zip', $name, false)->header('Content-Disposition');
+        self::assertSame($expected, $header);
+        self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F-\xFF]/', (string) $header, 'Printable ASCII only.');
+        // Exactly the two parameters: the quoted name holds no quote, back-slash, or semicolon.
+        self::assertMatchesRegularExpression('/^attachment; filename="[\x20\x21\x23-\x2E\x30-\x3A\x3C-\x5B\x5D-\x7E]*"; filename\*=UTF-8\'\'[A-Za-z0-9%._~-]+$/', (string) $header);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function badNames(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'invalid UTF-8' => ["a\xFF.csv"];
+        yield 'overlong encoding' => ["\xC0\xAF.csv"];
+    }
+
+    #[DataProvider('badNames')]
+    public function testBadDownloadNamesAreRefused(string $name): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::download($this->file('x'), 'text/csv', $name, false);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function badMediaTypes(): iterable
+    {
+        yield 'empty' => [''];
+        yield 'no subtype' => ['text'];
+        yield 'upper case' => ['Text/CSV'];
+        yield 'parameter' => ['text/csv; charset=utf-8'];
+        yield 'line break' => ["text/csv\r\nX-Evil: 1"];
+        yield 'html sniffing bait with space' => ['text/html ;'];
+        yield 'two slashes' => ['text/csv/x'];
+        yield 'wildcard' => ['*/*'];
+        yield 'trailing newline' => ["text/csv\n"];
+    }
+
+    #[DataProvider('badMediaTypes')]
+    public function testBadMediaTypesAreRefused(string $type): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::download($this->file('x'), $type, 'a.csv', false);
+    }
+
+    public function testDownloadPathMustBeAnAbsoluteRegularFile(): void
+    {
+        $file = $this->file('x');
+        $dir = sys_get_temp_dir() . '/tiffindb-download-dir-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $this->made[] = $dir;
+        $link = $dir . '/link.csv';
+        symlink($file, $link);
+        $this->made[] = $link;
+        $relative = basename($file);
+
+        foreach (['', $relative, 'tmp/x.csv', $dir, $dir . '/missing.csv', $link, $file . "\0.csv", '../' . $relative] as $path) {
+            try {
+                Response::download($path, 'text/csv', 'a.csv', false);
+                self::fail('Accepted ' . json_encode($path));
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testDownloadStreamsInChunks(): void
+    {
+        $contents = str_repeat('0123456789abcdef', 8192) . 'tail';   // 131,076 bytes: two whole chunks and a piece
+        $response = Response::download($this->file($contents), 'application/zip', 'Home.tiffindb.zip', false);
+        $response = (new SecurityHeaders())->apply($response)->withHeader('X-Test', 'kept');
+
+        $this->expectOutputString('');
+        $steps = self::sendAndRecord($response, false);
+        $chunks = array_values(array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'));
+        self::assertSame([Response::CHUNK_BYTES, Response::CHUNK_BYTES, 4], array_map(static fn (array $s): int => strlen((string) $s[1]), $chunks));
+        self::assertSame($contents, implode('', array_map(static fn (array $s): string => (string) $s[1], $chunks)));
+        self::assertSame(['remove', 'X-Powered-By'], $steps[0]);
+        self::assertSame(['status', 200], $steps[1]);
+        $headers = array_column(array_filter($steps, static fn (array $s): bool => $s[0] === 'header'), 1);
+        self::assertContains('Content-Length: 131076', $headers);
+        self::assertContains('X-Content-Type-Options: nosniff', $headers, 'The security headers survive on a download.');
+        self::assertContains('Cache-Control: no-store', $headers);
+        self::assertContains('X-Test: kept', $headers);
+        self::assertSame('chunk', end($steps)[0], 'The body comes after every header.');
+    }
+
+    public function testAnEmptyFileSendsNoChunk(): void
+    {
+        $response = Response::download($this->file(''), 'text/csv', 'empty.csv', false);
+
+        self::assertSame('0', $response->header('Content-Length'));
+        self::assertSame([], array_filter(self::sendAndRecord($response, false), static fn (array $s): bool => $s[0] === 'chunk'));
+    }
+
+    public function testHeadSendsHeadersButNoBody(): void
+    {
+        $calls = 0;
+        $response = Response::download($this->file('secret'), 'text/csv', 'a.csv', true)
+            ->withAfterSend(static function () use (&$calls): void {
+                $calls++;
+            });
+
+        $this->expectOutputString('');
+        $steps = self::sendAndRecord($response, true);
+        self::assertSame([], array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'));
+        self::assertContains(['header', 'Content-Length: 6'], $steps);
+        self::assertSame(1, $calls, 'The after-send callback runs after the headers of a HEAD.');
+    }
+
+    public function testAfterSendRunsOnceAfterTheBody(): void
+    {
+        $order = [];
+        $response = Response::download($this->file('abc'), 'text/csv', 'a.csv', true)
+            ->withAfterSend(static function () use (&$order): void {
+                $order[] = 'done';
+            });
+        // Copies made by the kernel (headers, cookies) share the one callback.
+        $copy = (new SecurityHeaders())->apply($response);
+
+        $copy->send(false, static function (string $step) use (&$order): void {
+            $order[] = $step;
+        });
+        $copy->send(false, static function (string $step): void {
+        });
+        $response->send(true, static function (string $step): void {
+        });
+
+        self::assertSame('done', end($order));
+        self::assertSame(1, count(array_keys($order, 'done', true)), 'The callback ran once.');
+        self::assertContains('chunk', $order);
+        self::assertLessThan(array_search('done', $order, true), array_search('chunk', $order, true));
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function getAndHead(): iterable
+    {
+        yield 'GET' => [false];
+        yield 'HEAD' => [true];
+    }
+
+    /**
+     * Review follow-up: a download whose file has gone by the time it is
+     * sent gets the fixed 500, with none of the download's headers, no
+     * PHP message, and the after-send callback still run once.
+     */
+    #[DataProvider('getAndHead')]
+    public function testAGoneFileSendsTheFallbackBeforeAnyDownloadHeader(bool $head): void
+    {
+        $path = $this->file('abc');
+        $calls = 0;
+        $response = Response::download($path, 'text/csv', 'a.csv', true)
+            ->withAfterSend(static function () use (&$calls): void {
+                $calls++;
+            });
+        $response = (new SecurityHeaders())->apply($response);
+        unlink($path);
+
+        $log = tempnam(sys_get_temp_dir(), 'tiffindb-log-');
+        self::assertIsString($log);
+        $previous = ini_set('error_log', $log);
+        try {
+            $this->expectOutputString($head ? '' : Fallback::BODY);
+            $steps = self::sendAndRecord($response, $head);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            $logged = (string) file_get_contents($log);
+            unlink($log);
+        }
+
+        self::assertSame(['status', 500], $steps[1]);
+        $headers = array_column(array_filter($steps, static fn (array $s): bool => $s[0] === 'header'), 1);
+        self::assertContains('Content-Type: text/plain; charset=utf-8', $headers);
+        self::assertContains('X-Content-Type-Options: nosniff', $headers);
+        foreach ($headers as $line) {
+            self::assertDoesNotMatchRegularExpression('/^(Content-Disposition|Content-Length):/i', (string) $line);
+        }
+        self::assertSame([], array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'));
+        self::assertSame(1, $calls);
+        self::assertStringContainsString('The download file cannot be opened.', $logged);
+        self::assertStringNotContainsString($path, $logged, 'The log line names no path.');
+    }
+
+    public function testAFileReplacedByALinkIsNotSent(): void
+    {
+        $path = $this->file('abc');
+        $response = Response::download($path, 'text/csv', 'a.csv', false);
+        unlink($path);
+        symlink('/etc/hostname', $path);
+
+        $log = tempnam(sys_get_temp_dir(), 'tiffindb-log-');
+        self::assertIsString($log);
+        $previous = ini_set('error_log', $log);
+        try {
+            $this->expectOutputString(Fallback::BODY);
+            $steps = self::sendAndRecord($response, false);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            unlink($log);
+        }
+        self::assertSame(['status', 500], $steps[1]);
+    }
+
+    public function testOnlyADownloadTakesAnAfterSendCallback(): void
+    {
+        $this->expectException(LogicException::class);
+        (new Response(200, [], 'x'))->withAfterSend(static function (): void {
+        });
+    }
+
+    public function testAStringBodyIsUnchangedByTheDownloadCode(): void
+    {
+        $response = new Response(200, ['Content-Type' => 'text/plain; charset=utf-8'], 'plain');
+
+        self::assertSame('plain', $response->body());
+        self::assertFalse($response->removesAfterSend());
+        $this->expectOutputString('plain');
+        self::assertSame([], array_filter(self::sendAndRecord($response, false), static fn (array $s): bool => $s[0] === 'chunk'));
     }
 }

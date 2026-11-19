@@ -30,8 +30,24 @@ jobs:
           composer --version
           php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);'
 
+      # Strict validation, except for the one warning the exact pin of the
+      # shipped package causes on purpose (ADR 0008 decision 12, ADR 0016
+      # decision 2). Errors, and any other warning, still fail the step.
       - name: Validate the Composer manifest
-        run: composer validate --strict
+        run: |
+          set +e
+          out="$(composer validate --strict --no-ansi 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 1 ]; then exit "$status"; fi
+          allowed='- require.openspout/openspout : exact version constraints (5.2.2) should be avoided if the package follows semantic versioning'
+          other="$(printf '%s\n' "$out" | grep -e '^- ' | grep -vxF -e "$allowed" || true)"
+          if [ -n "$other" ] || ! printf '%s\n' "$out" | grep -qxF -e "$allowed"; then
+            echo 'composer validate reported warnings other than the expected exact-pin warning.'
+            exit 1
+          fi
 
       # The only step that uses the network. Lint and tests run offline.
       - name: Install development dependencies

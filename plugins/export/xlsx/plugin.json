@@ -1,0 +1,14 @@
+{
+    "api": 1,
+    "id": "xlsx",
+    "kind": "export",
+    "name": "Excel workbook",
+    "version": "1.0.0",
+    "class": "TiffinDB\\Plugin\\Export\\Xlsx\\XlsxExporter",
+    "licence": "AGPL-3.0-or-later",
+    "extensions": ["xlsx"],
+    "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "scopes": ["table", "project"],
+    "requires_extensions": ["zip", "xmlreader", "dom", "filter", "libxml"],
+    "description": "Writes one table, or every table of a project, as an Excel workbook (.xlsx) with one sheet per table."
+}

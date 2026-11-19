@@ -34,12 +34,61 @@ final class MessageKeysTest extends TestCase
         'problem.project_name.taken',
     ];
 
+    /**
+     * Keys the core produces that a spec section does not list yet: the
+     * orchestrator adds each to M3 spec section 14 and its text to
+     * strings/en/problems.php (owned by M3-WP3), then removes it here.
+     */
+    private const PENDING_SPEC_KEYS = [];
+
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {
-        $listed = self::specKeys();
+        // M1 spec section 12, M2 spec section 8, and M3 spec section 14; the strings file test stays M1-only.
+        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::PENDING_SPEC_KEYS];
+        foreach (self::PENDING_SPEC_KEYS as $pending) {
+            self::assertNotContains($pending, self::m3Keys(), $pending . ' is listed now: remove it from PENDING_SPEC_KEYS.');
+        }
         $used = self::coreKeys('src/Core');
         self::assertNotEmpty($used);
-        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from spec section 12.');
+        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, and M3 spec section 14.');
+    }
+
+    /** @return list<string> keys listed in `docs/specs/M3-io.md` section 14 */
+    private static function m3Keys(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M3-io.md'));
+        $start = strpos($spec, "\n## 14. Message keys produced by the core");
+        $end = strpos($spec, "\n## 15.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', substr($spec, $start, $end - $start), $matches);
+        self::assertGreaterThanOrEqual(31, count($matches[1]));
+        self::assertContains('problem.import.target_changed', $matches[1]);
+
+        return $matches[1];
+    }
+
+    public function testTheImportPipelineProducesItsKeys(): void
+    {
+        $io = self::coreKeys('src/Core/Io');
+        foreach (['problem.import.nothing_included', 'problem.import.type_invalid', 'problem.import.field_twice', 'problem.import.too_many_choices', 'problem.import.target_changed'] as $key) {
+            self::assertContains($key, self::m3Keys());
+            self::assertArrayHasKey($key, $io, $key . ' is produced by Core\Io.');
+        }
+    }
+
+    /** @return list<string> keys listed in `docs/specs/M2-records.md` section 8 */
+    private static function m2Keys(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M2-records.md'));
+        $start = strpos($spec, "\n## 8. Message keys produced by the core");
+        $end = strpos($spec, "\n## 9.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', substr($spec, $start, $end - $start), $matches);
+        self::assertNotEmpty($matches[1]);
+
+        return $matches[1];
     }
 
     public function testTheOperationsProduceTheirKeys(): void

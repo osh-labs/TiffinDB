@@ -19,16 +19,17 @@ use TiffinDB\Core\Storage\Timestamp;
 
 /**
  * Creates and opens project files (M1 spec section 7.2). The file format
- * is `docs/formats/tiffin.md`, version 1; DDL holds its section 4
- * statements verbatim (T-SCH-1 compares them).
+ * is `docs/formats/tiffin.md`, version 3; DDL holds the statements of
+ * the three SQL blocks of its section 4 verbatim, in order (T-SCH-1 and
+ * T-FMT-4 compare them).
  */
 final class ProjectFile
 {
     public const FORMAT = 'tiffindb-project';
-    public const VERSION = 1;
+    public const VERSION = 3;
     public const APPLICATION_ID = 1413891138;
 
-    /** `docs/formats/tiffin.md` section 4, format version 1, in order. */
+    /** `docs/formats/tiffin.md` section 4: the version 1, 2, and 3 blocks, in order. */
     public const DDL = [
         'CREATE TABLE _tiffin_meta (
     key   TEXT PRIMARY KEY,
@@ -88,6 +89,40 @@ final class ProjectFile
     position      INTEGER NOT NULL,
     PRIMARY KEY (field_key, record_id, attachment_id)
 ) WITHOUT ROWID',
+        'CREATE TABLE _tiffin_forms (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    format     INTEGER NOT NULL,
+    html       TEXT NOT NULL,
+    css        TEXT NOT NULL DEFAULT \'\',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    generated  INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+) WITHOUT ROWID',
+        'CREATE INDEX _tiffin_forms_table ON _tiffin_forms (table_key)',
+        'CREATE UNIQUE INDEX _tiffin_forms_default ON _tiffin_forms (table_key) WHERE is_default = 1',
+        'CREATE TABLE _tiffin_import_log (
+    key            TEXT PRIMARY KEY,
+    imported_at    TEXT NOT NULL,
+    imported_by    TEXT,
+    source         TEXT NOT NULL,
+    plugin         TEXT,
+    file_name      TEXT NOT NULL,
+    file_size      INTEGER NOT NULL,
+    file_sha256    TEXT NOT NULL,
+    table_key      TEXT,
+    new_table      INTEGER NOT NULL DEFAULT 0,
+    rows_read      INTEGER NOT NULL,
+    rows_imported  INTEGER NOT NULL,
+    rows_skipped   INTEGER NOT NULL,
+    values_emptied INTEGER NOT NULL,
+    links_added    INTEGER NOT NULL DEFAULT 0,
+    snapshot       TEXT,
+    report         TEXT NOT NULL DEFAULT \'{}\'
+) WITHOUT ROWID',
+        'CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at)',
     ];
 
     private function __construct()
@@ -95,7 +130,7 @@ final class ProjectFile
     }
 
     /**
-     * Creates project.tiffin at $path with every format-1 table and the nine
+     * Creates project.tiffin at $path with every format-3 table and the nine
      * meta rows of `docs/formats/tiffin.md` section 4.1. On any failure after
      * the file was made, the file (and its -wal and -shm) is removed again.
      */
@@ -113,7 +148,7 @@ final class ProjectFile
         $db = Sqlite::create($path);
         try {
             $db->run('PRAGMA application_id = 1413891138');
-            $db->run('PRAGMA user_version = 1');
+            $db->run('PRAGMA user_version = 3');
             $now = Timestamp::format($clock->now());
             $db->write(static function (Database $db) use ($projectKey, $name, $createdByKey, $appVersion, $now): void {
                 foreach (self::DDL as $statement) {

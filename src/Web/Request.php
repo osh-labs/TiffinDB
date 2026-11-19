@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace TiffinDB\Web;
 
+use Closure;
 use InvalidArgumentException;
 
 /**
@@ -18,7 +19,13 @@ use InvalidArgumentException;
  * Built by fromGlobals(), which is only ever called from public/index.php;
  * tests use the constructor, fromServer(), or fromGlobals() with synthetic
  * arrays. Nothing here reads a superglobal. Forwarding headers
- * (X-Forwarded-*, Forwarded) are never read.
+ * (X-Forwarded-*, Forwarded) are never read. The Origin header is kept as
+ * sent, for the kernel's origin check (T-CF-1).
+ *
+ * M3 (spec part 2 section 2.1, P126) adds the uploaded files, one
+ * UploadedFile per well-formed single-file entry of PHP's upload array,
+ * and the declared body length (CONTENT_LENGTH, digits only), which the
+ * kernel compares with post_max_size.
  */
 final class Request
 {
@@ -27,6 +34,9 @@ final class Request
 
     /** Values of Sec-Fetch-Site the request keeps; anything else becomes null. */
     public const FETCH_SITES = ['cross-site', 'same-site', 'same-origin', 'none'];
+
+    /** Longest Origin header kept, in characters (T-CF-1). */
+    public const MAX_ORIGIN = 2048;
 
     /** Longest REMOTE_ADDR kept, in characters. */
     public const MAX_CLIENT_ADDRESS = 64;
@@ -39,6 +49,7 @@ final class Request
      *                                         may be strings or arrays.
      * @param array<array-key, mixed> $post    The POST array as given.
      * @param array<array-key, mixed> $cookies The cookie array as given.
+     * @param array<string, UploadedFile> $files Field name => uploaded file.
      */
     public function __construct(
         public readonly string $method,
@@ -55,6 +66,9 @@ final class Request
         public readonly ?string $serverAddress = null,
         public readonly ?int $serverPort = null,
         public readonly ?string $documentRoot = null,
+        public readonly ?string $origin = null,
+        public readonly array $files = [],
+        public readonly ?int $contentLength = null,
     ) {
         if (!str_starts_with($path, '/')) {
             throw new InvalidArgumentException('A request path must start with "/".');
@@ -77,6 +91,17 @@ final class Request
         if (strlen($clientAddress) > self::MAX_CLIENT_ADDRESS) {
             throw new InvalidArgumentException('Invalid client address.');
         }
+        if ($origin !== null && self::origin($origin) === null) {
+            throw new InvalidArgumentException('Invalid origin.');
+        }
+        foreach ($files as $field => $file) {
+            if (!$file instanceof UploadedFile || $file->field !== $field) {
+                throw new InvalidArgumentException('Files map each field name to its UploadedFile.');
+            }
+        }
+        if ($contentLength !== null && $contentLength < 0) {
+            throw new InvalidArgumentException('Invalid content length.');
+        }
     }
 
     /**
@@ -86,8 +111,9 @@ final class Request
      * @param array<array-key, mixed> $get     The query array ($_GET shape).
      * @param array<array-key, mixed> $post    The POST array ($_POST shape).
      * @param array<array-key, mixed> $cookies The cookie array ($_COOKIE shape).
+     * @param array<array-key, mixed> $files   The upload array ($_FILES shape).
      */
-    public static function fromGlobals(array $server, array $get, array $post, array $cookies): self
+    public static function fromGlobals(array $server, array $get, array $post, array $cookies, array $files = []): self
     {
         $base = self::fromServer($server, $get);
 
@@ -106,7 +132,39 @@ final class Request
             self::serverAddress($server['SERVER_ADDR'] ?? null),
             self::serverPort($server['SERVER_PORT'] ?? null),
             self::documentRoot($server['DOCUMENT_ROOT'] ?? null),
+            self::origin($server['HTTP_ORIGIN'] ?? null),
+            self::uploadedFiles($files),
+            self::contentLength($server['CONTENT_LENGTH'] ?? null),
         );
+    }
+
+    /**
+     * The uploaded files of a $_FILES-shaped array (UploadedFile::fromEntry):
+     * malformed and array-shaped entries are dropped. $isUploaded defaults to
+     * is_uploaded_file(); only fromGlobals() relies on that default.
+     *
+     * @param array<array-key, mixed>      $files
+     * @param (Closure(string): bool)|null $isUploaded
+     * @return array<string, UploadedFile>
+     */
+    public static function uploadedFiles(array $files, ?Closure $isUploaded = null): array
+    {
+        $isUploaded ??= static fn (string $path): bool => is_uploaded_file($path);
+        $built = [];
+        foreach ($files as $field => $entry) {
+            $file = UploadedFile::fromEntry($field, $entry, $isUploaded);
+            if ($file !== null) {
+                $built[$file->field] = $file;
+            }
+        }
+
+        return $built;
+    }
+
+    /** The uploaded file of a field, or null. */
+    public function file(string $name): ?UploadedFile
+    {
+        return $this->files[$name] ?? null;
     }
 
     /**
@@ -219,6 +277,26 @@ final class Request
         }
 
         return preg_match(self::HOST_NAME, $value) === 1 || preg_match(self::HOST_IPV6, $value) === 1 ? $value : null;
+    }
+
+    /**
+     * The Origin header as sent (T-CF-1): at most MAX_ORIGIN printable
+     * ASCII characters (U+0020 to U+007E), else null. An empty value is
+     * kept, so that the kernel refuses it as a foreign origin.
+     */
+    private static function origin(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[\x20-\x7E]{0,' . self::MAX_ORIGIN . '}\z/', $value) === 1 ? $value : null;
+    }
+
+    /** CONTENT_LENGTH as 1 to 18 digits, else null. */
+    private static function contentLength(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value >= 0 ? $value : null;
+        }
+
+        return is_string($value) && preg_match('/^[0-9]{1,18}\z/', $value) === 1 ? (int) $value : null;
     }
 
     private static function serverAddress(mixed $value): ?string

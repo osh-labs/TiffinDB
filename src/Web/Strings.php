@@ -15,11 +15,21 @@ use UnexpectedValueException;
 /**
  * UI strings (ADR 0008 decision 5): a flat `'dotted.key' => 'text'` array
  * loaded once, on first use, from a file the kernel names. Placeholders are
- * `{name}`.
+ * `{name}`; a plural placeholder `{name|singular|plural}` picks one of two
+ * texts by the integer parameter `name` and replaces `#` in it with the
+ * number formatted with thousands separators (M2 spec part 2 section 6.2,
+ * P97). English needs only "one" and "other".
  */
 final class Strings
 {
-    private const PLACEHOLDER = '/\{([A-Za-z0-9_.-]+)\}/';
+    /** Any brace group: a candidate placeholder. */
+    private const BRACES = '/(\{[^{}]*\})/';
+
+    /** A plain placeholder. */
+    private const PLACEHOLDER = '/^\{([A-Za-z0-9_.-]+)\}\z/';
+
+    /** A plural placeholder: name, singular text, plural text. */
+    private const PLURAL = '/^\{([a-z_]+)\|([^{}|]*)\|([^{}|]*)\}\z/';
 
     /** @var array<string, string>|null */
     private ?array $strings = null;
@@ -60,7 +70,7 @@ final class Strings
             throw new OutOfBoundsException("Unknown string key: {$key}");
         }
 
-        $parts = preg_split(self::PLACEHOLDER, $strings[$key], -1, PREG_SPLIT_DELIM_CAPTURE);
+        $parts = preg_split(self::BRACES, $strings[$key], -1, PREG_SPLIT_DELIM_CAPTURE);
         if ($parts === false) {
             throw new UnexpectedValueException("Cannot parse string: {$key}");
         }
@@ -68,20 +78,55 @@ final class Strings
         $out = '';
         foreach ($parts as $i => $part) {
             if ($i % 2 === 0) {
+                if (str_contains($part, '|') && strpbrk($part, '{}') !== false) {
+                    throw new UnexpectedValueException("Malformed plural placeholder in string key: {$key}");
+                }
                 $out .= $escape($part);
                 continue;
             }
-            if (!array_key_exists($part, $params)) {
-                throw new OutOfBoundsException("Missing parameter {$part} for string key: {$key}");
+            if (preg_match(self::PLURAL, $part, $plural) === 1) {
+                $out .= $escape($this->plural($key, $plural[1], $plural[2], $plural[3], $params));
+                continue;
             }
-            $value = $params[$part];
+            if (str_contains($part, '|')) {
+                throw new UnexpectedValueException("Malformed plural placeholder in string key: {$key}");
+            }
+            if (preg_match(self::PLACEHOLDER, $part, $plain) !== 1) {
+                // Braces that are not a placeholder are text (M1 behaviour).
+                $out .= $escape($part);
+                continue;
+            }
+            $name = $plain[1];
+            if (!array_key_exists($name, $params)) {
+                throw new OutOfBoundsException("Missing parameter {$name} for string key: {$key}");
+            }
+            $value = $params[$name];
             if (!is_string($value) && !is_int($value) && !is_float($value)) {
-                throw new InvalidArgumentException("Parameter {$part} must be a string or a number.");
+                throw new InvalidArgumentException("Parameter {$name} must be a string or a number.");
             }
             $out .= $escape((string) $value);
         }
 
         return $out;
+    }
+
+    /**
+     * The singular text when the parameter is the integer 1, else the
+     * plural text, with `#` replaced by the formatted number.
+     *
+     * @param array<string, mixed> $params
+     */
+    private function plural(string $key, string $name, string $one, string $other, array $params): string
+    {
+        if (!array_key_exists($name, $params)) {
+            throw new OutOfBoundsException("Missing parameter {$name} for string key: {$key}");
+        }
+        $n = $params[$name];
+        if (!is_int($n)) {
+            throw new InvalidArgumentException("Parameter {$name} of a plural placeholder must be an integer.");
+        }
+
+        return str_replace('#', number_format($n), $n === 1 ? $one : $other);
     }
 
     /** @return array<string, string> */

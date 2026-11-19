@@ -25,6 +25,7 @@ use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\SecurityHeaders;
+use TiffinDB\Web\UploadLimits;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
@@ -32,6 +33,10 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
  * T-WEB-16: every step of the kernel's gate (M1 spec part 2 section 2.4)
  * with FakeServices, the real templates and strings, and fixture
  * controllers. Synthetic data only.
+ *
+ * T-WEB-41 (M3 spec part 2 section 2.3): a POST whose declared length
+ * exceeds post_max_size gets the 413 page before the CSRF check, with no
+ * controller run.
  */
 #[CoversClass(Kernel::class)]
 #[CoversClass(Context::class)]
@@ -211,6 +216,107 @@ final class GateTest extends TestCase
         [$response] = self::send(self::member(), 'GET', '/projects', [], self::sessionCookie(), ['HTTP_SEC_FETCH_SITE' => 'cross-site']);
 
         self::assertHandled($response);
+    }
+
+    // ------------------------------------------------ Origin without Sec-Fetch-Site (T-CF-1)
+
+    /** @return array<string, array{array<string, string>, string, bool}> */
+    public static function origins(): array
+    {
+        $http = ['HTTP_HOST' => 'example.test'];
+        $https = ['HTTP_HOST' => 'example.test', 'HTTPS' => 'on'];
+
+        return [
+            'same origin' => [$http, 'http://example.test', true],
+            'same origin, other case' => [$http, 'HTTP://Example.TEST', true],
+            'default port in Origin' => [$http, 'http://example.test:80', true],
+            'default port in Host' => [['HTTP_HOST' => 'example.test:80'], 'http://example.test', true],
+            'https same origin' => [$https, 'https://example.test', true],
+            'https default port in Origin' => [$https, 'https://example.test:443', true],
+            'https default port in Host' => [['HTTP_HOST' => 'example.test:443', 'HTTPS' => 'on'], 'https://example.test', true],
+            'other port on both' => [['HTTP_HOST' => 'example.test:8728'], 'http://example.test:8728', true],
+            'IPv6 host' => [['HTTP_HOST' => '[2001:db8::1]:8080'], 'http://[2001:db8::1]:8080', true],
+            'foreign host' => [$http, 'http://attacker.example', false],
+            'sibling subdomain' => [$http, 'http://sub.example.test', false],
+            'host as a prefix' => [$http, 'http://example.test.attacker.example', false],
+            'null' => [$http, 'null', false],
+            'empty' => [$http, '', false],
+            'scheme differs (http page, https origin)' => [$http, 'https://example.test', false],
+            'scheme differs (https page, http origin)' => [$https, 'http://example.test', false],
+            'port differs' => [$http, 'http://example.test:8080', false],
+            'port missing from Origin' => [['HTTP_HOST' => 'example.test:8728'], 'http://example.test', false],
+            'other scheme default port' => [$http, 'http://example.test:443', false],
+            'path after origin' => [$http, 'http://example.test/', false],
+            'no Host' => [[], 'http://example.test', false],
+        ];
+    }
+
+    /** @param array<string, string> $server */
+    #[DataProvider('origins')]
+    public function testPostOriginIsCheckedWhenSecFetchSiteIsAbsent(array $server, string $origin, bool $allowed): void
+    {
+        $services = self::member();
+        [$response] = self::send($services, 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server + ['HTTP_ORIGIN' => $origin]);
+
+        if ($allowed) {
+            self::assertHandled($response, 'POST');
+        } else {
+            self::assertCsrfRefused($response);
+        }
+    }
+
+    public function testForeignOriginIsRefusedOnAnonymousFormsToo(): void
+    {
+        foreach ([[new FakeServices(), '/sign-in'], [new FakeServices(InstallState::NeedsAdmin), '/setup']] as [$services, $uri]) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://attacker.example'];
+            [$response] = self::send($services, 'POST', $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON], $server);
+            self::assertCsrfRefused($response);
+            [$response] = self::send($services, 'POST', $uri, ['_csrf' => self::ANON], ['tdb_csrf' => self::ANON], ['HTTP_ORIGIN' => 'http://example.test'] + $server);
+            self::assertHandled($response, 'POST');
+        }
+    }
+
+    public function testMatchingOriginStillNeedsTheCsrfToken(): void
+    {
+        $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://example.test'];
+        [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => 'wrong'], self::sessionCookie(), $server);
+
+        self::assertCsrfRefused($response);
+    }
+
+    public function testPostWithNeitherHeaderGoesToTheCsrfCheck(): void
+    {
+        $server = ['HTTP_HOST' => 'example.test'];
+        [$handled] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+        [$refused] = self::send(self::member(), 'POST', '/projects', ['_csrf' => 'wrong'], self::sessionCookie(), $server);
+
+        self::assertHandled($handled, 'POST');
+        self::assertCsrfRefused($refused);
+    }
+
+    /** With Sec-Fetch-Site present the M1 rules apply and Origin is not consulted. */
+    public function testOriginIsIgnoredWhenSecFetchSiteIsPresent(): void
+    {
+        foreach (['same-origin', 'none'] as $site) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://attacker.example', 'HTTP_SEC_FETCH_SITE' => $site];
+            [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+            self::assertHandled($response, 'POST');
+        }
+        foreach (['cross-site', 'same-site'] as $site) {
+            $server = ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => 'http://example.test', 'HTTP_SEC_FETCH_SITE' => $site];
+            [$response] = self::send(self::member(), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+            self::assertErrorPage($response, 403, 'You cannot do that here');
+        }
+    }
+
+    public function testGetAndHeadNeverCheckTheOrigin(): void
+    {
+        foreach (['GET', 'HEAD'] as $method) {
+            foreach (['http://attacker.example', 'null', ''] as $origin) {
+                [$response] = self::send(self::member(), $method, '/projects', [], self::sessionCookie(), ['HTTP_HOST' => 'example.test', 'HTTP_ORIGIN' => $origin]);
+                self::assertSame(200, $response->status, "{$method} {$origin}");
+            }
+        }
     }
 
     // ------------------------------------------------ step 5
@@ -857,5 +963,139 @@ final class GateTest extends TestCase
 
         self::assertNull($response->header('Set-Cookie'));
         self::assertContainsOnlyInstancesOf(Cookie::class, $response->cookies);
+    }
+
+    // ------------------------------------------------ T-WEB-41: oversized POST
+
+    /** post_max_size 1 MB, upload_max_filesize 512 KB. */
+    private static function limited(FakeServices $services): FakeServices
+    {
+        $services->uploadLimits = new UploadLimits(524288, 1048576);
+
+        return $services;
+    }
+
+    private static function assertTooLarge(Response $response): void
+    {
+        self::assertErrorPage($response, 413, 'That file is too large');
+        self::assertStringContainsString('The largest file this installation accepts is 512 KB.', $response->body);
+        self::assertStringContainsString('<a class="back-link" href="/">Go to the start page</a>', $response->body);
+        self::assertStringNotContainsString('handled', $response->body);
+        foreach (SecurityHeaders::headers() as $name => $value) {
+            self::assertSame($value, $response->header($name), $name);
+        }
+    }
+
+    public function testOversizedPostGets413BeforeTheCsrfCheck(): void
+    {
+        $services = self::limited(self::member());
+        // PHP has emptied the form: no token reaches the kernel.
+        [$response] = self::send($services, 'POST', '/projects', [], self::sessionCookie(), ['CONTENT_LENGTH' => '1048577']);
+
+        self::assertTooLarge($response);
+        self::assertStringContainsString('class="sign-out"', $response->body, 'Signed-in shell on the 413 page.');
+        self::assertSame(['installState', 'resume', 'close'], array_values(array_filter(
+            $services->calls,
+            static fn (string $call): bool => $call !== 'userSettings',
+        )), 'No controller or operation ran.');
+    }
+
+    public function testOversizedPostWithAValidTokenStillGets413(): void
+    {
+        [$response] = self::send(
+            self::limited(self::member()),
+            'POST',
+            '/projects',
+            ['_csrf' => FakeServices::SESSION_CSRF, 'name' => 'Example'],
+            self::sessionCookie(),
+            ['CONTENT_LENGTH' => '99999999'],
+        );
+
+        self::assertTooLarge($response);
+    }
+
+    public function testAPostAtTheLimitGoesOnToTheCsrfCheck(): void
+    {
+        [$refused] = self::send(self::limited(self::member()), 'POST', '/projects', [], self::sessionCookie(), ['CONTENT_LENGTH' => '1048576']);
+        self::assertCsrfRefused($refused);
+
+        [$handled] = self::send(
+            self::limited(self::member()),
+            'POST',
+            '/projects',
+            ['_csrf' => FakeServices::SESSION_CSRF, 'name' => 'Example'],
+            self::sessionCookie(),
+            ['CONTENT_LENGTH' => '1048576'],
+        );
+        self::assertHandled($handled, 'POST');
+    }
+
+    public function testNoPostLimitMeansNoCheck(): void
+    {
+        $services = self::member();
+        $services->uploadLimits = new UploadLimits(524288, null);
+        [$response] = self::send(
+            $services,
+            'POST',
+            '/projects',
+            ['_csrf' => FakeServices::SESSION_CSRF],
+            self::sessionCookie(),
+            ['CONTENT_LENGTH' => '999999999999'],
+        );
+
+        self::assertHandled($response, 'POST');
+    }
+
+    public function testAMissingOrMalformedLengthIsNotChecked(): void
+    {
+        foreach ([[], ['CONTENT_LENGTH' => ''], ['CONTENT_LENGTH' => '-5'], ['CONTENT_LENGTH' => '2e9'], ['CONTENT_LENGTH' => ' 2000000']] as $server) {
+            [$response] = self::send(self::limited(self::member()), 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], self::sessionCookie(), $server);
+            self::assertHandled($response, 'POST');
+        }
+    }
+
+    public function testGetIsNeverCheckedForLength(): void
+    {
+        [$response] = self::send(self::limited(self::member()), 'GET', '/projects', [], self::sessionCookie(), ['CONTENT_LENGTH' => '99999999']);
+
+        self::assertHandled($response);
+    }
+
+    public function testCrossSiteAndForeignOriginChecksComeFirst(): void
+    {
+        $big = ['CONTENT_LENGTH' => '99999999'];
+        [$crossSite] = self::send(self::limited(self::member()), 'POST', '/projects', [], self::sessionCookie(), $big + ['HTTP_SEC_FETCH_SITE' => 'cross-site']);
+        self::assertErrorPage($crossSite, 403, 'You cannot do that here');
+
+        [$foreign] = self::send(self::limited(self::member()), 'POST', '/projects', [], self::sessionCookie(), $big + ['HTTP_HOST' => 'tiffin.example', 'HTTP_ORIGIN' => 'https://evil.example']);
+        self::assertCsrfRefused($foreign);
+
+        [$sameOrigin] = self::send(self::limited(self::member()), 'POST', '/projects', [], self::sessionCookie(), $big + ['HTTP_SEC_FETCH_SITE' => 'same-origin']);
+        self::assertTooLarge($sameOrigin);
+    }
+
+    public function testAnonymousOversizedPostGets413InThePlainShell(): void
+    {
+        [$response] = self::send(self::limited(new FakeServices()), 'POST', '/sign-in', [], ['tdb_csrf' => self::ANON], ['CONTENT_LENGTH' => '2000000']);
+
+        self::assertTooLarge($response);
+        self::assertStringNotContainsString('class="sign-out"', $response->body, 'Plain shell.');
+    }
+
+    public function testOversizedPostWithoutASessionStillRedirectsToSignIn(): void
+    {
+        [$response] = self::send(self::limited(new FakeServices()), 'POST', '/projects', [], [], ['CONTENT_LENGTH' => '2000000']);
+
+        self::assertRedirect($response, '/sign-in');
+    }
+
+    public function testThe413PageStatesTheSmallestPhpLimit(): void
+    {
+        $services = self::member();
+        $services->uploadLimits = new UploadLimits(null, 2097152);
+        [$response] = self::send($services, 'POST', '/projects', [], self::sessionCookie(), ['CONTENT_LENGTH' => '2097153']);
+
+        self::assertSame(413, $response->status);
+        self::assertStringContainsString('The largest file this installation accepts is 2.0 MB.', $response->body);
     }
 }

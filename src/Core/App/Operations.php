@@ -37,6 +37,12 @@ final class Operations
     private ?TrashOperations $trash = null;
     private ?SnapshotOperations $snapshots = null;
     private ?AuditOperations $audit = null;
+    private ?RecordOperations $records = null;
+    private ?SettingsOperations $settings = null;
+    private ?ImportOperations $imports = null;
+    private ?ExportOperations $exports = null;
+    private ?ArchiveOperations $archives = null;
+    private ?PluginOperations $plugins = null;
 
     /**
      * @param (\Closure(string): void)|null $seam Test seam (T-APP-30), not for
@@ -89,6 +95,49 @@ final class Operations
     public function audit(): AuditOperations
     {
         return $this->audit ??= new AuditOperations($this->context);
+    }
+
+    public function records(): RecordOperations
+    {
+        return $this->records ??= new RecordOperations($this->context);
+    }
+
+    public function settings(): SettingsOperations
+    {
+        return $this->settings ??= new SettingsOperations($this->context);
+    }
+
+    public function imports(): ImportOperations
+    {
+        return $this->imports ??= new ImportOperations($this->context);
+    }
+
+    public function exports(): ExportOperations
+    {
+        return $this->exports ??= new ExportOperations($this->context);
+    }
+
+    public function archives(): ArchiveOperations
+    {
+        return $this->archives ??= new ArchiveOperations($this->context);
+    }
+
+    public function plugins(): PluginOperations
+    {
+        return $this->plugins ??= new PluginOperations($this->context);
+    }
+
+    /**
+     * The `plugins/` directory the registry reads (M3 spec section 13): the
+     * application's own by default. The constructor keeps its arguments
+     * (P78), so the composition root and tests set it here, before the
+     * first import, export, or plugin operation.
+     */
+    public function usePluginsRoot(string $pluginsRoot): self
+    {
+        $this->context->usePluginsRoot($pluginsRoot);
+
+        return $this;
     }
 
     /** Closes every project database this instance opened. The system database is the caller's. */

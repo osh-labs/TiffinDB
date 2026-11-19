@@ -71,6 +71,7 @@ final class SystemDatabaseTest extends TestCase
             ['type' => 'table', 'name' => 'audit_log', 'tbl_name' => 'audit_log'],
             ['type' => 'table', 'name' => 'login_throttle', 'tbl_name' => 'login_throttle'],
             ['type' => 'table', 'name' => 'meta', 'tbl_name' => 'meta'],
+            ['type' => 'table', 'name' => 'plugins', 'tbl_name' => 'plugins'],
             ['type' => 'table', 'name' => 'project_grants', 'tbl_name' => 'project_grants'],
             ['type' => 'table', 'name' => 'projects', 'tbl_name' => 'projects'],
             ['type' => 'table', 'name' => 'sessions', 'tbl_name' => 'sessions'],
@@ -113,7 +114,8 @@ final class SystemDatabaseTest extends TestCase
             $meta[$row['key']] = $row['value'];
         }
         $this->assertSame(['created_at', 'hmac_key', 'installation_key', 'schema_version'], array_keys($meta));
-        $this->assertSame('1', $meta['schema_version']);
+        $this->assertSame((string) SystemSchema::VERSION, $meta['schema_version']);
+        $this->assertSame('2', $meta['schema_version']);
         $this->assertTrue(Keys::isValid($meta['installation_key']));
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}\z/', $meta['hmac_key']);
         $this->assertSame('2026-03-14T08:00:00Z', $meta['created_at']);
@@ -168,7 +170,7 @@ final class SystemDatabaseTest extends TestCase
         $opened = SystemDatabase::open($this->data);
         $this->open[] = $opened->db();
         $this->assertSame($installationKey, $opened->meta('installation_key'));
-        $this->assertSame(1, SystemSchema::currentVersion($opened->db()));
+        $this->assertSame(SystemSchema::VERSION, SystemSchema::currentVersion($opened->db()));
     }
 
     public function testOpenOfAMissingFileIsUnavailableMissing(): void

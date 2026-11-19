@@ -21,7 +21,15 @@ use TiffinDB\Core\Auth\UserRecord;
 use TiffinDB\Core\Auth\Users;
 use TiffinDB\Core\Error\AccessDenied;
 use TiffinDB\Core\Error\NotFound;
+use TiffinDB\Core\Forms\FormParser;
+use TiffinDB\Core\Forms\FormStore;
+use TiffinDB\Core\Io\Plugin\PluginInfo;
+use TiffinDB\Core\Io\Plugin\PluginLoader;
+use TiffinDB\Core\Io\Plugin\PluginScanner;
+use TiffinDB\Core\Io\StagingArea;
+use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\DataDirectory;
@@ -32,6 +40,7 @@ use TiffinDB\Core\Storage\SnapshotInfo;
 use TiffinDB\Core\Storage\Snapshots;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditLog;
+use TiffinDB\Core\System\PluginStates;
 use TiffinDB\Core\System\ProjectRecord;
 use TiffinDB\Core\System\ProjectRegistry;
 use TiffinDB\Core\System\SystemDatabase;
@@ -56,6 +65,13 @@ final class Context
     public readonly Snapshots $snapshots;
     public readonly FieldTypes $types;
     public readonly ProjectOpener $opener;
+    public readonly PluginStates $pluginStates;
+
+    /** The application's `plugins/` directory (M3 spec section 13); set once, before the first plugin use. */
+    private string $pluginsRoot;
+    private ?StagingArea $staging = null;
+    private ?PluginScanner $scanner = null;
+    private ?PluginLoader $loader = null;
 
     /** @param (\Closure(string): void)|null $seam test seam, see Operations */
     public function __construct(
@@ -79,6 +95,74 @@ final class Context
         $this->snapshots = new Snapshots($clock, $this->keys);
         $this->types = FieldTypes::standard($this->keys);
         $this->opener = new ProjectOpener($data, $this->snapshots);
+        $this->pluginStates = new PluginStates($system);
+        $this->pluginsRoot = dirname(__DIR__, 3) . '/plugins';
+    }
+
+    /**
+     * Points the plugin registry at another `plugins/` directory. The web
+     * composition root passes the application's own (the default); tests
+     * pass a temporary one. \LogicException once a plugin was scanned or
+     * loaded through this context.
+     */
+    public function usePluginsRoot(string $pluginsRoot): void
+    {
+        if ($this->scanner !== null || $this->loader !== null) {
+            throw new \LogicException('The plugins directory is fixed once plugins have been used.');
+        }
+        $this->pluginsRoot = rtrim($pluginsRoot, '/');
+    }
+
+    public function pluginsRoot(): string
+    {
+        return $this->pluginsRoot;
+    }
+
+    public function staging(): StagingArea
+    {
+        return $this->staging ??= new StagingArea($this->data, $this->clock, $this->keys);
+    }
+
+    public function pluginScanner(): PluginScanner
+    {
+        return $this->scanner ??= new PluginScanner($this->pluginsRoot);
+    }
+
+    public function pluginLoader(): PluginLoader
+    {
+        return $this->loader ??= new PluginLoader($this->pluginsRoot);
+    }
+
+    /**
+     * Every plugin found, with the stored enabled states applied (scanned
+     * again on every call, so a plugin an Admin has just turned off, or
+     * that has become broken, is seen at once).
+     *
+     * @return list<PluginInfo>
+     */
+    public function plugins(): array
+    {
+        return $this->pluginScanner()->scan($this->pluginStates->all());
+    }
+
+    /**
+     * Outside a transaction: the acting person, read now, must still exist,
+     * be active, and hold the key and the role the Actor was built with
+     * (AccessDenied otherwise). Every import, export, archive, and plugin
+     * operation calls it after its permission check, so an Admin who has
+     * been deactivated or made a Member since the session was resumed, and
+     * an Actor naming nobody, are refused before anything is read or
+     * written. The permission check decides on the role; this check makes
+     * sure that role is still the person's.
+     */
+    public function requireCurrentActor(Actor $actor): UserRecord
+    {
+        $current = $this->users->byId($actor->userId);
+        if ($current === null || !$current->active || $current->role !== $actor->role || $current->key !== $actor->userKey) {
+            throw new AccessDenied('The acting person is not who the session says.');
+        }
+
+        return $current;
     }
 
     public function db(): Database
@@ -143,6 +227,10 @@ final class Context
      * A schema editor for a project acting as $actor. Every snapshot it
      * takes is recorded at once as `snapshot.taken`: the snapshot exists
      * from that moment, whether or not the change that follows succeeds.
+     *
+     * Each structural change regenerates the default forms of the tables
+     * it touches inside its own transaction (M2 spec section 5.6): an
+     * exception from the regeneration rolls the whole change back.
      */
     public function editor(ProjectRecord $project, Database $db, Actor $actor): SchemaEditor
     {
@@ -157,7 +245,25 @@ final class Context
             function (SnapshotInfo $info) use ($project, $actor): void {
                 $this->recordSnapshot($project, $actor, $info);
             },
+            function (Database $db, array $tableKeys): void {
+                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys));
+            },
         );
+    }
+
+    /**
+     * The record layer for an opened project (M2 spec section 7.1). The
+     * caller has already authorised $project; $schema must be current.
+     */
+    public function records(ProjectRecord $project, Database $db, Schema $schema): Records
+    {
+        return new Records($db, $schema, $this->types, $this->clock);
+    }
+
+    /** Stored forms of an opened project; the caller has already authorised it. */
+    public function forms(Database $db): FormStore
+    {
+        return new FormStore($db, $this->keys, $this->clock, new FormParser($this->types));
     }
 
     public function recordSnapshot(ProjectRecord $project, Actor $actor, SnapshotInfo $info): void

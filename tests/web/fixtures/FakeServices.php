@@ -26,6 +26,7 @@ use TiffinDB\Core\Install\HttpProbe;
 use TiffinDB\Core\Install\Installer;
 use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Web\Services;
+use TiffinDB\Web\UploadLimits;
 
 final class FakeServices implements Services
 {
@@ -54,6 +55,9 @@ final class FakeServices implements Services
     public ?Installer $installer = null;
     public ?HttpProbe $probe = null;
     public int $closed = 0;
+
+    /** The upload limits the kernel sees; null gives no PHP limit at all. */
+    public ?UploadLimits $uploadLimits = null;
     private bool $stateRechecked = false;
 
     public function __construct(public InstallState $state = InstallState::Installed)
@@ -158,6 +162,11 @@ final class FakeServices implements Services
     public function now(): DateTimeImmutable
     {
         return new DateTimeImmutable(self::NOW, new DateTimeZone('UTC'));
+    }
+
+    public function uploadLimits(): UploadLimits
+    {
+        return $this->uploadLimits ?? new UploadLimits(null, null);
     }
 
     public function close(): void

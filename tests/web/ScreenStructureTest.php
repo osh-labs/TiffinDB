@@ -11,8 +11,11 @@ namespace TiffinDB\Tests\Web;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\PasswordHasher;
+use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\IoFixture;
+use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -25,7 +28,9 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
 require_once __DIR__ . '/EndToEndTest.php';
 
 /**
- * T-SCR-1 (M1 spec part 2 section 9): every GET route of the real route
+ * T-SCR-1 (M1 spec part 2 section 9), T-SCR-2 (M2 spec part 2
+ * section 12, testEveryM2ScreenInEveryState), and T-SCR-3 (M3 spec part 2
+ * section 10.1: m3Screens and testPluginScreensWithAddedPlugins): every GET route of the real route
  * table, in each state its design document under docs/design/m1/ lists
  * that a GET can reach, served through the kernel with the real
  * CoreServices over a temporary installation built through the screens.
@@ -192,6 +197,18 @@ final class ScreenStructureTest extends TestCase
         );
         $this->screen($member, '/account/password', 'Change your password', 'Change your password');
 
+        // Reading and display settings (docs/design/m2/settings.md): standard, then saved (the reset button uses formaction; SettingsScreenTest covers it).
+        $this->screen($member, '/settings', 'Reading and display', 'Reading and display');
+        self::assertSame(303, $member->submit('/settings', [
+            'theme' => 'hc-dark',
+            'accent' => 'plum',
+            'typeface' => 'atkinson',
+            'text_size' => 'largest',
+            'line_spacing' => 'very-roomy',
+        ])->status);
+        $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings have been saved.');
+        self::assertSame('t-hcd f-atk s-largest l-very-roomy', HtmlAssertions::rootClass($member->page()));
+
         // Three projects, as in the mock-up; Home Inventory has every kind of field.
         $home = $this->createProject($admin, 'Home Inventory', 'Items');
         $garden = $this->createProject($admin, 'Garden Log', 'Plants');
@@ -231,6 +248,9 @@ final class ScreenStructureTest extends TestCase
         $this->screen($admin, $home . '/tables', 'Home Inventory', 'Home Inventory');
         $this->screen($admin, $home . '/tables/new', 'New table', 'New table');
         $this->screen($admin, $items . '/fields', 'Items', 'Items');
+        $this->screen($admin, $items, 'Items, Home Inventory', 'Items');
+        $this->screen($admin, $items . '/filter', 'Filter Items', 'Filter Items');
+        $this->screen($admin, $home . '/search?q=x', 'Search results, Home Inventory', 'Search results');
         $this->screen($admin, $rooms . '/fields', 'Rooms', 'Rooms');
         $this->screen($admin, $rooms . '/delete', 'Delete the table Rooms?', 'Delete the table Rooms?');
         $this->screen($admin, $items . '/fields/new', 'Add a field to Items', 'Add a field to Items');
@@ -248,6 +268,18 @@ final class ScreenStructureTest extends TestCase
         $serial = $this->fieldPath($admin, $items, 'Serial number');
         $this->screen($admin, $serial . '/type', 'Change the type of Serial number', 'Change the type of Serial number');
         $this->visit($this->fieldPath($admin, $items, 'Room') . '/type', 303, $admin);
+
+        // Record screens (record.md sections 2 to 6), as the Member.
+        $nameKey = substr($this->fieldPath($admin, $items, 'Name'), strlen($items . '/fields/'));
+        $this->screen($member, $items . '/records/new', 'New item', 'New item');
+        $added = $member->submit($items . '/records', ['f_' . $nameKey => 'Stand mixer']);
+        self::assertSame(303, $added->status);
+        $record = (string) parse_url((string) $added->header('Location'), PHP_URL_PATH);
+        $this->screen($member, $record, 'Stand mixer', 'Stand mixer', 'The item has been added.');
+        self::assertSame(303, $member->submit($record . '/trash')->status);
+        $this->screen($member, $record, 'Stand mixer', 'This item is in the trash', 'Stand mixer has been moved to the trash. Undo');
+        self::assertSame(303, $member->submit($record . '/restore')->status);
+        $this->screen($member, $record, 'Stand mixer', 'Stand mixer', 'Stand mixer has been restored.');
 
         // People (people-and-sharing.md sections 2 to 5).
         $this->screen($admin, '/admin/people', 'People', 'People');
@@ -273,16 +305,21 @@ final class ScreenStructureTest extends TestCase
         $this->visit($garden . '/tables', 503, $admin);
         $this->visit('/projects/aaaaaaaaaaaa/tables', 404, $admin);
 
+        // M3 screens (T-SCR-3), on Home Inventory.
+        $this->m3Screens($admin, $home, $items);
+
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
         $this->screen($admin, '/sign-in?signed-out=1', 'Sign in', 'Sign in', 'You have signed out.');
         $this->visit('/', 303, $admin);
         $this->visit('/projects', 303, $admin);
 
-        // Every GET route was visited.
+        // Every GET route was visited, the M3 ones included (T-SCR-3). Routes
+        // of controllers that do not exist yet are counted once their
+        // controller lands.
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET') {
+            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
                 $patterns[] = (string) $route[1];
             }
         }
@@ -292,7 +329,314 @@ final class ScreenStructureTest extends TestCase
         self::assertSame($patterns, $visited, 'Every GET route is visited.');
     }
 
+    /**
+     * T-SCR-2 (M2 spec part 2 section 12): every GET route M2 added, in each
+     * state its design document under docs/design/m2/ lists that a GET can
+     * reach, over the M2 synthetic data set (M2Fixture) with the real
+     * CoreServices, as the Admin and as the Member. States reached only by
+     * a POST response (422, the 409 conflict page) are covered by
+     * KeyboardStructureTest and EndToEndTest.
+     */
+    public function testEveryM2ScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $ops = $core->operations();
+            $m2 = M2Fixture::build($core, $ops);
+            $actor = $core->actor('admin');
+            $loans = $ops->schema()->createTable($actor, $m2->project, 'Loans', 'loan', true)->key;
+            $blank = $ops->schema()->createTable($actor, $m2->project, 'Notes', 'note', false)->key;
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m2-seed'), $core->hasher));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+
+            $project = $m2->projectPath();
+            $items = $m2->tablePath($m2->items);
+            $f = $m2->itemFields;
+
+            // /projects/{p} opens the first table.
+            self::assertSame($items, $this->visit($project, 303, $member)->header('Location'));
+
+            // List view (list-and-search.md section 2), Admin with the mock-up data, then each state.
+            foreach ([$admin, $member] as $client) {
+                $this->screen($client, $items, 'Items, Home Inventory', 'Items');
+                self::assertSame('48 records, sorted by Name, A to Z', HtmlAssertions::text($client->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            }
+            self::assertCount(48, $admin->texts('//main//table/tbody/tr'));
+            $this->screen($admin, $items . '?sort=' . $f['Purchased'] . '.desc', 'Items, Home Inventory', 'Items');
+            self::assertSame('48 records, sorted by Purchased, newest first', HtmlAssertions::text($admin->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $items . '?q=machine', 'Items, Home Inventory', 'Items');
+            self::assertSame('3 records match out of 48, sorted by Name, A to Z', HtmlAssertions::text($member->page(), '//main//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $items . '?filter=' . $f['Under warranty'] . '&op=is&v=1', 'Items, Home Inventory', 'Items');
+            self::assertSame('Showing only records where Under warranty is ticked. Remove the filter', HtmlAssertions::text($member->page(), '//main//div[contains(@class, "filter-bar")]'));
+            self::assertCount(12, $member->texts('//main//table/tbody/tr'));
+            $this->screen($member, $items . '?filter=' . $f['Purchased'] . '&op=between&v=&v2=', 'Items, Home Inventory', 'Items');
+            self::assertStringStartsWith('The filter could not be used, so every record is shown.', HtmlAssertions::text($member->page(), '//main//div[contains(@class, "notice-warn")]'));
+            $this->screen($member, $items . '?q=' . str_repeat('x', 201), 'Items, Home Inventory', 'Items');
+            self::assertSame(1, $member->xpath()->query('//main//p[@id="find-error"][@class="error-text"]')->length);
+            $this->screen($member, $items . '?q=zzzz', 'Items, Home Inventory', 'Items');
+            self::assertSame('Nothing matches', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($member, $items . '?q=zzzz&filter=' . $f['Under warranty'] . '&op=is&v=1', 'Items, Home Inventory', 'Items');
+            $this->screen($member, $m2->tablePath($loans), 'Loans, Home Inventory', 'Loans');
+            self::assertSame('No records yet', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($admin, $m2->tablePath($blank), 'Notes, Home Inventory', 'Notes');
+            self::assertSame(['Add a field'], $admin->texts('//main//div[@class="empty-state"]//a'));
+            $this->screen($member, $m2->tablePath($blank), 'Notes, Home Inventory', 'Notes');
+            self::assertSame(0, $member->xpath()->query('//main//div[@class="empty-state"]//a')->length);
+
+            // Filter (section 3): no filterable field, step 1, step 2 for each filterable type in the data.
+            $this->screen($member, $m2->tablePath($loans) . '/filter', 'Filter Loans', 'Filter Loans');
+            $this->screen($member, $items . '/filter', 'Filter Items', 'Filter Items');
+            foreach (['Category', 'Under warranty', 'Room', 'Purchased'] as $name) {
+                $this->screen($member, $items . '/filter?field=' . $f[$name], 'Filter Items', 'Filter Items');
+                self::assertSame('Show records where ' . $name, HtmlAssertions::text($member->page(), '//main//form//legend'));
+            }
+            $this->screen($member, $items . '/filter?field=' . $f['Notes'], 'Filter Items', 'Filter Items');
+            self::assertSame(1, $member->xpath()->query('//main//select[@name="field"]')->length, 'A field that cannot filter gives step 1.');
+
+            // Search results (section 4).
+            $this->screen($member, $project . '/search?q=machine', 'Search results, Home Inventory', 'Search results');
+            self::assertSame(['Items: 3 matches', 'Rooms: 2 matches', 'Warranties: 3 matches'], $member->texts('//main//section[@class="result-group"]/h2'));
+            $this->screen($member, $project . '/search?q=e', 'Search results, Home Inventory', 'Search results');
+            self::assertNotSame([], $member->texts('//main//a[@class="result-more"]'), 'A "Show all" link.');
+            $this->screen($member, $project . '/search?q=zzzz', 'Search results, Home Inventory', 'Search results');
+            self::assertSame('Nothing found', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($member, $project . '/search', 'Search results, Home Inventory', 'Search results');
+            $this->screen($member, $project . '/search?q=' . str_repeat('x', 201), 'Search results, Home Inventory', 'Search results');
+            self::assertSame(1, $member->xpath()->query('//main//div[contains(@class, "notice-warn")]')->length);
+
+            // Record screens (record.md sections 2 to 6), as the Member.
+            $mixer = $m2->itemPath('Stand mixer');
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer');
+            self::assertSame('Item 9 of 48. Last saved today at 10:00.', HtmlAssertions::text($member->page(), '//div[@class="page-head"]//p[@class="lead"]'));
+            self::assertSame(
+                'Added 14 Mar 2025 by Example Admin. Last changed today by Example Member. Records in the trash can be restored.',
+                HtmlAssertions::text($member->page(), '//main//p[@class="record-meta"]'),
+            );
+            $this->screen($member, $mixer . '?q=mixer', 'Stand mixer', 'Stand mixer');
+            self::assertSame('Item 1 of 1. Last saved today at 10:00.', HtmlAssertions::text($member->page(), '//div[@class="page-head"]//p[@class="lead"]'));
+            $this->screen($member, $m2->itemPath('Bookshelf, oak'), 'Bookshelf, oak', 'Bookshelf, oak');
+            $this->screen($member, $items . '/records/new', 'New item', 'New item');
+            $this->screen($member, $items . '/records/new?q=mixer', 'New item', 'New item');
+            $this->screen($member, $m2->itemPath('Old kettle'), 'Old kettle', 'This item is in the trash');
+            $member->get($mixer);
+            self::assertSame(303, $member->submit($mixer)->status);
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer', 'Your changes have been saved.');
+            self::assertSame(303, $member->submit($mixer . '/trash')->status);
+            $this->screen($member, $items, 'Items, Home Inventory', 'Items', 'Stand mixer has been moved to the trash. Undo');
+            $this->screen($member, $mixer, 'Stand mixer', 'This item is in the trash');
+            self::assertSame(303, $member->submit($mixer . '/restore')->status);
+            $this->screen($member, $mixer, 'Stand mixer', 'Stand mixer', 'Stand mixer has been restored.');
+            $this->visit($items . '/records/0', 404, $member);
+            $this->visit($items . '/records/999', 404, $member);
+
+            // Display settings (settings.md): standard, saved, back to standard.
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display');
+            self::assertSame(303, $member->submit('/settings', ['theme' => 'dark', 'accent' => 'indigo'])->status);
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings have been saved.');
+            self::assertSame('t-dark a-indigo', HtmlAssertions::rootClass($member->page()));
+            self::assertSame(303, $member->post('/settings/reset', ['_csrf' => (string) $member->xpath()->query('//form[@id="settings-form"]/input[@name="_csrf"]/@value')->item(0)?->nodeValue])->status);
+            $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings are back to standard.');
+            $this->screen($admin, '/settings', 'Reading and display', 'Reading and display');
+        } finally {
+            $core->remove();
+        }
+
+        $m2Patterns = [
+            '/projects/{project}',
+            '/projects/{project}/search',
+            '/projects/{project}/tables/{table}',
+            '/projects/{project}/tables/{table}/filter',
+            '/projects/{project}/tables/{table}/records/new',
+            '/projects/{project}/tables/{table}/records/{record}',
+            '/settings',
+        ];
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m2Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
+    /**
+     * T-SCR-3 (M3 spec part 2 section 10.1): every M3 GET route in each
+     * state its design document under docs/design/m3/ lists that a GET can
+     * reach, and the pages a POST answers with (422 review problems, the
+     * archive name taken), on a project with Items (with a Rooms link and a
+     * Bought on date) and an empty Rooms. Files are uploaded through the
+     * Request test seam (EndToEndClient::upload).
+     */
+    private function m3Screens(EndToEndClient $admin, string $home, string $items): void
+    {
+        $itemsKey = substr($items, strrpos($items, '/') + 1);
+        $upload = function (string $name, string $contents): string {
+            $path = $this->temp->path('upload-' . $name);
+            file_put_contents($path, $contents);
+
+            return $path;
+        };
+
+        // Step 1 (import.md 2).
+        $this->screen($admin, $home . '/import', 'Import a file', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//form[@enctype="multipart/form-data"]//input[@type="file"][@name="file"]')->length);
+
+        // Step 2, new table with a warning (the rooms are not in Rooms yet).
+        $rows = (new IoFixture())->itemRows(12);
+        $uploaded = $admin->upload($home . '/import', 'file', $upload('inventory.csv', IoFixture::csv(IoFixture::HEADINGS, $rows)), 'inventory.csv');
+        self::assertSame(303, $uploaded->status, $uploaded->body);
+        $job = (string) $uploaded->header('Location');
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//section[contains(@class, "warning-panel")]')->length, 'With warnings.');
+        self::assertSame(1, $admin->xpath()->query('//table[contains(@class, "mapping-table")]')->length);
+
+        // Reading options (section 5).
+        $this->screen($admin, $job . '/reading', 'How the file is read', 'How the file is read');
+
+        // Step 2 for an existing table, then a 422 with every problem linked, then back to a new table.
+        $admin->get($job);
+        self::assertSame(303, $admin->submit($job, ['action' => 'recheck', 'target' => 'existing', 'table' => $itemsKey])->status);
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame('Goes into', HtmlAssertions::text($admin->page(), '//table[contains(@class, "mapping-table")]//thead/tr/th[3]'));
+        // The existing-table page shows the new table's name empty, so it is typed again (reported).
+        self::assertSame('', (string) $admin->xpath()->query('//input[@name="table_name"]/@value')->item(0)?->nodeValue);
+        self::assertSame(303, $admin->submit($job, ['action' => 'recheck', 'target' => 'new', 'table_name' => 'inventory'])->status);
+        $admin->get($job);
+        $refused = $admin->submit($job, ['action' => 'import', 'table_name' => 'Items', 'name[0]' => '']);
+        self::assertSame(422, $refused->status, $refused->body);
+        $this->structure($refused->body, 'Error: Check the fields', 'Import a file', 'review 422');
+        self::assertGreaterThanOrEqual(2, $admin->xpath()->query('//div[@class="error-summary"]//a')->length);
+
+        // Step 3: preparing (with the script), then saving (without), then the report.
+        $this->screen($admin, $job, 'Check the fields', 'Import a file');
+        self::assertSame(303, $admin->submit($job, ['action' => 'import'])->status);
+        $this->screen($admin, $job, 'Import a file', 'Import a file');
+        self::assertSame(1, $admin->xpath()->query('//form[@data-auto-continue="1"]')->length, 'Preparing continues by itself with the script.');
+        for ($i = 0; $i < 10 && $admin->xpath()->query('//input[@name="step"][@value="save"]')->length === 0; $i++) {
+            self::assertSame(303, $admin->submit($job . '/continue')->status);
+            $this->screen($admin, $job, 'Import a file', 'Import a file');
+        }
+        self::assertSame(0, $admin->xpath()->query('//script')->length, 'The saving page loads no script.');
+        $saved = $admin->submit($job . '/continue', ['step' => 'save']);
+        self::assertSame(303, $saved->status);
+        $this->screen($admin, $job . '/report', 'Import report', 'Import a file', '12 rows were imported into inventory.');
+        $this->screen($admin, $job . '/report', 'Import report', 'Import a file');
+
+        // A report with values left empty: dates that cannot be read, into Items' Bought on.
+        $dates = "Name,Bought on\r\nKettle,2025-03-14\r\nLadder,soon\r\nLamp,unknown\r\n";
+        $admin->get($home . '/import');
+        $second = $admin->upload($home . '/import', 'file', $upload('dates.csv', $dates), 'dates.csv');
+        $job2 = (string) $second->header('Location');
+        $admin->get($job2);
+        self::assertSame(303, $admin->submit($job2, ['action' => 'recheck', 'target' => 'existing', 'table' => $itemsKey])->status);
+        $admin->get($job2);
+        self::assertSame(303, $admin->submit($job2, ['action' => 'import'])->status);
+        $admin->get($job2);
+        for ($i = 0; $i < 10 && $admin->xpath()->query('//input[@name="step"][@value="save"]')->length === 0; $i++) {
+            $admin->submit($job2 . '/continue');
+            $admin->get($job2);
+        }
+        self::assertSame(303, $admin->submit($job2 . '/continue', ['step' => 'save'])->status);
+        $this->screen($admin, $job2 . '/report', 'Import report', 'Import a file', '3 rows were imported into Items.');
+        self::assertSame(1, $admin->xpath()->query('//table[contains(@class, "report-table")]')->length, 'The values left empty are listed.');
+
+        // Reading a large file in parts, and the failure page (the format turned off meanwhile).
+        $admin->get($home . '/import');
+        $large = $admin->upload($home . '/import', 'file', $upload('large.csv', IoFixture::csv(IoFixture::HEADINGS, (new IoFixture())->itemRows(2100))), 'large.csv');
+        $job3 = (string) $large->header('Location');
+        $this->screen($admin, $job3, 'Import a file', 'Import a file');
+        self::assertStringStartsWith('Reading large.csv', HtmlAssertions::text($admin->page(), '//div[@class="progress"]/p[1]'));
+        $admin->get('/admin/plugins/import/csv');
+        self::assertSame(303, $admin->submit('/admin/plugins/import/csv/disable')->status);
+        $this->screen($admin, '/admin/plugins/import/csv', 'CSV', 'CSV', 'CSV is turned off.');
+        $this->visit('/admin/plugins/import/csv/enable', 303, $admin);
+        $admin->get($job3);
+        self::assertSame(303, $admin->submit($job3 . '/continue')->status);
+        $this->screen($admin, $job3, 'The import did not finish', 'The import did not finish');
+        $admin->get('/admin/plugins/import/csv');
+        self::assertSame(303, $admin->submit('/admin/plugins/import/csv/enable')->status);
+        $this->screen($admin, '/admin/plugins/import/csv', 'CSV', 'CSV', 'CSV is turned on.');
+
+        // Export (export.md).
+        $this->screen($admin, $home . '/export', 'Export', 'Export');
+
+        // Plugins (plugins.md 2 and 3).
+        $this->screen($admin, '/admin/plugins', 'Plugins', 'Plugins');
+        foreach (['import/csv' => 'CSV', 'import/xlsx' => 'Excel workbook', 'export/csv' => 'CSV', 'export/json' => 'JSON', 'export/xlsx' => 'Excel workbook'] as $ref => $name) {
+            $this->screen($admin, '/admin/plugins/' . $ref, $name, $name);
+        }
+        $this->visit('/admin/plugins/export/nothing', 404, $admin);
+
+        // Import a project archive (archive.md 2 to 4): form, name taken (422), result.
+        $admin->get($home . '/export');
+        $archive = $admin->submit($home . '/export/archive');
+        self::assertSame(200, $archive->status);
+        $zip = $upload('home.tiffindb.zip', $archive->body());
+        $this->screen($admin, '/projects/import', 'Import a project archive', 'Import a project archive');
+        $taken = $admin->upload('/projects/import', 'file', $zip, 'home.tiffindb.zip', ['name' => 'Home Inventory']);
+        self::assertSame(422, $taken->status, $taken->body);
+        $this->structure($taken->body, 'Error: Import a project archive', 'Import a project archive', 'name taken');
+        $nameForm = (string) $admin->xpath()->query('//main//form[@method="post"]/@action')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#^/projects/import/[A-Za-z0-9_-]+\z#', $nameForm);
+        $made = $admin->submit($nameForm, ['name' => 'Home Inventory copy']);
+        self::assertSame(303, $made->status, $made->body);
+        $this->screen($admin, (string) $made->header('Location'), 'Home Inventory copy', 'Home Inventory copy', 'The project Home Inventory copy has been made from the archive.');
+        $admin->cleanUp();
+    }
+
+    /**
+     * The structure assertions of screen() for a page a POST answered with.
+     */
+    private function structure(string $html, string $title, string $h1, string $where): void
+    {
+        HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
+        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        HtmlAssertions::assertForm($html);
+        self::assertSame($title . ' - TiffinDB', HtmlAssertions::text($html, '//title'), "Title of {$where}");
+        self::assertSame($h1, HtmlAssertions::text($html, '//h1'), "h1 of {$where}");
+    }
+
+    /**
+     * T-SCR-3, the plugin states that need plugins not shipped with
+     * TiffinDB: the list with every status, the page of a disabled added
+     * plugin, of one that cannot be used, and of a damaged one, and the
+     * confirmation for turning on an added plugin. The real CoreServices
+     * with the plugins directory of CoreFixture::pluginsRoot() (a copy of
+     * plugins/ plus three synthetic plugins); only scanning happens here,
+     * no plugin is loaded.
+     */
+    public function testPluginScreensWithAddedPlugins(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $services = new PluginsRootServices(new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m3-seed'), $core->hasher), $core->pluginsRoot());
+            $admin = $this->signIn(new Kernel($config, Fixtures::appRoot(), null, $services), 'admin');
+            $this->screen($admin, '/admin/plugins', 'Plugins', 'Plugins');
+            self::assertSame(['On', 'Off', 'Cannot be used', 'Damaged'], array_values(array_unique($admin->texts('//main//span[contains(@class, "plugin-status")]'))));
+            $this->screen($admin, '/admin/plugins/import/example', 'Example format', 'Example format');
+            $this->screen($admin, '/admin/plugins/import/example/enable', 'Turn on Example format?', 'Turn on Example format?');
+            self::assertSame(['Turn it on'], $admin->texts('//main//form//button[contains(@class, "button-danger")]'));
+            $this->screen($admin, '/admin/plugins/import/needs', 'Needs an extension', 'Needs an extension');
+            $broken = HtmlAssertions::text($this->visit('/admin/plugins/export/broken', 200, $admin)->body, '//h1');
+            $this->screen($admin, '/admin/plugins/export/broken', $broken, $broken);
+            self::assertSame(1, $admin->xpath()->query('//main//p[contains(@class, "notice")]')->length, 'A damaged plugin says so.');
+        } finally {
+            $core->remove();
+        }
+    }
+
     // Helpers.
+
+    private function signIn(Kernel $kernel, string $username): EndToEndClient
+    {
+        $client = new EndToEndClient($kernel);
+        $client->get('/sign-in');
+        $signedIn = $client->submit('/sign-in', ['username' => $username, 'password' => CoreFixture::PASSWORD]);
+        self::assertSame(303, $signedIn->status, $signedIn->body);
+
+        return $client;
+    }
 
     /**
      * GETs a screen and asserts its structure, title, `h1`, and the notice
@@ -397,5 +741,92 @@ final class ScreenStructureTest extends TestCase
         $added = $admin->submit($table . '/fields', $values);
         self::assertSame(303, $added->status, $added->body);
         self::assertSame(200, $admin->follow($added)->status);
+    }
+}
+
+/**
+ * The real CoreServices with another plugins directory: every call is
+ * delegated, and the first Operations it hands out is pointed at $root
+ * before any plugin is scanned (Operations::usePluginsRoot).
+ */
+final class PluginsRootServices implements \TiffinDB\Web\Services
+{
+    /** @var \WeakMap<\TiffinDB\Core\App\Operations, true> */
+    private \WeakMap $rooted;
+
+    public function __construct(private readonly CoreServices $inner, private readonly string $root)
+    {
+        $this->rooted = new \WeakMap();
+    }
+
+    public function installState(): \TiffinDB\Core\Install\InstallState
+    {
+        return $this->inner->installState();
+    }
+
+    public function installer(): \TiffinDB\Core\Install\Installer
+    {
+        return $this->inner->installer();
+    }
+
+    public function operations(): \TiffinDB\Core\App\Operations
+    {
+        $operations = $this->inner->operations();
+        if (!isset($this->rooted[$operations])) {
+            $operations->usePluginsRoot($this->root);
+            $this->rooted[$operations] = true;
+        }
+
+        return $operations;
+    }
+
+    public function probe(): \TiffinDB\Core\Install\HttpProbe
+    {
+        return $this->inner->probe();
+    }
+
+    public function resume(#[\SensitiveParameter] string $token): ?\TiffinDB\Core\Auth\SignedIn
+    {
+        return $this->inner->resume($token);
+    }
+
+    public function endSession(#[\SensitiveParameter] string $token): void
+    {
+        $this->inner->endSession($token);
+    }
+
+    public function takeFlash(#[\SensitiveParameter] string $token): ?array
+    {
+        return $this->inner->takeFlash($token);
+    }
+
+    public function setFlash(#[\SensitiveParameter] string $token, string $key, array $params = []): void
+    {
+        $this->inner->setFlash($token, $key, $params);
+    }
+
+    public function userSettings(int $userId): array
+    {
+        return $this->inner->userSettings($userId);
+    }
+
+    public function newCsrfToken(): string
+    {
+        return $this->inner->newCsrfToken();
+    }
+
+    public function now(): \DateTimeImmutable
+    {
+        return $this->inner->now();
+    }
+
+    public function uploadLimits(): \TiffinDB\Web\UploadLimits
+    {
+        return $this->inner->uploadLimits();
+    }
+
+    public function close(): void
+    {
+        $this->inner->close();
     }
 }

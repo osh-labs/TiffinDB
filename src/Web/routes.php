@@ -6,7 +6,9 @@
  * The route table (ADR 0008 decision 2; M1 spec part 2 section 2.3): a
  * list of [method, pattern, [ControllerClass, 'method'], access]. First
  * match wins, so literal segments such as `new` come before placeholders.
- * `/projects/{project}/tables/{table}` is reserved for M2.
+ * M2 adds the settings, search, list, and record routes (M2 spec part 2
+ * section 2), M3 the import, export, archive, and plugins routes (M3 spec
+ * part 2 section 3; their controllers arrive with M3-WP9 and WP10).
  */
 
 declare(strict_types=1);
@@ -14,16 +16,27 @@ declare(strict_types=1);
 namespace TiffinDB\Web;
 
 use TiffinDB\Web\Controller\AccountController;
+use TiffinDB\Web\Controller\ArchiveController;
+use TiffinDB\Web\Controller\ExportController;
 use TiffinDB\Web\Controller\FieldController;
 use TiffinDB\Web\Controller\HomeController;
+use TiffinDB\Web\Controller\ImportController;
 use TiffinDB\Web\Controller\PeopleController;
+use TiffinDB\Web\Controller\PluginController;
 use TiffinDB\Web\Controller\ProjectController;
+use TiffinDB\Web\Controller\RecordController;
+use TiffinDB\Web\Controller\RecordListController;
+use TiffinDB\Web\Controller\SearchController;
+use TiffinDB\Web\Controller\SettingsController;
 use TiffinDB\Web\Controller\SetupController;
 use TiffinDB\Web\Controller\SharingController;
 use TiffinDB\Web\Controller\SignInController;
 use TiffinDB\Web\Controller\TableController;
 
 $field = '/projects/{project}/tables/{table}/fields/{field}';
+$table = '/projects/{project}/tables/{table}';
+$import = '/projects/{project}/import';
+$plugin = '/admin/plugins/{kind}/{plugin}';
 
 return [
     ['GET', '/', [HomeController::class, 'show'], 'any'],
@@ -39,14 +52,34 @@ return [
     ['GET', '/account/password', [AccountController::class, 'passwordForm'], 'user'],
     ['POST', '/account/password', [AccountController::class, 'password'], 'user'],
 
+    ['GET', '/settings', [SettingsController::class, 'form'], 'user'],
+    ['POST', '/settings', [SettingsController::class, 'save'], 'user'],
+    ['POST', '/settings/reset', [SettingsController::class, 'reset'], 'user'],
+
     ['GET', '/projects', [ProjectController::class, 'index'], 'user'],
     ['GET', '/projects/new', [ProjectController::class, 'newForm'], 'user'],
     ['POST', '/projects', [ProjectController::class, 'create'], 'user'],
+    ['GET', '/projects/import', [ArchiveController::class, 'form'], 'user'],
+    ['POST', '/projects/import', [ArchiveController::class, 'import'], 'user'],
+    ['POST', '/projects/import/{job}', [ArchiveController::class, 'rename'], 'user'],
     ['GET', '/projects/{project}', [ProjectController::class, 'open'], 'user'],
     ['GET', '/projects/{project}/settings', [ProjectController::class, 'settingsForm'], 'user'],
     ['POST', '/projects/{project}/settings', [ProjectController::class, 'settings'], 'user'],
     ['GET', '/projects/{project}/sharing', [SharingController::class, 'form'], 'user'],
     ['POST', '/projects/{project}/sharing', [SharingController::class, 'save'], 'user'],
+    ['GET', $import, [ImportController::class, 'start'], 'user'],
+    ['POST', $import, [ImportController::class, 'upload'], 'user'],
+    ['GET', $import . '/{job}', [ImportController::class, 'show'], 'user'],
+    ['POST', $import . '/{job}', [ImportController::class, 'saveMapping'], 'user'],
+    ['GET', $import . '/{job}/reading', [ImportController::class, 'readingForm'], 'user'],
+    ['POST', $import . '/{job}/reading', [ImportController::class, 'reading'], 'user'],
+    ['POST', $import . '/{job}/continue', [ImportController::class, 'continue'], 'user'],
+    ['POST', $import . '/{job}/cancel', [ImportController::class, 'cancel'], 'user'],
+    ['GET', $import . '/{job}/report', [ImportController::class, 'report'], 'user'],
+    ['GET', '/projects/{project}/export', [ExportController::class, 'form'], 'user'],
+    ['POST', '/projects/{project}/export', [ExportController::class, 'export'], 'user'],
+    ['POST', '/projects/{project}/export/archive', [ExportController::class, 'archive'], 'user'],
+    ['GET', '/projects/{project}/search', [SearchController::class, 'index'], 'user'],
 
     ['GET', '/projects/{project}/tables', [TableController::class, 'index'], 'user'],
     ['GET', '/projects/{project}/tables/new', [TableController::class, 'newForm'], 'user'],
@@ -55,6 +88,15 @@ return [
     ['POST', '/projects/{project}/tables/{table}/settings', [TableController::class, 'update'], 'user'],
     ['GET', '/projects/{project}/tables/{table}/delete', [TableController::class, 'deleteForm'], 'user'],
     ['POST', '/projects/{project}/tables/{table}/delete', [TableController::class, 'delete'], 'user'],
+
+    ['GET', $table, [RecordListController::class, 'index'], 'user'],
+    ['GET', $table . '/filter', [RecordListController::class, 'filter'], 'user'],
+    ['GET', $table . '/records/new', [RecordController::class, 'newForm'], 'user'],
+    ['POST', $table . '/records', [RecordController::class, 'create'], 'user'],
+    ['GET', $table . '/records/{record}', [RecordController::class, 'show'], 'user'],
+    ['POST', $table . '/records/{record}', [RecordController::class, 'update'], 'user'],
+    ['POST', $table . '/records/{record}/trash', [RecordController::class, 'trash'], 'user'],
+    ['POST', $table . '/records/{record}/restore', [RecordController::class, 'restore'], 'user'],
 
     ['GET', '/projects/{project}/tables/{table}/fields/new', [FieldController::class, 'newForm'], 'user'],
     ['POST', '/projects/{project}/tables/{table}/fields', [FieldController::class, 'create'], 'user'],
@@ -76,4 +118,10 @@ return [
     ['GET', '/admin/people/{person}/deactivate', [PeopleController::class, 'deactivateForm'], 'user'],
     ['POST', '/admin/people/{person}/deactivate', [PeopleController::class, 'deactivate'], 'user'],
     ['POST', '/admin/people/{person}/reactivate', [PeopleController::class, 'reactivate'], 'user'],
+
+    ['GET', '/admin/plugins', [PluginController::class, 'index'], 'user'],
+    ['GET', $plugin, [PluginController::class, 'show'], 'user'],
+    ['GET', $plugin . '/enable', [PluginController::class, 'enableForm'], 'user'],
+    ['POST', $plugin . '/enable', [PluginController::class, 'enable'], 'user'],
+    ['POST', $plugin . '/disable', [PluginController::class, 'disable'], 'user'],
 ];

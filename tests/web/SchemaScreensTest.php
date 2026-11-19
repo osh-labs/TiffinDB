@@ -685,7 +685,7 @@ final class SchemaScreensTest extends TestCase
         self::assertSame(['Projects', 'Home Inventory', 'Items', 'Kind'], $this->crumbs($x));
         self::assertSame('Clear 2 values?', HtmlAssertions::text($html, '//h1'));
         self::assertSame(
-            'With this change, 2 values in 2 records no longer fit and will be cleared. TiffinDB saves a copy of the project first.',
+            'This change clears 2 values in 2 records.',
             HtmlAssertions::text($html, '//main/p'),
         );
         self::assertSame($this->t('/fields/' . $kind), $x->query('//main//form/@action')->item(0)?->nodeValue);
@@ -694,16 +694,16 @@ final class SchemaScreensTest extends TestCase
             $hidden[] = [$input->attributes?->getNamedItem('name')?->nodeValue, $input->attributes?->getNamedItem('value')?->nodeValue];
         }
         self::assertSame(
-            [['_csrf', FakeServices::SESSION_CSRF], ['name', 'Kind'], ['help', 'A <kind>'], ['opt_choice_' . $appliance, 'Appliance'], ['opt_choice_' . $tool, ''], ['opt_choices', ''], ['confirm', '1']],
+            [['_csrf', FakeServices::SESSION_CSRF], ['name', 'Kind'], ['help', 'A <kind>'], ['opt_choice_' . $appliance, 'Appliance'], ['opt_choice_' . $tool, ''], ['opt_choices', ''], ['confirm', '2']],
             $hidden,
-            'Every submitted field again, the current token first, and confirm (P59).',
+            'Every submitted field again, the current token first, and confirm with the count shown (P59, P82).',
         );
         self::assertStringContainsString('value="A &lt;kind&gt;"', $html);
         self::assertSame(['Clear 2 values and save'], $this->texts($x, '//main//button[@class="button button-large button-danger"]'));
         self::assertSame('Go back without saving', HtmlAssertions::text($html, '//div[@class="form-actions"]/a'));
         self::assertSame('Tool', $this->stored($kind, $first), 'Nothing changed yet.');
 
-        $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $kind), $post + ['confirm' => '1']);
+        $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $kind), $post + ['confirm' => '2']);
         self::assertSame(303, $response->status);
         self::assertNull($this->stored($kind, $first));
         self::assertSame(['Appliance'], array_column($this->field('Kind')->options['choices'], 'label'));
@@ -719,10 +719,94 @@ final class SchemaScreensTest extends TestCase
         self::assertSame('Clear 1 value?', HtmlAssertions::text($response->body, '//h1'));
         self::assertSame(['Clear 1 value and save'], $this->texts($this->xpath($response->body), '//main//button'));
         self::assertSame(
-            'With this change, 1 value in 1 record no longer fits and will be cleared. TiffinDB saves a copy of the project first.',
+            'This change clears 1 value in 1 record.',
             HtmlAssertions::text($response->body, '//main/p'),
         );
+        self::assertSame('1', $this->xpath($response->body)->query('//main//form/input[@name="confirm"]/@value')->item(0)?->nodeValue);
         self::assertSame('Go back without saving', HtmlAssertions::text($response->body, '//div[@class="form-actions"]/a'));
+    }
+
+    /**
+     * T-WEB-32 (P82): the confirmation is bound to the count it showed. A
+     * re-post after more values appeared shows the confirmation again with
+     * the new counts and changes nothing; the new count then goes ahead.
+     */
+    public function testAConfirmationForFewerValuesThanNowAffectedAsksAgain(): void
+    {
+        $stars = $this->addField('Stars', 'rating');
+        $first = $this->core->insertRecord($this->project, $this->items, [$stars => 5]);
+        $post = ['name' => 'Stars', 'help' => '', 'opt_max' => '3'];
+        $shown = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $stars), $post);
+        self::assertSame('1', $this->xpath($shown->body)->query('//main//form/input[@name="confirm"]/@value')->item(0)?->nodeValue);
+
+        // Two more values that no longer fit are saved before the person confirms.
+        $this->core->insertRecord($this->project, $this->items, [$stars => 4]);
+        $this->core->insertRecord($this->project, $this->items, [$stars => 5]);
+        $again = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $stars), $post + ['confirm' => '1']);
+
+        self::assertSame(409, $again->status);
+        $this->assertScreen($again->body);
+        $x = $this->xpath($again->body);
+        self::assertSame('Clear 3 values?', HtmlAssertions::text($again->body, '//h1'));
+        self::assertSame('This change clears 3 values in 3 records.', HtmlAssertions::text($again->body, '//main/p'));
+        self::assertSame(['Clear 3 values and save'], $this->texts($x, '//main//button'));
+        self::assertSame('3', $x->query('//main//form/input[@name="confirm"]/@value')->item(0)?->nodeValue);
+        self::assertSame(1, $x->query('//main//form/input[@name="confirm"]')->length, 'The old confirm value is not posted again.');
+        self::assertSame(5, $this->stored($stars, $first), 'Nothing changed.');
+        self::assertSame(['max' => 5], $this->field('Stars')->options);
+
+        $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $stars), $post + ['confirm' => '3']);
+        self::assertSame(303, $response->status);
+        self::assertNull($this->stored($stars, $first));
+        self::assertSame(['max' => 3], $this->field('Stars')->options);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function badConfirmValues(): iterable
+    {
+        yield 'yes' => ['yes'];
+        yield 'empty' => [''];
+        yield 'negative' => ['-2'];
+        yield 'leading zero' => ['02'];
+        yield 'decimal' => ['2.0'];
+        yield 'exponent' => ['2e0'];
+        yield 'space' => [' 2'];
+        yield 'trailing newline' => ["2\n"];
+        yield 'plus' => ['+2'];
+        yield 'too long' => [str_repeat('9', 19)];
+        yield 'too few' => ['1'];
+        yield 'zero' => ['0'];
+    }
+
+    /** Anything but a plain integer at least the real count accepts nothing (P82). */
+    #[DataProvider('badConfirmValues')]
+    public function testAConfirmValueThatIsNotTheCountChangesNothing(string $confirm): void
+    {
+        $name = $this->field('Name')->key;
+        $kettle = $this->core->insertRecord($this->project, $this->items, [$name => 'Kettle']);
+        $this->core->insertRecord($this->project, $this->items, [$name => 'Toaster']);
+
+        $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $name . '/type'), ['type' => 'number', 'confirm' => $confirm]);
+
+        self::assertSame(409, $response->status);
+        self::assertSame('Clear 2 values?', HtmlAssertions::text($response->body, '//h1'));
+        self::assertSame('Kettle', $this->stored($name, $kettle));
+        self::assertSame('text', $this->field('Name')->type);
+    }
+
+    public function testAConfirmValueAsAListChangesNothing(): void
+    {
+        $name = $this->field('Name')->key;
+        $this->core->insertRecord($this->project, $this->items, [$name => 'Kettle']);
+
+        $response = Fixtures::handle($this->kernel, Fixtures::fullRequest('POST', $this->t('/fields/' . $name . '/type'), [
+            '_csrf' => FakeServices::SESSION_CSRF,
+            'type' => 'number',
+            'confirm' => ['1'],
+        ], ['tdb_session' => self::ADMIN]))[0];
+
+        self::assertSame(409, $response->status);
+        self::assertSame('text', $this->field('Name')->type);
     }
 
     public function testChangingAFieldIsForAdminsOnly(): void
@@ -791,6 +875,7 @@ final class SchemaScreensTest extends TestCase
         self::assertSame(['_csrf', 'type', 'confirm'], $this->texts($x, '//main//form/input[@type="hidden"]/@name'));
         self::assertSame('text', $this->field('Name')->type, 'Nothing changed yet.');
 
+        self::assertSame('1', $x->query('//main//form/input[@name="confirm"]/@value')->item(0)?->nodeValue);
         $response = $this->request(self::ADMIN, 'POST', $this->t('/fields/' . $name . '/type'), ['type' => 'number', 'confirm' => '1']);
         self::assertSame(303, $response->status);
         self::assertSame(

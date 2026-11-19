@@ -19,6 +19,7 @@ use TiffinDB\Core\System\AuditEntry;
 use TiffinDB\Tests\Support\CoreFixture;
 
 require_once __DIR__ . '/AppTestCase.php';
+require_once __DIR__ . '/ImportOperationsTest.php';
 
 /**
  * T-APP-60: every action of M1 spec section 5.6 is written by the
@@ -90,10 +91,10 @@ final class AuditTrailTest extends AppTestCase
         $expect(AuditAction::TABLE_CHANGED, $admin, $project->id, 'table', $plants->key);
         $height = $schema->addField($this->admin, $p, $plants->key, 'Height', 'text', [], false, '');
         $expect(AuditAction::FIELD_CREATED, $admin, $project->id, 'field', $height->key, ['type' => 'text']);
-        $schema->updateField($this->admin, $p, $plants->key, $height->key, 'Height (cm)', [], false, '', false);
+        $schema->updateField($this->admin, $p, $plants->key, $height->key, 'Height (cm)', [], false, '', 0);
         $expect(AuditAction::FIELD_CHANGED, $admin, $project->id, 'field', $height->key, ['type' => 'text']);
         $this->fx->insertRecord($p, $plants->key, [$height->key => 'tall']);
-        $schema->changeFieldType($this->admin, $p, $plants->key, $height->key, 'number', [], true);
+        $schema->changeFieldType($this->admin, $p, $plants->key, $height->key, 'number', [], 1);
         $expect(AuditAction::FIELD_CHANGED, $admin, $project->id, 'field', $height->key, ['type' => 'number', 'type_from' => 'text', 'values_cleared' => 1]);
         $before = $this->ops->audit()->recent($this->admin, 2)[1];
         self::assertSame([AuditAction::SNAPSHOT_TAKEN, ['reason' => 'field-type-change']], [$before->action, $before->detail]);
@@ -111,6 +112,35 @@ final class AuditTrailTest extends AppTestCase
         $expect(AuditAction::TRASH_EMPTIED, $admin, $project->id, null, null, ['records' => 1]);
         $schema->deleteTable($this->admin, $p, $beds->key);
         $expect(AuditAction::TABLE_DELETED, $admin, $project->id, 'table', $beds->key, ['records' => 0]);
+
+        // M3 (spec section 13.6): no entry holds a cell value or a file name.
+        $plugins = $this->ops->plugins();
+        $plugins->disable($this->admin, 'export', 'json');
+        $expect(AuditAction::PLUGIN_DISABLED, $admin, null, 'plugin', 'export/json');
+        $plugins->enable($this->admin, 'export', 'json');
+        $expect(AuditAction::PLUGIN_ENABLED, $admin, null, 'plugin', 'export/json');
+        $imports = $this->ops->imports();
+        $job = $imports->start($this->admin, $p, $this->fx->upload("Name\nSynthetic basil\n"), 'basil.csv', null);
+        $imports->saveMapping($this->admin, $p, $job, ImportOperationsTest::input($imports->review($this->admin, $p, $job, null, [])));
+        while (!$imports->prepareChunk($this->admin, $p, $job)->finished) {
+        }
+        $report = $imports->report($this->admin, $p, $imports->commit($this->admin, $p, $job));
+        $expect(AuditAction::IMPORT_COMPLETED, $admin, $project->id, 'table', $report->report->tableKey, ['plugin' => 'import/csv', 'rows' => 1, 'new_table' => true]);
+        $exports = $this->ops->exports();
+        $file = $exports->export($this->admin, $p, 'export/csv', $plants->key, []);
+        $expect(AuditAction::EXPORT_CREATED, $admin, $project->id, 'table', $plants->key, ['format' => 'export/csv', 'scope' => 'table', 'records' => 1]);
+        $exports->finish($this->admin, $p, $file->jobKey);
+        $archive = $exports->archive($this->admin, $p);
+        $expect(AuditAction::ARCHIVE_EXPORTED, $admin, $project->id, 'project', $p, ['attachments' => 0]);
+        $copy = $this->ops->archives()->import($this->admin, $this->fx->upload((string) file_get_contents($archive->path)), 'garden.zip', 'Example Garden copy');
+        $expect(AuditAction::ARCHIVE_IMPORTED, $admin, $copy->project->id, 'project', $copy->project->key, [
+            'tables' => 2, 'records' => 2, 'values_emptied' => 0, 'links_dropped' => 0, 'forms_dropped' => 0, 'files_missing' => 0,
+        ]);
+        $exports->finish($this->admin, $p, $archive->jobKey);
+        $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
+        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv'] as $text) {
+            self::assertStringNotContainsString($text, $all);
+        }
 
         // setup.complete is the installer's (M1-WP6); every other action is written above.
         self::assertSame(

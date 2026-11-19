@@ -63,6 +63,7 @@ Results that matter but do not block v1:
 - `web.https` WARN: PHP sees plain HTTP. `X-Forwarded-Proto` is not trusted (a client can send it); behind a TLS-terminating proxy this line may WARN even though visitors use HTTPS. Note that case in plan Q2.
 - `web.authorization_header` WARN: the post-v1 MCP server would not work on this host. A PASS with value `via-rewrite` means TiffinDB's `.htaccess` must carry the `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]` line.
 - `crypto.argon2id` WARN: passwords use bcrypt instead.
+- `ext.dom`, `ext.filter`, `ext.libxml` WARN: the XLSX import and export plugins report themselves unavailable; everything else works (ADR 0016 decision 3).
 - `sqlite.fts5` WARN, low limits: record them; they shape defaults and documentation.
 
 The thresholds for limits (128M memory, 30 s execution time, 8M upload and post size, 10 files, 1000 input vars) and the SQLite 3.35 advisory are provisional values chosen for this check, not decisions recorded elsewhere.

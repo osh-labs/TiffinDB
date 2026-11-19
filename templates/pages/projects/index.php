@@ -4,7 +4,8 @@
  * Copyright (C) TiffinDB contributors
  *
  * Project list (docs/design/m1/sign-in-and-projects.md section 3). The
- * layout prints the flash notice before this.
+ * layout prints the flash notice before this. For Admins, "Import a
+ * project archive" follows "New project" (M3 spec part 2 section 4).
  *
  * Data: `title` and `lead` (plain text), `admin` (bool: the Admin-only
  * controls), `projects`: a list of
@@ -17,7 +18,7 @@ declare(strict_types=1);
 
 ?>
 <?php if ($data['admin'] === true) : ?>
-<?= $this->partial('page-head', ['title' => $data['title'], 'lead' => $data['lead'], 'actions' => [['label' => 'projects.new', 'path' => '/projects/new', 'primary' => true, 'icon' => 'plus']]]) ?>
+<?= $this->partial('page-head', ['title' => $data['title'], 'lead' => $data['lead'], 'actions' => [['label' => 'projects.new', 'path' => '/projects/new', 'primary' => true, 'icon' => 'plus'], ['label' => 'projects.import_archive', 'path' => '/projects/import', 'primary' => false]]]) ?>
 <?php else : ?>
 <?= $this->partial('page-head', ['title' => $data['title'], 'lead' => $data['lead']]) ?>
 <?php endif; ?>

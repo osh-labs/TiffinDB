@@ -223,13 +223,17 @@ final class RouterTest extends TestCase
     }
 
     /**
-     * The complete M1 table (spec part 2 section 2.3), in order.
+     * The complete table, in order: M1 (spec part 2 section 2.3), M2 (spec
+     * part 2 section 2), and M3 (spec part 2 section 3).
      *
      * @return list<array{string, string, string, string}>
      */
     private static function specifiedTable(): array
     {
         $f = '/projects/{project}/tables/{table}/fields/{field}';
+        $t = '/projects/{project}/tables/{table}';
+        $i = '/projects/{project}/import';
+        $p = '/admin/plugins/{kind}/{plugin}';
 
         return [
             ['GET', '/', 'HomeController::show', 'any'],
@@ -241,14 +245,33 @@ final class RouterTest extends TestCase
             ['POST', '/sign-out', 'SignInController::signOut', 'user'],
             ['GET', '/account/password', 'AccountController::passwordForm', 'user'],
             ['POST', '/account/password', 'AccountController::password', 'user'],
+            ['GET', '/settings', 'SettingsController::form', 'user'],
+            ['POST', '/settings', 'SettingsController::save', 'user'],
+            ['POST', '/settings/reset', 'SettingsController::reset', 'user'],
             ['GET', '/projects', 'ProjectController::index', 'user'],
             ['GET', '/projects/new', 'ProjectController::newForm', 'user'],
             ['POST', '/projects', 'ProjectController::create', 'user'],
+            ['GET', '/projects/import', 'ArchiveController::form', 'user'],
+            ['POST', '/projects/import', 'ArchiveController::import', 'user'],
+            ['POST', '/projects/import/{job}', 'ArchiveController::rename', 'user'],
             ['GET', '/projects/{project}', 'ProjectController::open', 'user'],
             ['GET', '/projects/{project}/settings', 'ProjectController::settingsForm', 'user'],
             ['POST', '/projects/{project}/settings', 'ProjectController::settings', 'user'],
             ['GET', '/projects/{project}/sharing', 'SharingController::form', 'user'],
             ['POST', '/projects/{project}/sharing', 'SharingController::save', 'user'],
+            ['GET', $i, 'ImportController::start', 'user'],
+            ['POST', $i, 'ImportController::upload', 'user'],
+            ['GET', $i . '/{job}', 'ImportController::show', 'user'],
+            ['POST', $i . '/{job}', 'ImportController::saveMapping', 'user'],
+            ['GET', $i . '/{job}/reading', 'ImportController::readingForm', 'user'],
+            ['POST', $i . '/{job}/reading', 'ImportController::reading', 'user'],
+            ['POST', $i . '/{job}/continue', 'ImportController::continue', 'user'],
+            ['POST', $i . '/{job}/cancel', 'ImportController::cancel', 'user'],
+            ['GET', $i . '/{job}/report', 'ImportController::report', 'user'],
+            ['GET', '/projects/{project}/export', 'ExportController::form', 'user'],
+            ['POST', '/projects/{project}/export', 'ExportController::export', 'user'],
+            ['POST', '/projects/{project}/export/archive', 'ExportController::archive', 'user'],
+            ['GET', '/projects/{project}/search', 'SearchController::index', 'user'],
             ['GET', '/projects/{project}/tables', 'TableController::index', 'user'],
             ['GET', '/projects/{project}/tables/new', 'TableController::newForm', 'user'],
             ['POST', '/projects/{project}/tables', 'TableController::create', 'user'],
@@ -256,6 +279,14 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/tables/{table}/settings', 'TableController::update', 'user'],
             ['GET', '/projects/{project}/tables/{table}/delete', 'TableController::deleteForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/delete', 'TableController::delete', 'user'],
+            ['GET', $t, 'RecordListController::index', 'user'],
+            ['GET', $t . '/filter', 'RecordListController::filter', 'user'],
+            ['GET', $t . '/records/new', 'RecordController::newForm', 'user'],
+            ['POST', $t . '/records', 'RecordController::create', 'user'],
+            ['GET', $t . '/records/{record}', 'RecordController::show', 'user'],
+            ['POST', $t . '/records/{record}', 'RecordController::update', 'user'],
+            ['POST', $t . '/records/{record}/trash', 'RecordController::trash', 'user'],
+            ['POST', $t . '/records/{record}/restore', 'RecordController::restore', 'user'],
             ['GET', '/projects/{project}/tables/{table}/fields/new', 'FieldController::newForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/fields', 'FieldController::create', 'user'],
             ['GET', $f, 'FieldController::editForm', 'user'],
@@ -275,6 +306,11 @@ final class RouterTest extends TestCase
             ['GET', '/admin/people/{person}/deactivate', 'PeopleController::deactivateForm', 'user'],
             ['POST', '/admin/people/{person}/deactivate', 'PeopleController::deactivate', 'user'],
             ['POST', '/admin/people/{person}/reactivate', 'PeopleController::reactivate', 'user'],
+            ['GET', '/admin/plugins', 'PluginController::index', 'user'],
+            ['GET', $p, 'PluginController::show', 'user'],
+            ['GET', $p . '/enable', 'PluginController::enableForm', 'user'],
+            ['POST', $p . '/enable', 'PluginController::enable', 'user'],
+            ['POST', $p . '/disable', 'PluginController::disable', 'user'],
         ];
     }
 
@@ -310,11 +346,52 @@ final class RouterTest extends TestCase
         }
     }
 
-    public function testM2ListRouteIsNotRouted(): void
+    public function testM2RecordRoutesComeInTheSpecifiedOrder(): void
     {
         $router = new Router(Router::applicationRoutes());
+        $base = '/projects/ABCDEFGHJKMN/tables/ABCDEFGHJKMN';
 
-        self::assertTrue($router->match('GET', '/projects/ABCDEFGHJKMN/tables/ABCDEFGHJKMN')->isNotFound());
+        self::assertSame('index', $router->match('GET', $base)->handler[1] ?? null);
+        self::assertSame('newForm', $router->match('GET', $base . '/records/new')->handler[1] ?? null, 'records/new comes before records/{record}.');
+        self::assertSame('show', $router->match('GET', $base . '/records/12')->handler[1] ?? null);
+        self::assertSame('fields', $router->match('GET', $base . '/fields')->handler[1] ?? null);
+        self::assertSame('form', $router->match('GET', '/settings')->handler[1] ?? null);
+        self::assertTrue($router->match('GET', $base . '/records/12/extra')->isNotFound());
+    }
+
+    /**
+     * M3 spec part 2 section 3: the archive import literal comes before
+     * the project placeholder, and the project import and export routes
+     * reach their own handlers; an M3 job key never shadows a project.
+     */
+    public function testM3RoutesComeInTheSpecifiedOrder(): void
+    {
+        $router = new Router(Router::applicationRoutes());
+        $project = '/projects/abcdefghijkl';
+        $handler = static fn (string $method, string $path): string => implode('::', array_map(
+            static fn (string $part): string => str_replace('TiffinDB\\Web\\Controller\\', '', $part),
+            $router->match($method, $path)->handler ?? ['none', 'none'],
+        ));
+
+        self::assertSame('ArchiveController::form', $handler('GET', '/projects/import'));
+        self::assertSame('ArchiveController::import', $handler('POST', '/projects/import'));
+        self::assertSame('ArchiveController::rename', $handler('POST', '/projects/import/mnopqrstuvwx'));
+        self::assertSame('ProjectController::open', $handler('GET', $project));
+        self::assertSame('ImportController::start', $handler('GET', $project . '/import'));
+        self::assertSame('ImportController::upload', $handler('POST', $project . '/import'));
+        self::assertSame('ImportController::show', $handler('GET', $project . '/import/mnopqrstuvwx'));
+        self::assertSame('ImportController::saveMapping', $handler('POST', $project . '/import/mnopqrstuvwx'));
+        self::assertSame('ImportController::readingForm', $handler('GET', $project . '/import/mnopqrstuvwx/reading'));
+        self::assertSame('ImportController::continue', $handler('POST', $project . '/import/mnopqrstuvwx/continue'));
+        self::assertSame('ImportController::cancel', $handler('POST', $project . '/import/mnopqrstuvwx/cancel'));
+        self::assertSame('ImportController::report', $handler('GET', $project . '/import/mnopqrstuvwx/report'));
+        self::assertSame('ExportController::archive', $handler('POST', $project . '/export/archive'));
+        self::assertSame('PluginController::enableForm', $handler('GET', '/admin/plugins/import/csv/enable'));
+        self::assertSame('PeopleController::show', $handler('GET', '/admin/people/abcdefghijkl'));
+        self::assertTrue($router->match('GET', $project . '/import/mnopqrstuvwx/continue')->isMethodNotAllowed());
+        self::assertTrue($router->match('GET', $project . '/export/archive')->isMethodNotAllowed());
+        self::assertTrue($router->match('GET', '/admin/plugins/import')->isNotFound());
+        self::assertTrue($router->match('GET', $project . '/import/../x')->isNotFound());
     }
 
     /**
@@ -326,6 +403,10 @@ final class RouterTest extends TestCase
         $pending = [
             'SetupController', 'SignInController', 'AccountController', 'ProjectController',
             'SharingController', 'TableController', 'FieldController', 'PeopleController',
+            // M2 spec part 2 section 2: created by M2-WP6 to WP8.
+            'RecordListController', 'SearchController', 'RecordController', 'SettingsController',
+            // M3 spec part 2 section 3: created by M3-WP9 and WP10.
+            'ImportController', 'ExportController', 'ArchiveController', 'PluginController',
         ];
         foreach (Router::applicationRoutes() as $route) {
             [, , [$class, $method]] = $route;

@@ -4,7 +4,9 @@
  * Copyright (C) TiffinDB contributors
  *
  * Shell, shared form, and shared notice strings (M0 spec section 9.4;
- * M1 spec part 2 section 5.2).
+ * M1 spec part 2 section 5.2; M2 spec part 2 section 6.3: the Display
+ * link, the project search, and the sidebar; M3 spec part 2 section 4:
+ * the Plugins link and the sidebar's Data group).
  */
 
 declare(strict_types=1);
@@ -21,9 +23,23 @@ return [
     'shell.nav.account' => 'Account',
     'shell.nav.projects' => 'Projects',
     'shell.nav.people' => 'People',
+    'shell.nav.plugins' => 'Plugins',
     'shell.account.label' => '{name}, change your password',
     'shell.sign_out' => 'Sign out',
     'shell.breadcrumb' => 'Where you are',
+    'shell.nav.display' => 'Display',
+    'shell.search.label' => 'Search all tables in {project}',
+    'shell.search.placeholder' => 'Search {project}',
+
+    'sidebar.label' => 'Project',
+    'sidebar.project' => 'Project',
+    'sidebar.switch' => 'Switch project',
+    'sidebar.tables' => 'Tables',
+    'sidebar.schema' => 'Tables and fields',
+    'sidebar.trash' => 'In the trash',
+    'sidebar.data' => 'Data',
+    'sidebar.import' => 'Import a file',
+    'sidebar.export' => 'Export',
 
     'count.problems.one' => 'There is a problem',
     'count.problems.many' => 'There are {count} problems',

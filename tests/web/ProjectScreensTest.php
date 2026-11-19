@@ -85,6 +85,10 @@ final class ProjectScreensTest extends TestCase
         self::assertSame('/projects/new', $new->attributes?->getNamedItem('href')?->nodeValue);
         self::assertSame('New project', trim($new->textContent));
         self::assertSame(1, $x->query('//div[@class="page-actions"]//svg[@class="button-icon"][@aria-hidden="true"]')->length);
+        // T-WEB-47 (M3-WP10): "Import a project archive" after New project, for Admins.
+        self::assertSame(['New project', 'Import a project archive'], $this->texts($x, '//div[@class="page-actions"]/a'));
+        self::assertSame('/projects/import', $x->query('//div[@class="page-actions"]/a[2]/@href')->item(0)?->nodeValue);
+        self::assertSame('button', $x->query('//div[@class="page-actions"]/a[2]/@class')->item(0)?->nodeValue);
 
         $cards = $x->query('//ul[@class="project-grid"]/li[@class="card project-card"]');
         self::assertSame(3, $cards->length);
@@ -125,6 +129,7 @@ final class ProjectScreensTest extends TestCase
 
         self::assertSame(['Recipes'], $this->texts($x, '//li/h2'));
         self::assertSame(0, $x->query('//div[@class="page-actions"]')->length, 'No New project.');
+        self::assertStringNotContainsString('/projects/import', $html, 'No Import a project archive (T-WEB-47).');
         self::assertSame(['Tables', 'Records', 'Last changed'], $this->texts($x, '//dl/dt'));
         self::assertSame(['Open'], $this->texts($x, '//li//a[not(ancestor::h2)]'));
         self::assertSame(0, $x->query('//p[contains(@class, "notice-muted")]')->length, 'No Admin note.');
@@ -253,13 +258,27 @@ final class ProjectScreensTest extends TestCase
         self::assertSame('Items', $tables[0]->table->name);
     }
 
-    public function testOpenRedirectsToTheTables(): void
+    public function testOpenWithoutTablesRedirectsToTheTables(): void
     {
         $key = $this->project('Recipes');
 
         self::assertSame('/projects/' . $key . '/tables', $this->request(self::ADMIN, 'GET', '/projects/' . $key)->header('Location'));
         self::assertSame(404, $this->request(self::MEMBER, 'GET', '/projects/' . $key)->status, 'Not shared: not found.');
         self::assertSame(404, $this->request(self::ADMIN, 'GET', '/projects/NOSUCHKEY000')->status);
+    }
+
+    public function testOpenRedirectsToTheFirstTableList(): void
+    {
+        $key = $this->project('Home Inventory', 'Items');
+        $admin = $this->core->actor('admin');
+        $this->ops->schema()->createTable($admin, $key, 'Rooms', 'room', true);
+        $first = $this->ops->schema()->tables($admin, $key)[0]->table;
+        self::assertSame('Items', $first->name);
+
+        $response = $this->request(self::ADMIN, 'GET', '/projects/' . $key . '?sort=added.desc');
+        self::assertSame(303, $response->status);
+        self::assertSame('/projects/' . $key . '/tables/' . $first->key, $response->header('Location'), 'No list state is carried.');
+        self::assertSame(404, $this->request(self::MEMBER, 'GET', '/projects/' . $key)->status, 'Not shared: not found.');
     }
 
     // Project settings.

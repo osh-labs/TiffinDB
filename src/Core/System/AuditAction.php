@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace TiffinDB\Core\System;
 
-/** The audit actions of M1 (M1 spec section 5.6). */
+/** The audit actions of M1 (M1 spec section 5.6) and M3 (M3 spec section 13.6, P128). */
 final class AuditAction
 {
     public const SETUP_COMPLETE = 'setup.complete';
@@ -34,6 +34,12 @@ final class AuditAction
     public const FIELD_DELETED = 'schema.field_deleted';
     public const SNAPSHOT_TAKEN = 'snapshot.taken';
     public const TRASH_EMPTIED = 'trash.emptied';
+    public const IMPORT_COMPLETED = 'import.completed';
+    public const EXPORT_CREATED = 'export.created';
+    public const ARCHIVE_EXPORTED = 'archive.exported';
+    public const ARCHIVE_IMPORTED = 'archive.imported';
+    public const PLUGIN_ENABLED = 'plugin.enabled';
+    public const PLUGIN_DISABLED = 'plugin.disabled';
 
     /** Values of the `reason` detail of auth.sign_in_failed. */
     public const REASON_UNKNOWN_USER = 'unknown-user';
@@ -47,7 +53,8 @@ final class AuditAction
         self::PEOPLE_REACTIVATED, self::PEOPLE_ACCESS_CHANGED, self::PROJECT_CREATED, self::PROJECT_RENAMED,
         self::PROJECT_SHARING_CHANGED, self::TABLE_CREATED, self::TABLE_CHANGED, self::TABLE_DELETED,
         self::FIELD_CREATED, self::FIELD_CHANGED, self::FIELD_MOVED, self::FIELD_DELETED,
-        self::SNAPSHOT_TAKEN, self::TRASH_EMPTIED,
+        self::SNAPSHOT_TAKEN, self::TRASH_EMPTIED, self::IMPORT_COMPLETED, self::EXPORT_CREATED,
+        self::ARCHIVE_EXPORTED, self::ARCHIVE_IMPORTED, self::PLUGIN_ENABLED, self::PLUGIN_DISABLED,
     ];
 
     private function __construct()

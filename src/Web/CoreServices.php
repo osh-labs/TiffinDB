@@ -100,14 +100,14 @@ final class CoreServices implements Services
             throw new LogicException('The core operations are not available before installation.');
         }
 
-        return $this->operationsInstance ??= new Operations(
+        return $this->operationsInstance ??= (new Operations(
             $this->system(),
             $this->data(),
             $this->clock(),
             $this->random(),
             $this->hasher(),
             $this->version(),
-        );
+        ))->usePluginsRoot(dirname(__DIR__, 2) . '/plugins');
     }
 
     public function probe(): HttpProbe

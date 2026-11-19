@@ -37,7 +37,7 @@ final class CsvExporter implements Exporter
                 'boolean',
                 '0',
                 [],
-                'Puts an apostrophe before text that starts with =, +, - or @, so spreadsheet programs do not treat it as a formula. The apostrophe becomes part of the value.',
+                'Puts an apostrophe before text that starts with =, +, -, @, a tab, or a carriage return, so spreadsheet programs do not treat it as a formula. The apostrophe becomes part of the value.',
             ),
         ]);
     }

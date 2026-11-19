@@ -26,6 +26,7 @@ use TiffinDB\Core\Io\Contract\ExportValue;
 use TiffinDB\Core\Io\Contract\PluginFailure;
 use TiffinDB\Core\Io\Contract\Setting;
 use TiffinDB\Core\Io\Contract\Settings;
+use TiffinDB\Core\Io\Csv\Charset;
 
 /**
  * The shipped XLSX export plugin (M3 spec section 9.3, ADR 0016 decision
@@ -49,8 +50,11 @@ use TiffinDB\Core\Io\Contract\Settings;
  *
  * Exact values (WP5): the writer prints a float with PHP's `precision`
  * setting (14 significant digits by default). A number or currency amount
- * that would not read back exactly that way is written as a string cell of
- * its exact text instead. Dates before 1900-03-01, which the 1900 date
+ * that would not read back exactly that way, and a whole number of 16 or
+ * more digits (spreadsheet programs keep 15), is written as a string cell
+ * of its exact text instead. Text with invalid UTF-8 is written with each
+ * invalid sequence as U+FFFD (the writer's escaping would otherwise give an
+ * empty cell); control characters are removed from sheet names. Dates before 1900-03-01, which the 1900 date
  * system cannot hold (or holds off by one day), are string cells of their
  * text too. Text longer than a spreadsheet cell's 32,767 characters is cut
  * to that length (TiffinDB's own fields are shorter; joined link titles
@@ -59,6 +63,7 @@ use TiffinDB\Core\Io\Contract\Settings;
 final class XlsxExporter implements Exporter
 {
     private const CELL_CHARS = 32767;
+    private const LARGEST_EXACT = 1000000000000000;
     private const SHEET_NAME_CHARS = 31;
     private const FIRST_DATE = '1900-03-01';
     private const NUMBER_TYPES = ['number', 'rating', 'auto_number'];
@@ -137,7 +142,7 @@ final class XlsxExporter implements Exporter
                     $digits = self::minorDigits($field->options);
                     $amount = $digits === 0 ? $raw : $raw / 10 ** $digits;
                     $decimal = self::decimal($raw, $digits);
-                    if (is_int($amount) || (float) $decimal === $amount && self::exact($amount)) {
+                    if (is_int($amount) ? self::exact($amount) : (float) $decimal === $amount && self::exact($amount)) {
                         return new NumericCell($amount, $style);
                     }
 
@@ -177,7 +182,12 @@ final class XlsxExporter implements Exporter
     /** Whether the writer's text of $value (PHP's float-to-string conversion) reads back as $value. */
     private static function exact(int|float $value): bool
     {
-        return is_int($value) || (float) (string) $value === $value;
+        if (is_int($value)) {
+            // Spreadsheet programs hold 15 significant digits.
+            return $value < self::LARGEST_EXACT && $value > -self::LARGEST_EXACT;
+        }
+
+        return (float) (string) $value === $value;
     }
 
     /** A canonical date (`YYYY-MM-DD`) or date and time (`YYYY-MM-DDTHH:MM:SS`), or null. */
@@ -219,6 +229,7 @@ final class XlsxExporter implements Exporter
      */
     private static function sheetName(string $name, array &$taken): string
     {
+        $name = (string) preg_replace('/[\x00-\x1F\x7F]+/', '', Charset::scrub($name));
         $name = trim(str_replace(['[', ']', ':', '*', '?', '/', '\\'], '', $name));
         $name = trim($name, "'");
         $name = $name === '' ? 'Sheet' : $name;
@@ -239,6 +250,9 @@ final class XlsxExporter implements Exporter
     /** Text cut to the 32,767 characters a spreadsheet cell holds. */
     private static function cut(string $text): string
     {
+        // Invalid UTF-8 would make the writer's escaping return an empty string.
+        $text = Charset::scrub($text);
+
         return strlen($text) <= self::CELL_CHARS ? $text : self::chars($text, self::CELL_CHARS);
     }
 

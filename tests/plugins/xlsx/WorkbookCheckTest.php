@@ -191,6 +191,49 @@ final class WorkbookCheckTest extends TestCase
         $parts = self::parts();
         $parts['xl/vbaProject.bin'] = "\xD0\xCF\x11\xE0 synthetic";
         self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($parts)));
+
+        // Character references in the content types are decoded before the check.
+        $b = (new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['a']))->mainContentType('application/vnd.ms-excel.sheet.macro&#69;nabled.main+xml');
+        self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($b->parts())), 'macro&#69;nabled');
+        $parts = self::parts();
+        $parts['[Content_Types].xml'] = str_replace('</Types>', '<Default Extension="bin" ContentType="application/vnd.ms-office.vba&#x50;roject"/></Types>', $parts['[Content_Types].xml']);
+        self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($parts)), 'VBA project content type by reference');
+
+        // XLM macro sheets and VBA parts by name, whatever the content types say.
+        foreach (['xl/macrosheets/sheet1.xml', 'XL/MacroSheets/x.xml', 'xl/dialogsheets/d.xml', 'xl/VBAPROJECT.BIN', 'xl/vbaProjectSignature.bin', 'xl/vbaData.xml'] as $name) {
+            $parts = self::parts();
+            $parts[$name] = WorkbookBuilder::HEAD . '<xm/>';
+            self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($parts)), $name);
+        }
+        $parts = self::parts();
+        $parts['[Content_Types].xml'] = str_replace('</Types>', '<Override PartName="/xl/m/s.xml" ContentType="application/vnd.ms-excel.macrosheet+xml"/></Types>', $parts['[Content_Types].xml']);
+        self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($parts)), 'Macro sheet content type');
+        $parts = self::parts();
+        $parts['xl/_rels/workbook.xml.rels'] = str_replace('</Relationships>', '<Relationship Id="rIdM" Type="' . WorkbookBuilder::REL
+            . '/xlMacrosheet" Target="m/s.xml"/></Relationships>', $parts['xl/_rels/workbook.xml.rels']);
+        self::assertSame(PluginFailure::REASON_UNSUPPORTED, $this->reason(self::raw($parts)), 'Macro sheet relationship');
+    }
+
+    public function testNamesThatDifferOnlyInCase(): void
+    {
+        $parts = self::parts();
+        $parts['XL/Worksheets/Sheet1.xml'] = WorkbookBuilder::HEAD . '<worksheet/>';
+        self::assertSame(PluginFailure::REASON_UNREADABLE, $this->reason(self::raw($parts)));
+        $parts = self::parts();
+        $parts['[content_types].xml'] = $parts['[Content_Types].xml'];
+        unset($parts['[Content_Types].xml']);
+        self::assertSame(PluginFailure::REASON_UNREADABLE, $this->reason(self::raw($parts)), 'The content types part needs its exact name.');
+    }
+
+    public function testTheSheetCap(): void
+    {
+        $builder = new WorkbookBuilder();
+        for ($i = 1; $i <= 255; $i++) {
+            $builder->sheet('S' . $i, '');
+        }
+        self::assertNull($this->reason(self::raw($builder->parts())), '255 worksheets');
+        $builder->sheet('S256', '');
+        self::assertSame(PluginFailure::REASON_TOO_LARGE, $this->reason(self::raw($builder->parts())), '256 worksheets');
     }
 
     public function testPrologRules(): void

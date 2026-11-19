@@ -66,7 +66,7 @@ final class SheetCursor
         $reader = $this->reader;
         if ($this->rowDepth === -1) {
             while (true) {
-                if (!$reader->read()) {
+                if (!Xml::read($reader)) {
                     return $this->end();
                 }
                 if ($reader->nodeType === \XMLReader::ELEMENT && $reader->localName === 'sheetData') {
@@ -79,7 +79,7 @@ final class SheetCursor
             }
         }
         while (true) {
-            if (!$this->pending && !$reader->read()) {
+            if (!$this->pending && !Xml::read($reader)) {
                 return $this->end();
             }
             $this->pending = false;
@@ -91,7 +91,7 @@ final class SheetCursor
                 continue;
             }
             if ($reader->localName !== 'row' || $reader->depth !== $this->rowDepth) {
-                $this->pending = $reader->next();
+                $this->pending = Xml::next($reader);
                 if (!$this->pending) {
                     return $this->end();
                 }
@@ -117,7 +117,7 @@ final class SheetCursor
     /** Leaves the current row without reading its cells. */
     public function skip(): void
     {
-        $this->pending = $this->reader->next();
+        $this->pending = Xml::next($this->reader);
     }
 
     /**
@@ -136,14 +136,14 @@ final class SheetCursor
         $depth = $reader->depth;
         $column = -1;
         $elements = 0;
-        $more = $reader->read();
+        $more = Xml::read($reader);
         while ($more && !($reader->nodeType === \XMLReader::END_ELEMENT && $reader->depth === $depth)) {
             if ($reader->nodeType !== \XMLReader::ELEMENT) {
-                $more = $reader->read();
+                $more = Xml::read($reader);
                 continue;
             }
             if ($reader->localName !== 'c' || $reader->depth !== $depth + 1) {
-                $more = $reader->next();
+                $more = Xml::next($reader);
                 continue;
             }
             if (++$elements > Limits::MAX_SHEET_COLUMN) {
@@ -156,7 +156,7 @@ final class SheetCursor
             } else {
                 unset($cells[$column]);
             }
-            $more = $reader->next();
+            $more = Xml::next($reader);
         }
         $this->pending = false;
 
@@ -203,21 +203,21 @@ final class SheetCursor
         $value = null;
         $inline = null;
         $formula = false;
-        $more = $reader->read();
+        $more = Xml::read($reader);
         while ($more && !($reader->nodeType === \XMLReader::END_ELEMENT && $reader->depth === $depth)) {
             if ($reader->nodeType === \XMLReader::ELEMENT && $reader->depth === $depth + 1) {
                 $name = $reader->localName;
                 if ($name === 'v') {
-                    $value = Xml::cut($reader->readString());
+                    $value = Xml::cut(Xml::content($reader));
                 } elseif ($name === 'is') {
                     $inline = Xml::text($reader);
                 } elseif ($name === 'f') {
                     $formula = true;
                 }
-                $more = $reader->next();
+                $more = Xml::next($reader);
                 continue;
             }
-            $more = $reader->read();
+            $more = Xml::read($reader);
         }
         if ($formula && ($value === null || $value === '')) {
             // A formula without a cached value: never evaluated.

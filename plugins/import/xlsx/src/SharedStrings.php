@@ -42,7 +42,7 @@ final class SharedStrings
         $offsets = '';
         $count = 0;
         try {
-            $more = $reader->read();
+            $more = Xml::read($reader);
             while ($more) {
                 if ($reader->nodeType === \XMLReader::ELEMENT && $reader->localName === 'si') {
                     if ($count >= Limits::MAX_SHARED_STRINGS) {
@@ -54,16 +54,32 @@ final class SharedStrings
                     if (strlen($text) > Limits::MAX_SHARED_BYTES) {
                         throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, 'The shared strings are larger than the limit.');
                     }
-                    $more = $reader->next();
+                    $more = Xml::next($reader);
                     continue;
                 }
-                $more = $reader->read();
+                $more = Xml::read($reader);
             }
         } finally {
             $reader->close();
         }
 
         return new self($text, $offsets . pack('V', strlen($text)), $count);
+    }
+
+    /** A table from cached parts (JobCache); null when the parts do not fit together. */
+    public static function fromParts(string $text, string $offsets, int $count): ?self
+    {
+        if ($count < 0 || strlen($offsets) !== 4 * ($count + 1)) {
+            return null;
+        }
+
+        return new self($text, $offsets, $count);
+    }
+
+    /** @return array{0: string, 1: string, 2: int} the text, the offsets, the count */
+    public function parts(): array
+    {
+        return [$this->text, $this->offsets, $this->count];
     }
 
     public function count(): int
@@ -79,6 +95,9 @@ final class SharedStrings
         }
         /** @var array{1: int, 2: int} $bounds */
         $bounds = unpack('V2', $this->offsets, 4 * $index);
+        if ($bounds === false || $bounds[1] > $bounds[2] || $bounds[2] > strlen($this->text)) {
+            return null;
+        }
 
         return substr($this->text, $bounds[1], $bounds[2] - $bounds[1]);
     }

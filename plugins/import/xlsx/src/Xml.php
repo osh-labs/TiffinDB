@@ -12,13 +12,30 @@ use TiffinDB\Core\Io\Contract\PluginFailure;
 
 /**
  * Streaming XML reading of workbook parts with PHP's XMLReader, over the
- * zip:// stream wrapper (nothing is extracted to disk).
+ * zip:// stream wrapper (nothing is extracted to disk). Parts are opened
+ * only after WorkbookCheck has refused any prolog that declares a DOCTYPE
+ * or entity and has counted every entry's real bytes, so a part never
+ * yields more bytes than its (capped) declared size.
  *
  * Parser options: LIBXML_NONET and LIBXML_COMPACT only: no entity
  * substitution, no DTD loading or validation, no XInclude, and no
- * LIBXML_PARSEHUGE, so libxml keeps its own limits on text node size,
- * names, and nesting depth. Parts are opened only after WorkbookCheck has
- * refused any prolog that declares a DOCTYPE or entity.
+ * LIBXML_PARSEHUGE, so libxml keeps its own limits on text node size
+ * (10 MB), names, and nesting depth. LIBXML_NONET is defence in depth: no
+ * part can declare an external entity or DTD after the prolog check, but
+ * the parser is still never allowed to fetch one.
+ *
+ * Never on untrusted subtrees: XMLReader::readString(), readInnerXml(),
+ * readOuterXml(), and expand() build the whole subtree in libxml's memory,
+ * outside PHP's memory_limit (a few megabytes of a workbook can hold
+ * hundreds of megabytes of child elements). Text is collected here from
+ * text nodes one read() at a time, up to MAX_STRING_BYTES, and elements
+ * where text is expected are skipped with next() without being built.
+ *
+ * Work limit: every read() and next() goes through this class and counts
+ * one step against the current phase's budget (phase(), budget()); a
+ * phase that passes its budget is a PluginFailure(REASON_TOO_LARGE), so
+ * the parsing work of one call is bounded whatever the file holds.
+ * steps() is the total since the process started (tests measure with it).
  *
  * Errors: each piece of parsing runs inside run(), which turns libxml
  * errors and PHP warnings into PluginFailure(REASON_UNREADABLE) and
@@ -32,8 +49,12 @@ final class Xml
 {
     private const OPTIONS = LIBXML_NONET | LIBXML_COMPACT;
 
-    /** How many run() calls are open (an inner call runs inside the outer one's scope). */
+    /** How many run() calls are open. */
     private static int $depth = 0;
+    /** Steps left in the current phase. */
+    private static int $remaining = 0;
+    /** Steps taken since the process started. */
+    private static int $steps = 0;
 
     private function __construct()
     {
@@ -48,6 +69,61 @@ final class Xml
         }
 
         return $reader;
+    }
+
+    /**
+     * Runs $work with a budget of $steps reads; the enclosing budget is
+     * restored afterwards (the steps of this phase do not count against it).
+     *
+     * @template T
+     * @param \Closure(): T $work
+     * @return T
+     */
+    public static function phase(int $steps, \Closure $work): mixed
+    {
+        $outer = self::$remaining;
+        self::$remaining = $steps;
+        try {
+            return $work->__invoke();
+        } finally {
+            self::$remaining = $outer;
+        }
+    }
+
+    /** Starts a new budget of $steps reads (for a row generator, which cannot wrap its yields in phase()). */
+    public static function budget(int $steps): void
+    {
+        self::$remaining = $steps;
+    }
+
+    /** Steps taken since the process started. */
+    public static function steps(): int
+    {
+        return self::$steps;
+    }
+
+    /** XMLReader::read(), counted. */
+    public static function read(\XMLReader $reader): bool
+    {
+        self::step();
+
+        return $reader->read();
+    }
+
+    /** XMLReader::next(), counted: moves past the current node's subtree without building it. */
+    public static function next(\XMLReader $reader): bool
+    {
+        self::step();
+
+        return $reader->next();
+    }
+
+    private static function step(): void
+    {
+        self::$steps++;
+        if (--self::$remaining < 0) {
+            throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, 'The workbook needs more reading work than the limit allows.');
+        }
     }
 
     /**
@@ -94,10 +170,11 @@ final class Xml
     }
 
     /**
-     * The text of the element the reader is on (an `<si>` or `<is>`): the
+     * The text of the element the reader is on (an `<si>` or `<is>`): its
      * `<t>` children, directly or inside rich text runs `<r>`; phonetic runs
-     * (`<rPh>`) and run properties are left out. Kept to MAX_STRING_BYTES.
-     * Leaves the reader on the element's end (or on it when it is empty).
+     * (`<rPh>`), run properties, and anything else are skipped. Kept to
+     * MAX_STRING_BYTES. Leaves the reader on the element's end (or on it
+     * when it is empty).
      */
     public static function text(\XMLReader $reader): string
     {
@@ -106,26 +183,56 @@ final class Xml
         }
         $depth = $reader->depth;
         $text = '';
-        $more = $reader->read();
+        $more = self::read($reader);
         while ($more && !($reader->nodeType === \XMLReader::END_ELEMENT && $reader->depth === $depth)) {
             if ($reader->nodeType === \XMLReader::ELEMENT) {
                 $name = $reader->localName;
-                if ($name === 't') {
-                    if (strlen($text) <= Limits::MAX_STRING_BYTES) {
-                        $text .= $reader->readString();
-                    }
-                    $more = $reader->next();
+                $inRun = $reader->depth === $depth + 2;
+                if ($name === 't' && ($reader->depth === $depth + 1 || $inRun)) {
+                    $text .= self::content($reader, Limits::MAX_STRING_BYTES + 1 - strlen($text));
+                    $more = self::read($reader);
                     continue;
                 }
-                if ($name !== 'r') {
-                    $more = $reader->next();
+                if ($name !== 'r' || $reader->depth !== $depth + 1) {
+                    $more = self::next($reader);
                     continue;
                 }
             }
-            $more = $reader->read();
+            $more = self::read($reader);
         }
 
         return self::cut($text);
+    }
+
+    /**
+     * The character data directly inside the element the reader is on (a
+     * `<t>` or `<v>`): text, CDATA, and white space nodes, kept while fewer
+     * than $room bytes are held (cut() trims the last one). Child elements
+     * are skipped with next(), never built. Leaves the reader on the
+     * element's end (or on it when it is empty).
+     */
+    public static function content(\XMLReader $reader, int $room = Limits::MAX_STRING_BYTES + 1): string
+    {
+        if ($reader->isEmptyElement) {
+            return '';
+        }
+        $depth = $reader->depth;
+        $text = '';
+        $more = self::read($reader);
+        while ($more && !($reader->nodeType === \XMLReader::END_ELEMENT && $reader->depth === $depth)) {
+            $type = $reader->nodeType;
+            if ($type === \XMLReader::ELEMENT) {
+                $more = self::next($reader);
+                continue;
+            }
+            if (strlen($text) < $room && ($type === \XMLReader::TEXT || $type === \XMLReader::CDATA
+                || $type === \XMLReader::SIGNIFICANT_WHITESPACE || $type === \XMLReader::WHITESPACE)) {
+                $text .= $reader->value;
+            }
+            $more = self::read($reader);
+        }
+
+        return $text;
     }
 
     /** $text kept to MAX_STRING_BYTES, cut at a character boundary. */

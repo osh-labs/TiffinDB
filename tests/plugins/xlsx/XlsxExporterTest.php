@@ -282,7 +282,8 @@ final class XlsxExporterTest extends TestCase
         $importer = XlsxPlugins::importer();
         $file = new SourceFile($this->temp->path('export.xlsx'), 'xlsx', (int) filesize($this->temp->path('export.xlsx')), $tmp);
         self::assertCount(300, XlsxPlugins::allRows($importer, $file, $importer->detect($file), 0, 100));
-        self::assertSame([], array_values(array_diff((array) scandir($tmp), ['.', '..'])), 'Reading writes no temporary files.');
+        self::assertSame(['xlsx-cache.json', 'xlsx-offsets.bin', 'xlsx-strings.bin'], array_values(array_diff((array) scandir($tmp), ['.', '..'])),
+            'Reading writes only its job cache, in tmp/.');
         self::assertSame($before, self::xlsxEntries($system));
 
         $missing = $this->temp->path('no-tmp');
@@ -296,6 +297,35 @@ final class XlsxExporterTest extends TestCase
     private static function xlsxEntries(string $folder): array
     {
         return array_values(array_filter((array) scandir($folder), static fn ($name): bool => is_string($name) && str_starts_with($name, 'xlsx')));
+    }
+
+    public function testInvalidTextControlCharactersAndLargeIntegers(): void
+    {
+        $fields = [
+            new ExportField('t', "Na\xC3me", 'text', [], false, '', null),
+            new ExportField('n', 'Number', 'number', ['decimals' => 0], false, '', null),
+            new ExportField('a', 'Counter', 'auto_number', [], false, '', null),
+            new ExportField('c', 'Amount', 'currency', ['code' => 'JPY', 'minor_digits' => 0], false, '', null),
+        ];
+        $values = [
+            't' => new ExportValue("Caf\xC3 sign", "Caf\xC3 sign", []),
+            'n' => new ExportValue(1234567890123456, '1234567890123456', []),
+            'a' => new ExportValue(999999999999999, '999999999999999', []),
+            'c' => new ExportValue(-1000000000000000, '-1000000000000000', []),
+        ];
+        $source = new FakeExportSource([self::table('t', "Rooms\x01\x1F\x7F", $fields, 1)], static fn (string $key): array => [self::record(1, $values)]);
+        $entries = self::entries($this->export($source));
+        $names = [];
+        foreach (self::xpath($entries['xl/workbook.xml'])->query('//m:sheets/m:sheet') as $sheet) {
+            $names[] = $sheet->getAttribute('name');
+        }
+        self::assertSame(['Rooms'], $names, 'Control characters are removed from sheet names.');
+        $cells = self::cells($entries, 'xl/worksheets/sheet1.xml');
+        self::assertSame("Na\u{FFFD}me", $cells['A1'][3]);
+        self::assertSame(['inlineStr', '', null, "Caf\u{FFFD} sign", false], $cells['A2'], 'Invalid UTF-8 becomes U+FFFD, not an empty cell.');
+        self::assertSame(['inlineStr', '', null, '1234567890123456', false], $cells['B2'], 'Sixteen digits: text.');
+        self::assertSame(['', '', '999999999999999', null, false], $cells['C2'], 'Fifteen digits: a number.');
+        self::assertSame(['inlineStr', '', null, '-1000000000000000', false], $cells['D2']);
     }
 
     public function testAFailingSourceRemovesThePartialFile(): void

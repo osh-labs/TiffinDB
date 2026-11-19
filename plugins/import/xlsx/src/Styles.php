@@ -60,13 +60,13 @@ final class Styles
         $inCellXfs = false;
         $cellXfsDepth = 0;
         try {
-            $more = $reader->read();
+            $more = Xml::read($reader);
             while ($more) {
                 $type = $reader->nodeType;
                 $name = $reader->localName;
                 if ($type === \XMLReader::END_ELEMENT && $inCellXfs && $name === 'cellXfs' && $reader->depth === $cellXfsDepth) {
                     $inCellXfs = false;
-                } elseif ($type === \XMLReader::ELEMENT && $name === 'numFmt' && count($custom) < Limits::MAX_FORMATS) {
+                } elseif ($type === \XMLReader::ELEMENT && $name === 'numFmt' && count($custom) < Limits::MAX_NUMBER_FORMATS) {
                     $id = self::id($reader->getAttribute('numFmtId'));
                     $code = $reader->getAttribute('formatCode');
                     if ($id !== null && $code !== null) {
@@ -81,10 +81,10 @@ final class Styles
                         $kinds[] = $custom[$id] ?? self::BUILT_IN[$id] ?? self::NUMBER;
                     }
                     // Skip the format's children (alignment, protection).
-                    $more = $reader->next();
+                    $more = Xml::next($reader);
                     continue;
                 }
-                $more = $reader->read();
+                $more = Xml::read($reader);
             }
         } finally {
             $reader->close();
@@ -99,6 +99,28 @@ final class Styles
         return $value !== null && preg_match('/^\d{1,9}\z/', $value) === 1 ? (int) $value : null;
     }
 
+    /** The kinds as one byte each (for JobCache). */
+    public function bytes(): string
+    {
+        $bytes = '';
+        foreach ($this->kinds as $kind) {
+            $bytes .= chr($kind);
+        }
+
+        return $bytes;
+    }
+
+    /** Kinds from bytes() (checked by JobCache: each 0 to 3). */
+    public static function fromBytes(string $bytes): self
+    {
+        $kinds = [];
+        for ($i = 0, $n = strlen($bytes); $i < $n; $i++) {
+            $kinds[] = ord($bytes[$i]) & 3;
+        }
+
+        return new self($kinds);
+    }
+
     /** The kind of cell format $index (the `s` attribute of a cell); NUMBER when unknown. */
     public function kind(int $index): int
     {
@@ -108,6 +130,10 @@ final class Styles
     /** The kind of number format code $code. */
     public static function classify(string $code): int
     {
+        if (strlen($code) > Limits::MAX_FORMAT_CODE) {
+            // Longer than any format a spreadsheet program writes: read as a plain number.
+            return self::NUMBER;
+        }
         // The first section (sections are separated by ';' outside quotes).
         $section = '';
         $quoted = false;
@@ -123,7 +149,7 @@ final class Styles
         }
         $section = (string) preg_replace('/"[^"]*"?|\\\\.|[_*]./s', '', $section);
         $elapsed = false;
-        $section = (string) preg_replace_callback('/\[([^\]]*)\]?/', static function (array $m) use (&$elapsed): string {
+        $section = (string) preg_replace_callback('/\[([^\[\]]*)\]?/', static function (array $m) use (&$elapsed): string {
             if (preg_match('/^(h+|m+|s+)\z/i', $m[1]) === 1) {
                 $elapsed = true;
             }

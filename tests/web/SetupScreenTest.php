@@ -830,6 +830,49 @@ final class SetupScreenTest extends TestCase
         self::assertSame(InstallState::NeedsAdmin, $this->installer()->state());
     }
 
+    /**
+     * T-CF-3: a POST that read NeedsAdmin but lost the race to another
+     * request that created the first Admin is sent to sign in, not a 500.
+     */
+    public function testALosingFirstAdminPostRedirectsToSignIn(): void
+    {
+        $this->prepareSafely();
+        $code = $this->setupCode();
+        $services = $this->services(InstallState::NeedsAdmin);
+        $this->installer()->createFirstAdmin($code, 'Example Admin', 'admin', self::PASSWORD, '192.0.2.1');
+
+        $response = self::send($services, 'POST', '/setup/admin', [
+            'setup_code' => $code,
+            'display_name' => 'Example Person',
+            'username' => 'person',
+            'password' => self::PASSWORD,
+            'repeat' => self::PASSWORD,
+        ], self::server($this->publicRoot()));
+
+        self::assertSame(303, $response->status, $response->body);
+        self::assertSame('/sign-in', $response->header('Location'));
+        self::assertSame('', $response->body);
+        self::assertNull($response->cookie(Context::SESSION_COOKIE));
+        self::assertNotContains('setFlash:notice.setup.done', $services->calls);
+        self::assertSame(InstallState::Installed, $this->installer()->state());
+    }
+
+    /** T-CF-3: an installer refusal that is not a lost race is still a 500. */
+    public function testAnInstallerRefusalBeforeTheDataFolderIsStillA500(): void
+    {
+        $services = $this->services(InstallState::NeedsAdmin);
+        $response = self::send($services, 'POST', '/setup/admin', [
+            'setup_code' => 'WRNG-WRNG-WRNG-WRNG',
+            'display_name' => 'Example Admin',
+            'username' => 'admin',
+            'password' => self::PASSWORD,
+            'repeat' => self::PASSWORD,
+        ], self::server($this->publicRoot()));
+
+        self::assertSame(500, $response->status);
+        self::assertNull($response->header('Location'));
+    }
+
     public function testALateOrEarlyAdminPostRedirectsWithoutTheInstaller(): void
     {
         $response = self::send(new FakeServices(InstallState::NeedsDataFolder), 'POST', '/setup/admin', ['setup_code' => 'x'], self::server($this->publicRoot()));

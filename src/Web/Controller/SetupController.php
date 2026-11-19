@@ -30,7 +30,9 @@ use TiffinDB\Web\Response;
  * - dataFolder (POST /setup/data-folder): prepares the data folder; a safe
  *   result redirects to /setup, any other renders step 2 with status 409.
  * - admin (POST /setup/admin): creates the first Admin, signs them in, and
- *   redirects to /projects; problems render step 3 with status 422.
+ *   redirects to /projects; problems render step 3 with status 422. A POST
+ *   that loses the race to another request that created the first Admin
+ *   redirects to /sign-in (T-CF-3).
  *
  * The installation state is read once per request through
  * Services::installState() (Installer::state() is not read-only). A POST
@@ -135,6 +137,16 @@ final class SetupController
             );
         } catch (ValidationFailed $failed) {
             return $this->adminPage($values, $failed->problems, false);
+        } catch (LogicException $e) {
+            // T-CF-3: another request created the first Admin after this one
+            // read the state. The installer refuses with a LogicException;
+            // when a fresh look at the state confirms the installation is
+            // complete, the person is sent to sign in instead of a 500.
+            if ($services->installer()->state() !== InstallState::Installed) {
+                throw $e;
+            }
+
+            return $this->context->redirect('/sign-in');
         }
 
         $response = $this->context->withNewSession($this->context->redirect('/projects'), $session);

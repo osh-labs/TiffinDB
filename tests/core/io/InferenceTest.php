@@ -63,6 +63,7 @@ final class InferenceTest extends TestCase
         yield '7 two decimals and a money heading' => ['Unit price', ['5.00', '12.50'], 'currency', ['code' => 'USD', 'minor_digits' => 2]];
         yield '7 two decimals alone is a number' => ['Weight', ['5.00', '12.50'], 'number', ['decimals' => 2]];
         yield '7 money heading without two decimals' => ['Total', ['5', '12.5'], 'number', ['decimals' => 1]];
+        yield '7 not for an amount the currency field cannot hold' => ['Paid', ['$1', '$12345678901234567890'], 'text', ['max_length' => 500]];
         yield '7 mixed symbols' => ['Paid', ['$5', '€6', '$7'], 'text', ['max_length' => 500]];
         yield '8 number' => ['Weight', ['1', '2.5', '-3.125', '1,000'], 'number', ['decimals' => 3]];
         yield '9 duration' => ['Length', ['1:30', '26:15'], 'duration', []];
@@ -89,6 +90,15 @@ final class InferenceTest extends TestCase
         self::assertSame($options, $guess->options);
         self::assertSame($type, $guess->typeChoices[0], 'The proposed type comes first in the menu.');
         self::assertTrue($guess->include);
+    }
+
+    public function testTheCurrencyCounterUsesTheLenientParse(): void
+    {
+        $stats = self::stats(['$1', '$12345678901234567890', '$899,999,999,999.99']);
+        self::assertSame(2, $stats->counter('currency'), 'Twenty digits are past the currency limit; twelve are not.');
+        self::assertSame(1, self::stats(['$900,000,000,000'])->counter('currency'));
+        self::assertSame(0, self::stats(['$900,000,000,000.5'])->counter('currency'), 'Counted under the tightest limit any proposed options give.');
+        self::assertNotContains('currency', Inference::guess('Paid', self::stats(['$1', '$12345678901234567890']), [])->typeChoices);
     }
 
     public function testLinksNeedATextLikeTitleAndANonEmptyColumn(): void

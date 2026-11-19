@@ -36,6 +36,8 @@ final class ColumnStats
         '/^-?([$€£¥])?\d+(\.\d{1,3})?\z/u',
     ];
     public const COUNTERS = ['checkbox', 'number', 'currency', 'date', 'date_time', 'time', 'duration', 'url', 'email', 'integer1to5', 'intDistinctIncreasing'];
+    /** Currency options under which the amount limit is tightest (CurrencyType::MINOR_DIGITS_MAX). */
+    private const STRICTEST_CURRENCY = ['code' => 'USD', 'minor_digits' => 4];
     private const CHECKBOX_WORDS = ['yes', 'no', 'true', 'false'];
     private const LENIENT = ['number', 'date', 'date_time', 'time', 'duration', 'url', 'email'];
 
@@ -118,7 +120,9 @@ final class ColumnStats
                 }
             }
         }
-        if (self::isCurrencyLike($text)) {
+        if (self::isCurrencyLike($text) && $types->get('currency')->parse(self::cleanCurrency($text), self::STRICTEST_CURRENCY, true)->isOk()) {
+            // The preparer's parse, with the most minor digits a currency field can have, so the amount limit is the
+            // tightest any proposed options could give (a 20-digit amount is not counted).
             $this->counters['currency']++;
             if (preg_match('/([$€£¥])/u', $text, $m) === 1 && !in_array($m[1], $this->symbols, true)) {
                 $this->symbols[] = $m[1];

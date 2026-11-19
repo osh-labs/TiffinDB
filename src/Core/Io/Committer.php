@@ -46,8 +46,11 @@ use TiffinDB\Core\Storage\Timestamp;
  * 4. The job moves to Done with the report key in its meta; the caller
  *    audits and removes the job folder.
  *
- * Job states on failure: target changed, Review; Busy, stays Ready (the
- * Admin may retry); anything else, Failed with reason `commit-failed`.
+ * Job states on failure: target changed, Review; more than
+ * IoLimits::MAX_NEW_LINK_RECORDS new records in linked tables
+ * (problem.import.too_many_links, P142), Review, so the Admin can leave a
+ * link column out; Busy, stays Ready (the Admin may retry); anything else,
+ * Failed with reason `commit-failed`.
  *
  * Fields of a new table are added in source column order, link columns
  * included, so that the table's field order follows the file (the spec's
@@ -64,9 +67,13 @@ final class Committer
     /**
      * @param (\Closure(string): void)|null $fault test seam, called inside the transaction after each sub-step
      *     ('table', 'fields', 'links', 'rows-half', 'rows', 'log') so a test can inject a failure there
+     * @internal $maxNewLinkRecords is a test seam; application code uses IoLimits::MAX_NEW_LINK_RECORDS
      */
-    public function __construct(?\Closure $fault = null)
+    public function __construct(?\Closure $fault = null, private readonly int $maxNewLinkRecords = IoLimits::MAX_NEW_LINK_RECORDS)
     {
+        if ($maxNewLinkRecords < 0) {
+            throw new \InvalidArgumentException('The cap on new linked records is 0 or more.');
+        }
         $this->fault = $fault ?? static function (string $step): void {
         };
     }
@@ -123,7 +130,7 @@ final class Committer
                 $job, $mapping, $db, $types, $clock, $editor, $userKey, $snapshot->file, $requiredEmpty,
             ));
         } catch (ValidationFailed $failed) {
-            if (self::isTargetChanged($failed)) {
+            if (self::isTargetChanged($failed) || self::hasKey($failed, 'problem.import.too_many_links')) {
                 $job->moveTo(JobState::Review);
             } else {
                 $job->fail('commit-failed');
@@ -263,11 +270,13 @@ final class Committer
         $schema = new Schema($db, $types);
         $records = (new Records($db, $schema, $types, $clock))->within();
 
-        // 3.3: link targets.
+        // 3.3: link targets. Titles not found are collected first, so that an import that would add more than
+        // the cap of new records to other tables is refused before any of them is made (P142).
         $maps = [];
         $refused = [];
         $linksAdded = [];
         $duplicates = [];
+        $newRecords = 0;
         foreach ($plans as $plan) {
             if (!$plan->isLink() || $plan->target === null) {
                 continue;
@@ -276,13 +285,13 @@ final class Committer
             $duplicates[$plan->key] = $titles->duplicates;
             $map = $titles->ids;
             $refused[$plan->key] = [];
-            $linksAdded[$plan->key] = 0;
+            $missing = [];
             foreach ($this->preparedRows($job) as $record) {
                 $value = $record[$plan->key] ?? null;
                 foreach (is_array($value) && is_array($value['titles'] ?? null) ? $value['titles'] : [] as $title) {
                     $title = (string) $title;
                     $folded = Titles::fold($title);
-                    if ($folded === '' || isset($map[$folded]) || isset($refused[$plan->key][$folded])) {
+                    if ($folded === '' || isset($map[$folded]) || isset($missing[$folded]) || isset($refused[$plan->key][$folded])) {
                         continue;
                     }
                     if (Titles::parse($types, $plan->target, $title) === null) {
@@ -290,10 +299,17 @@ final class Committer
 
                         continue;
                     }
-                    $map[$folded] = $records->create($plan->target->tableKey, [$plan->target->titleField->key => $title], InputMode::Import, $userKey, []);
-                    $linksAdded[$plan->key]++;
+                    $missing[$folded] = $title;
                 }
             }
+            $newRecords += count($missing);
+            if ($newRecords > $this->maxNewLinkRecords) {
+                throw new ValidationFailed([new Problem('table', 'problem.import.too_many_links', ['max' => $this->maxNewLinkRecords])]);
+            }
+            foreach ($missing as $folded => $title) {
+                $map[$folded] = $records->create($plan->target->tableKey, [$plan->target->titleField->key => $title], InputMode::Import, $userKey, []);
+            }
+            $linksAdded[$plan->key] = count($missing);
             $maps[$plan->key] = $map;
         }
         $fault('links');
@@ -569,6 +585,17 @@ final class Committer
         }
 
         throw new \LogicException('No plan for an included column.');
+    }
+
+    private static function hasKey(ValidationFailed $failed, string $key): bool
+    {
+        foreach ($failed->problems as $problem) {
+            if ($problem->key === $key) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function isTargetChanged(ValidationFailed $failed): bool

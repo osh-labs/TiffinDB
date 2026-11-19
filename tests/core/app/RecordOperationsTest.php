@@ -346,4 +346,47 @@ final class RecordOperationsTest extends AppTestCase
         $this->assertThrows(NotFound::class, fn () => $records->setLinks($this->admin, $this->project, $this->items, $id, $name, []));
         $this->assertThrows(\InvalidArgumentException::class, fn () => $records->create($this->admin, $this->project, $this->items, [$name => ['array']]));
     }
+
+    public function testARelationFieldOfAnotherTableIsNotFound(): void
+    {
+        $records = $this->ops->records();
+        $item = $records->create($this->admin, $this->project, $this->items, [$this->f['name']->key => 'Example Lamp']);
+        $room = $records->create($this->admin, $this->project, $this->rooms, [$this->schemaField($this->rooms)->key => 'Example Study']);
+        self::assertSame($item, $room, 'Both tables hold a live record with the same id, so only the table check can refuse.');
+
+        $this->assertThrows(NotFound::class, fn () => $records->setLinks($this->admin, $this->project, $this->rooms, (string) $room, $this->f['located']->key, []));
+        $this->assertThrows(NotFound::class, fn () => $records->setLinks($this->member, $this->project, $this->rooms, (string) $room, $this->f['located']->key, [$room]));
+        $records->setLinks($this->admin, $this->project, $this->items, (string) $item, $this->f['located']->key, [$room]);
+    }
+
+    public function testTrashedOrAbsentRecordsAreNotFoundBeforeInputIsChecked(): void
+    {
+        $records = $this->ops->records();
+        $id = (string) $records->create($this->admin, $this->project, $this->items, [$this->f['name']->key => 'Example Lamp']);
+        $version = (string) $records->screen($this->admin, $this->project, $this->items, $id, ListRequest::none())->version;
+        $records->trash($this->admin, $this->project, $this->items, $id);
+        $invalid = $this->input(['name' => '', 'count' => 'lots']);
+
+        foreach ([$id, '999'] as $target) {
+            $this->assertThrows(NotFound::class, fn () => $records->update($this->admin, $this->project, $this->items, $target, $invalid, $version));
+            $this->assertThrows(NotFound::class, fn () => $records->setLinks($this->admin, $this->project, $this->items, $target, $this->f['located']->key, [0]));
+            $this->assertThrows(NotFound::class, fn () => $records->setLinks($this->admin, $this->project, $this->items, $target, $this->f['located']->key, [999]));
+        }
+        $records->restore($this->admin, $this->project, $this->items, $id);
+        $this->assertThrows(ValidationFailed::class, fn () => $records->update($this->admin, $this->project, $this->items, $id, $invalid, $version));
+        $this->assertThrows(\InvalidArgumentException::class, fn () => $records->setLinks($this->admin, $this->project, $this->items, $id, $this->f['located']->key, [0]));
+    }
+
+    public function testABadRecordIdIsNotFoundBeforeTheInputIsChecked(): void
+    {
+        $records = $this->ops->records();
+        $bad = [$this->f['name']->key => ['not text']];
+        foreach (['0', 'x', '12345678901234567890'] as $id) {
+            $this->assertThrows(NotFound::class, fn () => $records->conflict($this->admin, $this->project, $this->items, $id, $bad, ListRequest::none()));
+            $this->assertThrows(NotFound::class, fn () => $records->redisplay($this->admin, $this->project, $this->items, $id, $bad, [], ListRequest::none()));
+            $this->assertThrows(NotFound::class, fn () => $records->redisplay($this->admin, $this->project, $this->items, $id, [], ['not a problem'], ListRequest::none()));
+            $this->assertThrows(NotFound::class, fn () => $records->update($this->admin, $this->project, $this->items, $id, $bad, '0000000000000000'));
+        }
+        $this->assertThrows(\InvalidArgumentException::class, fn () => $records->redisplay($this->admin, $this->project, $this->items, null, $bad, [], ListRequest::none()));
+    }
 }

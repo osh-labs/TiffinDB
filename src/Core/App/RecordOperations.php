@@ -207,6 +207,7 @@ final class RecordOperations
     {
         [$project, $db, $schema, $records] = $this->open($actor, $projectKey, Permission::EditRecords);
         $table = $schema->table($tableKey);
+        $id = $recordId === null ? null : self::recordId($recordId);
         $submitted = self::input($input);
         $byField = [];
         foreach ($problems as $problem) {
@@ -217,12 +218,12 @@ final class RecordOperations
                 $byField[$problem->field][] = $problem;
             }
         }
-        if ($recordId === null) {
+        if ($id === null) {
             $normalised = $this->normalise($records, $table, $request);
 
             return $this->newScreen($project, $db, $schema, $table, $submitted, $byField, $this->request($records, $table, $normalised, 1));
         }
-        $record = self::live($records->get($table->key, self::recordId($recordId)));
+        $record = self::live($records->get($table->key, $id));
 
         return $this->recordScreen($project, $db, $schema, $records, $table, $record, $request, $submitted, $byField);
     }
@@ -256,8 +257,9 @@ final class RecordOperations
         [, , $schema, $records] = $this->open($actor, $projectKey, Permission::EditRecords);
         $table = $schema->table($tableKey);
         $id = self::recordId($recordId);
+        $values = self::input($input);
         self::live($records->get($table->key, $id));
-        $records->update($table->key, $id, self::input($input), InputMode::Form, $version, $actor->userKey);
+        $records->update($table->key, $id, $values, InputMode::Form, $version, $actor->userKey);
     }
 
     /**
@@ -271,8 +273,9 @@ final class RecordOperations
     {
         [$project, $db, $schema, $records] = $this->open($actor, $projectKey, Permission::EditRecords);
         $table = $schema->table($tableKey);
+        $id = self::recordId($recordId);
         $posted = self::input($input);
-        $record = self::live($records->get($table->key, self::recordId($recordId)));
+        $record = self::live($records->get($table->key, $id));
         $screen = $this->recordScreen($project, $db, $schema, $records, $table, $record, $request, [], []);
         $labels = $screen->form === null ? [] : self::labels($screen->form->nodes);
 

@@ -1264,7 +1264,12 @@ final class ShellTest extends TestCase
     {
         // Classes the shared templates write that carry no style of their own.
         $unstyled = ['error-head', 'form-cancel', 'user-name'];
-        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        // A class counts as styled when app.css or tokens.css (theme, accent, and typeface classes) defines it.
+        $css = (string) preg_replace(
+            '#/\*.*?\*/#s',
+            '',
+            RepoFiles::read('public/assets/css/app.css') . "\n" . RepoFiles::read('public/assets/css/tokens.css'),
+        );
         $missing = [];
         foreach (RepoFiles::withExtension(['php'], 'templates') as $file) {
             preg_match_all('/class="([^"<]+)"/', RepoFiles::read($file), $m);
@@ -1276,7 +1281,7 @@ final class ShellTest extends TestCase
                 }
             }
         }
-        self::assertSame([], $missing, 'Template classes without a rule in app.css.');
+        self::assertSame([], $missing, 'Template classes without a rule in app.css or tokens.css.');
     }
 
     public function testTheScriptFollowsItsRules(): void

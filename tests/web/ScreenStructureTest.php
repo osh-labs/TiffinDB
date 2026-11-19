@@ -192,6 +192,18 @@ final class ScreenStructureTest extends TestCase
         );
         $this->screen($member, '/account/password', 'Change your password', 'Change your password');
 
+        // Reading and display settings (docs/design/m2/settings.md): standard, then saved (the reset button uses formaction; SettingsScreenTest covers it).
+        $this->screen($member, '/settings', 'Reading and display', 'Reading and display');
+        self::assertSame(303, $member->submit('/settings', [
+            'theme' => 'hc-dark',
+            'accent' => 'plum',
+            'typeface' => 'atkinson',
+            'text_size' => 'largest',
+            'line_spacing' => 'very-roomy',
+        ])->status);
+        $this->screen($member, '/settings', 'Reading and display', 'Reading and display', 'Your display settings have been saved.');
+        self::assertSame('t-hcd f-atk s-largest l-very-roomy', HtmlAssertions::rootClass($member->page()));
+
         // Three projects, as in the mock-up; Home Inventory has every kind of field.
         $home = $this->createProject($admin, 'Home Inventory', 'Items');
         $garden = $this->createProject($admin, 'Garden Log', 'Plants');

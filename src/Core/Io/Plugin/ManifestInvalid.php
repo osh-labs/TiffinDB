@@ -20,6 +20,8 @@ final class ManifestInvalid extends \RuntimeException
     public const MANIFEST_LINK = 'manifest-link';
     public const TOO_LARGE = 'too-large';
     public const NOT_UTF8 = 'not-utf8';
+    public const PHP_TAG = 'php-tag';
+    public const DUPLICATE_MEMBER = 'duplicate-member';
     public const NOT_JSON = 'not-json';
     public const TOO_DEEP = 'too-deep';
     public const NOT_AN_OBJECT = 'not-an-object';
@@ -43,7 +45,8 @@ final class ManifestInvalid extends \RuntimeException
     public const CLASS_FILE_MISSING = 'class-file-missing';
 
     public const REASONS = [
-        self::MANIFEST_MISSING, self::MANIFEST_LINK, self::TOO_LARGE, self::NOT_UTF8, self::NOT_JSON, self::TOO_DEEP,
+        self::MANIFEST_MISSING, self::MANIFEST_LINK, self::TOO_LARGE, self::NOT_UTF8, self::PHP_TAG, self::NOT_JSON, self::TOO_DEEP,
+        self::DUPLICATE_MEMBER,
         self::NOT_AN_OBJECT, self::UNKNOWN_MEMBER, self::MISSING_MEMBER, self::BAD_API, self::BAD_ID, self::ID_MISMATCH,
         self::KIND_MISMATCH, self::BAD_NAME, self::BAD_DESCRIPTION, self::BAD_VERSION, self::BAD_CLASS, self::BAD_LICENCE,
         self::BAD_EXTENSIONS, self::BAD_MEDIA_TYPE, self::BAD_SCOPES, self::BAD_REQUIRES_EXTENSIONS, self::SRC_MISSING,

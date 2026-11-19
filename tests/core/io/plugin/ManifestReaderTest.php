@@ -179,6 +179,20 @@ final class ManifestReaderTest extends TestCase
         $this->assertSame('application/vnd.example+json', $manifest->mediaType);
     }
 
+    public function testEscapedTagsBracketsAndRepeatedValuesAreNotDuplicates(): void
+    {
+        // `<` escaped by JSON is not an open tag; equal names in different objects or inside
+        // strings are not duplicate members.
+        $data = PluginTree::manifest('import', 'escapes', ['description' => 'a {"api":1} [x] "q" \\ <b>']);
+        $bytes = json_encode($data, JSON_THROW_ON_ERROR | JSON_HEX_TAG);
+        $this->assertStringContainsString('\\u003C', $bytes);
+        $this->tree->add('import', 'escapes', str_replace('"description"', '"description" ', $bytes));
+        $this->assertSame('a {"api":1} [x] "q" \\ <b>', $this->read('import', 'escapes')->description);
+
+        $this->tree->add('import', 'tagged', json_encode(PluginTree::manifest('import', 'tagged', ['description' => '<?php x']), JSON_THROW_ON_ERROR | JSON_HEX_TAG));
+        $this->assertStringStartsWith('<?php', $this->read('import', 'tagged')->description, 'An escaped tag is plain text, never PHP.');
+    }
+
     public function testLimitsAreInclusive(): void
     {
         $this->tree->add('import', 'limits', [
@@ -216,6 +230,12 @@ final class ManifestReaderTest extends TestCase
         yield 'too large' => [ManifestInvalid::TOO_LARGE, 'import', $valid . str_repeat(' ', ManifestReader::MAX_BYTES - strlen($valid) + 1)];
         yield 'depth over 8' => [ManifestInvalid::TOO_DEEP, 'import', '{"api": 1, "x": [[[[[[[[1]]]]]]]]}'];
         yield 'deeply nested object' => [ManifestInvalid::TOO_DEEP, 'import', str_repeat('{"a":', 200) . '1' . str_repeat('}', 200)];
+        yield 'PHP open tag in a member' => [ManifestInvalid::PHP_TAG, 'import', ['description' => "<?php echo 'x'; __halt_compiler();"]];
+        yield 'short open tag' => [ManifestInvalid::PHP_TAG, 'import', ['name' => 'a <?= 1 ?>']];
+        yield 'PHP open tag outside the object' => [ManifestInvalid::PHP_TAG, 'import', '<?php exit; ?>' . $valid];
+        yield 'duplicate member' => [ManifestInvalid::DUPLICATE_MEMBER, 'import', '{"class":"Evil\\\\X",' . substr($valid, 1)];
+        yield 'duplicate member, escaped name' => [ManifestInvalid::DUPLICATE_MEMBER, 'import', '{"cl\\u0061ss":"Evil\\\\X",' . substr($valid, 1)];
+        yield 'duplicate member, same value' => [ManifestInvalid::DUPLICATE_MEMBER, 'import', '{"api":1,' . substr($valid, 1)];
         yield 'not UTF-8' => [ManifestInvalid::NOT_UTF8, 'import', str_replace('Example format', "Example \xff", $valid)];
         yield 'a list' => [ManifestInvalid::NOT_AN_OBJECT, 'import', '[1, 2]'];
         yield 'an empty list' => [ManifestInvalid::NOT_AN_OBJECT, 'import', '[]'];

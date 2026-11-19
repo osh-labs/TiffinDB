@@ -74,7 +74,7 @@ ADR 0015 decision 5 amends the layer table; `tests/repo/CoreLayerRulesTest.php` 
 | System | Storage, Error (unchanged; `PluginStates` is a repository) |
 | App | Error, Storage, System, Auth, Schema, Query, Forms, Io |
 
-`Core\Io\Contract` uses nothing but PHP and `Core\Io\Contract` itself, so plugins see one small namespace. Files under `plugins/` may name only `TiffinDB\Core\Io\Contract\`, their own namespace (`TiffinDB\Plugin\<Kind>\<Id>\`), PHP built-in classes, `OpenSpout\`, and `TiffinDB\Core\Io\Csv\` (the core CSV reader and writer of ADR 0015 decision 2, so that the CSV plugins can use them; exactly that prefix, no other part of `Core\Io`; P143, provisional) (T-PLG-8, new `tests/repo/PluginLayerRulesTest.php`). The web layer may use the result objects of the new `Core\App` operations and `Core\Error` values only (T-WEB-23 unchanged).
+`Core\Io\Contract` uses nothing but PHP and `Core\Io\Contract` itself, so plugins see one small namespace. Files under `plugins/` may name only `TiffinDB\Core\Io\Contract\`, their own namespace (`TiffinDB\Plugin\<Kind>\<Id>\`), PHP built-in classes except a fixed denylist (database, network, reflection, FFI, and similar classes), `OpenSpout\`, and exactly the five core CSV classes `TiffinDB\Core\Io\Csv\Charset`, `CsvDetector`, `CsvReader`, `CsvWriter`, and `CsvDialect` (ADR 0015 decision 2, so that the CSV plugins can use them; a list of classes, not a namespace prefix; P143, provisional, narrowed after the WP2 security review). `Core\Io\Csv` itself may use only `Core\Io\Contract` and `Core\Error\Text` (`CoreLayerRulesTest`) (T-PLG-8, new `tests/repo/PluginLayerRulesTest.php`). The web layer may use the result objects of the new `Core\App` operations and `Core\Error` values only (T-WEB-23 unchanged).
 
 ### 2.2 SQL rules
 
@@ -276,6 +276,14 @@ final class PluginLoader
 ```
 
 On first use of a plugin in a request, `PluginLoader` calls `spl_autoload_register` with a closure that handles only class names starting with that plugin's namespace prefix, maps the rest of the name to `src/<path>.php` (each segment `[A-Z][A-Za-z0-9]{0,63}`; anything else is not loaded), checks the resolved file is inside the plugin's `src/` directory with `Fs::isInside`, and `require`s it. It then checks that the manifest's class exists, is final, and implements the interface for its kind, and instantiates it with no arguments (`new $class()`: the second allowed dynamic `new` in the code base after the kernel's controller dispatch; `tests/repo/CompositionSeamTest.php` (which refuses every computed `new` except the one in `CompositionSeamTest::DISPATCHER`) and `SqlStringsTest`'s `variable-new` rule (section 2.2) are told of it by path, in `PluginLoader.php` only). Any failure throws `PluginFailure(REASON_FAILED)` with the detail logged. A plugin is loaded at most once per request. Every job operation (read, reading options, prepare, export) rescans before loading; when the job's plugin is no longer Enabled (an Admin turned it off, or it became Broken or Unavailable), the import job goes to `Failed` with reason `plugin-unavailable` and the export gives `problem.export.failed`; the `\LogicException` of `PluginLoader` is never reached from a request.
+
+Accepted limits (security review of M3-WP2; the registry is not a sandbox, ADR 0015 decision 3):
+
+- A plugin that calls `exit`, or hits a fatal error while it is loaded or used, ends the request instead of becoming Broken.
+- The `final` check reads the class file's tokens, so a plugin that declares its class through `eval` gets past it (`PluginLayerRulesTest` refuses `eval` for the plugins in the repository).
+- A stored enabled row stays after a plugin's folder is removed, so a different plugin later copied in with the same kind and id starts enabled.
+
+Manifest reasons added by that review: `php-tag` (the file holds `<?` anywhere, so including it by mistake could never run code) and `duplicate-member` (two members with the same name, which `json_decode` would quietly reduce to the last).
 
 ### 4.4 Enabled state (`TiffinDB\Core\System\PluginStates`)
 
@@ -769,7 +777,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-PLG-5 | `PluginLoader`: refuses non-Enabled plugins; loads only classes under the plugin's prefix; a class name with path tricks is not loaded; class not final or not implementing the interface fails; loaded once per request |
 | T-PLG-6 | `PluginStates`: set, all, refuses outside a transaction; system schema version 2 migration from version 1 (copy taken, table created, `SystemSchema::VERSION` 2) |
 | T-PLG-7 | `CoreLayerRulesTest` rows of section 2.1 |
-| T-PLG-8 | `PluginLayerRulesTest`: files under `plugins/` name only the allowed namespaces (section 2.1: the contract, their own, PHP built-ins, `OpenSpout\`, and `TiffinDB\Core\Io\Csv\` by P143; look-alikes such as `TiffinDB\Core\Io\CsvEvil\` and every other `Core` namespace refused); no network functions (the M0 rule's list), no SQL, no superglobals, no `header()` |
+| T-PLG-8 | `PluginLayerRulesTest`: under `plugins/` only `plugin.json`, class files in `src/`, and plain documentation files; PHP files name only the allowed names of section 2.1 (the contract, their own namespace, global PHP names off the denylist, `OpenSpout\`, and the five core CSV classes of P143; look-alikes such as `TiffinDB\Core\Io\CsvEvil\` and every other `Core` name refused, in code and in strings, ignoring case); no network functions or network URLs, no SQL, no database classes, no code execution (eval, include, backticks, process and ini functions, `unserialize`, variable calls, `new $class`), no superglobals or other request state, no `header()`; denied functions refused also through `use function` aliases and callable strings |
 
 ### 15.3 CSV (`tests/core/io/csv/`, `tests/plugins/csv/`, WP4)
 

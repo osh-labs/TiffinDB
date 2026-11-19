@@ -18,6 +18,7 @@ use TiffinDB\Core\Auth\SignedIn;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
+use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\Controller\ProjectController;
@@ -245,6 +246,52 @@ final class ListScreenTest extends TestCase
             self::assertSame($count, $x->query('//tbody/tr')->length, $text);
             self::assertStringStartsWith($count . ' record', HtmlAssertions::text($html, '//p[@class="lead"]'));
             $this->assertOrder($x, ['//form[@class="list-controls"]', '//div[@class="notice filter-bar"]']);
+        }
+    }
+
+    public function testMarkupInFilterValuesAndPickListIsEscaped(): void
+    {
+        $label = 'Oak "dark" <b>&amp;</b>';
+        $finish = $this->addField('Finish', 'choice', ['choices' => [$label, 'Plain']]);
+        $this->add(['Name' => 'Example shelf', 'Finish' => $label]);
+        $room = 'Den <i>"x"</i> & co';
+        $roomId = $this->core->addRecord($this->project, $this->rooms, [$this->f['Room name'] => $room]);
+
+        // The relation pick list on filter step 2 (option labels are record titles).
+        $html = $this->page(self::ADMIN, $this->t('/filter?field=' . $this->f['Room']));
+        self::assertStringNotContainsString('<i>', $html);
+        $x = $this->xpath($html);
+        self::assertSame($room, HtmlAssertions::text($html, '//select[@id="filter-value"]/option[@value="' . $roomId . '"]'));
+
+        // The active filter's value in the list controls' hidden inputs.
+        $html = $this->page(self::ADMIN, $this->t('?' . http_build_query(['filter' => $finish, 'op' => 'is', 'v' => $label], '', '&', PHP_QUERY_RFC3986)));
+        self::assertStringNotContainsString('<b>', $html);
+        self::assertStringNotContainsString('"dark"', $html);
+        $x = $this->xpath($html);
+        self::assertSame($label, $this->attr($x, '//form[@class="list-controls"]/input[@type="hidden"][@name="v"]', 'value'));
+        self::assertSame(['Example shelf'], $this->texts($x, '//tbody/tr/th/a'));
+    }
+
+    public function testFilterProblemTextIsEscaped(): void
+    {
+        // Problem texts are fixed strings today; a strings file whose text
+        // holds markup checks that the list escapes the text at output.
+        $temp = TempDir::create();
+        try {
+            $root = $temp->path();
+            self::assertTrue(symlink(Fixtures::appRoot() . '/templates', $root . '/templates'));
+            self::assertTrue(mkdir($root . '/strings'));
+            $real = var_export(Fixtures::appRoot() . '/strings/en.php', true);
+            file_put_contents($root . '/strings/en.php', "<?php\nreturn ['problem.filter.invalid' => 'Use <b>\"this\"</b> & not that.'] + (require {$real});\n");
+            $kernel = new Kernel(Fixtures::config(false), $root, Fixtures::applicationRoutes(), $this->services);
+            $response = Fixtures::handle($kernel, Fixtures::fullRequest('GET', $this->t('?filter=nosuchfield&op=is&v=x'), [], ['tdb_session' => self::ADMIN]))[0];
+            self::assertSame(200, $response->status);
+            self::assertStringNotContainsString('<b>', $response->body);
+            self::assertStringContainsString('Use &lt;b&gt;&quot;this&quot;&lt;/b&gt; &amp; not that.', $response->body);
+            $x = $this->xpath($response->body);
+            self::assertSame(['The filter could not be used, so every record is shown.', 'Use <b>"this"</b> & not that.'], $this->texts($x, '//div[@class="notice notice-warn"]/p'));
+        } finally {
+            $temp->remove();
         }
     }
 

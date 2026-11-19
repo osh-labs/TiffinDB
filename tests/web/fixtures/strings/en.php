@@ -37,4 +37,13 @@ return [
     'test.markup' => '<b>{x}</b>',
     'count.test.one' => 'One <thing>',
     'count.test.many' => '{count} <things>',
+    'test.plural' => '{count|# record|# records}',
+    'test.plural_two' => 'This clears {values|# value|# values} in {records|# record|# records}.',
+    'test.plural_mixed' => '{name} has {count|one item|# items} & more',
+    'test.plural_words' => '{count|a single thing|several things}',
+    'test.plural_bad_pipes' => '{count|# record}',
+    'test.plural_bad_name' => '{Count|# record|# records}',
+    'test.plural_bad_extra' => '{count|a|b|c}',
+    'test.plural_bad_brace' => 'x {count|a|b',
+    'test.braces' => 'Keep { these } as text',
 ];

@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Copyright (C) TiffinDB contributors
  *
- * Message keys produced by the core (M1 spec part 1 section 12), with
- * their English text exactly as specified there. {name} placeholders are
+ * Message keys produced by the core (M1 spec part 1 section 12, then M2
+ * spec part 1 section 8), with their English text exactly as specified
+ * there. {name} placeholders are
  * the problem's parameters, except {wait}, which Format::problem() builds
  * from the `seconds` parameter.
  */
@@ -70,4 +71,13 @@ return [
     'problem.people.admin_has_all' => 'Admins can use every project, so there is nothing to choose.',
     'problem.setup_code.wrong' => 'That setup code is not right. Open the file again and copy the code exactly.',
     'problem.throttled' => 'Too many tries. Wait {wait}, then try again.',
+
+    'problem.value.required' => 'Fill this in.',
+    'problem.value.unknown_field' => 'This field is not part of this table.',
+    'problem.link.target_missing' => 'Choose a record that still exists.',
+    'problem.link.one_only' => 'Only one record can be linked here.',
+    'problem.link.target_taken' => '{title} is already linked to another record, and it can only be linked once.',
+    'problem.filter.invalid' => 'That filter cannot be used with this field.',
+    'problem.filter.value' => 'Choose a value for the filter.',
+    'problem.filter.range' => 'The start of the range must be on or before the end.',
 ];

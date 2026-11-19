@@ -21,7 +21,8 @@ use TiffinDB\Tests\Support\TempDir;
 
 /**
  * T-REPO-9: the dependency rule between core areas (ADR 0012 decision 1,
- * M1 spec section 2.1), and no direct calls to clock or randomness
+ * M1 spec section 2.1, amended by ADR 0014 decision 5 and M2 spec
+ * section 2.1), and no direct calls to clock or randomness
  * functions under src/Core/ (section 3.2).
  *
  * For each PHP file under src/Core/<Area>/, every name of the form
@@ -62,8 +63,9 @@ final class CoreLayerRulesTest extends TestCase
         'Auth' => ['System', 'Storage', 'Error'],
         'Schema' => ['Storage', 'Error'],
         'Query' => ['Schema', 'Storage', 'Error'],
+        'Forms' => ['Schema', 'Storage', 'Error'],
         'Install' => ['Auth', 'System', 'Storage', 'Error'],
-        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query'],
+        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query', 'Forms'],
     ];
 
     public const FORBIDDEN_FUNCTIONS = ['random_bytes', 'random_int', 'mt_rand', 'rand', 'time', 'date', 'microtime'];
@@ -366,7 +368,13 @@ final class CoreLayerRulesTest extends TestCase
         yield 'comment is not checked here' => ['src/Core/Storage/A.php', $head('Storage') . "// See TiffinDB\\Core\\App\\Operations.\n", []];
         yield 'app uses everything allowed' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Error\\A;\nuse TiffinDB\\Core\\Storage\\B;\nuse TiffinDB\\Core\\System\\C;\nuse TiffinDB\\Core\\Auth\\D;\nuse TiffinDB\\Core\\Schema\\E;\nuse TiffinDB\\Core\\Query\\F;\n", []];
         yield 'app uses install' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Install\\Installer;\n", ['uses TiffinDB\\Core\\Install, which App may not use']];
-        yield 'unknown area' => ['src/Core/Forms/A.php', $head('Forms'), ['is in an area the dependency table does not list (Forms)']];
+        yield 'app uses forms' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Forms\\FormStore;\n", []];
+        yield 'forms uses schema, storage, error' => ['src/Core/Forms/A.php', $head('Forms') . "use TiffinDB\\Core\\Schema\\Schema;\nuse TiffinDB\\Core\\Storage\\Database;\nuse TiffinDB\\Core\\Error\\Text;\n", []];
+        yield 'forms uses query' => ['src/Core/Forms/A.php', $head('Forms') . "use TiffinDB\\Core\\Query\\Records;\n", ['uses TiffinDB\\Core\\Query, which Forms may not use']];
+        yield 'forms uses app' => ['src/Core/Forms/A.php', $head('Forms') . "\$x = \\TiffinDB\\Core\\App\\Context::class;\n", ['uses TiffinDB\\Core\\App, which Forms may not use']];
+        yield 'query uses forms' => ['src/Core/Query/A.php', $head('Query') . "use TiffinDB\\Core\\Forms\\FormDocument;\n", ['uses TiffinDB\\Core\\Forms, which Query may not use']];
+        yield 'schema uses forms' => ['src/Core/Schema/A.php', $head('Schema') . "use TiffinDB\\Core\\Forms\\FormStore;\n", ['uses TiffinDB\\Core\\Forms, which Schema may not use']];
+        yield 'unknown area' => ['src/Core/Reports/A.php', $head('Reports'), ['is in an area the dependency table does not list (Reports)']];
         yield 'file directly in core' => ['src/Core/A.php', "<?php\n", ['is not inside an area folder under src/Core/']];
 
         yield 'time call' => ['src/Core/System/A.php', $head('System') . "\$t = time();\n", ['calls time() directly']];

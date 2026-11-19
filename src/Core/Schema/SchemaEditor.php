@@ -35,6 +35,11 @@ use TiffinDB\Core\Storage\Timestamp;
  * SQL names come only from Identifier (built from keys) and column
  * definitions only from ColumnDefinition; every value is a bound parameter.
  * After any change the caller must build a new Schema.
+ *
+ * Every structural method also calls the after-change hook once, inside
+ * its transaction, after its own changes and before ProjectFile::touch(),
+ * with the keys of the tables whose forms may change (M2 spec section
+ * 5.6); an exception from the hook rolls the whole change back.
  */
 final class SchemaEditor
 {
@@ -53,7 +58,14 @@ final class SchemaEditor
 
     private readonly \Closure $onSnapshot;
 
-    /** @param \Closure(SnapshotInfo): void $onSnapshot */
+    /** @var \Closure(Database, list<string>): void */
+    private readonly \Closure $afterChange;
+
+    /**
+     * @param \Closure(SnapshotInfo): void $onSnapshot
+     * @param (\Closure(Database, list<string>): void)|null $afterChange called inside each structural change with the
+     *     keys of the tables whose forms may change; Core\App passes one that regenerates their forms
+     */
     public function __construct(
         private readonly Database $db,
         private readonly string $projectFolder,
@@ -63,11 +75,14 @@ final class SchemaEditor
         private readonly Snapshots $snapshots,
         private readonly string $userKey,
         \Closure $onSnapshot,
+        ?\Closure $afterChange = null,
     ) {
         if (!Keys::isValid($userKey)) {
             throw new \InvalidArgumentException('The person key must be a valid key.');
         }
         $this->onSnapshot = $onSnapshot;
+        $this->afterChange = $afterChange ?? static function (Database $db, array $tableKeys): void {
+        };
     }
 
     // ------------------------------------------------------------------ tables
@@ -103,11 +118,14 @@ final class SchemaEditor
             );
             $table = new TableDef($key, $name, $itemName, $position, null);
             if (!$withNameField) {
+                $this->afterChange([$key]);
+
                 return $table;
             }
             $text = $this->types->get('text');
             $field = $this->insertField($table, self::NAME_FIELD, $text, $text->normaliseOptions([]), false, '');
             $this->db->run('UPDATE "_tiffin_tables" SET "title_field" = ? WHERE "key" = ?', [$field->key, $key]);
+            $this->afterChange([$key]);
 
             return new TableDef($key, $name, $itemName, $position, $field->key);
         });
@@ -156,11 +174,14 @@ final class SchemaEditor
             $this->db->run('DELETE FROM "_tiffin_fields" WHERE "table_key" = ?', [$tableKey]);
             $this->db->run('DELETE FROM "_tiffin_tables" WHERE "key" = ?', [$tableKey]);
             $this->renumberTables();
+            $others = [];
             foreach (array_unique($touched) as $other) {
                 if ($other !== $tableKey) {
                     $this->renumberFields($other);
+                    $others[] = $other;
                 }
             }
+            $this->afterChange($others);
 
             return $records;
         });
@@ -191,8 +212,10 @@ final class SchemaEditor
                 $problems[] = new Problem(null, 'problem.table.too_many_fields', ['max' => self::MAX_FIELDS]);
             }
             self::fail($problems);
+            $field = $this->insertField($table, Text::trim($name), $this->types->get($type), $normalised, $required, Text::trim($help));
+            $this->afterChange([$table->key]);
 
-            return $this->insertField($table, Text::trim($name), $this->types->get($type), $normalised, $required, Text::trim($help));
+            return $field;
         });
     }
 
@@ -279,6 +302,7 @@ final class SchemaEditor
                 . ' "right_table", "right_field", "right_max", "created_at") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [$relationKey, $joinName, $table->key, $leftKey, $thisMax->value, $target->key, $rightKey, $otherMax->value, $this->now()],
             );
+            $this->afterChange(array_values(array_unique([$table->key, $target->key])));
 
             return $left;
         });
@@ -339,6 +363,7 @@ final class SchemaEditor
                     return null;
                 }
                 $field = $this->applyUpdate($schema, $plan);
+                $this->afterChange($this->tablesOfField($schema, $field));
                 ProjectFile::touch($this->db, $this->userKey, $this->clock);
 
                 return $field;
@@ -407,6 +432,7 @@ final class SchemaEditor
             if ($table->titleFieldKey === $field->key && !$to->canBeTitle()) {
                 $this->db->run('UPDATE "_tiffin_tables" SET "title_field" = NULL WHERE "key" = ?', [$table->key]);
             }
+            $this->afterChange($this->tablesOfField($schema, $field));
 
             return new Impact($plan->failures, $plan->failures);
         });
@@ -432,6 +458,7 @@ final class SchemaEditor
             foreach ($keys as $i => $key) {
                 $this->db->run('UPDATE "_tiffin_fields" SET "position" = ? WHERE "key" = ?', [$i + 1, $key]);
             }
+            $this->afterChange($this->tablesOfField($schema, $field));
             ProjectFile::touch($this->db, $this->userKey, $this->clock);
         });
     }
@@ -462,6 +489,7 @@ final class SchemaEditor
             foreach (array_unique($touched) as $tableKey) {
                 $this->renumberFields($tableKey);
             }
+            $this->afterChange(array_values(array_unique($touched)));
         });
     }
 
@@ -905,8 +933,9 @@ final class SchemaEditor
     }
 
     /**
-     * A key not used by any table, field, or relation of this project (one
-     * scope, ADR 0010 decision 1), nor by any SQL object, nor in $also.
+     * A key not used by any table, field, relation, or form of this project
+     * (one scope, ADR 0010 decision 1, `docs/formats/tiffin.md` section
+     * 4.6), nor by any SQL object, nor in $also.
      *
      * @param string ...$also
      */
@@ -920,8 +949,9 @@ final class SchemaEditor
                 'SELECT 1 FROM "_tiffin_tables" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "_tiffin_fields" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "_tiffin_relations" WHERE "key" = ?'
+                . ' UNION ALL SELECT 1 FROM "_tiffin_forms" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "sqlite_master" WHERE "name" IN (?, ?)',
-                [$key, $key, $key, Identifier::tableName($key), Identifier::joinName($key)],
+                [$key, $key, $key, $key, Identifier::tableName($key), Identifier::joinName($key)],
             );
 
             return $used !== null;
@@ -1001,6 +1031,33 @@ final class SchemaEditor
         }
 
         return false;
+    }
+
+    /**
+     * The field's table, then the other table of a relation field (once
+     * for a self-relation).
+     *
+     * @return list<string>
+     */
+    private function tablesOfField(Schema $schema, FieldDef $field): array
+    {
+        $relation = $schema->relationOf($field);
+        if ($relation === null || $relation->otherTable($field->key) === $field->tableKey) {
+            return [$field->tableKey];
+        }
+
+        return [$field->tableKey, $relation->otherTable($field->key)];
+    }
+
+    /**
+     * Calls the after-change hook inside the current transaction.
+     *
+     * @param list<string> $tableKeys
+     */
+    private function afterChange(array $tableKeys): void
+    {
+        $hook = $this->afterChange;
+        $hook($this->db, $tableKeys);
     }
 
     /** @param list<Problem> $problems */

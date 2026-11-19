@@ -126,10 +126,18 @@ final class Inference
             return true;
         }
 
-        return $s->twoDecimals === $s->count && self::isMoneyHeading($heading);
+        // P138: a money word in the heading proposes currency when every cell reads as an amount; two decimals
+        // alone propose a number with two decimals (rule 8).
+        return self::isMoneyHeading($heading);
     }
 
-    /** @return list<string> types, other than the proposed one, every cell of the column would be read as */
+    /**
+     * The type menu after the proposed type: types every cell would be read
+     * as (in MENU_ORDER), then text and long text, then every other
+     * importable type, phone included.
+     *
+     * @return list<string>
+     */
     private static function offered(ColumnStats $s): array
     {
         $count = $s->count;
@@ -145,13 +153,15 @@ final class Inference
                 $types[] = $type;
             }
         }
-        if ($count === 0) {
-            $types = [...$types, 'phone'];
-        }
         $types[] = 'text';
         $types[] = 'long_text';
+        // Every other importable type follows (M3-WP11 X-9, X-14): the Admin may choose a type some cells do not
+        // fit, and the review warns how many values will be left empty.
+        foreach (self::IMPORTABLE as $type) {
+            $types[] = $type;
+        }
 
-        return $types;
+        return array_values(array_unique($types));
     }
 
     /** Options for a new field of $type built from the column (section 6.4); [] for a link. */

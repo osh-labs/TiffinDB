@@ -62,7 +62,7 @@ final class InferenceTest extends TestCase
         yield '7 yen' => ['Cost', ['¥500', '¥1,200'], 'currency', ['code' => 'JPY', 'minor_digits' => 0]];
         yield '7 two decimals and a money heading' => ['Unit price', ['5.00', '12.50'], 'currency', ['code' => 'USD', 'minor_digits' => 2]];
         yield '7 two decimals alone is a number' => ['Weight', ['5.00', '12.50'], 'number', ['decimals' => 2]];
-        yield '7 money heading without two decimals' => ['Total', ['5', '12.5'], 'number', ['decimals' => 1]];
+        yield '7 money heading without two decimals (P138)' => ['Total', ['5', '12.5'], 'currency', ['code' => 'USD', 'minor_digits' => 1]];
         yield '7 not for an amount the currency field cannot hold' => ['Paid', ['$1', '$12345678901234567890'], 'text', ['max_length' => 500]];
         yield '7 mixed symbols' => ['Paid', ['$5', '€6', '$7'], 'text', ['max_length' => 500]];
         yield '8 number' => ['Weight', ['1', '2.5', '-3.125', '1,000'], 'number', ['decimals' => 3]];
@@ -98,7 +98,7 @@ final class InferenceTest extends TestCase
         self::assertSame(2, $stats->counter('currency'), 'Twenty digits are past the currency limit; twelve are not.');
         self::assertSame(1, self::stats(['$900,000,000,000'])->counter('currency'));
         self::assertSame(0, self::stats(['$900,000,000,000.5'])->counter('currency'), 'Counted under the tightest limit any proposed options give.');
-        self::assertNotContains('currency', Inference::guess('Paid', self::stats(['$1', '$12345678901234567890']), [])->typeChoices);
+        self::assertSame('text', Inference::guess('Paid', self::stats(['$1', '$12345678901234567890']), [])->type);
     }
 
     public function testLinksNeedATextLikeTitleAndANonEmptyColumn(): void
@@ -108,25 +108,96 @@ final class InferenceTest extends TestCase
         self::assertContains('link:' . self::ROOMS, Inference::guess('Name', self::stats(['Kitchen']), self::targets())->typeChoices);
     }
 
+    /**
+     * @param list<string> $first
+     * @return list<string> $first, then every importable type not in it (the rest of the menu)
+     */
+    private static function menu(array $first): array
+    {
+        return array_values(array_unique([...$first, ...Inference::IMPORTABLE]));
+    }
+
     public function testTheTypeMenu(): void
     {
         $rating = Inference::guess('Stars', self::stats(['1', '5', '3', '2', '4', '5']), self::targets());
         self::assertSame('number', $rating->type, 'Rating is offered, never proposed (P117).');
-        self::assertSame(['number', 'currency', 'rating', 'choice', 'text', 'long_text', 'link:' . self::ROOMS], $rating->typeChoices);
+        self::assertSame([...self::menu(['number', 'currency', 'rating', 'choice', 'text', 'long_text']), 'link:' . self::ROOMS], $rating->typeChoices);
 
         $date = Inference::guess('When', self::stats(['2025-01-02', '2025-02-03', '2025-03-04']), []);
-        self::assertSame(['date', 'date_time', 'choice', 'text', 'long_text'], $date->typeChoices);
+        self::assertSame(self::menu(['date', 'date_time', 'choice', 'text', 'long_text']), $date->typeChoices);
 
         $two = Inference::guess('Weight', self::stats(['5.00', '12.50']), []);
         self::assertSame('number', $two->type);
         self::assertContains('currency', $two->typeChoices, 'Currency is offered for two decimals.');
 
         $empty = Inference::guess('Blank', self::stats([]), []);
-        self::assertSame(['text', 'checkbox', 'date', 'date_time', 'time', 'currency', 'number', 'duration', 'email', 'url', 'rating', 'choice', 'phone', 'long_text'], $empty->typeChoices);
+        self::assertSame(self::menu(['text', 'checkbox', 'date', 'date_time', 'time', 'currency', 'number', 'duration', 'email', 'url', 'rating', 'choice', 'long_text']), $empty->typeChoices);
 
+        // More than 200 values: choice is only in the rest of the menu (MappingCheck refuses it with too_many_choices).
         $many = Inference::guess('Code', self::stats(array_map(static fn (int $i): string => 'C' . $i, range(1, 201))), []);
-        self::assertNotContains('choice', $many->typeChoices);
+        self::assertSame(self::menu(['text', 'long_text']), $many->typeChoices);
         self::assertTrue(self::stats(array_map(static fn (int $i): string => 'C' . $i, range(1, 202)))->moreDistinct);
+    }
+
+    public function testEveryImportableTypeIsOfferedForEveryColumn(): void
+    {
+        // M3-WP11 X-9 and X-14: Date for a column with some unreadable dates, and Phone, are always in the menu.
+        $columns = [
+            'Purchased' => ['2025-01-02', 'last spring', '2025-03-04', 'n/a'],
+            'Phone' => ['555-0100', '555-0123 ext 4'],
+            'Hostile' => ["\x00\x07", '"; DROP TABLE t; --', "\u{202E}gnp.exe", str_repeat('x', 600)],
+            'Empty' => [null, ''],
+        ];
+        foreach ($columns as $heading => $cells) {
+            $guess = Inference::guess($heading, self::stats($cells), self::targets());
+            foreach (Inference::IMPORTABLE as $type) {
+                self::assertContains($type, $guess->typeChoices, $heading . ': ' . $type);
+            }
+            self::assertSame($guess->typeChoices, array_values(array_unique($guess->typeChoices)), $heading . ': no repeats');
+            self::assertSame('link:' . self::ROOMS, $guess->typeChoices[count($guess->typeChoices) - 1]);
+        }
+        self::assertSame('text', Inference::guess('Purchased', self::stats($columns['Purchased']), [])->type, 'Not every cell is a date: Date is offered, not proposed.');
+        self::assertSame('long_text', Inference::guess('Hostile', self::stats($columns['Hostile']), [])->type);
+    }
+
+    public function testWebAddressesNeedAnExplicitScheme(): void
+    {
+        foreach ([['stand-mixer.jpg', 'a.jpg'], ['report.pdf', 'notes.txt'], ['example.com/x', 'example.org'], ['javascript:alert(1)', 'ftp://example.com/f']] as $cells) {
+            $stats = self::stats($cells);
+            self::assertSame(0, $stats->counter('url'), implode(', ', $cells));
+            self::assertNotSame('url', Inference::guess('Picture', $stats, [])->type, implode(', ', $cells));
+        }
+        foreach ([['https://example.com/a', 'http://example.org'], ['www.example.com', 'WWW.example.org/x'], ['HTTPS://EXAMPLE.COM']] as $cells) {
+            self::assertSame('url', Inference::guess('Link', self::stats($cells), [])->type, implode(', ', $cells));
+        }
+        self::assertSame('text', Inference::guess('Picture', self::stats(['https://example.com/a', 'b.jpg']), [])->type);
+    }
+
+    public function testMoneyHeadingsProposeCurrencyAndCheckboxNeedsWords(): void
+    {
+        // P138: a money word with plain amounts (an XLSX number cell "240") proposes currency.
+        self::assertSame('currency', Inference::guess('Price', self::stats(['240', '15', '9.99']), [])->type);
+        self::assertSame(['code' => 'USD', 'minor_digits' => 2], Inference::guess('Value', self::stats(['240', '15']), [])->options);
+        self::assertSame('number', Inference::guess('Count', self::stats(['240', '15']), [])->type);
+        // P117: 1 and 0 are numbers; only yes, no, true, false propose a checkbox (checkbox stays in the menu).
+        $flags = Inference::guess('In use', self::stats(['1', '0', '1']), []);
+        self::assertSame('number', $flags->type);
+        self::assertContains('checkbox', $flags->typeChoices);
+        self::assertSame('checkbox', Inference::guess('In use', self::stats(['yes', 'no', 'YES']), [])->type);
+    }
+
+    public function testFirstValuesAreCutWithAnEllipsis(): void
+    {
+        $stats = self::stats([str_repeat("\u{00e9}", 70), str_repeat('a', 60), 'short']);
+        self::assertSame([str_repeat("\u{00e9}", 59) . "\u{2026}", str_repeat('a', 60)], $stats->firstValues);
+        foreach ($stats->firstValues as $value) {
+            self::assertSame(1, preg_match('//u', $value));
+            self::assertLessThanOrEqual(60, preg_match_all('/./su', $value));
+        }
+        self::assertSame("ab\u{2026}", ColumnStats::sample('abcdef', 3));
+        self::assertSame('abc', ColumnStats::sample('abc', 3));
+        self::assertSame('', ColumnStats::sample("\xFF\xFE", 3));
+        self::assertSame("\u{1F600}\u{2026}", ColumnStats::sample(str_repeat("\u{1F600}", 100), 2));
     }
 
     public function testTheIdRule(): void
@@ -165,7 +236,7 @@ final class InferenceTest extends TestCase
         $stats = self::stats(['  Spare Lamp  ', 'Spare Lamp', str_repeat('b', 70), null, '']);
         self::assertSame(3, $stats->count);
         self::assertSame(2, $stats->distinct());
-        self::assertSame(['Spare Lamp', str_repeat('b', 60)], $stats->firstValues);
+        self::assertSame(['Spare Lamp', str_repeat('b', 59) . "\u{2026}"], $stats->firstValues);
         self::assertSame(70, $stats->maxLength);
         $restored = ColumnStats::fromArray(json_decode(json_encode($stats->toArray(), JSON_THROW_ON_ERROR), true));
         self::assertSame($stats->toArray(), $restored->toArray());

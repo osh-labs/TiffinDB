@@ -20,7 +20,8 @@ use TiffinDB\Core\Schema\FieldTypes;
  * The type counters count cells the M1 type's lenient parse accepts, with
  * the narrowings of section 6.3: checkbox only for the words yes, no,
  * true, false; time and duration only for cells holding `:` (rule 6 and
- * the duration counter); date only for cells without `:` (M1's lenient
+ * the duration counter); url only for cells with an explicit `http://`,
+ * `https://`, or leading `www.`; date only for cells without `:` (M1's lenient
  * date parse accepts a date-time and drops its time, which would propose
  * `date` for a date-time column); currency by the cell pattern of section
  * 6.3.1.
@@ -38,6 +39,7 @@ final class ColumnStats
     public const COUNTERS = ['checkbox', 'number', 'currency', 'date', 'date_time', 'time', 'duration', 'url', 'email', 'integer1to5', 'intDistinctIncreasing'];
     /** Currency options under which the amount limit is tightest (CurrencyType::MINOR_DIGITS_MAX). */
     private const STRICTEST_CURRENCY = ['code' => 'USD', 'minor_digits' => 4];
+    public const ELLIPSIS = "\u{2026}";
     private const CHECKBOX_WORDS = ['yes', 'no', 'true', 'false'];
     private const LENIENT = ['number', 'date', 'date_time', 'time', 'duration', 'url', 'email'];
 
@@ -94,7 +96,7 @@ final class ColumnStats
                 $this->moreDistinct = true;
             }
             if (count($this->firstValues) < self::FIRST_VALUES) {
-                $this->firstValues[] = self::cut($text, self::FIRST_VALUE_CHARS);
+                $this->firstValues[] = self::sample($text, self::FIRST_VALUE_CHARS);
             }
         }
         $this->maxLength = max($this->maxLength, Text::length($text));
@@ -107,6 +109,11 @@ final class ColumnStats
         }
         foreach (self::LENIENT as $type) {
             if (($type === 'duration' || $type === 'time') && !str_contains($text, ':')) {
+                continue;
+            }
+            if ($type === 'url' && !self::hasUrlScheme($text)) {
+                // M1's lenient parse makes `stand-mixer.jpg` into `https://stand-mixer.jpg`; only an explicit
+                // scheme or a leading `www.` counts as a web address (M3-WP11 X-13).
                 continue;
             }
             if ($type === 'date' && str_contains($text, ':')) {
@@ -209,6 +216,29 @@ final class ColumnStats
         $stats->lastInt = is_int($data['last_int'] ?? null) ? $data['last_int'] : null;
 
         return $stats;
+    }
+
+    /** Whether a trimmed cell names a web address explicitly: `http://`, `https://`, or a leading `www.` (ASCII case-insensitive). */
+    public static function hasUrlScheme(string $text): bool
+    {
+        return preg_match('~^(?:https?://|www\.)~i', $text) === 1;
+    }
+
+    /**
+     * $text for showing as a sample: unchanged when at most $max characters,
+     * else its first $max - 1 characters and "…" (cut on a character
+     * boundary, so the result is valid UTF-8 of $max characters).
+     */
+    public static function sample(string $text, int $max): string
+    {
+        if ($max < 1) {
+            throw new \InvalidArgumentException('A sample is at least one character.');
+        }
+        if (!Text::isUtf8($text) || Text::length($text) <= $max) {
+            return Text::isUtf8($text) ? $text : '';
+        }
+
+        return self::cut($text, $max - 1) . self::ELLIPSIS;
     }
 
     /** The first $max characters of $text. */

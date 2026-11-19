@@ -137,6 +137,10 @@ final class ColumnPlan
         if ($text === '') {
             return [$empty, false, null];
         }
+        if ($this->type === 'url' && !ColumnStats::hasUrlScheme($text)) {
+            // Never turn text into a web address (M3-WP11 X-13): a cell without a scheme or `www.` is unreadable.
+            return [$empty, false, 'unreadable'];
+        }
         $input = $this->currency ? ColumnStats::cleanCurrency($text) : $text;
         $checked = $type->parse($input, $this->options, true);
         if (!$checked->isOk()) {

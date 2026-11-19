@@ -311,9 +311,43 @@ final class StringsTest extends TestCase
         $m2 = self::problemRows('docs/specs/M2-records.md', "\n## 8. Message keys produced by the core", "\n## 9. ");
         self::assertCount(8, $m2, 'The M2 specification table was read.');
         self::assertSame([], array_intersect_key($m1, $m2), 'The M2 table adds keys only.');
+        $m3 = self::problemRows('docs/specs/M3-io.md', "\n## 14. Message keys produced by the core", "\n## 15. ");
+        self::assertCount(31, $m3, 'The M3 specification table was read.');
+        self::assertSame([], array_intersect_key($m1 + $m2, $m3), 'The M3 table adds keys only.');
 
         $problems = require RepoFiles::path('strings/en/problems.php');
-        self::assertSame($m1 + $m2, $problems);
+        self::assertSame($m1 + $m2 + $m3, $problems);
+    }
+
+    /** M3 spec part 2 sections 2.3, 4, and 6, and docs/design/m3/import.md section 1. */
+    public function testM3SharedStringsAreTheSpecification(): void
+    {
+        $strings = require RepoFiles::path('strings/en.php');
+        self::assertIsArray($strings);
+        $expected = [
+            'error.too_large.title' => 'That file is too large',
+            'error.too_large.body' => 'The largest file this installation accepts is {max}.',
+            'shell.nav.plugins' => 'Plugins',
+            'sidebar.data' => 'Data',
+            'sidebar.import' => 'Import a file',
+            'sidebar.export' => 'Export',
+            'steps.done' => 'Step {n}, done',
+            'steps.now' => 'Step {n}, now',
+            'steps.next' => 'Step {n}',
+            'steps.import.label' => 'Import steps',
+            'steps.import.choose' => 'Choose a file',
+            'steps.import.check' => 'Check the fields',
+            'steps.import.import' => 'Import',
+            'steps.import.report' => 'Read the report',
+        ];
+        foreach ($expected as $key => $text) {
+            self::assertSame($text, $strings[$key] ?? null, $key);
+        }
+        $io = require RepoFiles::path('strings/en/io.php');
+        self::assertIsArray($io);
+        foreach (array_keys($io) as $key) {
+            self::assertStringStartsWith('steps.', $key, 'strings/en/io.php holds the shared step strings.');
+        }
     }
 
     public function testShellAndErrorStringsAreTheSpecification(): void

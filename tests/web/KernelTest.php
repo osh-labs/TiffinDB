@@ -31,6 +31,7 @@ use TiffinDB\Web\CoreServices;
 use TiffinDB\Web\Fallback;
 use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Response;
+use TiffinDB\Web\UploadLimits;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
@@ -423,6 +424,15 @@ final class KernelTest extends TestCase
         self::assertSame('2026-11-03T10:00:00+00:00', $services->now()->format('c'));
         $services->close();
         self::assertSame([], array_values(array_diff((array) scandir((string) $config['data_dir']), ['.', '..'])), 'Nothing written.');
+    }
+
+    /** M3 spec part 2 section 2.3: CoreServices reports the running PHP's upload limits. */
+    public function testCoreServicesReportThePhpUploadLimits(): void
+    {
+        $limits = self::services($this->dataConfig())->uploadLimits();
+
+        self::assertEquals(UploadLimits::fromIni(), $limits);
+        self::assertSame(UploadLimits::parse(ini_get('post_max_size')), $limits->postMaxBytes());
     }
 
     public function testCoreServicesWhileTheFirstAdminIsMissing(): void

@@ -182,6 +182,11 @@ final class CoreServices implements Services
         return $this->clock()->now();
     }
 
+    public function uploadLimits(): UploadLimits
+    {
+        return UploadLimits::fromIni();
+    }
+
     public function close(): void
     {
         try {

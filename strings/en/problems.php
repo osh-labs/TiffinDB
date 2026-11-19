@@ -4,7 +4,7 @@
  * Copyright (C) TiffinDB contributors
  *
  * Message keys produced by the core (M1 spec part 1 section 12, then M2
- * spec part 1 section 8), with their English text exactly as specified
+ * spec part 1 section 8, then M3 spec part 1 section 14), with their English text exactly as specified
  * there. {name} placeholders are
  * the problem's parameters, except {wait}, which Format::problem() builds
  * from the `seconds` parameter.
@@ -80,4 +80,36 @@ return [
     'problem.filter.invalid' => 'That filter cannot be used with this field.',
     'problem.filter.value' => 'Choose a value for the filter.',
     'problem.filter.range' => 'The start of the range must be on or before the end.',
+
+    'problem.upload.missing' => 'Choose a file.',
+    'problem.upload.too_large' => 'That file is larger than {max}, the largest this installation accepts.',
+    'problem.upload.failed' => 'The file did not arrive completely. Try again.',
+    'problem.upload.no_space' => 'There is not enough free disk space for that file.',
+    'problem.import.format_unknown' => 'TiffinDB cannot tell how to read this file. Choose a format.',
+    'problem.import.unreadable' => 'This file could not be read as {format}.',
+    'problem.import.unsupported' => 'This file uses something TiffinDB cannot read yet.',
+    'problem.import.failed' => 'The file could not be read.',
+    'problem.import.too_many_columns' => 'The file has more than {max} columns.',
+    'problem.import.nothing_included' => 'Choose at least one column to bring in.',
+    'problem.import.type_invalid' => 'Choose a type for this column.',
+    'problem.import.field_twice' => 'Each field can take only one column.',
+    'problem.import.too_many_choices' => 'This column has more than {max} different values, so it cannot be a choice.',
+    'problem.import.target_changed' => 'The table changed while you were importing. Check the fields again.',
+    'problem.export.failed' => 'The export could not be made.',
+    'problem.archive.entry_name' => 'This archive holds a file that does not belong in a TiffinDB archive.',
+    'problem.archive.duplicate' => 'This archive holds the same file twice.',
+    'problem.archive.encrypted' => 'This archive is encrypted. TiffinDB cannot open encrypted archives.',
+    'problem.archive.compression' => 'This archive uses a kind of compression TiffinDB cannot read.',
+    'problem.archive.too_large' => 'This archive is too large to import.',
+    'problem.archive.missing_entry' => 'This is not a TiffinDB archive: the project file or its description is missing.',
+    'problem.archive.manifest' => 'This archive\'s description does not match its project file.',
+    'problem.archive.not_sqlite' => 'The project file in this archive is not a database.',
+    'problem.archive.damaged' => 'The project file in this archive is damaged.',
+    'problem.archive.not_project' => 'The file in this archive is not a TiffinDB project.',
+    'problem.archive.newer' => 'This archive was made by a newer version of TiffinDB.',
+    'problem.archive.unexpected_object' => 'The project file in this archive contains something TiffinDB does not allow.',
+    'problem.archive.bad_metadata' => 'The project file in this archive has a table or field TiffinDB cannot read.',
+    'problem.archive.bad_table' => 'The project file in this archive has a table that does not match its fields.',
+    'problem.archive.rebuild_failed' => 'The project could not be rebuilt from this archive.',
+    'problem.plugin.not_available' => 'This plugin cannot be turned on.',
 ];

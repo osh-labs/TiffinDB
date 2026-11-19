@@ -311,10 +311,18 @@ final class ScreenStructureTest extends TestCase
 
         // Every GET route was visited. Routes of controllers that do not
         // exist yet (M2 spec part 2 section 2: WP6 to WP8) are counted once
-        // their controller lands.
+        // their controller lands. The M3 controllers are left out until
+        // M3-WP11 visits their routes and removes this list (M3 spec part 2
+        // section 11).
+        $notYetVisited = [
+            'TiffinDB\\Web\\Controller\\ImportController',
+            'TiffinDB\\Web\\Controller\\ExportController',
+            'TiffinDB\\Web\\Controller\\ArchiveController',
+            'TiffinDB\\Web\\Controller\\PluginController',
+        ];
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
+            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0]) && !in_array($route[2][0], $notYetVisited, true)) {
                 $patterns[] = (string) $route[1];
             }
         }

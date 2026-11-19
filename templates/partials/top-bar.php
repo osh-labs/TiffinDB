@@ -4,8 +4,8 @@
  * Copyright (C) TiffinDB contributors
  *
  * Top bar of the signed-in shell (M1 spec part 2 section 4.2; M2 spec
- * part 2 section 3.1): the brand link, the main navigation (Projects;
- * People for Admins), the project search when the page has `search`, and
+ * part 2 section 3.1; M3 spec part 2 section 4): the brand link, the main
+ * navigation (Projects; People and Plugins for Admins), the project search when the page has `search`, and
  * the account navigation (the Display link to the reading and display
  * settings, the user chip, a link to the password page, and the Sign out
  * form).
@@ -36,6 +36,11 @@ declare(strict_types=1);
 <a class="top-pill" href="<?= $this->url('/admin/people') ?>" aria-current="page"><?= $this->t('shell.nav.people') ?></a>
 <?php elseif ($data['shell']['isAdmin'] === true) : ?>
 <a class="top-pill" href="<?= $this->url('/admin/people') ?>"><?= $this->t('shell.nav.people') ?></a>
+<?php endif; ?>
+<?php if ($data['shell']['isAdmin'] === true && $data['shell']['nav'] === 'plugins') : ?>
+<a class="top-pill" href="<?= $this->url('/admin/plugins') ?>" aria-current="page"><?= $this->t('shell.nav.plugins') ?></a>
+<?php elseif ($data['shell']['isAdmin'] === true) : ?>
+<a class="top-pill" href="<?= $this->url('/admin/plugins') ?>"><?= $this->t('shell.nav.plugins') ?></a>
 <?php endif; ?>
 </nav>
 <?php if (is_array($data['search'] ?? null)) : ?>

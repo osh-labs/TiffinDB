@@ -17,6 +17,11 @@ use TiffinDB\Core\App\TableSummary;
  * and name and the `tables` and `trashCount` of a record listing or search
  * result. It takes strings rather than the project record because the web
  * layer may not name Core\System classes.
+ *
+ * M3 (spec part 2 section 4): with $canImportExport (the core's `io.use`
+ * answer for the person, P132), `data` holds the paths of the Data group's
+ * "Import a file" and "Export" links; otherwise it is null and the group
+ * is not drawn. Neither link is ever current: those pages use breadcrumbs.
  */
 final class Sidebar
 {
@@ -28,10 +33,16 @@ final class Sidebar
 
     /**
      * @param list<TableSummary> $tables in table order
-     * @return array{projectName: string, switchPath: string, tables: list<array{name: string, count: string, path: string, current: bool}>, schemaPath: string, trashCount: string}
+     * @return array{projectName: string, switchPath: string, tables: list<array{name: string, count: string, path: string, current: bool}>, schemaPath: string, trashCount: string, data: array{importPath: string, exportPath: string}|null}
      */
-    public static function build(string $projectKey, string $projectName, array $tables, int $trashCount, ?string $currentTableKey): array
-    {
+    public static function build(
+        string $projectKey,
+        string $projectName,
+        array $tables,
+        int $trashCount,
+        ?string $currentTableKey,
+        bool $canImportExport = false,
+    ): array {
         if (preg_match(self::KEY, $projectKey) !== 1) {
             throw new InvalidArgumentException('Invalid project key.');
         }
@@ -58,6 +69,9 @@ final class Sidebar
             'tables' => $items,
             'schemaPath' => "/projects/{$projectKey}/tables",
             'trashCount' => number_format(max(0, $trashCount)),
+            'data' => $canImportExport
+                ? ['importPath' => "/projects/{$projectKey}/import", 'exportPath' => "/projects/{$projectKey}/export"]
+                : null,
         ];
     }
 }

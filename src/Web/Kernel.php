@@ -45,7 +45,11 @@ use UnexpectedValueException;
  *     first, when the POST carries no `Sec-Fetch-Site`, an `Origin` that
  *     is present and is not the request's own origin (`null` included) is
  *     refused with the same page (T-CF-1, ADR 0013 9.11; see
- *     originAllowed());
+ *     originAllowed()); then, before the token check, a POST whose
+ *     declared length exceeds post_max_size (Services::uploadLimits(),
+ *     when PHP sets one) gets the 413 page and nothing else runs: PHP has
+ *     emptied the form by then, so the token check would give a
+ *     misleading 403 (M3 spec part 2 section 2.3, P126);
  * 10. the controller, as `new Controller(Context $context)` and
  *     `$controller->method(Request $request, array $params)` (the M0 call
  *     shape, kept);
@@ -317,6 +321,11 @@ final class Kernel
             if ($request->secFetchSite === null && !self::originAllowed($request)) {
                 return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
             }
+            $limits = $this->services->uploadLimits();
+            $postMax = $limits->postMaxBytes();
+            if ($postMax !== null && $request->contentLength !== null && $request->contentLength > $postMax) {
+                return $this->tooLargePage($view, $context, $limits);
+            }
             $expected = $signedIn !== null ? $signedIn->session->csrfToken : $anonymousExpected;
             if ($expected === null || !Csrf::matches($expected, $request->post['_csrf'] ?? null)) {
                 return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
@@ -400,6 +409,25 @@ final class Kernel
             'bodyKey' => $bodyKey,
             'shell' => null,
         ], $status);
+    }
+
+    /**
+     * The 413 page (M3 spec part 2 section 2.3): `error.too_large.*`, the
+     * body naming the largest file PHP accepts, and the link to the start
+     * page, in the shell the error pages use.
+     */
+    private function tooLargePage(View $view, Context $context, UploadLimits $limits): Response
+    {
+        $signedIn = $context->signedIn();
+
+        return $view->page('error', [
+            'status' => 413,
+            'title' => $view->text('error.too_large.title'),
+            'titleKey' => 'error.too_large.title',
+            'bodyKey' => 'error.too_large.body',
+            'bodyParams' => ['max' => $view->format()->fileSize($limits->effective())],
+            'shell' => $signedIn === null ? null : Context::shell($signedIn, '', null),
+        ], 413);
     }
 
     /** The 500 page, or a fixed plain-text 500 if that cannot be rendered either. */

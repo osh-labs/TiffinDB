@@ -1834,6 +1834,304 @@ li.link-row a {
 }
 
 /*
+ * M3 components (docs/design/m3/components.md; M3 spec part 2 section 7).
+ * Design px at the Standard text size, written in rem (px / 18).
+ */
+
+/* 1. Page structure */
+.page.page-io {
+  gap: 1.3333rem;
+  max-width: var(--width-wide);
+  padding: 1.1111rem 1.3333rem 2.6667rem;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5556rem;
+  min-width: 0;
+  margin: 0;
+  padding: 1.1111rem 1.3333rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.panel h2,
+.panel legend {
+  margin: 0;
+  font-size: var(--text-h2);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.panel legend {
+  padding: 0 var(--space-2);
+}
+
+/* 2. Steps (the M1 .steps and .step rules apply) */
+.step-number {
+  display: block;
+}
+
+.step-label {
+  display: block;
+  color: var(--ink);
+}
+
+.step-done,
+.step-next {
+  border-color: var(--line);
+}
+
+.step-now {
+  padding: 0.6111rem 0.8333rem;
+  border: var(--border-control) solid var(--accent);
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* 3. Facts list */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11.1111rem, 100%), 1fr));
+  gap: 0.6667rem 1.3333rem;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--ink2);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 4. Warning panel */
+.warning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3333rem;
+  padding: 1rem 1.2222rem;
+  border: var(--border-control) solid var(--warn);
+  border-radius: var(--radius-card);
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+
+.warning-panel h2 {
+  margin: 0;
+  font-size: 1.1111rem;
+  color: var(--warn);
+}
+
+.warning-panel ul {
+  margin: 0;
+  padding-left: 1.2222rem;
+}
+
+/* 5. Mapping table */
+.table-scroll {
+  overflow-x: auto;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.mapping-table {
+  width: 100%;
+  min-width: 47.7778rem;
+  border-collapse: collapse;
+}
+
+.mapping-table th,
+.mapping-table td {
+  padding: 0.6667rem var(--space-4);
+  border-bottom: var(--border-card) solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.mapping-table thead th {
+  background: var(--sunk);
+  color: var(--ink2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.mapping-table th[scope="row"] {
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-base);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.mapping-left-out th[scope="row"] {
+  color: var(--ink2);
+}
+
+.mapping-first {
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.mapping-table .input,
+.mapping-table select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 6. Inline choice row (target table) */
+.choice-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.choice-inline .check {
+  min-height: var(--control-height);
+}
+
+.choice-inline .input,
+.choice-inline select {
+  flex: 0 1 14.4444rem;
+  min-width: 0;
+}
+
+/* 7. Actions row with note */
+.io-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6667rem 1.1111rem;
+}
+
+.io-note {
+  flex: 1 1 17.7778rem;
+  margin: 0;
+  color: var(--ink2);
+}
+
+/* 8. Progress */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.progress p {
+  margin: 0;
+}
+
+.progress progress {
+  width: 100%;
+  height: 0.8889rem;
+  appearance: none;
+  border: var(--border-card) solid var(--ctl);
+  border-radius: var(--radius-pill);
+  background: var(--sunk);
+  color: var(--accent);
+  overflow: hidden;
+}
+
+.progress progress::-webkit-progress-bar {
+  background: var(--sunk);
+}
+
+.progress progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.progress progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.progress-status {
+  margin: 0;
+  font-weight: 700;
+}
+
+.continue-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6667rem 1.1111rem;
+  margin: 0;
+}
+
+/* The file input of the file-field partial: the M1 input box, centred text. */
+.input[type="file"] {
+  padding: var(--space-2) 0.7778rem;
+}
+
+/* 9. Report and plugin lists */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.report-table th,
+.report-table td {
+  padding: 0.6667rem var(--space-4);
+  border-bottom: var(--border-card) solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6667rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6667rem 1.3333rem;
+  padding: 1.1111rem 1.3333rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.plugin-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.7778rem;
+  padding: 0 0.6667rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+}
+
+.plugin-status-enabled {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+
+.plugin-status-broken,
+.plugin-status-unavailable {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+
+/*
  * Narrow phones at large text sizes (M2 spec part 1 section 11): less side
  * padding, so whole words such as "Temporary" fit on the add-person page.
  */
@@ -1843,7 +2141,8 @@ li.link-row a {
 
 @media (max-width: 22.5em) {
   .page,
-  .page.page-list {
+  .page.page-list,
+  .page.page-io {
     padding-inline: var(--space-3);
   }
 

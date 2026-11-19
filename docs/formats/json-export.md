@@ -2,11 +2,11 @@
 
 Status: format version 1, written by TiffinDB from milestone M3 (export plugin `export/json`). Provisional until the maintainer confirms ADR 0017. This document lets anyone read a TiffinDB JSON export with ordinary tools and no TiffinDB code. Every example is synthetic.
 
-A JSON export holds one whole project: its tables, fields, live records, links between records, and the descriptions of attached files. It does not hold the files themselves, records in the trash, forms, or anything about people other than their keys. For a complete backup that TiffinDB can import again, use a project archive (`docs/formats/tiffin.md` section 13).
+A JSON export holds one whole project: its tables, fields, live records, links between records, and the descriptions of the files attached to live records. It does not hold the files themselves, records in the trash, files not attached to any live record, forms, or anything about people other than their keys. For a complete backup that TiffinDB can import again, use a project archive (`docs/formats/tiffin.md` section 13).
 
 ## 1. The document
 
-One UTF-8 JSON text (RFC 8259), no byte order mark, one top-level object. TiffinDB writes members in the order shown, keys and record ids as given, and a line break after the top-level members and after each record so that large files can be read line by line; readers must not rely on the layout.
+One UTF-8 JSON text (RFC 8259), no byte order mark, one top-level object. Strings hold characters as UTF-8, not as `\u` escapes, except that `"`, `\`, control characters (U+0000 to U+001F), and the line and paragraph separators U+2028 and U+2029 are escaped; `/` is not escaped. The file is always valid UTF-8: text that TiffinDB holds as invalid UTF-8 is written with each invalid byte sequence replaced by U+FFFD (the replacement character, `�`), so such a value can differ from the stored bytes. TiffinDB writes members in the order shown, keys and record ids as given, and a line break after the top-level members and after each record so that large files can be read line by line; readers must not rely on the layout.
 
 ```json
 {
@@ -55,7 +55,7 @@ One UTF-8 JSON text (RFC 8259), no byte order mark, one top-level object. Tiffin
 | `exported_with` | The TiffinDB version that wrote the file |
 | `project` | `key` (12 characters from `abcdefghijklmnopqrstuvwxyz234567`), `name`, `created_at`, `updated_at`, and `file_format_version` (the project file's format version, `docs/formats/tiffin.md` section 11) |
 | `relations` | One object per relation between tables (section 5) |
-| `attachments` | One object per attached file (section 6) |
+| `attachments` | One object per file attached to a live record (section 6) |
 | `tables` | One object per table, in the order TiffinDB shows them (section 3) |
 
 ## 3. Tables and fields
@@ -71,7 +71,7 @@ Each record object: `id` (a positive integer, unique within the table, never reu
 | `type` | JSON value | Empty |
 |---|---|---|
 | `text`, `long_text` | String (`long_text` may hold `\n`) | `null` |
-| `number` | Number, written with at most 15 significant digits, no exponent (`12`, `-3.25`) | `null` |
+| `number` | Number in plain decimal notation, never an exponent, with the field's `options.decimals` fraction digits (`12` and `-3` when `decimals` is 0; `12.00` and `-3.25` when it is 2). A value stored before the field's `decimals` was lowered keeps its digits and is written as the shortest decimal that reads back as the same 64-bit floating-point number, which can have up to 17 significant digits (`27.318581000000002`) | `null` |
 | `currency` | String with exactly `minor_digits` decimals and no symbol or separators: `"329.00"`, `"-5.50"`, `"1200"` when `minor_digits` is 0. The currency is the field's `options.code` | `null` |
 | `date` | String `YYYY-MM-DD` | `null` |
 | `time` | String `HH:MM:SS` (24-hour) | `null` |
@@ -91,12 +91,12 @@ Each relation object: `key`, and `left` and `right`, each with `table` (table ke
 
 ## 6. Attachments
 
-Each attachment object: `id`, `sha256` (of the file content, lower-case hexadecimal), `size` (bytes), `media_type`, `original_name`, `created_at`. The files are not in the export. In a TiffinDB project folder a file is at `attachments/<first two characters of sha256>/<sha256>` (`docs/formats/tiffin.md` section 8); in a project archive, at the same path inside the zip.
+Only files attached to at least one live record are listed, by `id` ascending; a file attached only to records in the trash, or to no record, is left out, so every `id` in an `attachment` value (section 4) is in this list. Each attachment object: `id`, `sha256` (of the file content, lower-case hexadecimal), `size` (bytes), `media_type`, `original_name`, `created_at`. The files are not in the export. In a TiffinDB project folder a file is at `attachments/<first two characters of sha256>/<sha256>` (`docs/formats/tiffin.md` section 8); in a project archive, at the same path inside the zip.
 
 ## 7. Reading the file
 
 - Use any JSON parser. For very large exports, a streaming parser avoids loading the whole document.
-- Numbers in `number` fields fit a 64-bit floating-point value exactly up to 15 significant digits. Currency amounts are strings so that no rounding is ever involved.
+- Every `number` value is the text of a 64-bit floating-point number and reads back as that number in any parser that uses such numbers. A value entered in TiffinDB has at most 15 significant digits and reads back with exactly its decimal digits; only the older values of section 4 have more. Read the text as a decimal if trailing zeros (`12.00`) matter. Currency amounts are strings so that no rounding is ever involved.
 - Example with the `jq` tool: every item's name and value, `jq -r '.tables[] | select(.name=="Items") | .records[] | [.values.m4pz7k2qsw3n, .values.b7xk2mq4nz3p] | @csv' export.json`.
 
 ## 8. Versions

@@ -17,7 +17,7 @@ use TiffinDB\Tests\Support\CssTokens;
 use TiffinDB\Tests\Support\RepoFiles;
 
 /**
- * T-DES-2 (skeleton) and T-DES-3 (calculator).
+ * T-DES-2, T-DES-3 (calculator) and T-DES-7 (all combinations).
  *
  * Token values are read from public/assets/css/tokens.css and resolved by
  * cascade for each (theme, accent) combination; no colour value is copied
@@ -37,29 +37,78 @@ final class ContrastTest extends TestCase
     /** Root-element classes per accent; null means the default (Teal, no class). */
     private const ACCENTS = ['teal' => null, 'indigo' => 'a-indigo', 'plum' => 'a-plum', 'graphite' => 'a-graphite'];
 
+    /** Pair tokens in the row order of ui-design-plan sections 4.2 and 4.5; the last entry is the control border. */
+    private const PAIRS = [
+        ['--ink', '--bg'],
+        ['--ink2', '--bg'],
+        ['--ink2', '--sunk'],
+        ['--accent', '--surface'],
+        ['--accent', '--soft'],
+        ['--on-accent', '--accent'],
+        ['--warn', '--warn-soft'],
+        ['--side-ink', '--side'],
+        ['--side-ink2', '--side'],
+        ['--ctl', '--surface'],
+    ];
+
+    /** Column heading in section 4.5 => [theme, accent]; the high-contrast themes take no accent class. */
+    private const COMBINATIONS = [
+        'Light teal' => ['light', 'teal'],
+        'Light indigo' => ['light', 'indigo'],
+        'Light plum' => ['light', 'plum'],
+        'Light graphite' => ['light', 'graphite'],
+        'Dark teal' => ['dark', 'teal'],
+        'Dark indigo' => ['dark', 'indigo'],
+        'Dark plum' => ['dark', 'plum'],
+        'Dark graphite' => ['dark', 'graphite'],
+        'High-contrast light' => ['hcl', 'teal'],
+        'High-contrast dark' => ['hcd', 'teal'],
+    ];
+
     /**
      * (theme, accent, foreground token, background token, expected ratio, note).
-     * Light rows follow the row order of ui-design-plan section 4.2.
+     * T-DES-7: every cell of ui-design-plan section 4.5, read from the
+     * published table so the test and the document cannot drift.
      *
      * @return iterable<string, array{string, string, string, string, float, ?string}>
      */
     public static function pairs(): iterable
     {
-        $light = [
-            ['--ink', '--bg', 16.19, null],
-            ['--ink2', '--bg', 8.86, null],
-            ['--ink2', '--sunk', 8.05, null],
-            ['--accent', '--surface', 9.43, null],
-            ['--accent', '--soft', 7.84, null],
-            ['--on-accent', '--accent', 9.43, null],
-            ['--warn', '--warn-soft', 7.61, null],
-            ['--side-ink', '--side', 9.43, null],
-            ['--side-ink2', '--side', 7.43, null],
-            ['--ctl', '--surface', 4.36, null],
-        ];
-        foreach ($light as [$foreground, $background, $expected, $note]) {
-            yield "light/teal: {$foreground} on {$background}" => ['light', 'teal', $foreground, $background, $expected, $note];
+        $table = self::tableOf(RepoFiles::read('docs/ui-design-plan.md'), "\n### 4.5 ");
+        $heading = array_shift($table);
+        array_shift($table);
+        self::assertCount(count(self::PAIRS), $table, 'Section 4.5 row count.');
+
+        foreach (self::COMBINATIONS as $column => [$theme, $accent]) {
+            $index = array_search($column, $heading, true);
+            self::assertIsInt($index, "Section 4.5 table has no '{$column}' column.");
+            foreach (self::PAIRS as $row => [$foreground, $background]) {
+                $note = $foreground === '--ctl' ? 'control border' : null;
+                yield "{$column}: {$foreground} on {$background}" => [$theme, $accent, $foreground, $background, (float) $table[$row][$index], $note];
+            }
         }
+    }
+
+    /** Every text pair reaches 7:1 and the control border 3:1 in all ten combinations. */
+    #[DataProvider('pairs')]
+    public function testPairMeetsItsTarget(
+        string $theme,
+        string $accent,
+        string $foreground,
+        string $background,
+        float $expected,
+        ?string $note,
+    ): void {
+        $tokens = CssTokens::resolve(RepoFiles::read(self::TOKENS), self::classesFor($theme, $accent));
+        $target = $foreground === '--ctl' ? 3.0 : 7.0;
+
+        self::assertGreaterThanOrEqual($target, Contrast::rounded($tokens[$foreground], $tokens[$background]), "{$foreground} on {$background} ({$theme}/{$accent})");
+        self::assertGreaterThanOrEqual($target, $expected, 'The published figure is below its target.');
+    }
+
+    public function testThereAreOneHundredPublishedCells(): void
+    {
+        self::assertCount(100, iterator_to_array(self::pairs()));
     }
 
     #[DataProvider('pairs')]
@@ -225,16 +274,16 @@ final class ContrastTest extends TestCase
     }
 
     /**
-     * One column of the table in ui-design-plan section 4.2, in row order.
+     * Rows of the first table in the section whose heading starts with $marker.
      *
-     * @return list<string>
+     * @return list<list<string>>
      */
-    private static function publishedColumn(string $markdown, string $column): array
+    private static function tableOf(string $markdown, string $marker): array
     {
-        $start = strpos($markdown, "\n### 4.2 ");
-        self::assertNotFalse($start, 'docs/ui-design-plan.md has no section 4.2.');
-        $end = strpos($markdown, "\n### ", $start + 1);
-        $section = substr($markdown, $start, $end === false ? null : $end - $start);
+        $start = strpos($markdown, $marker);
+        self::assertNotFalse($start, "docs/ui-design-plan.md has no section {$marker}.");
+        $end = preg_match('/\n#{2,3} /', $markdown, $m, PREG_OFFSET_CAPTURE, $start + 1) === 1 ? $m[0][1] : null;
+        $section = substr($markdown, $start, $end === null ? null : $end - $start);
 
         $rows = [];
         foreach (preg_split('/\r\n|\n|\r/', $section) ?: [] as $line) {
@@ -242,7 +291,19 @@ final class ContrastTest extends TestCase
                 $rows[] = array_map('trim', explode('|', trim(trim($line), '|')));
             }
         }
-        self::assertGreaterThan(2, count($rows), 'Section 4.2 has no table.');
+        self::assertGreaterThan(2, count($rows), "Section {$marker} has no table.");
+
+        return $rows;
+    }
+
+    /**
+     * One column of the table in ui-design-plan section 4.2, in row order.
+     *
+     * @return list<string>
+     */
+    private static function publishedColumn(string $markdown, string $column): array
+    {
+        $rows = self::tableOf($markdown, "\n### 4.2 ");
         $index = array_search($column, $rows[0], true);
         self::assertIsInt($index, "Section 4.2 table has no '{$column}' column.");
 

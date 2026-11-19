@@ -30,6 +30,13 @@ use TiffinDB\Core\Storage\Database;
  * of each attachment field are read with one query each, and the titles
  * of linked records with one query per target table. A linked record with
  * no title text is shown as "{item name} {id}".
+ *
+ * Join order: every join starts from the link table restricted by the
+ * page's record ids (or the field key) and reaches the other table by its
+ * primary key. `CROSS JOIN` fixes that order in SQLite; with a plain JOIN
+ * the planner may start from the other table's trash index (`_trashed_at
+ * IS NULL`) and scan every live row of it for each page, which made the
+ * export quadratic (review of M3-WP6, T-IO-15).
  */
 final class ProjectExportSource implements ExportSource
 {
@@ -151,7 +158,7 @@ final class ProjectExportSource implements ExportSource
                     continue;
                 }
                 $rows = $this->db->all(
-                    'SELECT DISTINCT "l"."attachment_id" AS "id" FROM "_tiffin_attachment_links" AS "l" JOIN ' . Identifier::table($tableKey)
+                    'SELECT DISTINCT "l"."attachment_id" AS "id" FROM "_tiffin_attachment_links" AS "l" CROSS JOIN ' . Identifier::table($tableKey)
                     . ' AS "r" ON "r"."id" = "l"."record_id" AND "r"."_trashed_at" IS NULL WHERE "l"."field_key" = ?',
                     [$field->key],
                 );
@@ -198,7 +205,7 @@ final class ProjectExportSource implements ExportSource
         $otherSide = $left ? 'right_id' : 'left_id';
         $rows = $this->db->all(
             'SELECT "jj".' . Identifier::system($thisSide) . ' AS "rid", "jj".' . Identifier::system($otherSide) . ' AS "oid" FROM '
-            . Identifier::joinTable($relation->key) . ' AS "jj" JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
+            . Identifier::joinTable($relation->key) . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
             . ' WHERE "o"."_trashed_at" IS NULL AND "jj".' . Identifier::system($thisSide) . ' IN (' . Database::placeholders(count($ids)) . ')'
             . ' ORDER BY "jj".' . Identifier::system($thisSide) . ', "jj"."position", "jj".' . Identifier::system($otherSide),
             $ids,
@@ -264,7 +271,7 @@ final class ProjectExportSource implements ExportSource
     {
         $rows = $this->db->all(
             'SELECT "l"."record_id" AS "rid", "a"."id" AS "id", "a"."original_name" AS "name"'
-            . ' FROM "_tiffin_attachment_links" AS "l" JOIN "_tiffin_attachments" AS "a" ON "a"."id" = "l"."attachment_id"'
+            . ' FROM "_tiffin_attachment_links" AS "l" CROSS JOIN "_tiffin_attachments" AS "a" ON "a"."id" = "l"."attachment_id"'
             . ' WHERE "l"."field_key" = ? AND "l"."record_id" IN (' . Database::placeholders(count($ids)) . ')'
             . ' ORDER BY "l"."record_id", "l"."position", "a"."id"',
             [$field->key, ...$ids],

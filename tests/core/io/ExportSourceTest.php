@@ -194,4 +194,65 @@ final class ExportSourceTest extends TestCase
         self::assertGreaterThan(50, $linked);
         self::assertSame(500, ProjectExportSource::PAGE);
     }
+
+    /**
+     * T-IO-15 (review of M3-WP6): reading links is linear. Each join starts
+     * from the link table restricted by the page's ids; a plain JOIN let
+     * SQLite start from the other table's trash index and scan all of it per
+     * page (20,000 records with a relation to the same table took about 70 s,
+     * now well under one).
+     */
+    public function testLinksOfALargeSelfRelationAreReadInLinearTime(): void
+    {
+        $parts = $this->editor()->addRelation($this->items->key, 'Parts', $this->items->key, Cardinality::Many, Cardinality::Many, 'Part of', false, '');
+        $relation = (string) $parts->options['relation'];
+        $count = 20000;
+        $this->db->write(function (Database $db) use ($relation, $count): void {
+            for ($i = 1; $i <= $count; $i++) {
+                $this->insert($this->items->key, [$this->f['name']->key => 'Item ' . $i, $this->f['auto_number']->key => $i]);
+            }
+            for ($i = 1; $i <= $count; $i++) {
+                $this->link($relation, $i, ($i * 7) % $count + 1);
+            }
+        });
+        $source = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $this->items->key, $this->clock, '0.3.0-dev');
+        $start = hrtime(true);
+        $read = 0;
+        foreach ($source->records($this->items->key) as $record) {
+            $read++;
+            $expected = ($record->id * 7) % $count + 1;
+            self::assertSame([$expected], $record->values[$parts->key]->ids);
+            self::assertSame('Item ' . $expected, $record->values[$parts->key]->text);
+        }
+        $seconds = (hrtime(true) - $start) / 1e9;
+        self::assertSame($count, $read);
+        self::assertLessThan(15.0, $seconds, 'Reading 20,000 linked records must not be quadratic.');
+    }
+
+    public function testEveryJoinFromALinkTableKeepsItsOrder(): void
+    {
+        // The structural half of T-IO-15: inner joins that start from a link table are CROSS JOINs, so the planner
+        // cannot reorder them; and the plan of the export's link query starts from the join table.
+        foreach (['src/Core/Io/ProjectExportSource.php', 'src/Core/Query/Records.php'] as $file) {
+            $source = (string) file_get_contents(\TiffinDB\Tests\Support\RepoFiles::path($file));
+            self::assertSame(0, preg_match_all('/(?<!CROSS |LEFT )JOIN /', $source), $file);
+            self::assertGreaterThan(0, preg_match_all('/CROSS JOIN /', $source), $file);
+        }
+        $parts = $this->editor()->addRelation($this->items->key, 'Parts', $this->items->key, Cardinality::Many, Cardinality::Many, 'Part of', false, '');
+        $join = \TiffinDB\Core\Schema\Identifier::joinTable((string) $parts->options['relation']);
+        $plan = $this->db->all(
+            'EXPLAIN QUERY PLAN SELECT "jj"."left_id" AS "rid", "jj"."right_id" AS "oid" FROM ' . $join . ' AS "jj" CROSS JOIN ' . $this->items->sql()
+            . ' AS "o" ON "o"."id" = "jj"."right_id" WHERE "o"."_trashed_at" IS NULL AND "jj"."left_id" IN (?, ?) ORDER BY "jj"."left_id", "jj"."position", "jj"."right_id"',
+            [1, 2],
+        );
+        $details = array_map(static fn (array $row): string => (string) $row['detail'], $plan);
+        $first = null;
+        foreach ($details as $detail) {
+            if (preg_match('/^(SEARCH|SCAN) (\w+)/', $detail, $m) === 1) {
+                $first ??= $m[2];
+            }
+        }
+        self::assertSame('jj', $first, implode(' | ', $details));
+        self::assertSame([], preg_grep('/_trash/', $details), 'The trash index is not used to find linked records.');
+    }
 }

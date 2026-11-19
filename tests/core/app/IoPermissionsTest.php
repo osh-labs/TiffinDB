@@ -45,13 +45,13 @@ final class IoPermissionsTest extends AppTestCase
     /** Methods that take a project key. */
     private const PROJECT_SCOPED = [
         'imports.startScreen', 'imports.start', 'imports.job', 'imports.readChunk', 'imports.readingOptions', 'imports.setReadingOptions',
-        'imports.review', 'imports.recheck', 'imports.saveMapping', 'imports.prepareChunk', 'imports.commit', 'imports.report', 'imports.cancel',
+        'imports.review', 'imports.recheck', 'imports.saveMapping', 'imports.prepareChunk', 'imports.commit', 'imports.save', 'imports.report', 'imports.cancel',
         'exports.screen', 'exports.export', 'exports.archive', 'exports.finish',
     ];
     /** Methods bound to the import job of the Admin who started it. */
     private const IMPORT_JOB = [
         'imports.job', 'imports.readChunk', 'imports.readingOptions', 'imports.setReadingOptions', 'imports.review', 'imports.recheck',
-        'imports.saveMapping', 'imports.prepareChunk', 'imports.commit', 'imports.cancel',
+        'imports.saveMapping', 'imports.prepareChunk', 'imports.commit', 'imports.save', 'imports.cancel',
     ];
 
     private ProjectRecord $project;
@@ -220,6 +220,7 @@ final class IoPermissionsTest extends AppTestCase
             'imports.saveMapping' => $imports->saveMapping($actor, $p, $k['job'], $mapping),
             'imports.prepareChunk' => $imports->prepareChunk($actor, $p, $k['job']),
             'imports.commit' => $imports->commit($actor, $p, $k['ready']),
+            'imports.save' => $imports->save($actor, $p, $k['ready']),
             'imports.report' => $imports->report($actor, $p, $k['log']),
             'imports.cancel' => $imports->cancel($actor, $p, $k['job']),
             'exports.screen' => $exports->screen($actor, $p),

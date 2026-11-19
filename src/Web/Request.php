@@ -18,7 +18,8 @@ use InvalidArgumentException;
  * Built by fromGlobals(), which is only ever called from public/index.php;
  * tests use the constructor, fromServer(), or fromGlobals() with synthetic
  * arrays. Nothing here reads a superglobal. Forwarding headers
- * (X-Forwarded-*, Forwarded) are never read.
+ * (X-Forwarded-*, Forwarded) are never read. The Origin header is kept as
+ * sent, for the kernel's origin check (T-CF-1).
  */
 final class Request
 {
@@ -27,6 +28,9 @@ final class Request
 
     /** Values of Sec-Fetch-Site the request keeps; anything else becomes null. */
     public const FETCH_SITES = ['cross-site', 'same-site', 'same-origin', 'none'];
+
+    /** Longest Origin header kept, in characters (T-CF-1). */
+    public const MAX_ORIGIN = 2048;
 
     /** Longest REMOTE_ADDR kept, in characters. */
     public const MAX_CLIENT_ADDRESS = 64;
@@ -55,6 +59,7 @@ final class Request
         public readonly ?string $serverAddress = null,
         public readonly ?int $serverPort = null,
         public readonly ?string $documentRoot = null,
+        public readonly ?string $origin = null,
     ) {
         if (!str_starts_with($path, '/')) {
             throw new InvalidArgumentException('A request path must start with "/".');
@@ -76,6 +81,9 @@ final class Request
         }
         if (strlen($clientAddress) > self::MAX_CLIENT_ADDRESS) {
             throw new InvalidArgumentException('Invalid client address.');
+        }
+        if ($origin !== null && self::origin($origin) === null) {
+            throw new InvalidArgumentException('Invalid origin.');
         }
     }
 
@@ -106,6 +114,7 @@ final class Request
             self::serverAddress($server['SERVER_ADDR'] ?? null),
             self::serverPort($server['SERVER_PORT'] ?? null),
             self::documentRoot($server['DOCUMENT_ROOT'] ?? null),
+            self::origin($server['HTTP_ORIGIN'] ?? null),
         );
     }
 
@@ -219,6 +228,16 @@ final class Request
         }
 
         return preg_match(self::HOST_NAME, $value) === 1 || preg_match(self::HOST_IPV6, $value) === 1 ? $value : null;
+    }
+
+    /**
+     * The Origin header as sent (T-CF-1): at most MAX_ORIGIN printable
+     * ASCII characters (U+0020 to U+007E), else null. An empty value is
+     * kept, so that the kernel refuses it as a foreign origin.
+     */
+    private static function origin(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/^[\x20-\x7E]{0,' . self::MAX_ORIGIN . '}\z/', $value) === 1 ? $value : null;
     }
 
     private static function serverAddress(mixed $value): ?string

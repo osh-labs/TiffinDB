@@ -7,10 +7,10 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Item | Value |
 |---|---|
 | Milestone | M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
-| Phase | Phase 1: M2-D1 merged (suite 4777 OK, lint OK); M2-R1 (spec review) dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
+| Phase | Phase 2: M2-D1 and M2-R1 merged (READY FOR IMPLEMENTATION); wave 1 (WP2, WP3) and M3-D1 dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
 | Window start | 2026-11-19 (window 5) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merge M2-R1, record P84 to P109 in section 4 (P108 process-only), then wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+| Next action | Merge wave 1 packages as they report (review each with a different agent), then WP5, WP0, WP1 as slots free; M3-D1 starts after this; see `docs/specs/M2-records.md` section 12 for waves. Wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 
@@ -155,6 +155,32 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P81 | Add-person project list | Built from `people()->projectAccess($actor, $actor->userKey)` (relies on P78: an Admin's list holds every project); display only, core validates keys | M1-WP10 review ruling |
 | P82 | Schema confirmation scope | Confirmation is a yes/no flag, not bound to the count shown; if records change between the confirmation page and the re-post, more values can be cleared than shown (Admin's own data, CSRF-bound). Later fix: post back the expected count and have the core ask again when the real impact is larger. Confirmation strings use plain numbers with a singular body (departs from spec 11 `count.records.*` wording) | M1-WP11 review |
 | P83 | Visual deviations from the mock-ups accepted in M1 (add to M1-screens 8.3) | Project-name links and footer links keep a 44 px minimum height (touch-target accessibility; cards 14 px and footer 20 px taller than the mock-up); project cards are sorted by name per `sign-in-and-projects.md` 3.1, not in the mock-up's order; sign-in content sits at the top per `components.md` section 1, not vertically centred; the sign-in wordmark uses Atkinson per the brand README, not the mock-up's Inter. Installer step 2 "exposed" cannot be produced on the PHP built-in server; verified only on the Apache host check | M1-WP12 visual check (D2 to D6) |
+| P84 | Paging | 50 records per page; record Previous and Next follow the list's sort, filter, and search carried in the query string; out-of-range pages clamp | ADR 0013 d2 |
+| P85 | Lost-update guard | Hidden version token (16 hex characters of SHA-256 over the row and its link ids) instead of `_updated_at`; mismatch gives a 409 conflict page with both versions and a re-post | ADR 0013 d6 |
+| P86 | Autosave | Not built; explicit Save; "Last saved {when}" replaces "All changes saved"; after Save the record page reloads with a notice (the mock-up's Save went to the list) | ADR 0013 d7 |
+| P87 | Search | ASCII case-insensitive substring (`LIKE`) over text, long text, choice, web address, email, phone, and linked titles one level deep; 1 to 200 characters; across tables 10 hits per table; no full-text index | ADR 0013 d5 |
+| P88 | Sort | Every type but attachment; empties last both ways; ties by id; choice by list order; relation by lowest linked title; default title A to Z else order added; plus newest, oldest, recently changed | ADR 0013 d3 |
+| P89 | Filter | One condition from the query string; choice, checkbox, relation, date, date-time; condition object reused by M4 collections; invalid filters reported, list unfiltered | ADR 0013 d4 |
+| P90 | List columns | Title field first, then up to six more fields in field order, skipping long text; no column configuration in M2 | ADR 0013 d9.1 |
+| P91 | Form format 1 | Vocabulary of `docs/formats/tiffin.md` 12.1; XML syntax parsed with `XMLReader`; images by attachment reference only; links parsed, shown as text until M5; form CSS reserved and ignored | ADR 0014 d1 |
+| P92 | Showing stored forms | Default-deny parse into a node model rendered by templates; rejected forms replaced by the generated layout; no safe-HTML type in M2 (deviates from the session plan) | ADR 0014 d4 |
+| P93 | Generated forms | Details, Files, one section per many-link relation; long text and rating full width; English legends as data; regenerated in the schema transaction while `generated` is 1; edited forms gain and lose slots only | ADR 0014 d3 |
+| P94 | Version 2 upgrade | Adds `_tiffin_forms` only; tables have no stored form until their fields next change | ADR 0014 d2 |
+| P95 | Columns on wide screens (A1) | `Details` laid out as a 300 px minimum auto-fit grid; record page 1120 wide | ADR 0014 d6 |
+| P96 | Generated ids in templates | New scope helper `id(prefix, part...)` producing validated tokens for `id`, `for`, `aria-describedby`, `aria-labelledby`, `form`, and fragment links; amends the M1 rule that ids are literal | ADR 0013 d9.2 |
+| P97 | Plural strings | Placeholder `{name | plural}` with `#` for the formatted number, English one/other only; `Format::count` stays |
+| P98 | Move to trash | Immediate, with an Undo button in the next page's notice; no confirmation page; a trashed record's address shows a Restore page | ADR 0013 d8 |
+| P99 | Warning token | Light `--warn` `#703D00` (7.61:1 on the tint); no other published figure changes | ADR 0013 d9.4 |
+| P100 | Display link and settings route | Display link on every signed-in page (reverses that part of P41); `/settings` with Save and "Back to standard" (a `formaction` reset); live preview script; mock-up wording about black-and-white strong contrast changed | ADR 0013 d9.5 |
+| P101 | Record form controls | Required fields marked "(required)"; choice as a select with "Not chosen"; rating as radios with "Not rated"; numbers and money as text inputs with `inputmode`; currency label adds the currency name or code | ADR 0013 d9.6 |
+| P102 | List controls | Visible Apply button; the sort menu never submits on change | ADR 0013 d9.7 |
+| P103 | Sidebar in M2 | Collections, Import, Export left out; trash count shown as text; "Tables and fields" link added; `/projects/{p}` opens the first table's list (completes P43) | ADR 0013 d9.8 |
+| P104 | Record ids from URLs | Passed to the core as strings; anything but `^[1-9][0-9]{0,18}$` is not found | ADR 0013 d9.9 |
+| P105 | Required and links | Requiredness not enforced for relation and attachment fields until they can be edited (M4) | ADR 0013 d7 |
+| P106 | Record writes touch project meta | Create, update, links, trash, and restore update `updated_at` and `updated_by` | ADR 0013 d7 |
+| P107 | SQL composition | `Core\Query\Sql` fragments plus an extended scanner; `Sql.php` the only file joining variables into SQL text | ADR 0013 d9.10 |
+| P108 | Work-package changes from the session plan | Plural strings moved from WP0 to WP5; P82 fix moved to WP8; the token value changed in the design, so WP1 is mechanical (tests only) | this spec 12 (process; ledger only) |
+| P109 | `Origin` check | With no `Sec-Fetch-Site`, a POST whose `Origin` is present and not the request's own origin (or is `null`) is refused; requests with no `Origin` pass | ADR 0013 d9.11 |
 
 ## 5. Blockers
 

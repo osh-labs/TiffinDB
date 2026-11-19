@@ -152,6 +152,10 @@ final class Preparer
             }
         }
 
+        ksort($emptied);
+        ksort($added);
+        ksort($refused);
+
         return new PreviewResult(count($rows), $total > $limit, $emptied, $added, $refused, $import);
     }
 

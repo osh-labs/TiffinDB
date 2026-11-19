@@ -8,15 +8,17 @@ declare(strict_types=1);
 
 namespace TiffinDB\Tests\Web;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Tests\Support\RepoFiles;
+use TiffinDB\Web\Ids;
 
 /**
- * T-WEB-11: the escaping rule and the other template source rules
- * (ADR 0008 decisions 4 and 5; M0 spec sections 6.8 and 15.2; M1 spec
- * part 2 section 4.3).
+ * T-WEB-11 and T-WEB-26: the escaping rule and the other template source
+ * rules (ADR 0008 decisions 4 and 5; M0 spec sections 6.8 and 15.2; M1
+ * spec part 2 section 4.3; M2 spec part 2 section 4.3).
  *
  * The scanner works on PHP tokens and on the static markup as a whole:
  *
@@ -37,14 +39,19 @@ use TiffinDB\Tests\Support\RepoFiles;
  *   at the start of a URL attribute; no `<meta>` and no element of
  *   FORBIDDEN_ELEMENTS (iframe, object, embed, base, SVG animation, and
  *   the like). The exceptions are in the layout's `<head>` only: its two
- *   fixed meta elements (LAYOUT_METAS) and the show-password script
- *   element, exactly as SCRIPT_ELEMENT.
+ *   fixed meta elements (LAYOUT_METAS) and the two script elements,
+ *   each at most once and exactly as in SCRIPT_ELEMENTS.
  * - Each `<?=` sits in element text, or is the whole value of a
  *   double-quoted attribute (not `class`, `id`, `style`, `on*`, or
  *   NO_OUTPUT_ATTRIBUTES such as `srcdoc` and SVG `to`, `from`, `values`,
  *   `attributeName`; in a URL attribute only through url() or asset(), or
  *   e() for the footer's configured source link). csrf() only in the csrf
- *   partial, as the whole value of a `value` attribute; count() only in element text or `aria-label`. The layout
+ *   partial, as the whole value of a `value` attribute; count() only in element text or `aria-label`.
+ *   value() and inputValue() only in element text or as the whole value of
+ *   `value`. id() only as the whole value of `id`, `for`, `form`, or
+ *   `aria-labelledby`, or in `aria-describedby` as one or more id()
+ *   separated by single literal spaces; those attributes take no other
+ *   output. fieldFacts() returns data and is never printed. The layout
  *   accessor may sit in the `<html>` start tag. Never in a comment or
  *   elsewhere in a tag.
  * - Every literal string key passed to t(), or as a key parameter to a
@@ -57,8 +64,17 @@ use TiffinDB\Tests\Support\RepoFiles;
 #[CoversNothing]
 final class TemplateRulesTest extends TestCase
 {
-    /** Helpers any template may call (ADR 0008 decision 4). */
-    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot', 'csrf', 'count'];
+    /** Helpers any template may call (ADR 0008 decision 4; M2 spec part 2 sections 4.2 and 5.2). */
+    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot', 'csrf', 'count', 'number', 'value', 'inputValue', 'id', 'fieldFacts'];
+
+    /** Helpers that return data for decisions, never markup: not allowed after `<?=`. */
+    public const DATA_HELPERS = ['fieldFacts'];
+
+    /** Attributes whose whole value may be one id() (P96). */
+    public const ID_ATTRIBUTES = ['id', 'for', 'form', 'aria-labelledby'];
+
+    /** The attribute whose value may be several id() separated by single spaces. */
+    public const ID_LIST_ATTRIBUTE = 'aria-describedby';
 
     /** Accessors only the layout may call, each returning markup built from server-side constants. */
     public const LAYOUT_ACCESSORS = ['rootClassAttribute'];
@@ -95,10 +111,30 @@ final class TemplateRulesTest extends TestCase
      */
     public const RUNTIME_PREFIXES = [
         'problem.', 'error.', 'type.', 'setup.check.', 'notice.', 'wait.', 'date.', 'count.', 'role.',
+        'currency.', 'file.type.', 'size.', 'sort.', 'lists.cond.', 'settings.theme.', 'settings.accent.',
+        'settings.size.', 'settings.spacing.', 'settings.face.',
     ];
 
-    /** The one script element, allowed only in the layout (M1 spec part 2 section 4.1). */
+    /**
+     * Shared keys (strings/en/components.php, M2-WP5) printed by the record
+     * form partials of M2-WP7 (docs/design/m2/record.md section 2.1), which
+     * do not exist yet. Each counts as used until those partials land;
+     * testPendingKeysAreStillPending fails once a template uses one, so the
+     * entry is then removed.
+     */
+    public const PENDING_KEYS = [
+        'input.duration.help', 'input.duration.help_seconds', 'input.currency.label', 'input.auto_number_new',
+        'input.links.none', 'input.links.help', 'input.files.none', 'input.file.facts',
+    ];
+
+    /** The show-password script element (M1 spec part 2 section 4.1). */
     public const SCRIPT_ELEMENT = '<script src="<?= $this->asset(\'js/show-password.js\') ?>" defer="defer"></script>';
+
+    /** The script elements allowed in the layout's head, each at most once (M2 spec part 2 section 3.3). */
+    public const SCRIPT_ELEMENTS = [
+        self::SCRIPT_ELEMENT,
+        '<script src="<?= $this->asset(\'js/settings-preview.js\') ?>" defer="defer"></script>',
+    ];
 
     /** Templates that write the wordmark as live text (ADR 0008 decision 5). */
     public const WORDMARK_TEMPLATES = ['templates/partials/top-bar.php', 'templates/partials/lockup.php'];
@@ -271,9 +307,9 @@ final class TemplateRulesTest extends TestCase
      *
      * - each fixed meta element (LAYOUT_METAS) found inside the one
      *   `<head>`...`</head>`, exactly as written (so it holds no output);
-     * - the one script element, when the source holds it exactly once and
-     *   exactly as SCRIPT_ELEMENT, with no other script, and it sits inside
-     *   that head.
+     * - the script elements, when the source holds each of SCRIPT_ELEMENTS
+     *   at most once, exactly as written, with no other script, and they
+     *   sit inside that head.
      *
      * Anything else is left as it is, so markupProblems() reports it.
      */
@@ -296,11 +332,19 @@ final class TemplateRulesTest extends TestCase
         }
 
         $stripped = '<script src="" defer="defer"></script>';
+        $present = 0;
+        $once = true;
+        foreach (self::SCRIPT_ELEMENTS as $element) {
+            $n = substr_count($source, $element);
+            $present += $n;
+            $once = $once && $n <= 1;
+        }
         if (
-            substr_count($source, self::SCRIPT_ELEMENT) === 1
-            && preg_match_all('/<\s*\/?\s*script\b/i', $source) === 2
-            && substr_count($html, $stripped) === 1
-            && substr_count($head, $stripped) === 1
+            $present > 0
+            && $once
+            && preg_match_all('/<\s*\/?\s*script\b/i', $source) === 2 * $present
+            && substr_count($html, $stripped) === $present
+            && substr_count($head, $stripped) === $present
         ) {
             $head = str_replace($stripped, '', $head);
         }
@@ -419,13 +463,14 @@ final class TemplateRulesTest extends TestCase
                     'text' => match (true) {
                         in_array($helper, self::LAYOUT_ACCESSORS, true) => 'a layout accessor outside the <html> start tag',
                         $helper === 'csrf' => 'csrf() output in element text',
+                        $helper === 'id' => 'id() output in element text',
                         default => null,
                     },
                     'comment' => 'output inside a comment',
                     'tag' => $file === self::LAYOUT && $tagName === 'html' && $n === 0
                         && in_array($helper, self::LAYOUT_ACCESSORS, true)
                         ? null : 'output inside a tag, outside an attribute value',
-                    'dq' => self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file),
+                    'dq' => self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file, $byOffset),
                     default => 'output in a single-quoted or unquoted attribute value',
                 };
                 if ($where !== null) {
@@ -488,7 +533,12 @@ final class TemplateRulesTest extends TestCase
         return $problems;
     }
 
-    /** Why output at this point of a double-quoted value is not allowed, or null. */
+    /**
+     * Why output at this point of a double-quoted value is not allowed, or
+     * null.
+     *
+     * @param array<int, list<array{int, string, string}>> $byOffset echoes by offset in the static markup
+     */
     private static function attributeOutputProblem(
         string $html,
         int $pos,
@@ -497,12 +547,29 @@ final class TemplateRulesTest extends TestCase
         string $attribute,
         string $helper,
         string $file,
+        array $byOffset = [],
     ): ?string {
+        if ($attribute === self::ID_LIST_ATTRIBUTE) {
+            // One or more id() outputs separated by single literal spaces.
+            $startsWell = $pos === $valueStart || ($pos > $valueStart && $html[$pos - 1] === ' ' && isset($byOffset[$pos - 1]));
+            $endsWell = ($html[$pos] ?? '') === '"' || (($html[$pos] ?? '') === ' ' && isset($byOffset[$pos + 1]));
+            if ($helper !== 'id' || $index !== 0 || !$startsWell || !$endsWell) {
+                return "output in {$attribute} other than id() outputs separated by single spaces";
+            }
+
+            return null;
+        }
         if ($pos !== $valueStart || $index !== 0 || ($html[$pos] ?? '') !== '"') {
             return "output that is not the whole value of the {$attribute} attribute";
         }
+        if (in_array($attribute, self::ID_ATTRIBUTES, true)) {
+            return $helper === 'id' ? null : "{$helper}() output in the attribute {$attribute} (only id())";
+        }
+        if ($helper === 'id') {
+            return "id() output in the attribute {$attribute}";
+        }
         if (
-            in_array($attribute, ['class', 'id', 'style'], true)
+            in_array($attribute, ['class', 'style'], true)
             || in_array($attribute, self::NO_OUTPUT_ATTRIBUTES, true)
             || str_starts_with($attribute, 'on')
         ) {
@@ -514,6 +581,9 @@ final class TemplateRulesTest extends TestCase
         if ($helper === 'count') {
             return $attribute === 'aria-label' ? null : "count() output in the attribute {$attribute}";
         }
+        if (in_array($helper, ['value', 'inputValue'], true)) {
+            return $attribute === 'value' ? null : "{$helper}() output in the attribute {$attribute}";
+        }
         if (in_array($attribute, self::URL_ATTRIBUTES, true)) {
             $allowed = ['url', 'asset'];
             if ($file === self::FOOTER && $attribute === 'href') {
@@ -523,7 +593,7 @@ final class TemplateRulesTest extends TestCase
             return in_array($helper, $allowed, true) ? null : "{$helper}() output in the URL attribute {$attribute}";
         }
 
-        return in_array($helper, ['e', 't'], true) ? null : "{$helper}() output in the attribute {$attribute}";
+        return in_array($helper, ['e', 't', 'number'], true) ? null : "{$helper}() output in the attribute {$attribute}";
     }
 
     /**
@@ -592,6 +662,9 @@ final class TemplateRulesTest extends TestCase
             || $tokens[$d] !== '('
         ) {
             return '<?= must begin with a documented helper call';
+        }
+        if (in_array($tokens[$c][1], self::DATA_HELPERS, true)) {
+            return "<?= cannot print \$this->{$tokens[$c][1]}(), which returns data";
         }
 
         // Find the matching closing parenthesis.
@@ -845,12 +918,19 @@ final class TemplateRulesTest extends TestCase
         return $keys;
     }
 
-    /** @return list<string> */
+    /**
+     * The PHP files whose whole string literals count as key uses: the
+     * controllers (breadcrumb labels) and the web layer's own classes
+     * directly under src/Web (Format and ValueText name the keys they
+     * format with).
+     *
+     * @return list<string>
+     */
     private static function controllers(): array
     {
         return array_values(array_filter(
-            RepoFiles::withExtension(['php'], 'src/Web/Controller'),
-            static fn (string $file): bool => dirname($file) === 'src/Web/Controller',
+            RepoFiles::withExtension(['php'], 'src/Web'),
+            static fn (string $file): bool => in_array(dirname($file), ['src/Web', 'src/Web/Controller'], true),
         ));
     }
 
@@ -880,7 +960,7 @@ final class TemplateRulesTest extends TestCase
         }
         $unused = [];
         foreach (array_keys($strings) as $key) {
-            if (!isset($used[$key]) && !self::isRuntimeKey($key)) {
+            if (!isset($used[$key]) && !self::isRuntimeKey($key) && !in_array($key, self::PENDING_KEYS, true)) {
                 $unused[] = $key;
             }
         }
@@ -1049,8 +1129,24 @@ final class TemplateRulesTest extends TestCase
     {
         $files = self::controllers();
         self::assertContains('src/Web/Controller/HomeController.php', $files);
+        self::assertContains('src/Web/ValueText.php', $files);
         foreach ($files as $file) {
-            self::assertSame('src/Web/Controller', dirname($file));
+            self::assertContains(dirname($file), ['src/Web', 'src/Web/Controller']);
+        }
+    }
+
+    public function testPendingKeysAreStillPending(): void
+    {
+        $strings = self::strings();
+        $used = [];
+        foreach (self::templates() as $file) {
+            foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
+                $used[$key] = true;
+            }
+        }
+        foreach (self::PENDING_KEYS as $key) {
+            self::assertArrayHasKey($key, $strings, $key);
+            self::assertArrayNotHasKey($key, $used, "{$key} is used by a template now; remove it from PENDING_KEYS.");
         }
     }
 
@@ -1107,7 +1203,8 @@ final class TemplateRulesTest extends TestCase
     public function testStringsArePlainText(): void
     {
         foreach (self::strings() as $key => $text) {
-            self::assertMatchesRegularExpression('/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/', $key);
+            // Lower case, except the ISO 4217 code of a currency name (M2 spec part 2 section 6.3).
+            self::assertMatchesRegularExpression('/^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*|currency\.[A-Z]{3})$/', $key);
             self::assertNotSame('', trim($text), $key);
             self::assertDoesNotMatchRegularExpression('/[<>]/', $text, "{$key}: strings hold text, not markup.");
             // A scheme may be named ("starts with https://"), but no address.
@@ -1283,6 +1380,58 @@ final class TemplateRulesTest extends TestCase
         yield 'base' => ['<base href="/x/" />', $page];
         yield 'base in the layout head' => [$head('<base href="/x/" />'), $layout];
         yield 'upper-case iframe' => ['<IFRAME src="/x"></IFRAME>', $page];
+
+        // M2 rules (M2 spec part 2 section 4.3).
+        $preview = self::SCRIPT_ELEMENTS[1];
+        yield 'id() in element text' => ['<p><?= $this->id(\'f\', $data[\'k\']) ?></p>', $page];
+        yield 'id() in class' => ['<p class="<?= $this->id(\'f\', $data[\'k\']) ?>">x</p>', $page];
+        yield 'id() in title' => ['<p title="<?= $this->id(\'f\', $data[\'k\']) ?>">x</p>', $page];
+        yield 'id() in href' => ['<a href="<?= $this->id(\'f\', $data[\'k\']) ?>">x</a>', $page];
+        yield 'id() in name' => ['<input name="<?= $this->id(\'f\', $data[\'k\']) ?>" />', $page];
+        yield 'e() in id' => ['<p id="<?= $this->e($data[\'k\']) ?>">x</p>', $page];
+        yield 't() in for' => ['<label for="<?= $this->t(\'k\') ?>">x</label>', $page];
+        yield 'e() in form' => ['<button form="<?= $this->e($data[\'k\']) ?>">x</button>', $page];
+        yield 'e() in aria-labelledby' => ['<section aria-labelledby="<?= $this->e($data[\'k\']) ?>"></section>', $page];
+        yield 'id() with static text in id' => ['<p id="x-<?= $this->id(\'f\', $data[\'k\']) ?>">x</p>', $page];
+        yield 'two id() in id' => ['<p id="<?= $this->id(\'f\', 1) ?> <?= $this->id(\'f\', 2) ?>">x</p>', $page];
+        yield 'e() in aria-describedby' => ['<input aria-describedby="<?= $this->e($data[\'k\']) ?>" />', $page];
+        yield 'static text in aria-describedby' => ['<input aria-describedby="help <?= $this->id(\'f\', 1) ?>" />', $page];
+        yield 'static id after id() in aria-describedby' => ['<input aria-describedby="<?= $this->id(\'f\', 1) ?> help" />', $page];
+        yield 'two spaces in aria-describedby' => ['<input aria-describedby="<?= $this->id(\'f\', 1) ?>  <?= $this->id(\'f\', 2) ?>" />', $page];
+        yield 'adjacent ids in aria-describedby' => ['<input aria-describedby="<?= $this->id(\'f\', 1) ?><?= $this->id(\'f\', 2) ?>" />', $page];
+        yield 'value() in title' => ['<p title="<?= $this->value($data[\'f\'], $data[\'v\']) ?>">x</p>', $page];
+        yield 'value() in href' => ['<a href="<?= $this->value($data[\'f\'], $data[\'v\']) ?>">x</a>', $page];
+        yield 'inputValue() in aria-label' => ['<input aria-label="<?= $this->inputValue($data[\'f\'], \'\', false) ?>" />', $page];
+        yield 'value() as part of a value' => ['<input value="x<?= $this->value($data[\'f\'], $data[\'v\']) ?>" />', $page];
+        yield 'fieldFacts() printed' => ['<p><?= $this->fieldFacts($data[\'f\']) ?></p>', $page];
+        yield 'number() in href' => ['<a href="<?= $this->number(1) ?>">x</a>', $page];
+        yield 'protocol-relative formaction' => ['<button type="submit" formaction="//example.org/">x</button>', $page];
+        yield 'e() in formaction' => ['<button type="submit" formaction="<?= $this->e($data[\'u\']) ?>">x</button>', $page];
+        yield 'slash-backslash formaction' => ['<button type="submit" formaction="/\\example.org/">x</button>', $page];
+        yield 'preview script outside the layout' => [$preview, $page];
+        yield 'preview script twice in the layout' => [$head($preview . "\n" . $preview), $layout];
+        yield 'both scripts and an inline one' => [$head(self::SCRIPT_ELEMENT . "\n" . $preview . "\n<script>alert(1)</script>"), $layout];
+        yield 'preview script in the layout body' => ["<head>\n</head>\n<body>\n" . $preview . "\n</body>", $layout];
+    }
+
+    public function testScannerAcceptsTheM2Forms(): void
+    {
+        $page = self::HEADER . <<<'HTML'
+            <?php $facts = $this->fieldFacts($data['field']); ?>
+            <label class="label" for="<?= $this->id('f', $data['key']) ?>"><?= $this->e($data['label']) ?></label>
+            <p class="help" id="<?= $this->id('help', $data['key']) ?>"><?= $this->value($data['field'], $data['value']) ?></p>
+            <?php if ($facts['type'] === 'text') : ?>
+            <input class="input" id="<?= $this->id('f', $data['key']) ?>" name="<?= $this->e('f_' . $data['key']) ?>" value="<?= $this->inputValue($data['field'], $data['text'], false) ?>" aria-describedby="<?= $this->id('help', $data['key']) ?> <?= $this->id('err', $data['key']) ?>" />
+            <?php endif; ?>
+            <input aria-describedby="<?= $this->id('help', $data['key']) ?>" value="<?= $this->value($data['field'], $data['value'], 'cell') ?>" />
+            <button type="submit" form="<?= $this->id('form', 1) ?>" formaction="<?= $this->url('/settings/reset') ?>"><?= $this->number(1234) ?></button>
+            <section aria-labelledby="<?= $this->id('group', $data['key']) ?>"><span title="<?= $this->number(2) ?>"><?= $this->number(3) ?></span></section>
+            HTML;
+        self::assertSame([], self::violations($page, self::PAGE));
+
+        $both = "<head>\n" . implode("\n", self::SCRIPT_ELEMENTS) . "\n</head>";
+        self::assertSame([], self::violations(self::HEADER . $both, self::LAYOUT));
+        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENTS[1] . "\n</head>", self::LAYOUT));
     }
 
     public function testScannerAcceptsTheLayoutHead(): void
@@ -1316,7 +1465,7 @@ final class TemplateRulesTest extends TestCase
     public function testTheComponentFixturesFollowTheRules(): void
     {
         $strings = self::strings();
-        foreach (['components', 'notices', 'form-actions'] as $name) {
+        foreach (['components', 'notices', 'form-actions', 'm2-components'] as $name) {
             $file = "tests/web/fixtures/templates/pages/{$name}.php";
             self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
             foreach (self::literalKeys(RepoFiles::read($file)) as $key) {
@@ -1358,6 +1507,45 @@ final class TemplateRulesTest extends TestCase
             [],
             self::violations(self::HEADER . '<a href="<?= $this->e($data[\'sourceUrl\']) ?>" rel="noopener noreferrer">x</a>', self::FOOTER),
         );
+    }
+
+    // T-WEB-26: Ids::make() (M2 spec part 2 section 4.2).
+
+    public function testIdsAreBuiltFromValidatedParts(): void
+    {
+        self::assertSame('f-abcdefghijkl', Ids::make('f', 'abcdefghijkl'));
+        self::assertSame('group-abcdefghijkl', Ids::make('group', 'abcdefghijkl'));
+        self::assertSame('err-a2-12', Ids::make('err', 'a2', 12));
+        self::assertSame('filter-field-x', Ids::make('filter-field', 'x'));
+    }
+
+    /** @return iterable<string, array{string, list<string|int>}> */
+    public static function badIds(): iterable
+    {
+        yield 'empty prefix' => ['', ['a']];
+        yield 'prefix starting with a digit' => ['1f', ['a']];
+        yield 'prefix starting with a dash' => ['-f', ['a']];
+        yield 'upper-case prefix' => ['F', ['a']];
+        yield 'prefix with a quote' => ['f"', ['a']];
+        yield 'prefix too long' => [str_repeat('a', 17), ['a']];
+        yield 'no parts' => ['f', []];
+        yield 'empty part' => ['f', ['']];
+        yield 'part with a dash' => ['f', ['a-b']];
+        yield 'part with a space' => ['f', ['a b']];
+        yield 'part with a quote' => ['f', ['a"']];
+        yield 'part with markup' => ['f', ['<b>']];
+        yield 'upper-case part' => ['f', ['ABC']];
+        yield 'part too long' => ['f', [str_repeat('a', 25)]];
+        yield 'negative number' => ['f', [-1]];
+        yield 'part with a newline' => ['f', ["a\n"]];
+    }
+
+    /** @param list<string|int> $parts */
+    #[DataProvider('badIds')]
+    public function testIdsRefuseBadPrefixesAndParts(string $prefix, array $parts): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Ids::make($prefix, ...$parts);
     }
 
     public function testLiteralKeysAreFound(): void

@@ -230,6 +230,7 @@ final class RouterTest extends TestCase
     private static function specifiedTable(): array
     {
         $f = '/projects/{project}/tables/{table}/fields/{field}';
+        $t = '/projects/{project}/tables/{table}';
 
         return [
             ['GET', '/', 'HomeController::show', 'any'],
@@ -241,6 +242,9 @@ final class RouterTest extends TestCase
             ['POST', '/sign-out', 'SignInController::signOut', 'user'],
             ['GET', '/account/password', 'AccountController::passwordForm', 'user'],
             ['POST', '/account/password', 'AccountController::password', 'user'],
+            ['GET', '/settings', 'SettingsController::form', 'user'],
+            ['POST', '/settings', 'SettingsController::save', 'user'],
+            ['POST', '/settings/reset', 'SettingsController::reset', 'user'],
             ['GET', '/projects', 'ProjectController::index', 'user'],
             ['GET', '/projects/new', 'ProjectController::newForm', 'user'],
             ['POST', '/projects', 'ProjectController::create', 'user'],
@@ -249,6 +253,7 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/settings', 'ProjectController::settings', 'user'],
             ['GET', '/projects/{project}/sharing', 'SharingController::form', 'user'],
             ['POST', '/projects/{project}/sharing', 'SharingController::save', 'user'],
+            ['GET', '/projects/{project}/search', 'SearchController::index', 'user'],
             ['GET', '/projects/{project}/tables', 'TableController::index', 'user'],
             ['GET', '/projects/{project}/tables/new', 'TableController::newForm', 'user'],
             ['POST', '/projects/{project}/tables', 'TableController::create', 'user'],
@@ -256,6 +261,14 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/tables/{table}/settings', 'TableController::update', 'user'],
             ['GET', '/projects/{project}/tables/{table}/delete', 'TableController::deleteForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/delete', 'TableController::delete', 'user'],
+            ['GET', $t, 'RecordListController::index', 'user'],
+            ['GET', $t . '/filter', 'RecordListController::filter', 'user'],
+            ['GET', $t . '/records/new', 'RecordController::newForm', 'user'],
+            ['POST', $t . '/records', 'RecordController::create', 'user'],
+            ['GET', $t . '/records/{record}', 'RecordController::show', 'user'],
+            ['POST', $t . '/records/{record}', 'RecordController::update', 'user'],
+            ['POST', $t . '/records/{record}/trash', 'RecordController::trash', 'user'],
+            ['POST', $t . '/records/{record}/restore', 'RecordController::restore', 'user'],
             ['GET', '/projects/{project}/tables/{table}/fields/new', 'FieldController::newForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/fields', 'FieldController::create', 'user'],
             ['GET', $f, 'FieldController::editForm', 'user'],
@@ -310,11 +323,17 @@ final class RouterTest extends TestCase
         }
     }
 
-    public function testM2ListRouteIsNotRouted(): void
+    public function testM2RecordRoutesComeInTheSpecifiedOrder(): void
     {
         $router = new Router(Router::applicationRoutes());
+        $base = '/projects/ABCDEFGHJKMN/tables/ABCDEFGHJKMN';
 
-        self::assertTrue($router->match('GET', '/projects/ABCDEFGHJKMN/tables/ABCDEFGHJKMN')->isNotFound());
+        self::assertSame('index', $router->match('GET', $base)->handler[1] ?? null);
+        self::assertSame('newForm', $router->match('GET', $base . '/records/new')->handler[1] ?? null, 'records/new comes before records/{record}.');
+        self::assertSame('show', $router->match('GET', $base . '/records/12')->handler[1] ?? null);
+        self::assertSame('fields', $router->match('GET', $base . '/fields')->handler[1] ?? null);
+        self::assertSame('form', $router->match('GET', '/settings')->handler[1] ?? null);
+        self::assertTrue($router->match('GET', $base . '/records/12/extra')->isNotFound());
     }
 
     /**
@@ -326,6 +345,8 @@ final class RouterTest extends TestCase
         $pending = [
             'SetupController', 'SignInController', 'AccountController', 'ProjectController',
             'SharingController', 'TableController', 'FieldController', 'PeopleController',
+            // M2 spec part 2 section 2: created by M2-WP6 to WP8.
+            'RecordListController', 'SearchController', 'RecordController', 'SettingsController',
         ];
         foreach (Router::applicationRoutes() as $route) {
             [, , [$class, $method]] = $route;

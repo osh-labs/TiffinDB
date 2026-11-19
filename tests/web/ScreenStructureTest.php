@@ -279,10 +279,12 @@ final class ScreenStructureTest extends TestCase
         $this->visit('/', 303, $admin);
         $this->visit('/projects', 303, $admin);
 
-        // Every GET route was visited.
+        // Every GET route was visited. Routes of controllers that do not
+        // exist yet (M2 spec part 2 section 2: WP6 to WP8) are counted once
+        // their controller lands.
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET') {
+            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
                 $patterns[] = (string) $route[1];
             }
         }

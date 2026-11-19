@@ -6,11 +6,17 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M1 CLOSED; M2 not started |
-| Phase | Stopped at the end of M1 by maintainer instruction; no agents running. Integration branch `claude/exciting-maxwell-l2yieq` holds all of M0 and M1 |
-| Window start | 2026-11-17T11:06Z (window 4) |
-| Resume reminder | none (deleted at the M1 stop; the maintainer resumes the build) |
-| Next action | Stopped. On the maintainer's instruction to continue: design M2 (`docs/specs/M2-*.md`) per orchestration section 3, starting with the carried-forward items in section 7 that are mapped to M2. If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9); everything is pushed. Brief every agent with its own scratch subfolder and port |
+| Milestone | M1 CLOSED; M2 design in progress (session plan `docs/build/M2-M3-session-plan.md`, run without a stop to the M3 exit audit) |
+| Phase | Phase 1: M2-D1 (design) dispatched. Integration branch `claude/gifted-archimedes-ix5bwy` (fast-forwarded to the session plan commit); no unpushed work |
+| Window start | 2026-11-19 (window 5) |
+| Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
+| Next action | Merge M2-D1 output, dispatch M2-R1 (second design-tier reviewer), then wave 1 per the session plan section 6.2. Plan section 3 questions 1 to 4 run on their defaults (no `composer.lock`; reflowing form columns; substring search; no stop at M2 close). If resuming after a reclaim: rebuild the offline PHPUnit install (orchestration 9) |
+
+### Phase 0 record (2026-11-19)
+
+Baseline on the integration branch: `composer test` OK (4777 tests, 1 skipped), `composer lint` 348 files 0 failed, as at M1 close.
+
+XLSX dependency probe (metadata read from Packagist; no code installed): `openspout/openspout` declares licence MIT. Releases v5.3 and later that were checked (v5.4.1, v5.5.0, v5.10.0, v5.15.x) require PHP `~8.4.0` or newer and do NOT admit PHP 8.3. Releases that admit 8.3: v5.0.0, v5.1.1, v5.2.2 (PHP `~8.3.0 || ~8.4.0 || ~8.5.0`) and v4.32.0. Required extensions: `dom`, `filter`, `libxml`, `xmlreader`, `zip` (v4.x also `fileinfo`). Not checked: v5.3.0 and v5.4.0 floors, transitive packages (none declared), the licence file at a tag. Consequence for M3-D1: ADR 0016 must pin a release admitting 8.3 (candidate v5.2.2 or v4.32.0, subject to a tag-level licence check) and note the extension additions (`dom`, `filter`, `libxml`) for the installer check and `tools/host-check/`. No download blocker was seen.
 
 ## 2. Milestones
 

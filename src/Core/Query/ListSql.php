@@ -23,7 +23,11 @@ use TiffinDB\Core\Schema\TableDef;
  * come from Identifier or from definition objects; every value (labels,
  * dates, ids, search patterns, list positions) is a bound parameter. The
  * record row is always aliased "r", a join row "jj", and the record at the
- * other end of a link "o".
+ * other end of a link "o". Every join of a join table with the other
+ * table is a CROSS JOIN, which SQLite never reorders: the join row is
+ * found first through its key on r."id", then "o" by its primary key.
+ * With a plain JOIN, statistics that make the other table's trash index
+ * look selective lead SQLite to scan that index for every record.
  *
  * Internal helper of Core\Query (not part of the record layer's API).
  */
@@ -157,14 +161,14 @@ final class ListSql
             $otherSide = self::otherSide($relation, $field->key);
             if (in_array($title->type, self::TEXT_LIKE, true)) {
                 $lowest = Sql::of(
-                    '(SELECT MIN("o".' . $title->sql() . ' COLLATE NOCASE) FROM ' . $relation->sql() . ' AS "jj" JOIN ' . $other->sql()
+                    '(SELECT MIN("o".' . $title->sql() . ' COLLATE NOCASE) FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql()
                     . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide) . ' WHERE "jj".' . Identifier::system($thisSide)
                     . ' = r."id" AND "o"."_trashed_at" IS NULL)',
                 );
                 $term = Sql::join(' ', [$lowest, Sql::of('COLLATE NOCASE'), $direction]);
             } else {
                 $lowest = Sql::of(
-                    '(SELECT MIN("o".' . $title->sql() . ') FROM ' . $relation->sql() . ' AS "jj" JOIN ' . $other->sql()
+                    '(SELECT MIN("o".' . $title->sql() . ') FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql()
                     . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide) . ' WHERE "jj".' . Identifier::system($thisSide)
                     . ' = r."id" AND "o"."_trashed_at" IS NULL)',
                 );
@@ -221,7 +225,7 @@ final class ListSql
             }
 
             return Sql::of(
-                'NOT EXISTS (SELECT 1 FROM ' . $relation->sql() . ' AS "jj" JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".'
+                'NOT EXISTS (SELECT 1 FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".'
                 . Identifier::system($otherSide) . ' WHERE "jj".' . Identifier::system($thisSide) . ' = r."id" AND "o"."_trashed_at" IS NULL)',
             );
         }
@@ -313,7 +317,7 @@ final class ListSql
         }
 
         return Sql::of(
-            'EXISTS (SELECT 1 FROM ' . $relation->sql() . ' AS "jj" JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".'
+            'EXISTS (SELECT 1 FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".'
             . Identifier::system(self::otherSide($relation, $field->key)) . ' WHERE "jj".' . Identifier::system(self::thisSide($relation, $field->key))
             . ' = r."id" AND "o"."_trashed_at" IS NULL AND "o".' . $title->sql() . ' LIKE ? ESCAPE \'\\\')',
             [$pattern],

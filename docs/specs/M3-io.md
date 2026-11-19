@@ -78,7 +78,7 @@ ADR 0015 decision 5 amends the layer table; `tests/repo/CoreLayerRulesTest.php` 
 
 ### 2.2 SQL rules
 
-`tests/core/schema/SqlStringsTest.php` (M2 T-REC-14 version) is extended to every file under `src/Core/Io/` with the same rules as `src/Core/Query/` (literals, `Identifier` calls, `Database::placeholders()`, `Sql` fragments). `src/Core/Schema/Ddl.php` falls under the existing `src/Core/Schema/` rules. No SQL is allowed under `plugins/` (plugins receive values, never a database).
+`tests/core/schema/SqlStringsTest.php` (M2 T-REC-14 version) is extended to every file under `src/Core/Io/` with the same rules as `src/Core/Query/` (literals, `Identifier` calls, `Database::placeholders()`, `Sql` fragments). Its `variable-new` rule allows exactly one `new $class()` in `src/Core/Io/Plugin/PluginLoader.php` (section 4.3); WP1 adds that exemption by path, since the file is WP2's. `src/Core/Schema/Ddl.php` falls under the existing `src/Core/Schema/` rules. No SQL is allowed under `plugins/` (plugins receive values, never a database).
 
 ## 3. The plugin contract (`TiffinDB\Core\Io\Contract`, API 1)
 
@@ -275,7 +275,7 @@ final class PluginLoader
 }
 ```
 
-On first use of a plugin in a request, `PluginLoader` calls `spl_autoload_register` with a closure that handles only class names starting with that plugin's namespace prefix, maps the rest of the name to `src/<path>.php` (each segment `[A-Z][A-Za-z0-9]{0,63}`; anything else is not loaded), checks the resolved file is inside the plugin's `src/` directory with `Fs::isInside`, and `require`s it. It then checks that the manifest's class exists, is final, and implements the interface for its kind, and instantiates it with no arguments (`new $class()`: the second allowed dynamic `new` in the code base after the kernel's controller dispatch; the template and source scanners are told of it by name, in `PluginLoader.php` only). Any failure throws `PluginFailure(REASON_FAILED)` with the detail logged. A plugin is loaded at most once per request.
+On first use of a plugin in a request, `PluginLoader` calls `spl_autoload_register` with a closure that handles only class names starting with that plugin's namespace prefix, maps the rest of the name to `src/<path>.php` (each segment `[A-Z][A-Za-z0-9]{0,63}`; anything else is not loaded), checks the resolved file is inside the plugin's `src/` directory with `Fs::isInside`, and `require`s it. It then checks that the manifest's class exists, is final, and implements the interface for its kind, and instantiates it with no arguments (`new $class()`: the second allowed dynamic `new` in the code base after the kernel's controller dispatch; `tests/repo/CompositionSeamTest.php` (which refuses every computed `new` except the one in `CompositionSeamTest::DISPATCHER`) and `SqlStringsTest`'s `variable-new` rule (section 2.2) are told of it by path, in `PluginLoader.php` only). Any failure throws `PluginFailure(REASON_FAILED)` with the detail logged. A plugin is loaded at most once per request. Every job operation (read, reading options, prepare, export) rescans before loading; when the job's plugin is no longer Enabled (an Admin turned it off, or it became Broken or Unavailable), the import job goes to `Failed` with reason `plugin-unavailable` and the export gives `problem.export.failed`; the `\LogicException` of `PluginLoader` is never reached from a request.
 
 ### 4.4 Enabled state (`TiffinDB\Core\System\PluginStates`)
 
@@ -312,7 +312,7 @@ final class StagingArea
 }
 ```
 
-`<data>/staging/` is inside the data directory, so the installer's exposure test and deny rules cover it. Every file in a job folder is named by the application: `upload.bin`, `job.sqlite` (plus its journal), `export.<extension>`, `archive.zip`, `source.tiffin`, `rebuilt/` and `tmp/` (the plugin's and the library's temporary folder). The uploaded file's own name is never used as a path.
+`<data>/staging/` is inside the data directory, so the installer's exposure test and deny rules cover it. Every file in a job folder is named by the application: `upload.bin`, `job.sqlite` (plus its journal), `export.<extension>`, `archive.zip`, `source.tiffin`, `rebuilt/`, `tmp/`, `job.lock` (section 5.2), and `owner.json` (archive jobs, section 11.6) (the plugin's and the library's temporary folder). The uploaded file's own name is never used as a path.
 
 `Fs` gains (M3-WP1; amends P64 for this folder only, P127):
 
@@ -325,7 +325,7 @@ A job file is created by `ImportJob::create` with `Sqlite::create` (journal mode
 
 ```sql
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
-CREATE TABLE rows (n INTEGER PRIMARY KEY, cells TEXT NOT NULL);            -- JSON list of ?string, n from 1
+CREATE TABLE rows (n INTEGER PRIMARY KEY, cells TEXT NOT NULL);            -- JSON list of ?string; n = data row number in the file, from 1 (gaps where empty rows were skipped)
 CREATE TABLE prepared (n INTEGER PRIMARY KEY, record TEXT, skip TEXT);     -- record: JSON field key => storage value; skip: reason
 CREATE TABLE issues (n INTEGER NOT NULL, col INTEGER NOT NULL, kind TEXT NOT NULL, PRIMARY KEY (n, col)) WITHOUT ROWID;
 ```
@@ -340,6 +340,8 @@ Transitions: `Reading` to `Review` (read done) to `Preparing` (mapping accepted)
 
 Ownership (P134): every operation on a job checks that `meta.project` equals the project in the URL and `meta.user` equals the actor's user id; otherwise `NotFound`.
 
+Concurrency (job lock): two requests on one job can arrive together (a double press, the auto-continue script and a manual press, two tabs). Every operation that reads or changes a job first takes an exclusive, non-blocking `flock` on `job.lock` in the job folder (created with the folder) through `ImportJob::lock()`, and reads `state` and `read_rows`/`prepared_rows` only after holding it; when the lock is held by another request the operation gives `Busy` (the M1 busy page; the Admin goes back to the import address). The lock is released at the end of the operation (and by the operating system if the request dies). `commit` additionally checks, as the first statement inside its project transaction, that `_tiffin_import_log` has no row with the job key; when it has one (an earlier commit finished but its clean-up did not), it rolls back and returns the log key, so the report is shown and nothing is imported twice.
+
 ## 6. Import pipeline (`TiffinDB\Core\Io`)
 
 ### 6.1 Upload (step 1)
@@ -348,7 +350,7 @@ Ownership (P134): every operation on a job checks that `meta.project` equals the
 
 ### 6.2 Read (chunked)
 
-`Reader::chunk(ImportJob, Importer, IoLimits): bool` (true when done): reads rows from `read_rows` with `rows(file, settings, tableIndex, from, limit)` where `limit` is the rows left before the cap plus one, stopping after 2,000 rows or 5 seconds (`IoLimits::CHUNK_ROWS`, `CHUNK_SECONDS`, measured with the injected clock's monotonic source: `hrtime` through a `\Closure(): int` seam), and in one job-file transaction appends each row (rows whose cells are all null or `''` are counted as `skipped.empty` and not stored) and updates `ColumnStats` (section 6.3). Each cell longer than 20,000 characters (`IoLimits::MAX_CELL_CHARS`) is stored as null and recorded as issue `too-long`. Reaching row 50,001 (`IoLimits::MAX_ROWS`) stops reading: the rows over the limit are counted (`skipped.over_limit`, only the first extra row is read, so the count is "at least one" and the report says "more than 50,000 rows; the rest were left out") and the review shows a warning.
+`Reader::chunk(ImportJob, Importer, IoLimits): bool` (true when done): reads rows from `read_rows` (the number of data rows the plugin has returned so far, empty rows included, so that `from` always counts in the plugin's own numbering) with `rows(file, settings, tableIndex, from, limit)` where `limit` is the rows left before the cap plus one, stopping after 2,000 rows or 5 seconds (`IoLimits::CHUNK_ROWS`, `CHUNK_SECONDS`, measured with the injected clock's monotonic source: `hrtime` through a `\Closure(): int` seam), and in one job-file transaction appends each row with `n` = its 1-based data row number in the file (`read_rows` + 1 at the time it is read; so row numbers in issues and in the report are the file's data row numbers, with gaps where empty rows were) (rows whose cells are all null or `''` are counted as `skipped.empty` and not stored) and updates `ColumnStats` (section 6.3). Each cell longer than 20,000 characters (`IoLimits::MAX_CELL_CHARS`) is stored as null and recorded as issue `too-long`. Reaching row 50,001 (`IoLimits::MAX_ROWS`) stops reading: the rows over the limit are counted (`skipped.over_limit`, only the first extra row is read, so the count is "at least one" and the report says "more than 50,000 rows; the rest were left out") and the review shows a warning.
 
 ### 6.3 Cells and inference
 
@@ -413,7 +415,7 @@ final class Mapping
 
 ### 6.5 Prepare (step 3, chunked)
 
-`Preparer::chunk(ImportJob, Mapping, Schema): bool` converts stored rows from `prepared_rows + 1` in chunks (`IoLimits::CHUNK_ROWS`, `CHUNK_SECONDS`) and writes, per row, into `prepared` one JSON object of field key (for a new table: `col-<n>`, resolved at commit) to **storage** value (`toStorage(value)`), and into `issues` one row per value left empty. Per included column:
+`Preparer::chunk(ImportJob, Mapping, Schema): bool` converts stored rows in `n` order after the last prepared one (`WHERE n > COALESCE((SELECT MAX(n) FROM prepared), 0)`; `prepared_rows` is a count for the progress bar, not an offset) in chunks (`IoLimits::CHUNK_ROWS`, `CHUNK_SECONDS`) and writes, per row, into `prepared` one JSON object of field key (for a new table: `col-<n>`, resolved at commit) to **storage** value (`toStorage(value)`), and into `issues` one row per value left empty. Per included column:
 
 1. Empty cell (null or `''` after `Text::trim`): empty value (checkbox: false).
 2. Plain field: the field type's lenient parse (`InputMode::Import`, M2) with the field's options (for a new field, the options of 6.4; for currency columns the cell is first cleaned as 6.3.1). Failure: empty value, issue `unreadable`. A `choice` value not among the labels: empty, issue `not-a-choice` (existing fields are never changed by an import, P119).
@@ -428,17 +430,20 @@ A row whose included cells are all empty after conversion is stored with `skip` 
 1. Recompute `schema_hash` (SHA-256 of the JSON of the target table's field rows `[key, type, options, position]` and its relations, or of the list of table names for a new table) and compare with the hash stored when the mapping was accepted. Different: the job goes back to `Review` with `problem.import.target_changed`; nothing written.
 2. `Snapshots::take($db, $projectFolder, SnapshotReason::Import)` (outside any transaction).
 3. One `Database::write()`:
+   0. Check `_tiffin_import_log` has no row with the job key (section 5.2), then recompute `schema_hash` inside the transaction; a difference throws `ValidationFailed(problem.import.target_changed)` and rolls back (the schema may change between step 1 and the write lock; step 1 only avoids a needless snapshot).
    1. Target `new`: `$editor->within()->createTable(name, itemName, withNameField: false)` (item name: the table name in lower case cut to 40 characters, singular not attempted, P117); for each included column in order, `addField` with the mapped name, type, options, `required` false, help `''`; for each link column, `addRelation(newTable, otherTable, thisMax 'many', otherMax 'many', names)` with this side named as mapped and the other side named after the new table (made unique); the title field is set to the first included column of type `text` (else none). The schema hook regenerates forms in the same transaction (M2 section 5.6).
    2. Build a fresh `Schema` and `Records` for the open transaction (`$records->within()`).
-   3. For each link column: load the target table's live titles once (`Records::pickList` is limited to 500, so the committer reads `id`, title with one query per target table: `SELECT "id", <title> FROM <t> WHERE "_trashed_at" IS NULL`), keyed by `strtolower(Text::trim(title))` (first id wins on duplicates; a warning counts duplicates). For each title not found, in first-seen order: `create(targetTable, [titleField => title], InputMode::Import, userKey, requiredKeys: [])` and add it to the map (`links_added`).
-   4. For each prepared row by `n` (skipped rows excepted): `create(tableKey, values, InputMode::Canonical, userKey, requiredKeys: [])` with the stored values turned back with `fromStorage`; then `setLinks` for each link column with the matched ids (a target that may link to one record only and is already taken: the link is dropped and counted as issue `link-taken`). Rows are inserted in file order, so record ids follow it.
+   3. For each link column: load the target table's live titles once (`Records::pickList` is limited to 500, so the committer reads `id`, title with one query per target table: `SELECT "id", <title> FROM <t> WHERE "_trashed_at" IS NULL`), keyed by `strtolower(Text::trim(title))` (first id wins on duplicates; a warning counts duplicates). For each title not found, in first-seen order: first parse the title with the title field's lenient parse and options (a title longer than its `max_length`, not a choice label, or not an address for a `url` or `email` title field is refused); a refused title creates no record, its links are dropped and counted as issue `link-unreadable` (and in the review warnings); otherwise `create(targetTable, [titleField => title], InputMode::Import, userKey, requiredKeys: [])` and add it to the map (`links_added`). A `ValidationFailed` from a link-target `create` therefore cannot occur for a reason the committer could have seen; if one does, the whole commit fails as below.
+   4. For each prepared row by `n` (skipped rows excepted): `create(tableKey, values, InputMode::Canonical, userKey, requiredKeys: [])` with the stored values turned back with `fromStorage`; then `setLinks` for each link column with the matched ids. The committer checks before calling `setLinks` so that it never throws: a target that may link to one record only and is already taken (by an earlier record or an earlier row of this import) is dropped and counted as issue `link-taken`; ids past `Records::MAX_LINK_IDS` (1,000) in one cell are dropped and counted as issue `link-too-many`. Rows are inserted in file order, so record ids follow it.
    5. Insert the `_tiffin_import_log` row (section 6.7) with the job key as its key.
    6. `ProjectFile::touch` (also done by each `create`; harmless).
 4. After the commit: audit `import.completed` (section 13.6), write `report` to the job meta, remove the job folder.
 
 Any exception inside step 3 rolls everything back (one transaction); the snapshot stays, the job goes to `Failed` (reason `commit-failed`) or, for `Busy`, stays `Ready` so the Admin can retry. Required-field counts for the report (`required_empty`) are computed from the prepared values before the transaction.
 
-**Joined mode (M2 amendment, M3-WP1).** M2's `SchemaEditor` and `Records` each run every public method in their own `Database::write()`, which must not nest. Both gain `within(): self`, returning a copy that runs each method inside the caller's open transaction (`\LogicException` when `$db->inTransaction()` is false) and otherwise behaves the same, including validation, the after-change hook, and `ProjectFile::touch`. Methods that take a snapshot (`deleteTable`, `deleteField`, `changeType`, `updateField` when it clears values, `Trash::empty`) throw `\LogicException` in joined mode. `Records::create` gains a last parameter `?array $requiredKeys = null`: null enforces every required field of the table (M2 behaviour); a list enforces only those keys (P118).
+**Joined mode (M2 amendment, M3-WP1).** M2's `SchemaEditor` and `Records` each run every public method in their own `Database::write()`, which must not nest. Both gain `within(): self`, returning a copy that runs each method inside the caller's open transaction (`\LogicException` when `$db->inTransaction()` is false) and otherwise behaves the same, including validation, the after-change hook, and `ProjectFile::touch`. Methods that take a snapshot (`deleteTable`, `deleteField`, `changeType`, `updateField` when it clears values, `Trash::empty`) throw `\LogicException` in joined mode. `Records::create` gains a last parameter `?array $requiredKeys = null`: null enforces every required field of the table (M2 behaviour); a list enforces only those keys (P118), in both of M2's checks (a required key missing from `$values`, and a required key given an empty value).
+
+**Auto-number values (M2 defect, M3-WP1).** As built, M2's `Records::create` stores a caller's value for an `auto_number` field as given, so a duplicate reaches the field's UNIQUE index and escapes as a raw `PDOException`. M3 closes this in `Records` (WP1): in `Form` and `Import` mode a value for an `auto_number` field is refused with `problem.value.unsupported`; in `Canonical` mode (core callers only) a value already stored in that column is refused with the same key, checked inside the write before the `INSERT`, so the index is never the first line of defence. No M3 caller passes an auto-number value: `MappingCheck` never maps a column to one, and the archive rebuild (section 11.5) writes with its own statements and removes duplicates first. T-IO-13 covers both refusals.
 
 ### 6.7 Import log and report
 
@@ -466,7 +471,7 @@ All are constants (cheapest to change); the 64 MiB upload cap is also capped by 
 |---|---|---|
 | `Core\Schema\SchemaEditor` | `within()` joined mode (6.6); DDL statements built through the new `Core\Schema\Ddl` (`createTable`, `addColumn`, `createJoinTable`, `indexes`), so the archive rebuild uses the same text | WP1 |
 | `Core\Query\Records` | `within()`; `create(..., ?array $requiredKeys = null)` | WP1 |
-| `Core\App\RecordOperations::create` | Passes `$screen->form->editableKeys()` intersected with the table's required fields as `$requiredKeys` (ADR 0017 decision 4) | WP8 |
+| `Core\App\RecordOperations::create` | Binds the effective form itself (its private `bind()`, as `newScreen` does; as built, `create` holds no screen and the controller only filters the input) and passes `BoundForm::editableKeys()` intersected with the table's required fields as `$requiredKeys` (ADR 0017 decision 4) | WP8 |
 | `Core\App\RecordListing`, `SearchResults` | New `bool $canImportExport` (`Authorizer::can(io.use)`) for the sidebar | WP8 |
 | `Core\Forms\FormStore::regenerate` | Used unchanged by the archive rebuild (requires the M2 behaviour: edited forms gain slots for unnamed fields) | none |
 | `Web\Sidebar::build` | New last parameter `bool $canImportExport = false` | WP3 |
@@ -494,7 +499,7 @@ All are constants (cheapest to change); the 64 MiB upload cap is also capped by 
 
 ### 9.1 Zip check before the library
 
-`TiffinDB\Plugin\Import\Xlsx\WorkbookCheck` (plugin code, using only PHP's `ZipArchive`): opens with `ZipArchive::RDONLY | ZipArchive::CHECKCONS`; refuses (`REASON_UNREADABLE`) when it cannot open or `[Content_Types].xml` or `xl/workbook.xml` is absent; refuses (`REASON_TOO_LARGE`) more than 10,000 entries, any entry declaring more than 256 MiB uncompressed, more than 512 MiB in total, or a ratio of declared uncompressed to compressed size over 200 for any entry larger than 1 MiB; refuses (`REASON_UNSUPPORTED`) encrypted entries or compression methods other than stored and deflated. Names are not used as paths (the library reads through the `zip://` wrapper), but entries whose names contain `..`, a leading `/`, `\`, or NUL are refused as unreadable.
+`TiffinDB\Plugin\Import\Xlsx\WorkbookCheck` (plugin code, using only PHP's `ZipArchive`): opens with `ZipArchive::RDONLY | ZipArchive::CHECKCONS`; refuses (`REASON_UNREADABLE`) when it cannot open or `[Content_Types].xml` or `xl/workbook.xml` is absent; refuses (`REASON_TOO_LARGE`) more than 10,000 entries, any entry declaring more than 256 MiB uncompressed, more than 512 MiB in total, or a ratio of declared uncompressed to compressed size over 200 for any entry larger than 1 MiB; refuses (`REASON_UNSUPPORTED`) encrypted entries or compression methods other than stored and deflated. Names are not used as paths (the library reads through the `zip://` wrapper), but entries whose names contain `..`, a leading `/`, `\`, or NUL are refused as unreadable. Every `.xml` and `.rels` entry the library will read is checked by streaming its prolog (the bytes before the first element start tag, at most 4,096 bytes): a `<!DOCTYPE` or `<!ENTITY` there is refused as `REASON_UNSUPPORTED` (workbook parts never declare one). The library's `expand()` calls decode entities, so this removes any reliance on the host's libxml version for internal entity expansion (section 18 item 12).
 
 ### 9.2 Reading
 
@@ -543,7 +548,7 @@ Settings: `record_ids` (as CSV). No `spreadsheet_safe` setting: text is never a 
 
 ### 10.3 JSON (plugin `export/json`)
 
-Scope `project` only; no settings. Writes `docs/formats/json-export.md` exactly, streamed with `fwrite` per record (`json_encode` with `JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION`, and `serialize_precision` -1 for numbers). Values per type as section 4 of that document: currency from minor units as a decimal string with exactly `minor_digits` decimals, computed with integer arithmetic. File name: the project's file name base plus `.json`.
+Scope `project` only; no settings. Writes `docs/formats/json-export.md` exactly, streamed with `fwrite` per record (`json_encode` with `JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION`, and `serialize_precision` -1 for numbers). Values per type as section 4 of that document: currency from minor units as a decimal string with exactly `minor_digits` decimals, computed with integer arithmetic; `number` values written as a raw JSON number token equal to `ExportValue::$text` (the M1 type's `toText`: plain decimal, `.` separator, never an exponent), not through `json_encode` of the float, which writes `1.0e-6` and, with `JSON_PRESERVE_ZERO_FRACTION`, `12.0`. File name: the project's file name base plus `.json`.
 
 ## 11. Project archive (`TiffinDB\Core\Io\Archive`) (security-critical)
 
@@ -558,7 +563,7 @@ Scope `project` only; no settings. Writes `docs/formats/json-export.md` exactly,
 
 ### 11.2 Import overview
 
-`ArchiveOperations::import` (section 13.4): sweep; create an `archives` job; move the upload to `upload.bin`; then `ArchiveReader::open` (11.3), `UntrustedProject::check` (11.4), `ProjectRebuilder::rebuild` (11.5), registration (11.6). Any refusal removes the job folder and reports `problem.archive.<reason>` (section 14); nothing is registered.
+`ArchiveOperations::import` (section 13.4): sweep; create an `archives` job; move the upload to `upload.bin`; then `ArchiveReader::open` (11.3), `UntrustedProject::check` (11.4), `ProjectRebuilder::rebuild` (11.5), registration (11.6). Any refusal removes the job folder and reports `problem.archive.<reason>` with `-` in the reason code replaced by `_` (section 14; keys follow the existing `snake_case` key style, which `MessageKeysTest` and `StringsTest` read); nothing is registered. The core maps each reason to its key with a literal table (whole string literals, so `MessageKeysTest` sees every key).
 
 ### 11.3 Zip
 
@@ -570,6 +575,8 @@ Scope `project` only; no settings. Writes `docs/formats/json-export.md` exactly,
 4. The manifest (at most 16 KiB) must decode to exactly the members of `docs/formats/tiffin.md` section 13.2 with valid values; `project_format_version` 1 to 3; `project_size` and `project_sha256` must equal the extracted copy (`manifest`).
 
 ### 11.4 `UntrustedProject::check(string $path): UntrustedProject`
+
+Any `PDOException` raised while opening or reading the copy (for example a schema naming an unknown collation, which SQLite reports when it first parses the schema) refuses the archive as `damaged`; it never reaches the request as an error page.
 
 1. The first 16 bytes are `SQLite format 3\0`; bytes 18 and 19 are 1 or 2; when 2 (WAL), both are rewritten to 1 in the copy (rollback journal), so it opens read-only without a `-wal` file (`not-sqlite`).
 2. Open with `Sqlite::openUntrusted($path)` (M3-WP1): PDO with `SQLITE_OPEN_READONLY`, exceptions on, then `PRAGMA trusted_schema = OFF`, `PRAGMA query_only = ON`, `PRAGMA cell_size_check = ON`, `PRAGMA mmap_size = 0`; no `journal_mode`, `foreign_keys`, or other writes. (`Sqlite::open` sets WAL mode, which writes, and is never used on an untrusted file.)
@@ -597,7 +604,7 @@ Attachment files: for each attachment row, the entry `attachments/<2>/<sha256>` 
 
 ### 11.6 Registration
 
-As M1 project creation (M1 spec 9.4.1, `ProjectOperations::create`): registry row in state `creating` with the new key and the name (name checked against the registry inside the write; taken: `problem.name.taken`, the job kept so the Admin can choose another name), `Fs::moveIn` of the `rebuilt` folder to `projects/<key>/` (same file system, a `rename`), `activate`. Failure after the registry row: undo as M1 does. No grants are created. Audit `project.created` and `archive.imported`.
+As M1 project creation (M1 spec 9.4.1, `ProjectOperations::create`): registry row in state `creating` with the new key and the name (name checked against the registry inside the write; taken: `problem.name.taken`, the job kept so the Admin can choose another name), `Fs::moveIn` of the `rebuilt` folder to `projects/<key>/` (same file system, a `rename`), `activate`. Failure after the registry row: undo as M1 does. No grants are created. The `archives` job folder holds `owner.json` (`{"user": <id>}`, written when the job is created); `importWithName` gives `NotFound` unless it names the actor (as P134 for import jobs), and takes the job lock of section 5.2. Audit `project.created` and `archive.imported`.
 
 ## 12. Project format version 3 and system schema version 2 in code
 
@@ -702,24 +709,24 @@ English text in `strings/en/problems.php` (owned by M3-WP3), exactly:
 | `problem.import.too_many_choices` | This column has more than {max} different values, so it cannot be a choice. |
 | `problem.import.target_changed` | The table changed while you were importing. Check the fields again. |
 | `problem.export.failed` | The export could not be made. |
-| `problem.archive.entry-name` | This archive holds a file that does not belong in a TiffinDB archive. |
+| `problem.archive.entry_name` | This archive holds a file that does not belong in a TiffinDB archive. |
 | `problem.archive.duplicate` | This archive holds the same file twice. |
 | `problem.archive.encrypted` | This archive is encrypted. TiffinDB cannot open encrypted archives. |
 | `problem.archive.compression` | This archive uses a kind of compression TiffinDB cannot read. |
-| `problem.archive.too-large` | This archive is too large to import. |
-| `problem.archive.missing-entry` | This is not a TiffinDB archive: the project file or its description is missing. |
+| `problem.archive.too_large` | This archive is too large to import. |
+| `problem.archive.missing_entry` | This is not a TiffinDB archive: the project file or its description is missing. |
 | `problem.archive.manifest` | This archive's description does not match its project file. |
-| `problem.archive.not-sqlite` | The project file in this archive is not a database. |
+| `problem.archive.not_sqlite` | The project file in this archive is not a database. |
 | `problem.archive.damaged` | The project file in this archive is damaged. |
-| `problem.archive.not-project` | The file in this archive is not a TiffinDB project. |
+| `problem.archive.not_project` | The file in this archive is not a TiffinDB project. |
 | `problem.archive.newer` | This archive was made by a newer version of TiffinDB. |
-| `problem.archive.unexpected-object` | The project file in this archive contains something TiffinDB does not allow. |
-| `problem.archive.bad-metadata` | The project file in this archive has a table or field TiffinDB cannot read. |
-| `problem.archive.bad-table` | The project file in this archive has a table that does not match its fields. |
-| `problem.archive.rebuild-failed` | The project could not be rebuilt from this archive. |
+| `problem.archive.unexpected_object` | The project file in this archive contains something TiffinDB does not allow. |
+| `problem.archive.bad_metadata` | The project file in this archive has a table or field TiffinDB cannot read. |
+| `problem.archive.bad_table` | The project file in this archive has a table that does not match its fields. |
+| `problem.archive.rebuild_failed` | The project could not be rebuilt from this archive. |
 | `problem.plugin.not_available` | This plugin cannot be turned on. |
 
-M1 keys reused: `problem.name.*`, `problem.text.*`. T-WEB-19 (`StringsTest`) is extended with this table.
+M1 keys reused: `problem.name.*`, `problem.text.*`, `problem.value.unsupported` (section 6.6). T-WEB-19 (`StringsTest`) is extended with this table, and `tests/core/app/MessageKeysTest.php` (WP1) reads this section as it reads M1 section 12 and M2 section 8.
 
 ## 15. Test plan
 
@@ -737,11 +744,11 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-IO-6 | `MappingCheck`: every problem at once; defaults for new and existing targets |
 | T-IO-7 | `Preparer`: every editable type in Import mode, unreadable values emptied with issues, choice labels outside the list, link splitting, empty rows; `preview` over the first 5,000 rows equals `chunk` counts on those rows |
 | T-IO-8 | Commit to a new table: table, fields, relation, title field, forms regenerated, records in file order, link targets created once per title (case-insensitive), log row exact (format document 4.7), snapshot `import` exists before the transaction |
-| T-IO-9 | Commit to an existing table: values into the mapped fields, unmapped fields empty, required fields not enforced and counted, links to a one-side target already taken dropped and counted |
+| T-IO-9 | Commit to an existing table: values into the mapped fields, unmapped fields empty, required fields not enforced and counted, links to a one-side target already taken dropped and counted, link titles the target's title field refuses (too long, not a choice) dropped and counted without failing the commit, more than 1,000 titles in a cell capped |
 | T-IO-10 | Target changed between review and commit (field added on a second connection): back to Review with the problem; nothing written; no snapshot |
-| T-IO-11 | `Busy` during commit leaves the job Ready and the file unchanged |
+| T-IO-11 | `Busy` during commit leaves the job Ready and the file unchanged; with the job lock held by another connection every job operation gives `Busy`; a second commit of a job whose log row exists returns the log key and imports nothing; a commit whose schema changes between step 1 and the write lock rolls back with `target_changed` |
 | T-IO-12 | Atomicity: a failure injected (test seam) after each sub-step of 6.6 step 3 (table created, fields added, link targets created, half the rows inserted, log row) leaves every table, row, form, and `_tiffin_*` row byte-identical to before (compared table by table) |
-| T-IO-13 | Joined mode: `SchemaEditor::within()` and `Records::within()` refuse outside a transaction, refuse snapshot-taking methods, and run the after-change hook; `Records::create` with `requiredKeys` null, a subset, and `[]` |
+| T-IO-13 | Joined mode: `SchemaEditor::within()` and `Records::within()` refuse outside a transaction, refuse snapshot-taking methods, and run the after-change hook; `Records::create` with `requiredKeys` null, a subset, and `[]` (missing key and empty value); an `auto_number` value refused in `Import` mode and a duplicate refused in `Canonical` mode with `problem.value.unsupported`, never a `PDOException` |
 | T-IO-14 | `ExportSourceBuilder`: scope, record order, paging over 1,234 records, live links only, titles and untitled records, attachment names, values and texts per type |
 | T-FMT-4 | `ProjectFile::create` writes version 3; `sqlite_master` SQL of every `_tiffin_*` object equals the three SQL blocks of section 4 |
 | T-FMT-5 | A version 2 file (built from blocks 1 and 2) opens: one snapshot, version 3, `_tiffin_import_log` empty, data unchanged, `integrity_check` and `foreign_key_check` pass; a version 1 file passes through 2 to 3; section 11.2 statements equal `STEPS[3]` and `VERSION_PRAGMAS[3]` |
@@ -783,7 +790,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-XLSX-3 | Writer: every type's cell class and format (read back by parsing the written XML directly, not with the library); a text value `=1+1` is a string cell, never a formula |
 | T-XLSX-4 | Temporary files go only to the job's `tmp/` |
 | T-XLSX-5 | Plugins report Unavailable without `dom` (seam) |
-| T-XLSX-6 | Hostile corpus: a zip bomb with honest headers refused by the check; XML with a DOCTYPE and an external entity in a worksheet is not expanded (no file read, no network); 50,000 rows by 20 columns read within the chunk limits and memory 128 MB |
+| T-XLSX-6 | Hostile corpus: a zip bomb with honest headers refused by the check; a worksheet, shared-strings part, or workbook part with a DOCTYPE (an external entity, and separately a nested internal-entity expansion) refused by the check before the library opens it (no file read, no network, no expansion); 50,000 rows by 20 columns read within the chunk limits and memory 128 MB |
 
 ### 15.5 JSON and archive (WP6, WP7)
 
@@ -795,7 +802,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-ARC-2 | Import of a written archive: new key, no grants, keys and ids kept, counts zero, `_tiffin_import_log` one `archive` row, project opens through `ProjectOpener` |
 | T-ARC-3 | Zip corpus: traversal names (`../x`, `/x`, `attachments/../../x`, backslashes, NUL), an extra entry, a duplicate, an encrypted entry, bzip2 method, a lying size header (actual bytes larger), entry count over the cap, a symlink entry (external attributes), missing manifest |
 | T-ARC-4 | Manifest corpus: extra member, wrong version, size or hash mismatch, version 4 |
-| T-ARC-5 | SQLite corpus (each built by plain SQL in the test): not SQLite, WAL header (accepted after the rewrite), integrity failure, wrong `application_id`, version 4, a trigger, a view, a virtual table, an extra table, an index with a foreign name, a generated column, an extra column, a missing column, a `CHECK` constraint calling a function on a user table (refused by the column rule or, if the columns match, never executed because the rebuild uses `Ddl`), a field with an unknown type, bad options, a relation pointing at a missing field, a title field of a non-title type |
+| T-ARC-5 | SQLite corpus (each built by plain SQL in the test): not SQLite, an index using an unknown collation (refused as `damaged`, no error page), WAL header (accepted after the rewrite), integrity failure, wrong `application_id`, version 4, a trigger, a view, a virtual table, an extra table, an index with a foreign name, a generated column, an extra column, a missing column, a `CHECK` constraint calling a function on a user table (refused by the column rule or, if the columns match, never executed because the rebuild uses `Ddl`), a field with an unknown type, bad options, a relation pointing at a missing field, a title field of a non-title type |
 | T-ARC-6 | Values: a text value with control characters, a number over the limit, an invalid date, a currency real, a choice label not in the list, an auto-number duplicate, a bad timestamp, a bad person key: each emptied or replaced and counted |
 | T-ARC-7 | Forms: a stored form with `<script>` dropped and replaced by the generated layout; an edited form (`generated` 0) missing a required field gains the slot; the bound form then shows the field and `RecordOperations::create` succeeds with the field filled; a second default form dropped |
 | T-ARC-8 | Attachments: hash or size mismatch not kept and counted; unlisted entry skipped; listed but absent counted |
@@ -835,9 +842,10 @@ Waves (at most three agents at once):
 
 | Wave | Packages | Starts when |
 |---|---|---|
-| 1 | WP1, WP2, WP3, then WP0 as a slot frees | M2 CLOSED and M3-D2 merged |
-| 2 | WP4, WP6, WP7, then WP5 | WP1 and WP2 merged (WP5 also WP0; the shared offline `vendor/` holds OpenSpout v5.2.2) |
-| 3 | WP8 | WP4, WP6, WP7 merged (WP5 may still run) |
+| 1 | WP1, WP3, WP0 | M2 CLOSED and M3-D2 merged; for WP0, the shared offline `vendor/` already holds OpenSpout v5.2.2 (T-DEP-1 checks that listed packages are installed, so every later package's suite needs it) |
+| 1b | WP2, then WP7 | WP1 merged (WP2 implements `Core\Io\Contract` interfaces and lives in the `Io` layer row, both WP1's) |
+| 2 | WP4, WP6, then WP5 | WP1 and WP2 merged (WP5 also WP0) |
+| 3 | WP8 | WP2, WP4, WP6, WP7 merged (WP5 may still run) |
 | 4 | WP9, WP10 | WP3 and WP8 merged |
 | 5 | WP11 | WP5, WP9, WP10 merged |
 
@@ -848,7 +856,7 @@ Waves (at most three agents at once):
 | Tier | implementation |
 | Depends on | probe (done; ADR 0016) |
 | Security-critical | Yes (supply chain) |
-| Owned files | `composer.json`; `docs/dependencies.md`; `tests/repo/ComposerManifestTest.php`, `tests/repo/DependencyLicenceTest.php`; `src/Core/Install/Installer.php` (requirement rows only); `strings/en/setup.php` (requirement strings only); `tests/core/install/RequirementCheckTest.php` (or the existing requirement test file); `tools/host-check/host-check.php`, `tools/host-check/README.md`, `tests/tools/HostCheckTest.php`; `.github/workflows/ci.yml` (only if `composer validate` or install needs a change) |
+| Owned files | `composer.json`; `docs/dependencies.md`; `tests/repo/ComposerManifestTest.php`, `tests/repo/DependencyLicenceTest.php`; `src/Core/Install/Installer.php` (requirement rows only); `strings/en/setup.php` (requirement strings only); `tests/core/install/RequirementsTest.php`; `tools/host-check/host-check.php`, `tools/host-check/README.md`, `tests/tools/HostCheckTest.php`; `.github/workflows/ci.yml` (only if `composer validate` or install needs a change) |
 | Scope | ADR 0016 decisions 2 and 3: pin `openspout/openspout` `5.2.2`; dependencies table row (version, commit `95403917927ef252f7ae82d919c55286a642962a`, licence `MIT AND Apache-2.0`, both licence files with SHA-256, extensions); T-DEP-1 (every installed non-dev package is listed with the exact installed version and source reference read from `vendor/composer/installed.json`; listed packages are installed), T-DEP-2 (declared licences on the allowlist; the dependencies table licence column for OpenSpout names both licences); installer warnings for `dom`, `filter`, `libxml`; host-check rows |
 | Acceptance | T-DEP-1, T-DEP-2, updated manifest and requirement tests pass with the orchestrator's vendor; design-tier review |
 
@@ -859,20 +867,20 @@ Waves (at most three agents at once):
 | Tier | implementation |
 | Depends on | none |
 | Security-critical | Yes (atomic commit, SQL from identifiers, file handling in the staging area) |
-| Owned files | `src/Core/Io/Contract/*`; `src/Core/Io/*.php` (top level, section 2); `src/Core/Schema/Ddl.php` (new), `src/Core/Schema/SchemaEditor.php`, `src/Core/Schema/ProjectFile.php`, `src/Core/Schema/FormatMigrations.php`; `src/Core/Query/Records.php`; `src/Core/Storage/Fs.php`, `src/Core/Storage/Sqlite.php`, `src/Core/Storage/SnapshotReason.php`; `tests/core/io/*.php` (top level); `tests/core/schema/ProjectFileTest.php`, `tests/core/schema/FormatUpgradeTest.php`, `tests/core/schema/DdlTest.php` (new), `tests/core/schema/SqlStringsTest.php`; `tests/core/query/RecordsJoinedTest.php` (new); `tests/core/storage/FsTreeTest.php` (new), `tests/core/storage/SqliteUntrustedTest.php` (new); `tests/repo/CoreLayerRulesTest.php` |
+| Owned files | `src/Core/Io/Contract/*`; `src/Core/Io/*.php` (top level, section 2); `src/Core/Schema/Ddl.php` (new), `src/Core/Schema/SchemaEditor.php`, `src/Core/Schema/ProjectFile.php`, `src/Core/Schema/FormatMigrations.php`; `src/Core/Query/Records.php`; `src/Core/Storage/Fs.php`, `src/Core/Storage/Sqlite.php`, `src/Core/Storage/SnapshotReason.php`; `tests/core/io/*.php` (top level); `tests/core/schema/ProjectFileTest.php`, `tests/core/schema/FormatUpgradeTest.php`, `tests/core/schema/DdlTest.php` (new), `tests/core/schema/SqlStringsTest.php`; `tests/core/query/RecordsJoinedTest.php` (new); `tests/core/storage/FsTreeTest.php` (new), `tests/core/storage/SqliteUntrustedTest.php` (new), `tests/core/storage/SnapshotsTest.php` (the reason list only); `tests/repo/CoreLayerRulesTest.php`; `tests/core/app/MessageKeysTest.php` (reading part 1 section 14 only); `tests/Support/IoFixture.php` (seed-only first version; WP11 extends it) |
 | Scope | Sections 2.1 (Io row), 2.2, 3, 5, 6, 7 (except the App rows), 10.1, 12.1; `Sqlite::openUntrusted` (11.4 step 2) |
-| Acceptance | T-IO-1 to T-IO-14, T-FMT-4, T-FMT-5, T-SCH-20 pass; M1 and M2 schema, record, and form tests pass unchanged except the version expectations; design-tier review of `Committer`, `Ddl`, `Fs::removeTree`, and the scanner changes |
+| Acceptance | T-IO-1 to T-IO-14, T-PLG-7, T-FMT-4, T-FMT-5, T-SCH-20 pass; M1 and M2 schema, record, and form tests pass unchanged except the version expectations; design-tier review of `Committer`, `Ddl`, `Fs::removeTree`, and the scanner changes |
 
 ### M3-WP2: Plugin registry and system schema version 2
 
 | | |
 |---|---|
 | Tier | implementation |
-| Depends on | none |
+| Depends on | WP1 (`Core\Io\Contract`, the `Io` layer row) |
 | Security-critical | Yes (plugin discovery and loading) |
-| Owned files | `src/Core/Io/Plugin/*`; `src/Core/System/PluginStates.php` (new), `src/Core/System/SystemSchema.php`, `src/Core/System/AuditAction.php`; the five `plugins/*/*/plugin.json` manifests (manifests only; classes come with WP4 to WP6); `tests/core/io/plugin/*`; `tests/core/system/PluginStatesTest.php` (new), `tests/core/system/SystemSchemaTest.php`; `tests/repo/PluginLayerRulesTest.php` (new); the scanner exemption for the dynamic `new` in `PluginLoader.php` in `tests/repo/PhpSourceRulesTest.php` (that one change only) |
-| Scope | Sections 4, 12.2, 13.6 (constants only) |
-| Acceptance | T-PLG-1 to T-PLG-8 pass; T-PLG-4 shows no plugin PHP runs during a scan; design-tier security review |
+| Owned files | `src/Core/Io/Plugin/*`; `src/Core/System/PluginStates.php` (new), `src/Core/System/SystemSchema.php`; the five `plugins/*/*/plugin.json` manifests (manifests only; classes come with WP4 to WP6); `tests/core/io/plugin/*`; `tests/core/system/PluginStatesTest.php` (new), `tests/core/system/SystemSchemaTest.php`, `tests/core/system/SystemDatabaseTest.php` (the `schema_version` expectation only); `tests/repo/PluginLayerRulesTest.php` (new); the exemption for the dynamic `new` in `PluginLoader.php` in `tests/repo/CompositionSeamTest.php` (that one change only) |
+| Scope | Sections 4, 12.2 |
+| Acceptance | T-PLG-1 to T-PLG-6 and T-PLG-8 pass; T-PLG-4 shows no plugin PHP runs during a scan; design-tier security review |
 
 ### M3-WP3: Web plumbing and shared components
 
@@ -936,8 +944,8 @@ Waves (at most three agents at once):
 | Tier | implementation |
 | Depends on | WP1, WP2, WP4, WP6, WP7 |
 | Security-critical | Yes (authorization boundary) |
-| Owned files | `src/Core/App/` new files of section 13, `src/Core/App/Operations.php`, `src/Core/App/Context.php`, `src/Core/App/RecordOperations.php`, `src/Core/App/RecordListing.php`, `src/Core/App/SearchResults.php`; `src/Web/CoreServices.php` (passing the plugins root only; WP3 changed it in wave 1 for `uploadLimits()`); `tests/core/app/Import*Test.php`, `Export*Test.php`, `Archive*Test.php`, `Plugin*Test.php`, `IoPermissionsTest.php` (new); `tests/Support/CoreFixture.php` |
-| Scope | Sections 7 (App rows), 11.6, 13 |
+| Owned files | `src/Core/App/` new files of section 13, `src/Core/App/Operations.php`, `src/Core/App/Context.php`, `src/Core/App/RecordOperations.php`, `src/Core/App/RecordListing.php`, `src/Core/App/SearchResults.php`; `src/Core/System/AuditAction.php` (section 13.6: adding the actions to `AuditAction::ALL` makes `AuditTrailTest` require each to be written, so the constants land with the operations that write them); `src/Web/CoreServices.php` (passing the plugins root only; WP3 changed it in wave 1 for `uploadLimits()`); `tests/core/app/Import*Test.php`, `Export*Test.php`, `Archive*Test.php`, `Plugin*Test.php`, `IoPermissionsTest.php` (new), `tests/core/app/AuditTrailTest.php`; `tests/Support/CoreFixture.php` |
+| Scope | Sections 7 (App rows), 11.6, 13 (including the 13.6 constants) |
 | Acceptance | T-APP-90 to T-APP-97 pass; M1 and M2 T-APP tests pass; design-tier security review |
 
 ### M3-WP9: Import screens
@@ -979,18 +987,18 @@ Waves (at most three agents at once):
 |---|---|---|---|---|---|
 | M3-WP0 | Shipped dependency | implementation | probe | Yes | 1 |
 | M3-WP1 | `Core\Io` foundation, import pipeline, format version 3 | implementation | none | Yes | 1 |
-| M3-WP2 | Plugin registry, system schema version 2 | implementation | none | Yes | 1 |
+| M3-WP2 | Plugin registry, system schema version 2 | implementation | WP1 | Yes | 1b |
 | M3-WP3 | Web plumbing and shared components | implementation | none | Yes | 1 |
 | M3-WP4 | CSV | implementation | WP1, WP2 | Yes | 2 |
 | M3-WP5 | XLSX | implementation | WP0, WP1, WP2 | Yes | 2 |
 | M3-WP6 | JSON export | implementation | WP1, WP2 | No | 2 |
-| M3-WP7 | Project archive | implementation | WP1 | Yes | 2 |
+| M3-WP7 | Project archive | implementation | WP1 | Yes | 1b |
 | M3-WP8 | Core operations | implementation | WP1, WP2, WP4, WP6, WP7 | Yes | 3 |
 | M3-WP9 | Import screens | implementation | WP3, WP8 | Yes | 4 |
 | M3-WP10 | Export, archive, plugins screens | implementation | WP3, WP8 | Yes | 4 |
 | M3-WP11 | Fixtures, round trips, end to end, keyboard, visual | implementation | WP4 to WP10 | No | 5 |
 
-Ownership check. Wave 1: WP0 holds `composer.json`, `docs/dependencies.md`, two repository tests, the installer requirement rows and their strings, host-check files; WP1 holds `src/Core/Io/` top level and `Contract/`, the four Schema files, `Records.php`, three Storage files, `CoreLayerRulesTest.php`, `SqlStringsTest.php`; WP2 holds `src/Core/Io/Plugin/`, three System files, the manifests, `PluginLayerRulesTest.php`, one line of `PhpSourceRulesTest.php`; WP3 holds the web files of part 2 section 11. No file is shared. Wave 2: WP4 (`Io/Csv/`, CSV plugins), WP5 (XLSX plugins), WP6 (JSON plugin, `tests/formats/`), WP7 (`Io/Archive/`) are disjoint; the `plugin.json` files stay WP2's (merged). Wave 4: WP9 and WP10 own their controllers, templates, strings files, and tests; `routes.php`, `app.css`, `layout.php`, shared partials, and shared strings belong to WP3 (merged). Files touched by both milestones (session plan 8.3) each have one owner here: `routes.php`, `Request.php`, `Response.php`, `Kernel.php`, `app.css` (WP3); `Operations.php` (WP8); `FormatMigrations.php`, `docs/dependencies.md` (WP1, WP0); `docs/formats/tiffin.md` is changed by this design only.
+Ownership check (corrected by review M3-R1). Wave 1: WP0 holds `composer.json`, `docs/dependencies.md`, two repository tests, the installer requirement rows and their strings, host-check files; WP1 holds `src/Core/Io/` top level and `Contract/`, the four Schema files, `Records.php`, three Storage files, `CoreLayerRulesTest.php`, `SqlStringsTest.php`, `SnapshotsTest.php`, `MessageKeysTest.php`, the first `IoFixture.php`; WP3 holds the web files of part 2 section 11. No file is shared. Wave 1b (after WP1): WP2 holds `src/Core/Io/Plugin/`, two System files, the manifests, `PluginLayerRulesTest.php`, the System tests, one exemption in `CompositionSeamTest.php`; WP7 holds `Io/Archive/`; disjoint from each other and from WP0 and WP3. Wave 2: WP4 (`Io/Csv/`, CSV plugins), WP5 (XLSX plugins), WP6 (JSON plugin, `tests/formats/`) are disjoint; the `plugin.json` files stay WP2's (merged). Wave 4: WP9 and WP10 own their controllers, templates, strings files, and tests; `routes.php`, `app.css`, `layout.php`, shared partials, and shared strings belong to WP3 (merged). Files touched by both milestones (session plan 8.3) each have one owner here: `routes.php`, `Request.php`, `Response.php`, `Kernel.php`, `app.css` (WP3); `Operations.php` (WP8); `FormatMigrations.php`, `docs/dependencies.md` (WP1, WP0); `docs/formats/tiffin.md` is changed by this design only.
 
 ## 17. Provisional decisions (for the ledger, from P110)
 
@@ -1037,6 +1045,17 @@ Assumptions about M2 (for M3-D2; each is a statement of the reviewed M2 spec tha
 7. Project format version 2 is exactly `docs/formats/tiffin.md` sections 4 (first two blocks) and 11.1; `ProjectFile::VERSION` is 2 when M3 starts.
 8. The template rules allow scripts only from a fixed list in `layout.php` (M2-screens 3.3), which WP3 extends.
 9. `Strings` supports the plural placeholder (P97).
+
+Checked against the M2 code by review M3-R1 (tree at `d79c3fa`, M2-WP9 not yet merged), for M3-D2:
+
+- Items 1, 2, 3, 5, 7, 8, 9 hold. `InputMode` has `Form`, `Import`, `Canonical`; `Records::PICKER_LIMIT` is 500; `SchemaEditor` runs each method in its own `write()` through a private `change()` and calls the `\Closure(Database, list<string>)` after-change hook inside it; `FormStore::regenerate` requires an open transaction and extends only each table's **default** form (non-default forms are not touched, so `forms_extended` counts default forms); `ProjectFile::VERSION` is 2 and `ProjectFile::create` sets `PRAGMA user_version = 2` before its transaction; the 11.2 statements run on a version 2 file made by `ProjectFile::create` in one transaction and leave `integrity_check` `ok`.
+- Item 4 does not hold: `RecordOperations::create(Actor, $projectKey, $tableKey, array $input)` passes the input straight to `Records::create` in `Form` mode; the controller builds the input from `blank()`'s `editableKeys()`. Section 7 is corrected.
+- Item 6 holds except the signature: `Sidebar::build(string $projectKey, string $projectName, array $tables, int $trashCount, ?string $currentTableKey)`, called only by `RecordListController` and `SearchController`.
+- `Records` takes its `Schema` in the constructor (`Records(Database, Schema, FieldTypes, Clock)`), so `within()` cannot see a table created earlier in the same transaction: step 6.6 3.2 must construct a new `Records` over a new `Schema` (the committer needs `FieldTypes` and `Clock`, or `Records` gains `withSchema()`).
+- `SchemaEditor::addRelation(string $tableKey, string $name, string $targetTableKey, Cardinality $thisMax, Cardinality $otherMax, string $reverseName, bool $required, string $help)`; setting the title field of a new table is `updateTable(...)`, a separate method in joined mode.
+- The dynamic-`new` scanner is `tests/repo/CompositionSeamTest.php` (`DISPATCHER`), not `PhpSourceRulesTest.php`; `SqlStringsTest` also refuses `new $class` in the directories it scans. `AuditTrailTest` requires every action in `AuditAction::ALL` to be written; `SnapshotsTest` lists every `SnapshotReason`; `SystemDatabaseTest` expects `schema_version` `1`; `ScreenStructureTest` requires every GET route with an existing controller to be visited; `MessageKeysTest` reads M1 section 12 and M2 section 8 only and matches keys `[a-z_.]` (no hyphens). Section 16 and part 2 section 11 are corrected for each.
+- `Installer` already checks `zip` and `xmlreader` as failures; `Requirement::WARNING` exists for the three new rows; the requirement test is `tests/core/install/RequirementsTest.php`. `tools/host-check/host-check.php` lists `ext.zip` and `ext.xmlreader` only.
+- `tests/web/KeyboardStructureTest.php` and `tests/Support/M2Fixture.php` are M2-WP9's and not yet in the tree.
 
 Other assumptions and open points:
 

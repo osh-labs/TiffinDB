@@ -1,6 +1,6 @@
 # ADR 0015: Import and export plugin contract, and the import commit model
 
-Status: Accepted (provisional, awaiting maintainer confirmation). Settles ADR 0009 row E1 (single-transaction commit versus chunked import; context brief section 12 item 2), the plugin manifest, directory layout, namespace, loading, and enable and disable storage that plan section 6.2 sketches and ADR 0008 decision 1 reserved for the M3 spec, and amends the layer table of ADR 0012 decision 1 (as amended by ADR 0014 decision 5) for `Core\Io`. Implementation design: `docs/specs/M3-io.md` sections 3 to 7; screens in `docs/specs/M3-screens.md`. Provisional decision numbers are listed in `docs/specs/M3-io.md` section 14.
+Status: Accepted (provisional, awaiting maintainer confirmation). Settles ADR 0009 row E1 (single-transaction commit versus chunked import; context brief section 12 item 2), the plugin manifest, directory layout, namespace, loading, and enable and disable storage that plan section 6.2 sketches and ADR 0008 decision 1 reserved for the M3 spec, and amends the layer table of ADR 0012 decision 1 (as amended by ADR 0014 decision 5) for `Core\Io`. Implementation design: `docs/specs/M3-io.md` sections 3 to 7; screens in `docs/specs/M3-screens.md`. Provisional decision numbers are listed in `docs/specs/M3-io.md` section 17.
 
 ## Context
 

@@ -560,7 +560,7 @@ project.tiffin                        a complete copy of the project database (m
 attachments/9f/9f86d0...0a08          one entry per attachment file listed in _tiffin_attachments (section 8)
 ```
 
-No other entry is written, and TiffinDB refuses an archive that holds any other entry (for example a folder added by a zip tool, `snapshots/`, or a `project.tiffin-wal`). Entry names use `/`, are case-sensitive, and are exactly `tiffindb-archive.json`, `project.tiffin`, or `attachments/` followed by the first two characters of a SHA-256, `/`, and all 64 lower-case hexadecimal characters. Entries are stored or compressed with deflate; none is encrypted. Snapshots are not included.
+No other entry is written, and TiffinDB refuses an archive that holds any other entry (for example `snapshots/`, a `project.tiffin-wal`, or a folder entry other than those below). Folder entries `attachments/` and `attachments/<first two characters>/`, which some zip tools add when an archive is re-packed, are accepted and ignored. Entry names use `/`, are case-sensitive, and are exactly `tiffindb-archive.json`, `project.tiffin`, or `attachments/` followed by the first two characters of a SHA-256, `/`, and all 64 lower-case hexadecimal characters. Entries are stored or compressed with deflate; none is encrypted. Snapshots are not included.
 
 ### 13.2 Manifest
 

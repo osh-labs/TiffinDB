@@ -40,21 +40,53 @@ final class ProjectFileTest extends TestCase
     }
 
     /**
-     * The statements of the first and second SQL blocks in section 4 of the
-     * format document (version 1, then the version 2 additions), in order.
+     * The SQL blocks of section 4 of the format document that make up the
+     * current format version, in order: the version 1 block, then the
+     * "Version N adds" block of each version up to ProjectFile::VERSION.
+     * Blocks for later, planned versions are not read, so the document may
+     * describe them before the code writes them.
      *
-     * @return list<string>
+     * @return list<string> one entry per version
      */
-    private static function documentedDdl(): array
+    private static function documentedBlocks(): array
     {
         $doc = file_get_contents(RepoFiles::path('docs/formats/tiffin.md'));
         self::assertIsString($doc);
         $start = (int) strpos($doc, '## 4. Metadata tables');
         $section = substr($doc, $start, (int) strpos($doc, '## 5. User tables') - $start);
-        self::assertSame(2, preg_match_all('/```sql\n(.*?)```/s', $section, $blocks));
-        $statements = array_values(array_filter(array_map('trim', explode(';', $blocks[1][0] . $blocks[1][1])), static fn (string $s): bool => $s !== ''));
+        self::assertGreaterThanOrEqual(ProjectFile::VERSION, preg_match_all('/```sql\n(.*?)```/s', $section, $blocks, PREG_OFFSET_CAPTURE));
+        $result = [];
+        $previousEnd = 0;
+        for ($version = 1; $version <= ProjectFile::VERSION; $version++) {
+            [$sql, $offset] = $blocks[1][$version - 1];
+            $intro = substr($section, $previousEnd, $offset - $previousEnd);
+            if ($version > 1) {
+                self::assertStringContainsString('Version ' . $version . ' adds', $intro, 'Block ' . $version . ' of section 4 is not the version ' . $version . ' block.');
+            }
+            $result[] = $sql;
+            $previousEnd = $offset + strlen($sql);
+        }
+
+        return $result;
+    }
+
+    /** @return list<string> the statements of a block, white space collapsed */
+    private static function statementsOf(string $block): array
+    {
+        $statements = array_values(array_filter(array_map('trim', explode(';', $block)), static fn (string $s): bool => $s !== ''));
 
         return array_map([self::class, 'collapse'], $statements);
+    }
+
+    /** @return list<string> the documented DDL of the current version, in order */
+    private static function documentedDdl(): array
+    {
+        $statements = [];
+        foreach (self::documentedBlocks() as $block) {
+            $statements = [...$statements, ...self::statementsOf($block)];
+        }
+
+        return $statements;
     }
 
     private static function collapse(string $sql): string
@@ -96,7 +128,10 @@ final class ProjectFileTest extends TestCase
     public function testMetadataDdlEqualsTheFormatDocument(): void
     {
         $documented = self::documentedDdl();
-        self::assertCount(13, $documented);
+        $blocks = self::documentedBlocks();
+        // Versions 1 and 2 hold 10 and 3 statements; later versions only add.
+        self::assertCount(10, self::statementsOf($blocks[0]));
+        self::assertCount(3, self::statementsOf($blocks[1]));
         self::assertSame($documented, array_map([self::class, 'collapse'], ProjectFile::DDL));
 
         $stored = [];

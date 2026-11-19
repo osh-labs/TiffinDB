@@ -461,6 +461,8 @@ final class FormStore
 - default form with `generated` 1: when the serialized generated document differs from `html`, update `html` and `updated_at`;
 - default form with `generated` 0: parse it; when rejected, leave it unchanged; otherwise remove slots whose key is not a field of the table, append a slot for each field of the table that no slot names (at the end of the first section, or at the end of the root when there is none), and store the serialized result if it changed.
 
+A `_tiffin_forms` row whose columns do not have the documented types makes `defaultFor`, and so `regenerate`, throw `Unavailable('not-project')` (rolling back the caller's schema change), as M1 treats any other malformed project file; `effective` instead logs reason `row` and shows the generated layout.
+
 Form keys share the key scope of tables, fields, and relations (`docs/formats/tiffin.md` section 4.6): `FormStore` and `SchemaEditor::newKey` both check `_tiffin_tables`, `_tiffin_fields`, `_tiffin_relations`, and `_tiffin_forms` for a candidate key.
 
 ### 5.6 Regeneration inside schema changes

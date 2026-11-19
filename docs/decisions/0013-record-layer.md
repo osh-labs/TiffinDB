@@ -53,6 +53,24 @@ Record reading and writing is `TiffinDB\Core\Query\Records`, beside the M1 `Tras
 
 The record screen's "Move to trash" moves the record at once, without a confirmation page, and the next page shows a notice with an "Undo" button that restores it. A record in the trash is reversible, so the M1 rule that destructive actions go through a confirmation page (`docs/specs/M1-screens.md` section 4.5 item 7) does not apply to it. Opening the address of a record in the trash shows a page saying so, with a "Restore" button.
 
+### 9. Further M2 defaults
+
+Smaller choices made in the M2 design, recorded here so that each is in a decision record before it is implemented (orchestration guide section 5). Details are in the specs named.
+
+| # | Default | Where specified |
+|---|---|---|
+| 9.1 | List columns: the title field, then up to six more fields in field order, skipping long text; no column configuration in M2 | `docs/specs/M2-records.md` 7.2 |
+| 9.2 | Generated element ids in templates come from one validated helper (`id(prefix, parts)`), allowed only in `id`, `for`, `form`, `aria-labelledby`, `aria-describedby`; amends the M1 rule that ids are literal | `docs/specs/M2-screens.md` 4.2, 4.3 |
+| 9.3 | Strings gain a plural placeholder `{name|singular|plural}` (`#` is the formatted number), English one and other forms only | `docs/specs/M2-screens.md` 6.2 |
+| 9.4 | The light-theme `--warn` token is `#703D00` (7.61:1 on the warning tint), closing ui-design-plan section 9 item 4 | `docs/specs/M2-records.md` 9 |
+| 9.5 | The top bar shows "Display" on every signed-in page (reverses that part of M1 provisional decision P41); settings live at `/settings` with Save and "Back to standard" | `docs/design/m2/settings.md` |
+| 9.6 | Record form controls: required fields marked "(required)"; choice as a menu with "Not chosen"; rating as radios with "Not rated"; numbers and money as text inputs with `inputmode` | `docs/specs/M2-screens.md` 5.1 |
+| 9.7 | The list's sort menu applies with a visible Apply button, never on change | `docs/design/m2/list-and-search.md` 2 |
+| 9.8 | The sidebar leaves out screens that do not exist yet (collections, import, export), shows the trash count as text, and links to "Tables and fields"; `/projects/{p}` opens the first table's list | `docs/design/m2/list-and-search.md` 1, 6 |
+| 9.9 | Record ids reach the core as strings from URLs; anything but a positive whole number of at most 19 digits is "not found" | `docs/specs/M2-records.md` 7.1 |
+| 9.10 | Record-layer SQL whose shape depends on the schema is composed only through one class (`Core\Query\Sql`) of fragments built from literals and identifiers; the repository's SQL scanner is extended to enforce it | `docs/specs/M2-records.md` 3.9 |
+| 9.11 | When a POST carries no `Sec-Fetch-Site`, an `Origin` header that is present and is not the request's own origin (or is `null`) is refused (M1 exit audit finding F-2); a POST without either header still relies on the CSRF token | `docs/specs/M2-records.md` 10.5 |
+
 ## Alternatives considered
 
 | Topic | Option | Reason not chosen |

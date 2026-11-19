@@ -19,10 +19,13 @@ use TiffinDB\Tests\Support\RepoFiles;
  * PHP file under plugins/ lies in `plugins/<kind>/<id>/src/`, declares the
  * plugin's namespace (`TiffinDB\Plugin\<Kind>\<Id>`, or a namespace below
  * it), and names only `TiffinDB\Core\Io\Contract\`, its own namespace, PHP
- * built-in classes and functions, and `OpenSpout\`. It calls no network
+ * built-in classes and functions, `OpenSpout\`, and `TiffinDB\Core\Io\Csv\`
+ * (the core CSV reader and writer, ADR 0015 decision 2; P143, provisional). It calls no network
  * function (NETWORK_FUNCTIONS and NETWORK_PREFIXES; no literal URL of a
  * network stream wrapper), no database (no PDO, SQLite3, or other database
- * extension, no SQL statement in a literal), reads no superglobal, and
+ * extension, no SQL statement in a literal: upper-case statements, and
+ * lower-case ones only where SQL punctuation shows it is SQL, so that
+ * English labels pass), reads no superglobal, and
  * sends no header.
  *
  * Read with token_get_all. Names are checked as written, after the file's
@@ -41,6 +44,8 @@ final class PluginLayerRulesTest extends TestCase
     public const PLUGINS = 'plugins';
     public const CONTRACT = 'TiffinDB\\Core\\Io\\Contract\\';
     public const LIBRARY = 'OpenSpout\\';
+    /** The core CSV reader and writer (P143): exactly this prefix, not the rest of Core\Io. */
+    public const CORE_CSV = 'TiffinDB\\Core\\Io\\Csv\\';
 
     /** Network functions (no network calls in the application: CLAUDE.md, plan section 7). */
     public const NETWORK_FUNCTIONS = [
@@ -55,6 +60,12 @@ final class PluginLayerRulesTest extends TestCase
     public const DATABASE_CLASSES = ['pdo', 'pdostatement', 'pdoexception', 'sqlite3', 'sqlite3stmt', 'sqlite3result', 'mysqli', 'mysqli_stmt', 'mysqli_result'];
     public const DATABASE_PREFIXES = ['mysqli_', 'sqlite_', 'pg_', 'odbc_', 'oci_', 'sqlsrv_', 'db2_', 'dba_', 'mssql_'];
     /** Upper-case SQL statements (case-sensitive, so that English labels such as "Select a sheet from" pass). */
+    /** Lower-case (any case) SQL, only in shapes with SQL punctuation or clause order that English labels do not have. */
+    public const SQL_ANY_CASE = '/\b(insert\s+(or\s+\w+\s+)?into\s+["`\w.]+\s*(\(|values\b|select\b)|values\s*\(\s*\?'
+        . '|create\s+(temp(orary)?\s+|unique\s+)?(table|index|view|trigger)\s+(if\s+not\s+exists\s+)?["`\w.]+\s*(\(|on\b|as\b)'
+        . '|drop\s+(table|index|view|trigger)\s+if\s+exists\b|alter\s+table\s+["`\w.]+\s+(add|rename|drop)\b'
+        . '|delete\s+from\s+["`\w.]+\s+where\b|update\s+["`\w.]+\s+set\s+["`\w.]+\s*=|select\s+.+?\s+from\s+["`\w.]+\s+(where|order\s+by|group\s+by|limit|join)\b'
+        . '|\bwhere\s+["`\w.]+\s*(=|<|>|in\s*\()\s*[?:(]|pragma\s+\w+\s*(=|\(|;|\z)|attach\s+database\b|vacuum\s+into\b)/is';
     public const SQL = '/\b(SELECT\s.*\bFROM\b|INSERT\s+INTO|UPDATE\s+\S+\s+SET\b|DELETE\s+FROM|(CREATE|DROP)\s+(TEMP\s+|TEMPORARY\s+|UNIQUE\s+)?(TABLE|INDEX|VIEW|TRIGGER)|ALTER\s+TABLE|PRAGMA\s|ATTACH\s+DATABASE|VACUUM\b)/s';
 
     public const HEADER_FUNCTIONS = ['header', 'header_remove', 'setcookie', 'setrawcookie', 'http_response_code', 'header_register_callback'];
@@ -182,7 +193,7 @@ final class PluginLayerRulesTest extends TestCase
                 if (preg_match(self::NETWORK_SCHEMES, $value) === 1) {
                     $found[] = 'a literal URL of a network stream wrapper';
                 }
-                if (preg_match(self::SQL, $value) === 1) {
+                if (preg_match(self::SQL, $value) === 1 || preg_match(self::SQL_ANY_CASE, $value) === 1) {
                     $found[] = 'an SQL statement in a literal';
                 }
                 if (preg_match('/(?<![A-Za-z0-9_])\\\\?(TiffinDB\\\\[A-Za-z0-9_\\\\]+)/', $value, $named) === 1
@@ -204,7 +215,8 @@ final class PluginLayerRulesTest extends TestCase
     /** Why a fully qualified name is not allowed, or null when it is. */
     private static function nameProblem(string $name, string $own): ?string
     {
-        if (str_starts_with($name, self::CONTRACT) || str_starts_with($name, $own . '\\') || str_starts_with($name, self::LIBRARY)) {
+        if (str_starts_with($name, self::CONTRACT) || str_starts_with($name, $own . '\\') || str_starts_with($name, self::LIBRARY)
+            || str_starts_with($name, self::CORE_CSV)) {
             return null;
         }
         if (!str_contains($name, '\\') && self::isBuiltIn($name)) {
@@ -321,6 +333,16 @@ final class PluginLayerRulesTest extends TestCase
             . "        \$e = new \\TiffinDB\\Core\\Io\\Contract\\Settings([]); \$o = new \\OpenSpout\\Common\\Entity\\Row([]);\n"
             . "        \$h = fopen('php://temp', 'w+b'); \$t = \$this->header(); \$label = 'Select a sheet from the workbook';\n"
             . "        \$name = 'TiffinDB\\\\Plugin\\\\Import\\\\Example\\\\Sub'; \$i = \\DateTimeImmutable::class; \$q = \\JSON_THROW_ON_ERROR; } }\n"];
+        yield 'core csv reader and writer (P143)' => [self::HEAD
+            . "use TiffinDB\\Core\\Io\\Csv\\CsvReader;\nuse TiffinDB\\Core\\Io\\Csv\\Charset as C;\n"
+            . "\$w = new \\TiffinDB\\Core\\Io\\Csv\\CsvWriter(); \$d = C\\Sub::class; \$n = 'TiffinDB\\\\Core\\\\Io\\\\Csv\\\\CsvDialect';\n"];
+        foreach ([
+            'Select a sheet from the workbook', 'Delete from the list', 'Update the table', 'Create table from the first sheet',
+            'Drop table names that repeat', 'Insert into the project', 'Values are read as text', 'Where the heading is empty, use Column n',
+            'Choose where to put the values (one per row)', 'Pragma', 'Select rows from Sheet1 to import', 'Add a column with each record\'s number',
+        ] as $label) {
+            yield 'English label: ' . $label => [self::HEAD . "\$label = " . var_export($label, true) . ";\n"];
+        }
         yield 'sub-namespace' => ["<?php\nnamespace TiffinDB\\Plugin\\Import\\Example\\Sub;\nfinal class Thing {}\n"];
         yield 'method named like a forbidden function' => [self::HEAD . "final class R { public function header(): string { return \$this->mail(); } public function mail(): string { return ''; } }\n"];
     }
@@ -334,6 +356,14 @@ final class PluginLayerRulesTest extends TestCase
     /** @return iterable<string, array{string, string}> source, expected problem (substring) */
     public static function refused(): iterable
     {
+        yield 'core io archive' => [self::HEAD . "use TiffinDB\\Core\\Io\\Archive\\X;\n", 'names TiffinDB\\Core\\Io\\Archive\\X'];
+        yield 'core io top level' => [self::HEAD . "\$x = new \\TiffinDB\\Core\\Io\\ImportJob();\n", 'names TiffinDB\\Core\\Io\\ImportJob'];
+        yield 'core io plugin' => [self::HEAD . "use TiffinDB\\Core\\Io\\Plugin\\PluginLoader;\n", 'names TiffinDB\\Core\\Io\\Plugin\\PluginLoader'];
+        yield 'csv look-alike' => [self::HEAD . "use TiffinDB\\Core\\Io\\CsvEvil\\X;\n", 'names TiffinDB\\Core\\Io\\CsvEvil\\X'];
+        yield 'csv namespace itself' => [self::HEAD . "use TiffinDB\\Core\\Io\\Csv;\n", 'names TiffinDB\\Core\\Io\\Csv,'];
+        yield 'csv look-alike in a string' => [self::HEAD . "\$c = 'TiffinDB\\\\Core\\\\Io\\\\Csvx\\\\Y';\n", 'names TiffinDB\\Core\\Io\\Csvx\\Y'];
+        yield 'aliased csv parent' => [self::HEAD . "use TiffinDB\\Core\\Io as I;\n\$x = new I\\Csv\\CsvReader();\n", 'names TiffinDB\\Core\\Io,'];
+        yield 'query records' => [self::HEAD . "use TiffinDB\\Core\\Query\\Records;\n", 'names TiffinDB\\Core\\Query\\Records'];
         yield 'core storage' => [self::HEAD . "use TiffinDB\\Core\\Storage\\Fs;\n", 'names TiffinDB\\Core\\Storage\\Fs'];
         yield 'core io outside the contract' => [self::HEAD . "\$x = new \\TiffinDB\\Core\\Io\\ImportJob();\n", 'names TiffinDB\\Core\\Io\\ImportJob'];
         yield 'aliased namespace' => [self::HEAD . "use TiffinDB\\Core as C;\n\$x = new C\\System\\AuditLog();\n", 'names TiffinDB\\Core'];
@@ -364,6 +394,15 @@ final class PluginLayerRulesTest extends TestCase
         yield 'mysqli function' => [self::HEAD . "\$db = mysqli_connect();\n", 'calls the database function mysqli_connect()'];
         yield 'sql literal' => [self::HEAD . "\$sql = 'SELECT * FROM users';\n", 'an SQL statement in a literal'];
         yield 'sql literal in double quotes' => [self::HEAD . "\$sql = \"DELETE FROM sessions\";\n", 'an SQL statement in a literal'];
+        foreach ([
+            'select * from users where id = ?', 'insert into users (id) values (?)', 'insert or replace into meta values (1)',
+            'update users set role = ?', 'delete from sessions where token_hash = ?', 'create table t (x)',
+            'create unique index t_x on t (x)', 'drop table if exists t', 'alter table users add column x', 'pragma user_version = 3',
+            'pragma table_info(users)', 'select name from sqlite_master order by name', 'attach database :f as other', 'vacuum into ?',
+            'select a, b from t join u on t.id = u.id',
+        ] as $sql) {
+            yield 'lower-case sql: ' . $sql => [self::HEAD . "\$sql = " . var_export($sql, true) . ";\n", 'an SQL statement in a literal'];
+        }
         yield 'pragma literal' => [self::HEAD . "\$sql = 'PRAGMA user_version';\n", 'an SQL statement in a literal'];
         yield 'create table literal' => [self::HEAD . "\$sql = 'CREATE TABLE t (x)';\n", 'an SQL statement in a literal'];
         yield 'superglobal' => [self::HEAD . "\$x = \$_GET['a'];\n", 'reads the superglobal $_GET'];

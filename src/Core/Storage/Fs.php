@@ -14,7 +14,8 @@ namespace TiffinDB\Core\Storage;
  * mode 0750, files with 0640 (ADR 0011 decision 1). Calls that can warn run
  * under ErrorTrap, never with `@`. No method accepts a path containing a
  * NUL byte. The listing and stat helpers (entries, exists, isFile, isDir,
- * size) never follow a symbolic link (T-CF-4).
+ * size) never follow a symbolic link (T-CF-4). Recursive removal exists
+ * only for the staging area (removeTree, P127).
  */
 final class Fs
 {
@@ -135,6 +136,75 @@ final class Fs
     }
 
     /**
+     * Removes a directory tree inside the staging area (M3 spec section 5.1,
+     * P127; amends P64 for that folder only). $root must be an existing
+     * directory whose path ends in `/staging`, and $path must be strictly
+     * below it (its parent resolved with realpath; its own last segment not
+     * `.` or `..`); otherwise \LogicException and nothing is removed. The
+     * walk uses lstat and never follows a symbolic link: a link, wherever it
+     * points and whatever its target is, is removed as a link. Files are
+     * removed first, then directories bottom-up. No error when nothing is at
+     * $path; \RuntimeException when an entry cannot be removed.
+     */
+    public static function removeTree(string $path, string $root): void
+    {
+        self::refuseNul($path);
+        self::refuseNul($root);
+        $trimmedRoot = rtrim($root, '/');
+        if (!str_ends_with($trimmedRoot, '/staging')) {
+            throw new \LogicException('Recursive removal is allowed only inside the staging area.');
+        }
+        $realRoot = realpath($trimmedRoot);
+        if ($realRoot === false || !str_ends_with($realRoot, '/staging') || !self::isDir($realRoot)) {
+            throw new \LogicException('The staging area is not a directory.');
+        }
+        $name = basename(rtrim($path, '/'));
+        if ($name === '' || $name === '.' || $name === '..') {
+            throw new \LogicException('The path to remove must name an entry.');
+        }
+        $realParent = realpath(dirname(rtrim($path, '/')));
+        if ($realParent === false || ($realParent !== $realRoot && !str_starts_with($realParent, $realRoot . '/'))) {
+            throw new \LogicException('The path to remove is not inside the staging area.');
+        }
+        self::removeEntry($realParent . '/' . $name);
+    }
+
+    /**
+     * Moves a regular file or a directory to $to, which must not exist
+     * (anything there, a dangling link included, is \RuntimeException).
+     * `rename` first; when that fails (across devices) a file is copied to
+     * a new file and the original removed (a directory is not copied). A
+     * moved file gets mode 0640. $from must be a regular file or a
+     * directory, never a symbolic link.
+     */
+    public static function moveIn(string $from, string $to): void
+    {
+        self::refuseNul($from);
+        self::refuseNul($to);
+        $isFile = self::isFile($from);
+        if (!$isFile && !self::isDir($from)) {
+            throw new \RuntimeException('Cannot move: the source is not a regular file or a directory.');
+        }
+        if (self::exists($to)) {
+            throw new \RuntimeException('Cannot move: the target already exists.');
+        }
+        $renamed = ErrorTrap::run(static fn (): bool => rename($from, $to), 'Cannot rename.');
+        if (!$renamed) {
+            if (!$isFile) {
+                throw new \RuntimeException('Cannot move the directory.');
+            }
+            self::copyNew($from, $to);
+            self::remove($from);
+        }
+        if ($isFile) {
+            $changed = ErrorTrap::run(static fn (): bool => chmod($to, self::FILE_MODE), 'Cannot set the file mode.');
+            if (!$changed) {
+                throw new \RuntimeException('Cannot set the file mode.');
+            }
+        }
+    }
+
+    /**
      * The names in a directory, sorted by byte value, without `.` and `..`
      * (T-CF-4). Names of symbolic links inside are listed but not followed.
      * Throws \RuntimeException when nothing is at the path, when the path
@@ -204,6 +274,22 @@ final class Fs
         return (int) $stat['size'];
     }
 
+    /**
+     * The modification time (Unix seconds) of whatever is at the path, read
+     * with lstat (a symbolic link's own time, never its target's). Throws
+     * \RuntimeException when nothing is there.
+     */
+    public static function modifiedAt(string $path): int
+    {
+        self::refuseNul($path);
+        $stat = self::lstat($path);
+        if ($stat === null) {
+            throw new \RuntimeException('Cannot read the time: nothing is there.');
+        }
+
+        return (int) $stat['mtime'];
+    }
+
     public static function isWritableDir(string $path): bool
     {
         return !str_contains($path, "\0") && is_dir($path) && is_writable($path);
@@ -263,6 +349,61 @@ final class Fs
         }
 
         return str_starts_with($resolvedPath, rtrim($resolvedRoot, '/') . '/');
+    }
+
+    /** Removes one entry of a staging tree: a link or file by unlink, a directory after its entries. */
+    private static function removeEntry(string $path): void
+    {
+        $stat = self::lstat($path);
+        if ($stat === null) {
+            return;
+        }
+        if (self::type($stat) === self::TYPE_DIR) {
+            foreach (self::entries($path) as $entry) {
+                self::removeEntry($path . '/' . $entry);
+            }
+            $removed = ErrorTrap::run(static fn (): bool => rmdir($path), 'Cannot remove the directory.');
+            if (!$removed) {
+                throw new \RuntimeException('Cannot remove the directory.');
+            }
+
+            return;
+        }
+        $removed = ErrorTrap::run(static fn (): bool => unlink($path), 'Cannot remove the file.');
+        if (!$removed) {
+            throw new \RuntimeException('Cannot remove the file.');
+        }
+    }
+
+    /** Copies a regular file to a new file (created exclusively); a partial copy is removed. */
+    private static function copyNew(string $from, string $to): void
+    {
+        $in = ErrorTrap::run(static fn (): mixed => fopen($from, 'rb'), 'Cannot open the file.');
+        if (!is_resource($in)) {
+            throw new \RuntimeException('Cannot open the file.');
+        }
+        try {
+            $out = ErrorTrap::run(static fn (): mixed => fopen($to, 'xb'), 'Cannot create the file.');
+            if (!is_resource($out)) {
+                throw new \RuntimeException('Cannot create the file.');
+            }
+            try {
+                $copied = ErrorTrap::run(static fn (): int|false => stream_copy_to_stream($in, $out), 'Cannot copy the file.');
+                $closed = ErrorTrap::run(static fn (): bool => fclose($out), 'Cannot close the file.');
+                if ($copied === false || !$closed) {
+                    throw new \RuntimeException('Cannot copy the file.');
+                }
+            } catch (\Throwable $error) {
+                if (is_resource($out)) {
+                    fclose($out);
+                }
+                self::remove($to);
+
+                throw $error;
+            }
+        } finally {
+            fclose($in);
+        }
     }
 
     /**

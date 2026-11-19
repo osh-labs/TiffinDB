@@ -38,6 +38,20 @@ use TiffinDB\Core\Storage\Timestamp;
  * SQL: names come only from Identifier and from definition objects, and
  * statements whose shape depends on the schema are composed with Sql
  * (ListSql builds the list fragments). Every value is bound.
+ *
+ * Joined mode (M3 spec section 6.6, P130): within() returns a copy whose
+ * create, update, and setLinks run inside the caller's open transaction
+ * instead of their own Database::write(), over the Schema this instance
+ * was built with (a caller that changed the schema in that transaction
+ * builds a new Records first). Validation and ProjectFile::touch() are
+ * the same; \LogicException when no transaction is open.
+ *
+ * Auto-number values (M3 spec section 6.6): Form and Import mode refuse a
+ * given value (Form mode with the type's read-only problem, Import mode
+ * with problem.value.unsupported); Canonical mode refuses, inside the
+ * write and before the statement, a value another record already holds
+ * (problem.value.unsupported), so the unique index is never the first
+ * check.
  */
 final class Records
 {
@@ -51,6 +65,9 @@ final class Records
 
     private readonly ListSql $lists;
 
+    /** True for the copy within() returns. */
+    private bool $joined = false;
+
     public function __construct(
         private readonly Database $db,
         private readonly Schema $schema,
@@ -58,6 +75,22 @@ final class Records
         private readonly Clock $clock,
     ) {
         $this->lists = new ListSql($schema, $types);
+    }
+
+    /**
+     * A copy that runs each write inside the caller's open transaction
+     * (joined mode), over this instance's Schema. \LogicException when no
+     * transaction is open.
+     */
+    public function within(): self
+    {
+        if (!$this->db->inTransaction()) {
+            throw new \LogicException('Joined mode needs an open transaction.');
+        }
+        $copy = clone $this;
+        $copy->joined = true;
+
+        return $copy;
     }
 
     // ------------------------------------------------------------------ reading
@@ -147,17 +180,32 @@ final class Records
      * Creates a record; returns its id (section 3.3). Auto-number fields
      * not given a value get the next number.
      *
+     * $requiredKeys (M3, P118): null enforces every required field of the
+     * table; a list enforces only the required fields among those keys, in
+     * both checks (a required key missing from $values, and a required key
+     * given an empty value). Keys in the list that are not required fields
+     * of the table are ignored.
+     *
      * @param array<string, mixed> $values field key => value as $mode expects
+     * @param list<string>|null $requiredKeys
      * @throws ValidationFailed with every problem found; nothing is written
      */
-    public function create(string $tableKey, array $values, InputMode $mode, string $userKey): int
+    public function create(string $tableKey, array $values, InputMode $mode, string $userKey, ?array $requiredKeys = null): int
     {
         $table = $this->schema->table($tableKey);
         self::person($userKey);
-        $storage = $this->validate($table, $values, $mode, true);
+        if ($requiredKeys !== null) {
+            foreach ($requiredKeys as $requiredKey) {
+                if (!is_string($requiredKey)) {
+                    throw new \InvalidArgumentException('Required keys are field keys.');
+                }
+            }
+        }
+        $storage = $this->validate($table, $values, $mode, true, $requiredKeys);
         $now = Timestamp::format($this->clock->now());
 
-        return $this->db->write(function (Database $db) use ($table, $storage, $userKey, $now): int {
+        return $this->transaction(function (Database $db) use ($table, $storage, $userKey, $now): int {
+            $this->refuseTakenNumbers($db, $table, $storage, null);
             foreach ($this->schema->fields($table->key) as $candidate) {
                 if ($candidate->type === 'auto_number' && !array_key_exists($candidate->key, $storage)) {
                     $storage[$candidate->key] = $this->nextNumber($db, $table, $candidate->key);
@@ -197,10 +245,10 @@ final class Records
         self::id($id);
         $table = $this->schema->table($tableKey);
         self::person($userKey);
-        $storage = $this->validate($table, $values, $mode, false);
+        $storage = $this->validate($table, $values, $mode, false, null);
         $now = Timestamp::format($this->clock->now());
 
-        return $this->db->write(function (Database $db) use ($table, $id, $storage, $expectedVersion, $userKey, $now): RecordData {
+        return $this->transaction(function (Database $db) use ($table, $id, $storage, $expectedVersion, $userKey, $now): RecordData {
             $record = $this->get($table->key, $id);
             if ($record === null || $record->trashedAt !== null) {
                 throw new NotFound('No such live record.');
@@ -208,6 +256,7 @@ final class Records
             if (!hash_equals($record->version, $expectedVersion)) {
                 throw new Conflict($record->version);
             }
+            $this->refuseTakenNumbers($db, $table, $storage, $id);
             $sets = [];
             foreach ($storage as $fieldKey => $value) {
                 $field = $this->schema->field((string) $fieldKey);
@@ -261,7 +310,7 @@ final class Records
         $targetOnce = $relation->maxFor($relation->otherField($field->key)) === Cardinality::One;
         $now = Timestamp::format($this->clock->now());
 
-        $this->db->write(function (Database $db) use (
+        $this->transaction(function (Database $db) use (
             $field, $relation, $table, $other, $thisSide, $otherSide, $onlyOne, $targetOnce, $targets, $id, $userKey, $now,
         ): void {
             $live = $db->value('SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE "id" = ? AND "_trashed_at" IS NULL', [$id]);
@@ -657,7 +706,7 @@ final class Records
      * @param array<mixed> $values
      * @return array<string, string|int|float|null>
      */
-    private function validate(TableDef $table, array $values, InputMode $mode, bool $create): array
+    private function validate(TableDef $table, array $values, InputMode $mode, bool $create, ?array $requiredKeys): array
     {
         $fields = [];
         foreach ($this->schema->fields($table->key) as $candidate) {
@@ -679,6 +728,12 @@ final class Records
                 continue;
             }
             $type = $this->types->get($field->type);
+            if ($field->type === 'auto_number' && $mode === InputMode::Import && is_string($value) && Text::trim($value) !== '') {
+                // Import mode never sets a number (M3 spec section 6.6); Form mode keeps the type's own read-only problem.
+                $problems[] = new Problem($key, 'problem.value.unsupported');
+
+                continue;
+            }
             if ($mode === InputMode::Canonical) {
                 $checked = $type->check($value, $field->options);
             } elseif (is_string($value)) {
@@ -692,7 +747,7 @@ final class Records
                 continue;
             }
             $canonical = $checked->value();
-            if ($canonical === null && $field->required) {
+            if ($canonical === null && $field->required && self::enforced($key, $requiredKeys)) {
                 $problems[] = new Problem($key, 'problem.value.required');
 
                 continue;
@@ -704,7 +759,7 @@ final class Records
         }
         if ($create) {
             foreach ($fields as $key => $field) {
-                if ($field->required && $field->hasColumn && !array_key_exists($key, $values)) {
+                if ($field->required && $field->hasColumn && !array_key_exists($key, $values) && self::enforced($key, $requiredKeys)) {
                     $problems[] = new Problem($key, 'problem.value.required');
                 }
             }
@@ -714,6 +769,60 @@ final class Records
         }
 
         return $storage;
+    }
+
+    /** @param list<string>|null $requiredKeys */
+    private static function enforced(string $key, ?array $requiredKeys): bool
+    {
+        return $requiredKeys === null || in_array($key, $requiredKeys, true);
+    }
+
+    /**
+     * Refuses, with problem.value.unsupported, an auto-number value that
+     * another record of the table (live or trashed) already holds. Runs
+     * inside the write, before the INSERT or UPDATE, so the column's unique
+     * index is never reached with a duplicate.
+     *
+     * @param array<string, string|int|float|null> $storage
+     */
+    private function refuseTakenNumbers(Database $db, TableDef $table, array $storage, ?int $exceptId): void
+    {
+        $problems = [];
+        foreach ($this->schema->fields($table->key) as $field) {
+            if ($field->type !== 'auto_number' || !array_key_exists($field->key, $storage) || $storage[$field->key] === null) {
+                continue;
+            }
+            $taken = $db->value(
+                'SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE ' . Identifier::column($field->key) . ' = ? AND "id" <> ?',
+                [$storage[$field->key], $exceptId ?? 0],
+            );
+            if ((int) $taken > 0) {
+                $problems[] = new Problem($field->key, 'problem.value.unsupported');
+            }
+        }
+        if ($problems !== []) {
+            throw new ValidationFailed($problems);
+        }
+    }
+
+    /**
+     * Runs $work in its own Database::write(), or, in joined mode, inside
+     * the caller's transaction (\LogicException when none is open).
+     *
+     * @template T
+     * @param \Closure(Database): T $work
+     * @return T
+     */
+    private function transaction(\Closure $work): mixed
+    {
+        if (!$this->joined) {
+            return $this->db->write(static fn (Database $db): mixed => $work($db));
+        }
+        if (!$this->db->inTransaction()) {
+            throw new \LogicException('Joined mode needs an open transaction.');
+        }
+
+        return $work($this->db);
     }
 
     /**

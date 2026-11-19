@@ -19,7 +19,8 @@ use TiffinDB\Tests\Support\RepoFiles;
  * 0013 decision 9.10) is built only from string literals and from names
  * that come from Identifier. Read with token_get_all, these rules hold in
  * every PHP file under src/Core/Schema/ (except the field types, which
- * build no SQL), src/Core/Query/, and src/Core/Forms/, except
+ * build no SQL), src/Core/Query/, src/Core/Forms/, and every file under
+ * src/Core/Io/ at any depth (M3 spec section 2.2), except
  * src/Core/Query/Sql.php, the one file that joins fragment texts (it is
  * exempt by name and read by the design-tier review):
  *
@@ -71,6 +72,12 @@ use TiffinDB\Tests\Support\RepoFiles;
  *
  * Every value therefore reaches SQLite as a bound parameter. The negative
  * cases below check that the scan catches each kind of mistake.
+ *
+ * One file may use two rule 0 constructs, each exactly once (M3 spec
+ * sections 2.2 and 4.3): src/Core/Io/Plugin/PluginLoader.php instantiates
+ * the manifest's class (`variable-new`) and its per-plugin autoloader
+ * requires the class file (`include`). RULE_EXEMPTIONS lists them by path;
+ * every other rule applies to that file in full.
  */
 #[CoversNothing]
 final class SqlStringsTest extends TestCase
@@ -79,6 +86,18 @@ final class SqlStringsTest extends TestCase
     public const ALLOWED_VARIABLES = [
         'src/Core/Schema/ProjectFile.php' => ['$statement'],                 // foreach (self::DDL as $statement)
         'src/Core/Schema/FormatMigrations.php' => ['$statement', '$pragma'], // STEPS and VERSION_PRAGMAS
+        'src/Core/Io/ImportJob.php' => ['$statement'],                       // foreach (self::SCHEMA as $statement)
+    ];
+
+    /** Every rule 0 id. */
+    private const RULE_IDS = [
+        'dynamic-member', 'variable-variable', 'scope-rewriting', 'callable-invokers', 'callable-literal', 'eval', 'variable-new',
+        'variable-call', 'array-callable', 'reflection', 'include', 'namespace-relative', 'closure-rebinding', 'fragment-new',
+    ];
+
+    /** File => rule 0 ids it may break, each exactly as often as given. */
+    public const RULE_EXEMPTIONS = [
+        'src/Core/Io/Plugin/PluginLoader.php' => ['variable-new' => 1, 'include' => 1],
     ];
 
     /** Functions that rewrite variables or call a callable given as data. */
@@ -120,6 +139,14 @@ final class SqlStringsTest extends TestCase
                 }
             }
         }
+        if (is_dir(RepoFiles::path('src/Core/Io'))) {
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(RepoFiles::path('src/Core/Io'), \FilesystemIterator::SKIP_DOTS));
+            foreach ($iterator as $file) {
+                if ($file instanceof \SplFileInfo && $file->isFile() && $file->getExtension() === 'php') {
+                    $files[] = 'src/Core/Io/' . str_replace('\\', '/', substr($file->getPathname(), strlen(RepoFiles::path('src/Core/Io')) + 1));
+                }
+            }
+        }
         sort($files);
 
         return $files;
@@ -142,6 +169,12 @@ final class SqlStringsTest extends TestCase
         foreach (['Trash.php', 'Records.php', 'ListSql.php', 'RecordVersion.php'] as $name) {
             self::assertContains('src/Core/Query/' . $name, $files);
         }
+        foreach (['Ddl.php'] as $name) {
+            self::assertContains('src/Core/Schema/' . $name, $files);
+        }
+        foreach (['ImportJob.php', 'Committer.php', 'ImportLog.php', 'Titles.php', 'ProjectExportSource.php', 'Contract/Importer.php'] as $name) {
+            self::assertContains('src/Core/Io/' . $name, $files);
+        }
         self::assertNotContains('src/Core/Schema/FieldTypes.php', $files);
         self::assertNotContains(self::EXEMPT_FILE, $files);
         $forms = glob(RepoFiles::path('src/Core/Forms') . '/*.php') ?: [];
@@ -160,7 +193,36 @@ final class SqlStringsTest extends TestCase
     #[DataProvider('files')]
     public function testSqlIsBuiltOnlyFromLiteralsAndIdentifiers(string $file): void
     {
-        self::assertSame([], self::violations(RepoFiles::read($file), self::ALLOWED_VARIABLES[$file] ?? []));
+        $exempt = self::RULE_EXEMPTIONS[$file] ?? [];
+        $source = RepoFiles::read($file);
+        self::assertSame([], self::violations($source, self::ALLOWED_VARIABLES[$file] ?? [], array_keys($exempt)));
+        foreach ($exempt as $rule => $times) {
+            self::assertSame($times, self::countRule($source, $rule), $file . ' uses (' . $rule . ') a different number of times.');
+        }
+    }
+
+    /** How often one rule 0 construct occurs in a source. */
+    private static function countRule(string $source, string $rule): int
+    {
+        $others = array_values(array_diff(self::RULE_IDS, [$rule]));
+
+        return count(array_filter(
+            self::violations($source, [], $others),
+            static fn (string $v): bool => str_contains($v, 'forbidden construct (' . $rule . ')'),
+        ));
+    }
+
+    public function testRuleExemptionsAreCountedExactly(): void
+    {
+        $loader = "<?php\nnamespace TiffinDB\\Core\\Io\\Plugin;\nfinal class L { public function f(string \$class, string \$file): object { require \$file; return new \$class(); } }\n";
+        self::assertSame(1, self::countRule($loader, 'variable-new'));
+        self::assertSame(1, self::countRule($loader, 'include'));
+        $twice = "<?php\nfinal class L { public function f(string \$a, string \$b): array {\n\$x = new \$a();\n\$y = new \$b();\nreturn [\$x, \$y]; } }\n";
+        self::assertSame(2, self::countRule($twice, 'variable-new'));
+        self::assertSame(['src/Core/Io/Plugin/PluginLoader.php'], array_keys(self::RULE_EXEMPTIONS));
+        foreach (self::RULE_EXEMPTIONS as $rules) {
+            self::assertSame([], array_diff(array_keys($rules), self::RULE_IDS));
+        }
     }
 
     public function testTheExemptFileOnlyComposesFragments(): void

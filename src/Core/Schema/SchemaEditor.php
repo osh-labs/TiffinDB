@@ -33,13 +33,22 @@ use TiffinDB\Core\Storage\Timestamp;
  * Validation collects every problem before throwing ValidationFailed.
  *
  * SQL names come only from Identifier (built from keys) and column
- * definitions only from ColumnDefinition; every value is a bound parameter.
+ * definitions only from ColumnDefinition (through Ddl); every value is a bound parameter.
  * After any change the caller must build a new Schema.
  *
  * Every structural method also calls the after-change hook once, inside
  * its transaction, after its own changes and before ProjectFile::touch(),
  * with the keys of the tables whose forms may change (M2 spec section
  * 5.6); an exception from the hook rolls the whole change back.
+ *
+ * Joined mode (M3 spec section 6.6, P130): within() returns a copy whose
+ * methods run inside the caller's open transaction instead of their own,
+ * with the same validation, hook, and ProjectFile::touch(); each reads a
+ * fresh Schema, so it sees what earlier calls in the transaction added.
+ * Methods that take a snapshot (deleteTable, deleteField, changeType, and
+ * updateField when it would change stored values) throw \LogicException
+ * in joined mode, as does any method called with no transaction open.
+ * DDL text comes from Ddl, shared with the project archive rebuild.
  */
 final class SchemaEditor
 {
@@ -57,6 +66,9 @@ final class SchemaEditor
     private const NO_REQUIRED = ['checkbox', 'auto_number'];
 
     private readonly \Closure $onSnapshot;
+
+    /** True for the copy within() returns. */
+    private bool $joined = false;
 
     /** @var \Closure(Database, list<string>): void */
     private readonly \Closure $afterChange;
@@ -85,6 +97,21 @@ final class SchemaEditor
         };
     }
 
+    /**
+     * A copy that runs each method inside the caller's open transaction
+     * (joined mode). \LogicException when no transaction is open.
+     */
+    public function within(): self
+    {
+        if (!$this->db->inTransaction()) {
+            throw new \LogicException('Joined mode needs an open transaction.');
+        }
+        $copy = clone $this;
+        $copy->joined = true;
+
+        return $copy;
+    }
+
     // ------------------------------------------------------------------ tables
 
     public function createTable(string $name, string $itemName, bool $withNameField): TableDef
@@ -99,17 +126,7 @@ final class SchemaEditor
             $key = $this->newKey();
             $now = $this->now();
 
-            $this->db->run('CREATE TABLE ' . Identifier::table($key) . ' (
-    "id"          INTEGER PRIMARY KEY AUTOINCREMENT,
-    "_created_at" TEXT NOT NULL,
-    "_created_by" TEXT,
-    "_updated_at" TEXT NOT NULL,
-    "_updated_by" TEXT,
-    "_trashed_at" TEXT,
-    "_trashed_by" TEXT
-)');
-            $this->db->run('CREATE INDEX ' . Identifier::index(Identifier::tableName($key), 'trash')
-                . ' ON ' . Identifier::table($key) . ' ("_trashed_at")');
+            Ddl::createTable($this->db, $key);
             $position = (int) $this->db->value('SELECT COALESCE(MAX("position"), 0) + 1 FROM "_tiffin_tables"');
             $this->db->run(
                 'INSERT INTO "_tiffin_tables" ("key", "sql_name", "name", "item_name", "position", "title_field", "created_at", "updated_at")'
@@ -157,6 +174,7 @@ final class SchemaEditor
     /** Deletes a table, its records, and every relation that touches it. Returns the number of records it had. */
     public function deleteTable(string $tableKey): int
     {
+        $this->refuseJoined();
         $this->schema()->table($tableKey);
         $this->snapshot(SnapshotReason::TableDelete);
 
@@ -280,20 +298,7 @@ final class SchemaEditor
             $leftKey = $this->newKey($relationKey);
             $rightKey = $this->newKey($relationKey, $leftKey);
             $joinName = Identifier::joinName($relationKey);
-
-            $this->db->run('CREATE TABLE ' . Identifier::joinTable($relationKey) . ' (
-    "left_id"  INTEGER NOT NULL REFERENCES ' . Identifier::table($table->key) . ' ("id") ON DELETE CASCADE,
-    "right_id" INTEGER NOT NULL REFERENCES ' . Identifier::table($target->key) . ' ("id") ON DELETE CASCADE,
-    "position" INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY ("left_id", "right_id")
-) WITHOUT ROWID');
-            $this->db->run('CREATE INDEX ' . Identifier::index($joinName, 'r') . ' ON ' . Identifier::joinTable($relationKey) . ' ("right_id")');
-            if ($thisMax === Cardinality::One) {
-                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'l1') . ' ON ' . Identifier::joinTable($relationKey) . ' ("left_id")');
-            }
-            if ($otherMax === Cardinality::One) {
-                $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'r1') . ' ON ' . Identifier::joinTable($relationKey) . ' ("right_id")');
-            }
+            Ddl::createJoinTable($this->db, new RelationDef($relationKey, $table->key, $leftKey, $thisMax, $target->key, $rightKey, $otherMax));
 
             $left = $this->insertRelationField($leftKey, $table->key, Text::trim($name), $relationKey, 'left', $required, Text::trim($help));
             $this->insertRelationField($rightKey, $target->key, Text::trim($reverseName), $relationKey, 'right', false, '');
@@ -343,6 +348,21 @@ final class SchemaEditor
      */
     public function updateField(string $fieldKey, string $name, array $options, bool $required, string $help, int $acceptedLoss): FieldDef
     {
+        if ($this->joined) {
+            return $this->change(function (Schema $schema) use ($fieldKey, $name, $options, $required, $help, $acceptedLoss): FieldDef {
+                $plan = $this->planUpdate($schema, $schema->field($fieldKey), $name, $options, $required, $help);
+                if ($plan->cleared > max(0, $acceptedLoss)) {
+                    throw new ConfirmationRequired($plan->cleared, $plan->cleared);
+                }
+                if ($plan->changes !== []) {
+                    throw new \LogicException('A field update that changes stored values takes a snapshot and cannot run in joined mode.');
+                }
+                $field = $this->applyUpdate($schema, $plan);
+                $this->afterChange($this->tablesOfField($schema, $field));
+
+                return $field;
+            });
+        }
         $snapshotTaken = false;
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $schema = $this->schema();
@@ -408,6 +428,7 @@ final class SchemaEditor
      */
     public function changeType(string $fieldKey, string $newType, array $options, int $acceptedLoss): Impact
     {
+        $this->refuseJoined();
         $schema = $this->schema();
         $plan = $this->planConversion($schema, $schema->field($fieldKey), $newType, $options);
         if ($plan->failures > max(0, $acceptedLoss)) {
@@ -426,7 +447,9 @@ final class SchemaEditor
 
             $this->db->run('DROP INDEX IF EXISTS ' . Identifier::index(Identifier::columnName($field->key), 'u'));
             $this->db->run('ALTER TABLE ' . $table->sql() . ' DROP COLUMN ' . $field->sql());
-            $this->db->run('ALTER TABLE ' . $table->sql() . ' ADD COLUMN ' . $field->sql() . ' ' . ColumnDefinition::of($to));
+            Ddl::addColumn($this->db, new FieldDef(
+                $field->key, $field->tableKey, $field->name, $newType, $plan->options, $field->required, $field->help, $field->position, true,
+            ), $to);
             foreach ($plan->values as $id => $value) {
                 $this->db->run('UPDATE ' . $table->sql() . ' SET ' . $field->sql() . ' = ? WHERE "id" = ?', [$value, $id]);
             }
@@ -450,7 +473,7 @@ final class SchemaEditor
         if ($direction !== -1 && $direction !== 1) {
             throw new \InvalidArgumentException('The direction must be -1 or +1.');
         }
-        $this->db->write(function () use ($fieldKey, $direction): void {
+        $this->transaction(function () use ($fieldKey, $direction): void {
             $schema = $this->schema();
             $field = $schema->field($fieldKey);
             $keys = array_map(static fn (FieldDef $f): string => $f->key, $schema->fields($field->tableKey));
@@ -472,6 +495,7 @@ final class SchemaEditor
     /** Deletes a field (both fields for a relation) and its values, after a `field-delete` snapshot. */
     public function deleteField(string $fieldKey): void
     {
+        $this->refuseJoined();
         $this->schema()->field($fieldKey);
         $this->snapshot(SnapshotReason::FieldDelete);
 
@@ -690,11 +714,7 @@ final class SchemaEditor
             $left = $relation->sideOf($field->key) === 'left';
             $joinName = Identifier::joinName($relation->key);
             if ($plan->links === Cardinality::One) {
-                if ($left) {
-                    $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'l1') . ' ON ' . $relation->sql() . ' ("left_id")');
-                } else {
-                    $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index($joinName, 'r1') . ' ON ' . $relation->sql() . ' ("right_id")');
-                }
+                Ddl::oneIndex($this->db, $relation, $left ? 'left' : 'right');
             } else {
                 $this->db->run('DROP INDEX IF EXISTS ' . Identifier::index($joinName, $left ? 'l1' : 'r1'));
             }
@@ -845,9 +865,10 @@ final class SchemaEditor
     {
         $key = $this->newKey();
         $hasColumn = $type->columnDefinition() !== null;
-        if ($hasColumn) {
-            $this->db->run('ALTER TABLE ' . $table->sql() . ' ADD COLUMN ' . Identifier::column($key) . ' ' . ColumnDefinition::of($type));
-        }
+        $required = $required && !in_array($type->id(), self::NO_REQUIRED, true);
+        $position = $this->nextFieldPosition($table->key);
+        $field = new FieldDef($key, $table->key, $name, $type->id(), $options, $required, $help, $position, $hasColumn);
+        Ddl::addColumn($this->db, $field, $type);
         if ($type->id() === 'auto_number') {
             $next = $options['start'];
             foreach ($this->db->all('SELECT "id" FROM ' . $table->sql() . ' ORDER BY "id"') as $row) {
@@ -855,11 +876,8 @@ final class SchemaEditor
                 $next++;
             }
             $options['next'] = $next;
-            $this->db->run('CREATE UNIQUE INDEX ' . Identifier::index(Identifier::columnName($key), 'u')
-                . ' ON ' . $table->sql() . ' (' . Identifier::column($key) . ')');
+            Ddl::uniqueIndex($this->db, $field);
         }
-        $required = $required && !in_array($type->id(), self::NO_REQUIRED, true);
-        $position = $this->nextFieldPosition($table->key);
         $now = $this->now();
         $this->db->run(
             'INSERT INTO "_tiffin_fields" ("key", "table_key", "sql_name", "name", "type", "options", "required", "help", "position", "created_at", "updated_at")'
@@ -1084,12 +1102,40 @@ final class SchemaEditor
      */
     private function change(\Closure $work): mixed
     {
-        return $this->db->write(function () use ($work): mixed {
+        return $this->transaction(function () use ($work): mixed {
             $result = $work($this->schema());
             ProjectFile::touch($this->db, $this->userKey, $this->clock);
 
             return $result;
         });
+    }
+
+    /**
+     * Runs $work in its own Database::write(), or, in joined mode, directly
+     * inside the caller's transaction (\LogicException when none is open).
+     *
+     * @template T
+     * @param \Closure(): T $work
+     * @return T
+     */
+    private function transaction(\Closure $work): mixed
+    {
+        if (!$this->joined) {
+            return $this->db->write(static fn (): mixed => $work());
+        }
+        if (!$this->db->inTransaction()) {
+            throw new \LogicException('Joined mode needs an open transaction.');
+        }
+
+        return $work();
+    }
+
+    /** Snapshot-taking methods cannot run inside another transaction. */
+    private function refuseJoined(): void
+    {
+        if ($this->joined) {
+            throw new \LogicException('This change takes a snapshot and cannot run in joined mode.');
+        }
     }
 
     private function schema(): Schema

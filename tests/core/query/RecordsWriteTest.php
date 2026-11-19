@@ -182,17 +182,21 @@ final class RecordsWriteTest extends TestCase
         ], InputMode::Form, self::USER_KEY));
         self::assertSame([$this->f['number']->key, $this->f['date_time']->key], array_column($problems, 0));
 
+        // M3 spec section 6.6: Import mode refuses an auto-number value.
+        self::assertSame([[$this->f['auto']->key, 'problem.value.unsupported', []]], self::problems(fn (): int => $records->create($this->items->key, [
+            $this->f['auto']->key => '40',
+        ], InputMode::Import, self::USER_KEY)));
         $id = $records->create($this->items->key, [
             $this->f['number']->key => '3.555',
             $this->f['date_time']->key => '2026-11-12',
-            $this->f['auto']->key => '40',
         ], InputMode::Import, self::USER_KEY);
         $record = $records->get($this->items->key, $id);
         self::assertNotNull($record);
         self::assertSame('2026-11-12T00:00:00', $record->values[$this->f['date_time']->key]);
         self::assertIsFloat($record->values[$this->f['number']->key]);
         self::assertEqualsWithDelta(3.56, $record->values[$this->f['number']->key], 0.0001);
-        self::assertSame(40, $record->values[$this->f['auto']->key]);
+        self::assertSame(1, $record->values[$this->f['auto']->key]);
+        $records->create($this->items->key, [$this->f['auto']->key => 40], InputMode::Canonical, self::USER_KEY);
 
         $canonical = $records->create($this->items->key, [
             $this->f['checkbox']->key => true,

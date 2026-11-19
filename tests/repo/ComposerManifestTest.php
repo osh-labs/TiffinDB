@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Repo;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Tests\Support\RepoFiles;
 
@@ -20,6 +21,14 @@ use TiffinDB\Tests\Support\RepoFiles;
 #[CoversNothing]
 final class ComposerManifestTest extends TestCase
 {
+    /** One exact release: digits only, and \z so a trailing newline is refused too. */
+    private const EXACT_PIN = '/^\d+\.\d+\.\d+\z/';
+
+    public static function isExactPin(mixed $constraint): bool
+    {
+        return is_string($constraint) && preg_match(self::EXACT_PIN, $constraint) === 1;
+    }
+
     /** @return array<string, mixed> */
     private static function manifest(): array
     {
@@ -71,8 +80,7 @@ final class ComposerManifestTest extends TestCase
                     continue;
                 }
                 ++$packages;
-                self::assertIsString($constraint, "{$section}.{$name}");
-                self::assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', $constraint, "{$section}.{$name} must be pinned exactly.");
+                self::assertTrue(self::isExactPin($constraint), "{$section}.{$name} must be pinned exactly.");
             }
         }
         self::assertSame(2, $packages);
@@ -113,5 +121,39 @@ final class ComposerManifestTest extends TestCase
                 "composer.json '{$field}' must not contain the legacy product's name.",
             );
         }
+    }
+
+    /** @return iterable<string, array{mixed, bool}> */
+    public static function pinFixtures(): iterable
+    {
+        yield 'exact' => ['5.2.2', true];
+        yield 'exact, two-digit parts' => ['12.5.43', true];
+        yield 'caret' => ['^5.2.2', false];
+        yield 'tilde' => ['~5.2.2', false];
+        yield 'wildcard' => ['*', false];
+        yield 'wildcard patch' => ['5.2.*', false];
+        yield 'lower bound' => ['>=5.2.2', false];
+        yield 'bounded range' => ['>=5.2.2 <5.3', false];
+        yield 'hyphen range' => ['5.2.2 - 5.3.0', false];
+        yield 'alternatives' => ['5.2.2 || 5.3.0', false];
+        yield 'not equal' => ['!=5.2.1', false];
+        yield 'equals operator' => ['==5.2.2', false];
+        yield 'v prefix' => ['v5.2.2', false];
+        yield 'two parts' => ['5.2', false];
+        yield 'four parts' => ['5.2.2.0', false];
+        yield 'branch' => ['dev-master', false];
+        yield 'stability flag' => ['5.2.2@dev', false];
+        yield 'pre-release' => ['5.2.2-beta1', false];
+        yield 'alias' => ['5.2.2 as 5.3.0', false];
+        yield 'trailing newline' => ["5.2.2\n", false];
+        yield 'surrounding space' => [' 5.2.2', false];
+        yield 'empty' => ['', false];
+        yield 'not a string' => [522, false];
+    }
+
+    #[DataProvider('pinFixtures')]
+    public function testThePinRuleRefusesRangesAndWildcards(mixed $constraint, bool $exact): void
+    {
+        self::assertSame($exact, self::isExactPin($constraint));
     }
 }

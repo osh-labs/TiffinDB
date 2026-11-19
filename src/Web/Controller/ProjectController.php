@@ -106,9 +106,16 @@ final class ProjectController
     /** @param array<string, string> $params */
     public function open(Request $request, array $params): Response
     {
-        $project = $this->context->services()->operations()->projects()->get($this->context->actor(), $params['project'] ?? '');
+        $actor = $this->context->actor();
+        $operations = $this->context->services()->operations();
+        $project = $operations->projects()->get($actor, $params['project'] ?? '');
+        $tables = $operations->schema()->tables($actor, $project->key);
+        if ($tables === []) {
+            return $this->context->redirect('/projects/' . $project->key . '/tables');
+        }
 
-        return $this->context->redirect('/projects/' . $project->key . '/tables');
+        // The first table by position (M2 spec part 2 section 2), with no list state.
+        return $this->context->redirect('/projects/' . $project->key . '/tables/' . $tables[0]->table->key);
     }
 
     /** @param array<string, string> $params */

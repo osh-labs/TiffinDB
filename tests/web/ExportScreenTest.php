@@ -148,6 +148,30 @@ final class ExportScreenTest extends TestCase
         self::assertFalse($response->isDownload());
     }
 
+    public function testADisabledFormatPostedWhileOthersAreOnGives422WithNoFile(): void
+    {
+        $this->ops->plugins()->disable($this->core->actor('admin'), 'export', 'csv');
+        foreach (
+            [
+                'disabled csv' => ['format' => 'export/csv', 'scope' => 'table', 'table' => $this->m2->items, 'setting' => ['export/csv' => ['record_ids' => '1']]],
+                'disabled csv, project scope' => ['format' => 'export/csv', 'scope' => 'project'],
+                'import plugin as export' => ['format' => 'import/csv', 'scope' => 'table', 'table' => $this->m2->items],
+            ] as $case => $post
+        ) {
+            $response = $this->post(self::ADMIN, $this->path(), $post);
+            self::assertSame(422, $response->status, $case);
+            self::assertFalse($response->isDownload(), $case);
+            self::assertNull($response->header('Content-Disposition'), $case);
+            $this->assertScreen($response->body);
+            $x = $this->xpath($response->body);
+            self::assertSame('Choose one of the options shown.', HtmlAssertions::text($response->body, '//p[@id="err-format"]'), $case);
+            self::assertStringEndsWith('#f-format', (string) $x->query('//div[@class="error-summary"]//a/@href')->item(0)?->nodeValue, $case);
+            self::assertSame(['export/xlsx', 'export/json'], $this->values($x, '//input[@name="format"]/@value'), $case);
+            self::assertSame(0, $this->exportFiles(), $case);
+            self::assertSame([], glob($this->core->temp->path('data') . '/staging/exports/*') ?: [], $case);
+        }
+    }
+
     // Downloads.
 
     public function testCsvDownloadOfOneTable(): void

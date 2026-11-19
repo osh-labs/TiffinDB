@@ -498,7 +498,20 @@ final class ResponseTest extends TestCase
         self::assertLessThan(array_search('done', $order, true), array_search('chunk', $order, true));
     }
 
-    public function testAfterSendRunsEvenWhenStreamingFails(): void
+    /** @return iterable<string, array{bool}> */
+    public static function getAndHead(): iterable
+    {
+        yield 'GET' => [false];
+        yield 'HEAD' => [true];
+    }
+
+    /**
+     * Review follow-up: a download whose file has gone by the time it is
+     * sent gets the fixed 500, with none of the download's headers, no
+     * PHP message, and the after-send callback still run once.
+     */
+    #[DataProvider('getAndHead')]
+    public function testAGoneFileSendsTheFallbackBeforeAnyDownloadHeader(bool $head): void
     {
         $path = $this->file('abc');
         $calls = 0;
@@ -506,19 +519,52 @@ final class ResponseTest extends TestCase
             ->withAfterSend(static function () use (&$calls): void {
                 $calls++;
             });
+        $response = (new SecurityHeaders())->apply($response);
         unlink($path);
 
+        $log = tempnam(sys_get_temp_dir(), 'tiffindb-log-');
+        self::assertIsString($log);
+        $previous = ini_set('error_log', $log);
         try {
-            set_error_handler(static fn (): bool => true);
-            try {
-                self::sendAndRecord($response, false);
-            } finally {
-                restore_error_handler();
-            }
-            self::fail('Streaming a missing file must fail.');
-        } catch (LogicException) {
-            self::assertSame(1, $calls);
+            $this->expectOutputString($head ? '' : Fallback::BODY);
+            $steps = self::sendAndRecord($response, $head);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            $logged = (string) file_get_contents($log);
+            unlink($log);
         }
+
+        self::assertSame(['status', 500], $steps[1]);
+        $headers = array_column(array_filter($steps, static fn (array $s): bool => $s[0] === 'header'), 1);
+        self::assertContains('Content-Type: text/plain; charset=utf-8', $headers);
+        self::assertContains('X-Content-Type-Options: nosniff', $headers);
+        foreach ($headers as $line) {
+            self::assertDoesNotMatchRegularExpression('/^(Content-Disposition|Content-Length):/i', (string) $line);
+        }
+        self::assertSame([], array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'));
+        self::assertSame(1, $calls);
+        self::assertStringContainsString('The download file cannot be opened.', $logged);
+        self::assertStringNotContainsString($path, $logged, 'The log line names no path.');
+    }
+
+    public function testAFileReplacedByALinkIsNotSent(): void
+    {
+        $path = $this->file('abc');
+        $response = Response::download($path, 'text/csv', 'a.csv', false);
+        unlink($path);
+        symlink('/etc/hostname', $path);
+
+        $log = tempnam(sys_get_temp_dir(), 'tiffindb-log-');
+        self::assertIsString($log);
+        $previous = ini_set('error_log', $log);
+        try {
+            $this->expectOutputString(Fallback::BODY);
+            $steps = self::sendAndRecord($response, false);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+            unlink($log);
+        }
+        self::assertSame(['status', 500], $steps[1]);
     }
 
     public function testOnlyADownloadTakesAnAfterSendCallback(): void

@@ -26,6 +26,7 @@ use TiffinDB\Tests\Support\RepoFiles;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Format;
 use TiffinDB\Web\Ids;
+use TiffinDB\Web\Request;
 use TiffinDB\Web\UploadedFile;
 use TiffinDB\Web\Strings;
 use TiffinDB\Web\UrlGenerator;
@@ -993,6 +994,31 @@ final class ComponentsTest extends TestCase
 
         self::assertSame('.csv" onclick="alert(1),<b>', self::one($xpath, '//input[@type="file"]')->getAttribute('accept'));
         self::assertFalse(self::one($xpath, '//input[@type="file"]')->hasAttribute('onclick'));
+    }
+
+    /** Review follow-up: field names with digits (and, with an id part, underscores) work from request to form. */
+    public function testFieldNamesWithDigitsWorkEndToEnd(): void
+    {
+        $files = Request::uploadedFiles(
+            ['file2' => ['name' => 'a.csv', 'tmp_name' => '/tmp/phpA', 'size' => 3, 'error' => UPLOAD_ERR_OK], 'data_file' => ['name' => 'b.csv', 'tmp_name' => '/tmp/phpB', 'size' => 3, 'error' => UPLOAD_ERR_OK]],
+            static fn (string $path): bool => true,
+        );
+        self::assertSame(['file2', 'data_file'], array_keys($files));
+
+        $xpath = self::xpath(self::renderM3(['file' => self::fileField(['name' => $files['file2']->field])]));
+        $input = self::one($xpath, '//input[@type="file"]');
+        self::assertSame('file2', $input->getAttribute('name'));
+        self::assertSame('f-file2', $input->getAttribute('id'));
+        self::assertSame('help-file2', $input->getAttribute('aria-describedby'));
+        self::assertSame('f-file2', self::one($xpath, '//label')->getAttribute('for'));
+        self::assertSame(Ids::make('f', 'file2'), $input->getAttribute('id'));
+
+        $xpath = self::xpath(self::renderM3(['file' => self::fileField(['name' => $files['data_file']->field, 'id' => 'datafile', 'problems' => ['x']])]));
+        $input = self::one($xpath, '//input[@type="file"]');
+        self::assertSame('data_file', $input->getAttribute('name'));
+        self::assertSame('f-datafile', $input->getAttribute('id'));
+        self::assertSame('help-datafile err-datafile', $input->getAttribute('aria-describedby'));
+        self::assertSame('f-datafile', self::one($xpath, '//label')->getAttribute('for'));
     }
 
     public function testFileFieldRefusesANameThatIsNotAnIdPart(): void

@@ -23,7 +23,8 @@ use LogicException;
  * public/index.php also loads this file directly (without the autoloader)
  * to report missing dependencies, so it must not need other classes to be
  * loaded: Cookie is only named in type checks and `instanceof`, which load
- * nothing.
+ * nothing, and Fallback only when a download's file has gone (index.php
+ * has loaded it by then).
  *
  * A download (M3 spec part 2 section 2.2) has a file body instead of a
  * string: download() checks the file and builds its headers, send()
@@ -307,6 +308,25 @@ final class Response
             };
         };
 
+        // A download's file is opened before any header is emitted, so a
+        // file that has gone fails cleanly: the fixed 500 goes out instead,
+        // with none of the download's headers (Content-Length,
+        // Content-Disposition) and no PHP message in the body.
+        $handle = null;
+        if ($this->file !== null) {
+            $handle = self::open($this->file);
+            if ($handle === null) {
+                try {
+                    Fallback::log(new LogicException('The download file cannot be opened.'));
+                    Fallback::response()->send($headRequest, $production ? null : $emit);
+                } finally {
+                    $this->runAfterSend();
+                }
+
+                return;
+            }
+        }
+
         $emit('remove', 'X-Powered-By');
         $emit('status', $this->status);
         foreach ($this->headers as $name => $value) {
@@ -324,18 +344,51 @@ final class Response
         }
 
         try {
-            if (!$headRequest) {
-                $this->stream($production, $emit);
+            if (!$headRequest && $handle !== null) {
+                $this->stream($handle, $production, $emit);
             }
         } finally {
-            if ($this->afterSend !== null) {
-                ($this->afterSend)();
+            if ($handle !== null) {
+                fclose($handle);
             }
+            $this->runAfterSend();
         }
     }
 
-    /** @param callable(string, string|int): void $emit */
-    private function stream(bool $production, callable $emit): void
+    private function runAfterSend(): void
+    {
+        if ($this->afterSend !== null) {
+            ($this->afterSend)();
+        }
+    }
+
+    /**
+     * The file opened for reading, or null when it is gone or unreadable.
+     * PHP's warning is kept out of the output (which would send the
+     * headers early) and out of the error log; the caller logs the failure.
+     *
+     * @return resource|null
+     */
+    private static function open(string $path)
+    {
+        if (!is_file($path) || is_link($path)) {
+            return null;
+        }
+        set_error_handler(static fn (): bool => true);
+        try {
+            $handle = fopen($path, 'rb');
+        } finally {
+            restore_error_handler();
+        }
+
+        return $handle === false ? null : $handle;
+    }
+
+    /**
+     * @param resource                           $handle
+     * @param callable(string, string|int): void $emit
+     */
+    private function stream($handle, bool $production, callable $emit): void
     {
         if ($production) {
             ignore_user_abort(true);
@@ -343,25 +396,17 @@ final class Response
                 ob_end_flush();
             }
         }
-        $handle = fopen((string) $this->file, 'rb');
-        if ($handle === false) {
-            throw new LogicException('The download file cannot be opened.');
-        }
-        try {
-            while (!feof($handle)) {
-                $chunk = fread($handle, self::CHUNK_BYTES);
-                if ($chunk === false || $chunk === '') {
-                    break;
-                }
-                if ($production) {
-                    echo $chunk;
-                    flush();
-                } else {
-                    $emit('chunk', $chunk);
-                }
+        while (!feof($handle)) {
+            $chunk = fread($handle, self::CHUNK_BYTES);
+            if ($chunk === false || $chunk === '') {
+                break;
             }
-        } finally {
-            fclose($handle);
+            if ($production) {
+                echo $chunk;
+                flush();
+            } else {
+                $emit('chunk', $chunk);
+            }
         }
     }
 

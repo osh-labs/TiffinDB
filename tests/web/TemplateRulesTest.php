@@ -39,8 +39,10 @@ use TiffinDB\Web\Ids;
  *   at the start of a URL attribute; no `<meta>` and no element of
  *   FORBIDDEN_ELEMENTS (iframe, object, embed, base, SVG animation, and
  *   the like). The exceptions are in the layout's `<head>` only: its two
- *   fixed meta elements (LAYOUT_METAS) and the two script elements,
- *   each at most once and exactly as in SCRIPT_ELEMENTS.
+ *   fixed meta elements (LAYOUT_METAS) and the three script elements,
+ *   each at most once and exactly as in SCRIPT_ELEMENTS. The only
+ *   `enctype` is the literal `enctype="multipart/form-data"` on a `form`
+ *   start tag (M3 spec part 2 section 5.2); no `formenctype`.
  * - Each `<?=` sits in element text, or is the whole value of a
  *   double-quoted attribute (not `class`, `id`, `style`, `on*`, or
  *   NO_OUTPUT_ATTRIBUTES such as `srcdoc` and SVG `to`, `from`, `values`,
@@ -113,25 +115,45 @@ final class TemplateRulesTest extends TestCase
         'problem.', 'error.', 'type.', 'setup.check.', 'notice.', 'wait.', 'date.', 'count.', 'role.',
         'currency.', 'file.type.', 'size.', 'sort.', 'lists.cond.', 'settings.theme.', 'settings.accent.',
         'settings.size.', 'settings.spacing.', 'settings.face.',
+        // M3 spec part 2 section 6 (P141).
+        'import.warning.', 'import.issue.', 'import.type.', 'plugins.status.', 'problem.archive.', 'steps.import.',
     ];
 
     /**
-     * Shared keys (strings/en/components.php, M2-WP5) printed by the record
-     * form partials of M2-WP7 (docs/design/m2/record.md section 2.1), which
-     * do not exist yet. Each counts as used until those partials land;
+     * Shared keys (strings/en/io.php and the other M3-WP3 strings) that only
+     * the import screens of M3-WP9 print (M3 spec part 2 section 6, P141).
+     * WP9 empties this list; nothing else changes these lines.
+     */
+    public const PENDING_IMPORT = [
+    ];
+
+    /**
+     * Shared keys that only the export, archive, and plugins screens of
+     * M3-WP10 print (P141). WP10 empties this list; nothing else changes
+     * these lines.
+     */
+    public const PENDING_EXPORT = [
+    ];
+
+    /**
+     * Keys that count as used until the templates that print them land;
      * testPendingKeysAreStillPending fails once a template uses one, so the
      * entry is then removed.
      */
-    public const PENDING_KEYS = [];
+    public const PENDING_KEYS = [...self::PENDING_IMPORT, ...self::PENDING_EXPORT];
 
     /** The show-password script element (M1 spec part 2 section 4.1). */
     public const SCRIPT_ELEMENT = '<script src="<?= $this->asset(\'js/show-password.js\') ?>" defer="defer"></script>';
 
-    /** The script elements allowed in the layout's head, each at most once (M2 spec part 2 section 3.3). */
+    /** The script elements allowed in the layout's head, each at most once (M2 spec part 2 section 3.3; M3 spec part 2 section 7). */
     public const SCRIPT_ELEMENTS = [
         self::SCRIPT_ELEMENT,
         '<script src="<?= $this->asset(\'js/settings-preview.js\') ?>" defer="defer"></script>',
+        '<script src="<?= $this->asset(\'js/import-continue.js\') ?>" defer="defer"></script>',
     ];
+
+    /** The one enctype a template may write, on a form start tag (M3 spec part 2 section 5.2). */
+    public const UPLOAD_ENCTYPE = 'enctype="multipart/form-data"';
 
     /** Templates that write the wordmark as live text (ADR 0008 decision 5). */
     public const WORDMARK_TEMPLATES = ['templates/partials/top-bar.php', 'templates/partials/lockup.php'];
@@ -415,6 +437,17 @@ final class TemplateRulesTest extends TestCase
             if (preg_match($pattern, $html) === 1) {
                 $problems[] = "Markup contains {$what}.";
             }
+        }
+
+        // enctype: the literal UPLOAD_ENCTYPE once in a form start tag, and
+        // nowhere else (no other value, element, or formenctype).
+        $withoutUploadForms = (string) preg_replace_callback(
+            '/<form\b[^>]*>/',
+            static fn (array $tag): string => (string) preg_replace('/(?<=\s)' . preg_quote(self::UPLOAD_ENCTYPE, '/') . '(?=[\s\/>])/', '', $tag[0], 1),
+            $html,
+        );
+        if (preg_match('/enctype/i', $withoutUploadForms) === 1) {
+            $problems[] = 'Markup contains an enctype other than ' . self::UPLOAD_ENCTYPE . ' on a form.';
         }
 
         // URL attributes: no character reference and no scheme before the
@@ -1062,6 +1095,23 @@ final class TemplateRulesTest extends TestCase
         self::assertSame([], $parameters['breadcrumb']);
         self::assertSame([], $parameters['footer']);
         self::assertSame([], $parameters['field-error']);
+        // The M3 shared partials (M3 spec part 2 section 5.1).
+        self::assertSame(['label'], $parameters['steps']);
+        self::assertSame(['help', 'label'], $parameters['file-field']);
+        self::assertSame(['heading', 'term'], $parameters['facts']);
+        self::assertSame(['heading', 'key'], $parameters['warning-panel']);
+        self::assertSame(['label', 'status'], $parameters['progress']);
+        self::assertSame(['label', 'working'], $parameters['continue-form']);
+    }
+
+    /** P141: the pending lists are the two package lists, and hold only existing keys. */
+    public function testPendingKeysAreThePackageLists(): void
+    {
+        self::assertSame([...self::PENDING_IMPORT, ...self::PENDING_EXPORT], self::PENDING_KEYS);
+        self::assertSame([], array_intersect(self::PENDING_IMPORT, self::PENDING_EXPORT));
+        $source = RepoFiles::read('tests/web/TemplateRulesTest.php');
+        self::assertMatchesRegularExpression('/^    public const PENDING_IMPORT = \[\n(?:        \'[a-z0-9._-]+\',\n)*    \];$/m', $source);
+        self::assertMatchesRegularExpression('/^    public const PENDING_EXPORT = \[\n(?:        \'[a-z0-9._-]+\',\n)*    \];$/m', $source);
     }
 
     public function testKeysPassedToPartialsCountAsUsed(): void
@@ -1409,6 +1459,50 @@ final class TemplateRulesTest extends TestCase
         yield 'preview script twice in the layout' => [$head($preview . "\n" . $preview), $layout];
         yield 'both scripts and an inline one' => [$head(self::SCRIPT_ELEMENT . "\n" . $preview . "\n<script>alert(1)</script>"), $layout];
         yield 'preview script in the layout body' => ["<head>\n</head>\n<body>\n" . $preview . "\n</body>", $layout];
+
+        // M3 rules (M3 spec part 2 sections 5.2 and 7).
+        $continue = self::SCRIPT_ELEMENTS[2];
+        yield 'continue script outside the layout' => [$continue, $page];
+        yield 'continue script in a partial' => [$continue, 'templates/partials/continue-form.php'];
+        yield 'continue script twice in the layout' => [$head($continue . "\n" . $continue), $layout];
+        yield 'continue script in the layout body' => ["<head>\n</head>\n<body>\n" . $continue . "\n</body>", $layout];
+        yield 'continue script without defer' => [$head('<script src="<?= $this->asset(\'js/import-continue.js\') ?>"></script>'), $layout];
+        yield 'all three scripts and an inline one' => [$head(implode("\n", self::SCRIPT_ELEMENTS) . "\n<script>alert(1)</script>"), $layout];
+        yield 'enctype text/plain' => ['<form method="post" action="/x" enctype="text/plain"></form>', $page];
+        yield 'enctype url-encoded' => ['<form method="post" action="/x" enctype="application/x-www-form-urlencoded"></form>', $page];
+        yield 'enctype in upper case' => ['<form method="post" action="/x" ENCTYPE="multipart/form-data"></form>', $page];
+        yield 'enctype value in upper case' => ['<form method="post" action="/x" enctype="MULTIPART/FORM-DATA"></form>', $page];
+        yield 'enctype single-quoted' => ["<form method=\"post\" action=\"/x\" enctype='multipart/form-data'></form>", $page];
+        yield 'enctype unquoted' => ['<form method="post" action="/x" enctype=multipart/form-data></form>', $page];
+        yield 'enctype with spaces around =' => ['<form method="post" action="/x" enctype = "multipart/form-data"></form>', $page];
+        yield 'enctype on a div' => ['<div enctype="multipart/form-data"></div>', $page];
+        yield 'enctype on an input' => ['<form method="post" action="/x"><input enctype="multipart/form-data" /></form>', $page];
+        yield 'formenctype on a button' => ['<form method="post" action="/x"><button type="submit" formenctype="text/plain">x</button></form>', $page];
+        yield 'formenctype multipart on a button' => ['<form method="post" action="/x"><button type="submit" formenctype="multipart/form-data">x</button></form>', $page];
+        yield 'enctype from output' => ['<form method="post" action="/x" enctype="<?= $this->e($data[\'t\']) ?>"></form>', $page];
+        yield 'enctype with output after it' => ['<form method="post" action="/x" enctype="multipart/form-data<?= $this->e($data[\'t\']) ?>"></form>', $page];
+        yield 'enctype with output before it' => ['<form method="post" action="/x" enctype="<?= $this->e($data[\'t\']) ?>multipart/form-data"></form>', $page];
+        yield 'enctype twice on a form' => ['<form method="post" action="/x" enctype="multipart/form-data" enctype="text/plain"></form>', $page];
+        yield 'enctype split by an empty PHP block' => ['<form method="post" action="/x" enc<?php ?>type="text/plain"></form>', $page];
+    }
+
+    public function testScannerAcceptsTheM3Forms(): void
+    {
+        $page = self::HEADER . <<<'HTML'
+            <form method="post" action="<?= $this->url('/projects') ?>" enctype="multipart/form-data">
+            <?= $this->partial('csrf') ?>
+            </form>
+            <form class="continue-form" method="post" action="<?= $this->url('/projects') ?>" data-auto-continue="1">
+            <button class="button" type="submit" data-working="<?= $this->t('k') ?>"><?= $this->t('k') ?></button>
+            </form>
+            <progress aria-labelledby="progress-label" max="<?= $this->e($data['total']) ?>" value="<?= $this->e($data['done']) ?>"></progress>
+            <input type="file" accept="<?= $this->e($data['accept']) ?>" required="required" />
+            HTML;
+        self::assertSame([], self::violations($page, self::PAGE));
+
+        $all = "<head>\n" . implode("\n", self::SCRIPT_ELEMENTS) . "\n</head>";
+        self::assertSame([], self::violations(self::HEADER . $all, self::LAYOUT));
+        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENTS[2] . "\n</head>", self::LAYOUT));
     }
 
     public function testScannerAcceptsTheM2Forms(): void
@@ -1462,7 +1556,7 @@ final class TemplateRulesTest extends TestCase
     public function testTheComponentFixturesFollowTheRules(): void
     {
         $strings = self::strings();
-        foreach (['components', 'notices', 'form-actions', 'm2-components'] as $name) {
+        foreach (['components', 'notices', 'form-actions', 'm2-components', 'm3-components'] as $name) {
             $file = "tests/web/fixtures/templates/pages/{$name}.php";
             self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
             foreach (self::literalKeys(RepoFiles::read($file)) as $key) {

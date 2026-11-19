@@ -13,9 +13,16 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Web\Request;
+use TiffinDB\Web\UploadedFile;
+use TiffinDB\Web\UploadLimits;
 
-/** T-WEB-2, T-WEB-13: path and base-path detection, decoding, malformed input; POST, cookies, and server values. */
+/**
+ * T-WEB-2, T-WEB-13: path and base-path detection, decoding, malformed input; POST, cookies, and server values.
+ * T-WEB-40 (M3 spec part 2 section 2.1): uploaded files, the declared length, and the upload limits.
+ */
 #[CoversClass(Request::class)]
+#[CoversClass(UploadedFile::class)]
+#[CoversClass(UploadLimits::class)]
 final class RequestTest extends TestCase
 {
     /** @return array<string, array{string, string, string, string, bool}> */
@@ -464,5 +471,309 @@ final class RequestTest extends TestCase
     {
         self::assertSame('https://example.test', (new Request('POST', '/', origin: 'https://example.test'))->origin);
         self::assertNull((new Request('POST', '/'))->origin);
+    }
+
+    // T-WEB-40: uploads (M3 spec part 2 section 2.1).
+
+    /** A temporary file standing in for one PHP received; removed in tearDown(). */
+    private ?string $temp = null;
+
+    protected function tearDown(): void
+    {
+        if ($this->temp !== null && is_file($this->temp)) {
+            unlink($this->temp);
+        }
+        $this->temp = null;
+    }
+
+    private function tempFile(): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'tiffindb-upload-');
+        self::assertIsString($path);
+        file_put_contents($path, "name,room\nExample lamp,Hall\n");
+        $this->temp = $path;
+
+        return $path;
+    }
+
+    /** @return array<string, mixed> */
+    private static function entry(string $name, string $tmp, int|string $size = 28, int|string $error = UPLOAD_ERR_OK): array
+    {
+        return ['name' => $name, 'type' => 'text/csv', 'tmp_name' => $tmp, 'size' => $size, 'error' => $error, 'full_path' => $name];
+    }
+
+    public function testWellFormedSingleFilesAreBuilt(): void
+    {
+        $tmp = $this->tempFile();
+        $files = Request::uploadedFiles(
+            ['file' => self::entry('inventory.csv', $tmp), 'other_file' => self::entry('b.csv', $tmp, '12', '0')],
+            static fn (string $path): bool => $path === $tmp,
+        );
+
+        self::assertSame(['file', 'other_file'], array_keys($files));
+        $file = $files['file'];
+        self::assertSame('file', $file->field);
+        self::assertSame('inventory.csv', $file->clientName);
+        self::assertSame(28, $file->size);
+        self::assertSame(UPLOAD_ERR_OK, $file->error);
+        self::assertSame($tmp, $file->tmpPath);
+        self::assertNull($file->problem());
+        self::assertSame(12, $files['other_file']->size);
+    }
+
+    /** @return iterable<string, array{array-key, mixed}> */
+    public static function droppedEntries(): iterable
+    {
+        $ok = ['name' => 'a.csv', 'type' => 'text/csv', 'tmp_name' => '/tmp/phpUPLOAD', 'size' => 1, 'error' => 0];
+        yield 'array-shaped entry (name="file[]")' => ['file', ['name' => ['a.csv'], 'type' => ['text/csv'], 'tmp_name' => ['/tmp/phpUPLOAD'], 'size' => [1], 'error' => [0]]];
+        yield 'nested array name' => ['file', ['name' => ['x' => 'a.csv']] + $ok];
+        yield 'array tmp_name' => ['file', ['tmp_name' => ['/tmp/phpUPLOAD']] + $ok];
+        yield 'array size' => ['file', ['size' => [1]] + $ok];
+        yield 'array error' => ['file', ['error' => [0]] + $ok];
+        yield 'missing name' => ['file', array_diff_key($ok, ['name' => true])];
+        yield 'missing tmp_name' => ['file', array_diff_key($ok, ['tmp_name' => true])];
+        yield 'missing size' => ['file', array_diff_key($ok, ['size' => true])];
+        yield 'missing error' => ['file', array_diff_key($ok, ['error' => true])];
+        yield 'negative size' => ['file', ['size' => -1] + $ok];
+        yield 'size as text' => ['file', ['size' => '1kB'] + $ok];
+        yield 'float size' => ['file', ['size' => 1.5] + $ok];
+        yield 'unknown error code' => ['file', ['error' => 9] + $ok];
+        yield 'error as text' => ['file', ['error' => 'none'] + $ok];
+        yield 'not an array' => ['file', 'a.csv'];
+        yield 'upper-case field' => ['File', $ok];
+        yield 'field with a dash' => ['the-file', $ok];
+        yield 'field with brackets' => ['file[0]', $ok];
+        yield 'field with markup' => ['<b>', $ok];
+        yield 'empty field' => ['', $ok];
+        yield 'long field' => [str_repeat('f', 33), $ok];
+        yield 'numeric field' => [0, $ok];
+    }
+
+    #[DataProvider('droppedEntries')]
+    public function testMalformedEntriesAreDropped(int|string $field, mixed $entry): void
+    {
+        self::assertSame([], Request::uploadedFiles([$field => $entry], static fn (string $path): bool => true));
+    }
+
+    public function testATemporaryPathPhpDidNotReceiveIsNotUsed(): void
+    {
+        $tmp = $this->tempFile();
+        $refused = Request::uploadedFiles(['file' => self::entry('a.csv', $tmp)], static fn (string $path): bool => false);
+        self::assertNull($refused['file']->tmpPath);
+        self::assertSame('problem.upload.failed', $refused['file']->problem());
+
+        // fromGlobals() asks is_uploaded_file(), which no file made by a
+        // test (or by an attacker naming a path) passes.
+        $request = Request::fromGlobals(['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/'], [], [], [], [
+            'file' => self::entry('a.csv', $tmp),
+            'passwd' => self::entry('passwd', '/etc/passwd'),
+        ]);
+        self::assertNull($request->file('file')?->tmpPath);
+        self::assertSame('problem.upload.failed', $request->file('file')?->problem());
+        self::assertNull($request->file('passwd')?->tmpPath);
+        self::assertNull($request->file('missing'));
+    }
+
+    public function testTheCheckerIsNotAskedWhenPhpReportsAnError(): void
+    {
+        $asked = [];
+        $files = Request::uploadedFiles(
+            ['file' => self::entry('a.csv', '/tmp/phpUPLOAD', 0, UPLOAD_ERR_PARTIAL), 'none' => self::entry('', '', 0, UPLOAD_ERR_NO_FILE)],
+            static function (string $path) use (&$asked): bool {
+                $asked[] = $path;
+
+                return true;
+            },
+        );
+
+        self::assertSame([], $asked);
+        self::assertNull($files['file']->tmpPath);
+        self::assertSame('problem.upload.failed', $files['file']->problem());
+        self::assertSame('problem.upload.missing', $files['none']->problem());
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function uploadErrors(): iterable
+    {
+        yield 'no file' => [UPLOAD_ERR_NO_FILE, 'problem.upload.missing'];
+        yield 'over upload_max_filesize' => [UPLOAD_ERR_INI_SIZE, 'problem.upload.too_large'];
+        yield 'over the form limit' => [UPLOAD_ERR_FORM_SIZE, 'problem.upload.too_large'];
+        yield 'partial' => [UPLOAD_ERR_PARTIAL, 'problem.upload.failed'];
+        yield 'no temporary folder' => [UPLOAD_ERR_NO_TMP_DIR, 'problem.upload.failed'];
+        yield 'cannot write' => [UPLOAD_ERR_CANT_WRITE, 'problem.upload.failed'];
+        yield 'stopped by an extension' => [UPLOAD_ERR_EXTENSION, 'problem.upload.failed'];
+    }
+
+    #[DataProvider('uploadErrors')]
+    public function testEachUploadErrorHasItsProblem(int $error, string $key): void
+    {
+        $file = new UploadedFile('file', 'a.csv', 0, $error, '/tmp/phpUPLOAD');
+
+        self::assertSame($key, $file->problem());
+        self::assertNull($file->tmpPath, 'A failed upload never carries a path.');
+    }
+
+    public function testASuccessWithoutAPathHasFailed(): void
+    {
+        self::assertSame('problem.upload.failed', (new UploadedFile('file', 'a.csv', 3, UPLOAD_ERR_OK, null))->problem());
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function clientNames(): iterable
+    {
+        yield 'plain' => ['inventory.csv', 'inventory.csv'];
+        yield 'unix path' => ['../../etc/passwd', 'passwd'];
+        yield 'windows path' => ['C:\\Users\\example\\Desktop\\inventory.csv', 'inventory.csv'];
+        yield 'mixed separators' => ['a/b\\c/d.csv', 'd.csv'];
+        yield 'trailing slash' => ['folder/', ''];
+        yield 'markup kept as text' => ['<img src=x onerror=alert(1)>.csv', '<img src=x onerror=alert(1)>.csv'];
+        yield 'quotes and semicolons kept as text' => ['"a";b.csv', '"a";b.csv'];
+        yield 'dot dot' => ['..', '..'];
+        yield 'invalid UTF-8 kept for the core to clean' => ["a\xFF.csv", "a\xFF.csv"];
+    }
+
+    #[DataProvider('clientNames')]
+    public function testTheClientNameIsTheLastPathPartAsText(string $sent, string $kept): void
+    {
+        $files = Request::uploadedFiles(['file' => self::entry($sent, '/tmp/phpUPLOAD')], static fn (string $path): bool => true);
+
+        self::assertSame($kept, $files['file']->clientName);
+        self::assertSame($kept, UploadedFile::baseName($sent));
+    }
+
+    /** @return iterable<string, array{string, string, int, int, ?string}> */
+    public static function badUploadedFiles(): iterable
+    {
+        yield 'bad field' => ['File', 'a', 0, 0, null];
+        yield 'negative size' => ['file', 'a', -1, 0, null];
+        yield 'negative error' => ['file', 'a', 0, -1, null];
+        yield 'unknown error' => ['file', 'a', 0, 9, null];
+        yield 'empty path' => ['file', 'a', 0, 0, ''];
+        yield 'path with NUL' => ['file', 'a', 0, 0, "/tmp/a\0b"];
+    }
+
+    #[DataProvider('badUploadedFiles')]
+    public function testUploadedFileRefusesBadValues(string $field, string $name, int $size, int $error, ?string $path): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new UploadedFile($field, $name, $size, $error, $path);
+    }
+
+    public function testTheConstructorTakesFilesMappedByField(): void
+    {
+        $tmp = $this->tempFile();
+        $file = new UploadedFile('file', 'a.csv', 28, UPLOAD_ERR_OK, $tmp);
+        $request = new Request('POST', '/', files: ['file' => $file], contentLength: 400);
+
+        self::assertSame($file, $request->file('file'));
+        self::assertSame($tmp, $request->file('file')?->tmpPath, 'The test seam keeps any temporary path.');
+        self::assertSame(400, $request->contentLength);
+        self::assertSame([], (new Request('GET', '/'))->files);
+        self::assertNull((new Request('GET', '/'))->contentLength);
+    }
+
+    public function testTheConstructorRefusesAFileUnderAnotherField(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new Request('POST', '/', files: ['other' => new UploadedFile('file', 'a.csv', 0, UPLOAD_ERR_NO_FILE, null)]);
+    }
+
+    public function testTheConstructorRefusesANegativeLength(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        new Request('POST', '/', contentLength: -1);
+    }
+
+    /** @return iterable<string, array{mixed, ?int}> */
+    public static function contentLengths(): iterable
+    {
+        yield 'digits' => ['1048576', 1048576];
+        yield 'zero' => ['0', 0];
+        yield 'int' => [42, 42];
+        yield 'absent' => [null, null];
+        yield 'empty' => ['', null];
+        yield 'negative' => ['-1', null];
+        yield 'negative int' => [-1, null];
+        yield 'sign' => ['+5', null];
+        yield 'spaces' => [' 5', null];
+        yield 'hex' => ['0x10', null];
+        yield 'decimal' => ['1.5', null];
+        yield 'too long' => [str_repeat('9', 19), null];
+        yield 'list' => [['5'], null];
+    }
+
+    #[DataProvider('contentLengths')]
+    public function testContentLengthIsDigitsOnly(mixed $value, ?int $expected): void
+    {
+        $server = ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/'];
+        if ($value !== null) {
+            $server['CONTENT_LENGTH'] = $value;
+        }
+
+        self::assertSame($expected, Request::fromGlobals($server, [], [], [])->contentLength);
+    }
+
+    // Upload limits (sections 2.1 and 2.3).
+
+    /** @return iterable<string, array{string|false, ?int}> */
+    public static function iniQuantities(): iterable
+    {
+        yield 'megabytes' => ['2M', 2097152];
+        yield 'lower-case suffix' => ['8m', 8388608];
+        yield 'kilobytes' => ['512K', 524288];
+        yield 'gigabytes' => ['1G', 1073741824];
+        yield 'bytes' => ['1000', 1000];
+        yield 'spaces' => [' 64M ', 67108864];
+        yield 'leading zeros' => ['008M', 8388608];
+        yield 'zero means no limit' => ['0', null];
+        yield 'minus one means no limit' => ['-1', null];
+        yield 'empty' => ['', null];
+        yield 'absent setting' => [false, null];
+        yield 'unknown suffix' => ['5T', null];
+        yield 'words' => ['lots', null];
+        yield 'two suffixes' => ['1MK', null];
+        yield 'huge' => ['99999999999999999999G', PHP_INT_MAX];
+        yield 'overflow on the factor' => ['9223372036854775807K', PHP_INT_MAX];
+    }
+
+    #[DataProvider('iniQuantities')]
+    public function testIniQuantitiesAreParsed(string|false $value, ?int $expected): void
+    {
+        self::assertSame($expected, UploadLimits::parse($value));
+    }
+
+    public function testTheEffectiveLimitIsTheSmallest(): void
+    {
+        $limits = new UploadLimits(2097152, 8388608);
+        self::assertSame(2097152, $limits->effective());
+        self::assertSame(2097152, $limits->effective(67108864));
+        self::assertSame(1000, $limits->effective(1000));
+        self::assertSame(8388608, $limits->postMaxBytes());
+
+        self::assertSame(1048576, (new UploadLimits(null, 1048576))->effective(67108864));
+        self::assertSame(67108864, (new UploadLimits(null, null))->effective(67108864));
+        self::assertSame(PHP_INT_MAX, (new UploadLimits(null, null))->effective());
+        self::assertNull((new UploadLimits(5, null))->postMaxBytes());
+    }
+
+    public function testTheRunningPhpLimitsAreRead(): void
+    {
+        $limits = UploadLimits::fromIni();
+        self::assertSame(UploadLimits::parse(ini_get('upload_max_filesize')), $limits->uploadMaxFilesize);
+        self::assertSame(UploadLimits::parse(ini_get('post_max_size')), $limits->postMaxSize);
+    }
+
+    public function testLimitsRefuseNonPositiveFigures(): void
+    {
+        foreach ([[0, null], [null, 0], [-5, 5]] as [$upload, $post]) {
+            try {
+                new UploadLimits($upload, $post);
+                self::fail('Accepted a non-positive limit.');
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        $this->expectException(InvalidArgumentException::class);
+        (new UploadLimits(null, null))->effective(0);
     }
 }

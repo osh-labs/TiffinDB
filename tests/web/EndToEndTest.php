@@ -38,6 +38,7 @@ use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\Services;
+use TiffinDB\Web\UploadLimits;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
@@ -869,6 +870,11 @@ final class NoProbeServices implements Services
     public function now(): DateTimeImmutable
     {
         return $this->inner->now();
+    }
+
+    public function uploadLimits(): UploadLimits
+    {
+        return $this->inner->uploadLimits();
     }
 
     public function close(): void

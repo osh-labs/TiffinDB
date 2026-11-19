@@ -10,8 +10,9 @@
  *   then `main` in the shape `layout` names (M2 spec part 2 section 3.2):
  *   absent `main.page`; `list` `div.app-columns` holding the sidebar
  *   (`sidebar`, from Sidebar::build()) and `main.page.page-list`; `record`,
- *   `record-narrow`, and `settings` the record and settings widths; then
- *   the footer.
+ *   `record-narrow`, and `settings` the record and settings widths; `io`
+ *   the import, export, archive, and plugins pages (`main.page.page-io`,
+ *   M3 spec part 2 section 4); then the footer.
  * - Plain shell (`shell` null): lockup header, `main.page.page-plain` (or
  *   `main.page` when `wide` is true), centred footer.
  *
@@ -22,9 +23,10 @@
  * (a restore path Shell has checked) gets the Undo form.
  *
  * Data (see View for the full contract): `title`, `documentTitle`,
- * `hasError`, `sourceUrl`, `shell`, `wide`, `script` (`show-password` or
- * `settings-preview`), `layout`, `sidebar`, `search` (the top bar's project
- * search), `breadcrumb`, `problems`. Output is HTML5 in XML-well-formed syntax (ADR 0008
+ * `hasError`, `sourceUrl`, `shell`, `wide`, `script` (`show-password`,
+ * `settings-preview`, or `import-continue`, M3 spec part 2 section 7),
+ * `layout`, `sidebar`, `search` (the top bar's project search),
+ * `breadcrumb`, `problems`. Output is HTML5 in XML-well-formed syntax (ADR 0008
  * decision 4).
  */
 
@@ -50,6 +52,8 @@ declare(strict_types=1);
 <script src="<?= $this->asset('js/show-password.js') ?>" defer="defer"></script>
 <?php elseif (($data['script'] ?? null) === 'settings-preview') : ?>
 <script src="<?= $this->asset('js/settings-preview.js') ?>" defer="defer"></script>
+<?php elseif (($data['script'] ?? null) === 'import-continue') : ?>
+<script src="<?= $this->asset('js/import-continue.js') ?>" defer="defer"></script>
 <?php endif; ?>
 </head>
 <body>
@@ -67,6 +71,8 @@ declare(strict_types=1);
 <main id="main" class="page page-record page-record-narrow" tabindex="-1">
 <?php elseif (($data['layout'] ?? null) === 'settings') : ?>
 <main id="main" class="page page-settings" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'io') : ?>
+<main id="main" class="page page-io" tabindex="-1">
 <?php else : ?>
 <main id="main" class="page" tabindex="-1">
 <?php endif; ?>

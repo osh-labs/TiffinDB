@@ -327,7 +327,11 @@ final class ShellTest extends TestCase
         };
 
         self::assertSame(
-            ['/projects' => [self::string('shell.nav.projects'), 'top-pill'], '/admin/people' => [self::string('shell.nav.people'), 'top-pill']],
+            [
+                '/projects' => [self::string('shell.nav.projects'), 'top-pill'],
+                '/admin/people' => [self::string('shell.nav.people'), 'top-pill'],
+                '/admin/plugins' => [self::string('shell.nav.plugins'), 'top-pill'],
+            ],
             $links(self::render('error', self::errorData(self::shell(true)))),
         );
         self::assertSame(
@@ -344,6 +348,8 @@ final class ShellTest extends TestCase
         yield 'account' => ['account', true, ['/account/password']];
         yield 'none' => ['', true, []];
         yield 'people, as a Member' => ['people', false, []];
+        yield 'plugins' => ['plugins', true, ['/admin/plugins']];
+        yield 'plugins, as a Member' => ['plugins', false, []];
         yield 'account, as a Member' => ['account', false, ['/account/password']];
     }
 
@@ -568,6 +574,14 @@ final class ShellTest extends TestCase
             self::assertSame('/assets/js/settings-preview.js?v=' . self::VERSION, self::element($xpath, '/html/head/script')->getAttribute('src'));
             self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
             HtmlAssertions::assertNoInlineCode($preview, self::sourceUrl());
+
+            // M3 spec part 2 section 7: the third script.
+            $continue = self::render('components', self::componentData($shell, ['script' => 'import-continue']));
+            $xpath = self::xpath($continue);
+            self::assertSame(1, $xpath->query('//script')->length, 'Exactly one script element.');
+            self::assertSame('/assets/js/import-continue.js?v=' . self::VERSION, self::element($xpath, '/html/head/script')->getAttribute('src'));
+            self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
+            HtmlAssertions::assertNoInlineCode($continue, self::sourceUrl());
         }
     }
 
@@ -914,7 +928,7 @@ final class ShellTest extends TestCase
     /** @return iterable<string, array{string, bool}> */
     public static function displayLinkAreas(): iterable
     {
-        foreach (['projects', 'people', 'account', 'settings', ''] as $nav) {
+        foreach (['projects', 'people', 'plugins', 'account', 'settings', ''] as $nav) {
             foreach ([true, false] as $admin) {
                 yield ($nav === '' ? 'none' : $nav) . ($admin ? ', Admin' : ', Member') => [$nav, $admin];
             }
@@ -1107,6 +1121,54 @@ final class ShellTest extends TestCase
         self::assertSame(0, $none->query('//nav[@class="sidebar"]//*[@aria-current]')->length, 'No table is current on the search page.');
     }
 
+    /** M3 spec part 2 section 4: the Data group only with canImportExport, never current. */
+    public function testSidebarDataGroupOnlyWithImportAndExport(): void
+    {
+        $tables = [new TableSummary(new TableDef('mnopqrstuvwx', 'Items', 'item', 1, null), 3, 1234)];
+        self::assertNull(Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, null)['data']);
+        self::assertNull(Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, null, false)['data']);
+        $sidebar = Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, 'mnopqrstuvwx', true);
+        self::assertSame(['importPath' => '/projects/abcdefghijkl/import', 'exportPath' => '/projects/abcdefghijkl/export'], $sidebar['data']);
+
+        $xpath = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => $sidebar], 'light', '/base'));
+        $parts = [];
+        foreach ($xpath->query('//nav[@class="sidebar"]/*') as $child) {
+            /** @var DOMElement $child */
+            $parts[] = $child->nodeName . '.' . $child->getAttribute('class');
+        }
+        self::assertSame(['div.sidebar-project', 'div.sidebar-group', 'div.sidebar-group', 'div.sidebar-foot'], $parts, 'The Data group sits after Tables, before the trash line.');
+        self::assertSame(self::string('sidebar.data'), self::text(self::element($xpath, '//div[@class="sidebar-group"][2]/h2[@class="sidebar-heading"]')));
+        $links = [];
+        foreach ($xpath->query('//div[@class="sidebar-group"][2]/a') as $a) {
+            /** @var DOMElement $a */
+            $links[] = [$a->getAttribute('class'), $a->getAttribute('href'), self::text($a), $a->hasAttribute('aria-current')];
+        }
+        self::assertSame([
+            ['sidebar-link', '/base/projects/abcdefghijkl/import', self::string('sidebar.import'), false],
+            ['sidebar-link', '/base/projects/abcdefghijkl/export', self::string('sidebar.export'), false],
+        ], $links);
+
+        $without = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => self::sidebar()]));
+        self::assertSame(1, $without->query('//nav[@class="sidebar"]/div[@class="sidebar-group"]')->length);
+        self::assertSame(0, $without->query('//a[contains(@href, "/import") or contains(@href, "/export")]')->length);
+    }
+
+    /** M3 spec part 2 section 4: the io layout. */
+    public function testIoLayout(): void
+    {
+        $xpath = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'io']));
+        $main = self::element($xpath, '//main');
+        self::assertSame('page page-io', $main->getAttribute('class'));
+        self::assertSame('main', $main->getAttribute('id'));
+        self::assertSame(0, $xpath->query('//nav[@class="sidebar"]')->length);
+    }
+
+    public function testShellRefusesAnUnknownArea(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new Shell(self::NAME, 'EA', true, 'import', null);
+    }
+
     public function testSidebarBuildRefusesBadKeys(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -1199,6 +1261,56 @@ final class ShellTest extends TestCase
             }
         }
         self::assertSame([], $missing, 'Classes of docs/design/m2/components.md missing from app.css.');
+    }
+
+    /** M3 spec part 2 section 11: every class of docs/design/m3/components.md exists in app.css. */
+    public function testEveryM3ComponentClassExistsInTheStylesheet(): void
+    {
+        $doc = RepoFiles::read('docs/design/m3/components.md');
+        preg_match_all('/`\.([a-z][a-z0-9-]*)/', $doc, $m);
+        // `.reduce-motion` in section 8 names the reduce setting, whose class is the M1 `.m-reduce`.
+        $classes = array_values(array_diff(array_unique($m[1]), ['reduce-motion']));
+        self::assertGreaterThan(25, count($classes), 'The M3 component list was read.');
+
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        $missing = [];
+        foreach ($classes as $class) {
+            if (preg_match('/\.' . preg_quote($class, '/') . '(?![a-z0-9_-])[^{}]*\{/', $css) !== 1) {
+                $missing[] = $class;
+            }
+        }
+        self::assertSame([], $missing, 'Classes of docs/design/m3/components.md missing from app.css.');
+    }
+
+    /** M3 spec part 2 section 7: import-continue.js. */
+    public function testTheContinueScriptFollowsItsRules(): void
+    {
+        $js = RepoFiles::read('public/assets/js/import-continue.js');
+
+        self::assertStringStartsWith("// SPDX-License-Identifier: AGPL-3.0-or-later\n// Copyright (C) TiffinDB contributors\n", $js);
+        self::assertMatchesRegularExpression("/^\\(function \\(\\) \\{\n  'use strict';$/m", $js, 'Strict mode inside an IIFE.');
+        self::assertStringEndsWith("}());\n", $js);
+        $code = (string) preg_replace(['#/\*.*?\*/#s', '#^\s*//.*$#m'], '', $js);
+        foreach (
+            [
+                'innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval', 'Function(', 'setInterval',
+                'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'Storage', 'cookie',
+                'indexedDB', '.style', 'setAttribute', 'className', 'location', 'http', 'src', 'href', 'postMessage',
+                '.submit(', 'classList', 'createElement', 'appendChild',
+            ] as $forbidden
+        ) {
+            self::assertStringNotContainsString($forbidden, $code, "The script must not use {$forbidden}.");
+        }
+        self::assertStringContainsString("querySelectorAll('form[data-auto-continue=\"1\"]')", $code);
+        self::assertStringContainsString('forms.length !== 1', $code, 'Only when exactly one marked form exists.');
+        self::assertStringContainsString("document.visibilityState !== 'visible'", $code);
+        self::assertStringContainsString("getAttribute('data-working')", $code);
+        self::assertStringContainsString('button.disabled = true;', $code);
+        self::assertStringContainsString('form.requestSubmit();', $code);
+        self::assertStringContainsString('var DELAY = 400;', $code);
+        self::assertSame(1, substr_count($code, 'setTimeout('), 'One timer.');
+        self::assertSame(1, substr_count($code, 'textContent'), 'Only the status text changes.');
+        self::assertSame(1, substr_count($code, "addEventListener('DOMContentLoaded'"));
     }
 
     public function testPreviewSizesHaveOneRulePerRootSize(): void
@@ -1381,7 +1493,7 @@ final class ShellTest extends TestCase
 
     public function testInlineCodeAssertionAcceptsTheScript(): void
     {
-        foreach (['show-password', 'settings-preview'] as $name) {
+        foreach (['show-password', 'settings-preview', 'import-continue'] as $name) {
             $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/{$name}.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
             HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
         }

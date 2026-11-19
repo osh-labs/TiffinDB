@@ -9,7 +9,9 @@
  *
  * Data from the kernel: `status`, `title` (plain text, used by the layout),
  * `titleKey` and `bodyKey` (string keys such as error.<status>.title and
- * .body, error.csrf.*, error.busy.*, error.unavailable.<reason>.*).
+ * .body, error.csrf.*, error.busy.*, error.unavailable.<reason>.*), and
+ * optional `bodyParams` (the body's parameters: `max` for the 413 page,
+ * error.too_large.*, M3 spec part 2 section 2.3).
  */
 
 declare(strict_types=1);
@@ -17,6 +19,6 @@ declare(strict_types=1);
 ?>
 <div class="error-head">
 <h1><?= $this->t($data['titleKey']) ?></h1>
-<p class="lead"><?= $this->t($data['bodyKey']) ?></p>
+<p class="lead"><?= $this->t($data['bodyKey'], $data['bodyParams'] ?? []) ?></p>
 </div>
 <p class="back"><a class="back-link" href="<?= $this->url('/') ?>"><?= $this->t('error.back') ?></a></p>

@@ -26,6 +26,7 @@ use TiffinDB\Tests\Support\RepoFiles;
 use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Format;
 use TiffinDB\Web\Ids;
+use TiffinDB\Web\UploadedFile;
 use TiffinDB\Web\Strings;
 use TiffinDB\Web\UrlGenerator;
 use TiffinDB\Web\ValueText;
@@ -42,6 +43,12 @@ use TiffinDB\Web\ViewScope;
  * has no inline code, and passes assertForm; values holding markup,
  * quotes, ampersands, and `{name}` are escaped once and never treated as
  * placeholders. Synthetic data only.
+ *
+ * T-WEB-42 (M3 spec part 2 section 5.1): the shared M3 partials (steps,
+ * file-field, facts, warning-panel, progress, continue-form) through the
+ * fixture page m3-components.php: structure, ids, aria-current on the
+ * current step, progress without a total, the auto-continue marker, and
+ * hostile plain-text values escaped once.
  */
 #[CoversClass(ValueText::class)]
 #[CoversClass(ViewScope::class)]
@@ -62,8 +69,10 @@ final class ComponentsTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-components-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        if (!copy(__DIR__ . '/fixtures/templates/pages/m2-components.php', $dir . '/pages/m2-components.php')) {
-            throw new RuntimeException('Cannot copy the fixture.');
+        foreach (['m2-components', 'm3-components'] as $fixture) {
+            if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
+                throw new RuntimeException('Cannot copy the fixture.');
+            }
         }
         self::$templates = $dir;
     }
@@ -844,5 +853,273 @@ final class ComponentsTest extends TestCase
         self::assertSame('group-abcdefghijkl-12', Ids::make('group', 'abcdefghijkl', 12));
         $xpath = self::xpath(self::render(['fields' => [self::slot(self::field('text'))]]));
         self::assertSame('f-abcdefghijkl', self::one($xpath, '//label')->getAttribute('for'));
+    }
+
+    // T-WEB-42: the shared M3 partials.
+
+    /** @param array<string, mixed> $data */
+    private static function renderM3(array $data): string
+    {
+        $config = require RepoFiles::path('config/app.php');
+        self::assertIsArray($config);
+        $view = (new View(
+            self::$templates,
+            self::strings(),
+            new UrlGenerator('', self::VERSION),
+            Appearance::default(),
+            $config,
+        ))->withCsrfToken(self::TOKEN)->withFormat(self::format());
+        $html = $view->page('m3-components', ['title' => 'Components', ...$data])->body;
+
+        HtmlAssertions::assertWellFormed($html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+        HtmlAssertions::assertForm($html);
+        self::assertStringNotContainsString('<script>alert', $html, 'Markup in values is escaped.');
+        self::assertStringNotContainsString('&amp;lt;', $html, 'Nothing is escaped twice.');
+        self::assertStringNotContainsString('&amp;amp;', $html, 'Nothing is escaped twice.');
+
+        return $html;
+    }
+
+    public function testStepsMarkTheCurrentStep(): void
+    {
+        $xpath = self::xpath(self::renderM3(['steps' => [
+            'label' => 'steps.import.label',
+            'steps' => [
+                ['label' => 'steps.import.choose', 'state' => 'done'],
+                ['label' => 'steps.import.check', 'state' => 'now'],
+                ['label' => 'steps.import.import', 'state' => 'next'],
+                ['label' => 'steps.import.report', 'state' => 'unexpected'],
+            ],
+        ]]));
+
+        $list = self::one($xpath, '//main/ol');
+        self::assertSame('steps', $list->getAttribute('class'));
+        self::assertSame('Import steps', $list->getAttribute('aria-label'));
+        $items = $xpath->query('//main/ol/li');
+        self::assertSame(4, $items->length);
+        $expected = [
+            ['step step-done', 'Step 1, done', 'Choose a file'],
+            ['step step-now', 'Step 2, now', 'Check the fields'],
+            ['step step-next', 'Step 3', 'Import'],
+            ['step step-next', 'Step 4', 'Read the report'],
+        ];
+        foreach ($expected as $n => [$class, $number, $label]) {
+            $item = $items->item($n);
+            self::assertInstanceOf(DOMElement::class, $item);
+            self::assertSame($class, $item->getAttribute('class'));
+            self::assertSame($number, self::norm((string) $xpath->evaluate('string(span[@class="step-number"])', $item)));
+            self::assertSame($label, self::norm((string) $xpath->evaluate('string(span[@class="step-label"])', $item)));
+            self::assertSame($number . ' ' . $label, self::norm($item->textContent));
+        }
+        self::assertSame(1, $xpath->query('//li[@aria-current]')->length);
+        self::assertSame('step', self::one($xpath, '//li[contains(@class, "step-now")]')->getAttribute('aria-current'));
+    }
+
+    /** @return array<string, mixed> */
+    private static function fileField(array $overrides = []): array
+    {
+        return $overrides + [
+            'name' => 'file',
+            'label' => 'sidebar.import',
+            'help' => 'error.too_large.body',
+            'helpParams' => ['max' => self::HOSTILE],
+            'accept' => UploadedFile::acceptList(['.csv', 'txt', 'csv']),
+            'problems' => [],
+        ];
+    }
+
+    public function testFileFieldLabelHelpAndAccept(): void
+    {
+        $html = self::renderM3(['file' => self::fileField()]);
+        $xpath = self::xpath($html);
+
+        $form = self::one($xpath, '//main/form');
+        self::assertSame('multipart/form-data', $form->getAttribute('enctype'));
+        self::assertSame('post', $form->getAttribute('method'));
+        self::assertSame(self::TOKEN, self::one($xpath, '//form/input[@name="_csrf"]')->getAttribute('value'));
+
+        $input = self::one($xpath, '//input[@type="file"]');
+        self::assertSame([
+            'accept' => '.csv,.txt',
+            'aria-describedby' => 'help-file',
+            'class' => 'input',
+            'id' => 'f-file',
+            'name' => 'file',
+            'required' => 'required',
+            'type' => 'file',
+        ], self::attributes($input));
+        self::assertSame('Import a file', self::one($xpath, '//label[@for="f-file"]')->textContent);
+        $help = self::one($xpath, '//p[@id="help-file"]');
+        self::assertSame('help', $help->getAttribute('class'));
+        self::assertSame('The largest file this installation accepts is ' . self::HOSTILE . '.', $help->textContent);
+        self::assertSame(0, $xpath->query('//*[@id="err-file"]')->length);
+        // Label, help, then the input, in reading order (section 9.1, item 4).
+        self::assertSame(['label', 'p', 'input'], array_map(
+            static fn (\DOMNode $n): string => $n->nodeName,
+            iterator_to_array($xpath->query('//div[@class="field"]/*')),
+        ));
+    }
+
+    public function testFileFieldWithProblemsAndWithoutAccept(): void
+    {
+        $xpath = self::xpath(self::renderM3(['file' => self::fileField([
+            'accept' => [],
+            'problems' => [self::HOSTILE, 'That file is larger than 64.0 MB, the largest this installation accepts.'],
+        ])]));
+
+        $input = self::one($xpath, '//input[@type="file"]');
+        self::assertFalse($input->hasAttribute('accept'));
+        self::assertSame('true', $input->getAttribute('aria-invalid'));
+        self::assertSame('help-file err-file', $input->getAttribute('aria-describedby'));
+        $error = self::one($xpath, '//p[@id="err-file"]');
+        self::assertSame('error-text', $error->getAttribute('class'));
+        self::assertSame(self::HOSTILE . ' That file is larger than 64.0 MB, the largest this installation accepts.', $error->textContent);
+        self::assertSame(['label', 'p', 'p', 'input'], array_map(
+            static fn (\DOMNode $n): string => $n->nodeName,
+            iterator_to_array($xpath->query('//div[@class="field"]/*')),
+        ));
+
+        $withAccept = self::xpath(self::renderM3(['file' => self::fileField(['problems' => ['x']])]));
+        self::assertSame('.csv,.txt', self::one($withAccept, '//input[@type="file"]')->getAttribute('accept'));
+        self::assertSame('true', self::one($withAccept, '//input[@type="file"]')->getAttribute('aria-invalid'));
+    }
+
+    public function testFileFieldEscapesAHostileAcceptList(): void
+    {
+        // The controllers build the list with UploadedFile::acceptList(),
+        // which refuses this; the partial still escapes whatever it gets.
+        $xpath = self::xpath(self::renderM3(['file' => self::fileField(['accept' => ['.csv" onclick="alert(1)', '<b>']])]));
+
+        self::assertSame('.csv" onclick="alert(1),<b>', self::one($xpath, '//input[@type="file"]')->getAttribute('accept'));
+        self::assertFalse(self::one($xpath, '//input[@type="file"]')->hasAttribute('onclick'));
+    }
+
+    public function testFileFieldRefusesANameThatIsNotAnIdPart(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        self::renderM3(['file' => self::fileField(['name' => 'file" autofocus="autofocus'])]);
+    }
+
+    public function testFactsPanel(): void
+    {
+        $xpath = self::xpath(self::renderM3(['facts' => [
+            'heading' => 'sidebar.data',
+            'id' => 'file',
+            'items' => [
+                ['term' => 'sidebar.project', 'value' => self::HOSTILE],
+                ['term' => 'sidebar.tables', 'value' => '52 rows, plus a heading row'],
+            ],
+        ]]));
+
+        $section = self::one($xpath, '//main/section');
+        self::assertSame('panel', $section->getAttribute('class'));
+        self::assertSame('i-file', $section->getAttribute('aria-labelledby'));
+        self::assertSame('Data', self::one($xpath, '//section/h2[@id="i-file"]')->textContent);
+        self::assertSame('facts', self::one($xpath, '//section/dl')->getAttribute('class'));
+        $pairs = $xpath->query('//dl/div');
+        self::assertSame(2, $pairs->length);
+        self::assertSame(['Project', self::HOSTILE], [
+            (string) $xpath->evaluate('string(//dl/div[1]/dt)'),
+            (string) $xpath->evaluate('string(//dl/div[1]/dd)'),
+        ]);
+        self::assertSame('52 rows, plus a heading row', (string) $xpath->evaluate('string(//dl/div[2]/dd)'));
+    }
+
+    public function testWarningPanel(): void
+    {
+        $xpath = self::xpath(self::renderM3(['warnings' => [
+            'heading' => 'count.problems.many',
+            'headingParams' => ['count' => 2],
+            'items' => [
+                ['key' => 'problem.upload.too_large', 'params' => ['max' => self::HOSTILE]],
+                ['key' => 'problem.upload.failed', 'params' => []],
+            ],
+        ]]));
+
+        $section = self::one($xpath, '//main/section');
+        self::assertSame('warning-panel', $section->getAttribute('class'));
+        $heading = self::one($xpath, '//section/h2');
+        self::assertSame($section->getAttribute('aria-labelledby'), $heading->getAttribute('id'));
+        self::assertSame('There are 2 problems', $heading->textContent);
+        $items = $xpath->query('//section/ul/li');
+        self::assertSame(2, $items->length);
+        self::assertSame('That file is larger than ' . self::HOSTILE . ', the largest this installation accepts.', $items->item(0)?->textContent);
+        self::assertSame('The file did not arrive completely. Try again.', $items->item(1)?->textContent);
+    }
+
+    public function testProgressWithAndWithoutATotal(): void
+    {
+        $data = [
+            'label' => 'shell.title',
+            'labelParams' => ['title' => self::HOSTILE],
+            'done' => 4000,
+            'total' => 10000,
+            'status' => 'size.bytes',
+            'statusParams' => ['count' => 4000],
+        ];
+        $xpath = self::xpath(self::renderM3(['progress' => $data]));
+
+        self::assertSame('progress', self::one($xpath, '//main/div')->getAttribute('class'));
+        $label = self::one($xpath, '//div[@class="progress"]/p[1]');
+        self::assertSame(self::HOSTILE . ' - TiffinDB', $label->textContent);
+        $bar = self::one($xpath, '//progress');
+        self::assertSame($label->getAttribute('id'), $bar->getAttribute('aria-labelledby'));
+        self::assertSame('10000', $bar->getAttribute('max'));
+        self::assertSame('4000', $bar->getAttribute('value'));
+        $status = self::one($xpath, '//p[@class="progress-status"]');
+        self::assertSame('status', $status->getAttribute('role'));
+        self::assertSame('4,000 bytes', $status->textContent);
+        // The status follows the bar.
+        self::assertSame(1, $xpath->query('//progress/following-sibling::p[@role="status"]')->length);
+
+        $unknown = self::xpath(self::renderM3(['progress' => ['total' => null] + $data]));
+        $bar = self::one($unknown, '//progress');
+        self::assertFalse($bar->hasAttribute('max'), 'No max without a total.');
+        self::assertFalse($bar->hasAttribute('value'), 'No value without a total: the bar is indeterminate.');
+        self::assertSame('progress-label', $bar->getAttribute('aria-labelledby'));
+    }
+
+    public function testContinueFormAutoAndManual(): void
+    {
+        $auto = self::xpath(self::renderM3(['continue' => [
+            'action' => '/projects/abcdefghijkl/import/mnopqrstuvwx/continue',
+            'label' => 'sidebar.import',
+            'auto' => true,
+            'working' => 'sidebar.export',
+        ]]));
+        $form = self::one($auto, '//main/form');
+        self::assertSame([
+            'action' => '/projects/abcdefghijkl/import/mnopqrstuvwx/continue',
+            'class' => 'continue-form',
+            'data-auto-continue' => '1',
+            'method' => 'post',
+        ], self::attributes($form));
+        self::assertSame(self::TOKEN, self::one($auto, '//form/input[@name="_csrf"]')->getAttribute('value'));
+        $button = self::one($auto, '//form/button');
+        self::assertSame(['class' => 'button button-primary button-large', 'data-working' => 'Export', 'type' => 'submit'], self::attributes($button));
+        self::assertSame('Import a file', $button->textContent);
+
+        $manual = self::xpath(self::renderM3(['continue' => [
+            'action' => '/projects/abcdefghijkl/import/mnopqrstuvwx/continue',
+            'label' => 'sidebar.export',
+            'auto' => false,
+        ]]));
+        self::assertFalse(self::one($manual, '//main/form')->hasAttribute('data-auto-continue'), 'Saving waits for a press.');
+        self::assertFalse(self::one($manual, '//form/button')->hasAttribute('data-working'));
+    }
+
+    public function testAcceptListIsChecked(): void
+    {
+        self::assertSame(['.csv', '.txt', '.xlsx'], UploadedFile::acceptList(['csv', '.txt', '.csv', 'xlsx']));
+        self::assertSame([], UploadedFile::acceptList([]));
+        foreach (['', '.', '..csv', '.CSV', '.c s v', '.csv,', 'x"y', '.abcdefghijk', "csv\n", '.cs/v'] as $bad) {
+            try {
+                UploadedFile::acceptList([$bad]);
+                self::fail("Accepted {$bad}");
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
     }
 }

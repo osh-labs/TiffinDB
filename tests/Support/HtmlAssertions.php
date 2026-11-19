@@ -59,11 +59,12 @@ final class HtmlAssertions
 
     /**
      * The scripts a page may load (M1 spec part 2 sections 4.1 and 6; M2
-     * spec part 2 section 3.3): show-password.js or settings-preview.js, a
+     * spec part 2 section 3.3; M3 spec part 2 section 7): show-password.js,
+     * settings-preview.js, or import-continue.js, a
      * same-origin file under the assets directory, after an optional base
      * path, with the version parameter.
      */
-    private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/(?:show-password|settings-preview)\.js\?v=[A-Za-z0-9._~%-]+$#';
+    private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/(?:show-password|settings-preview|import-continue)\.js\?v=[A-Za-z0-9._~%-]+$#';
 
     /**
      * Attributes that load or link to an address. Their values (each
@@ -80,7 +81,7 @@ final class HtmlAssertions
      * T-WEB-9 and T-WEB-22: no inline style or script, no event-handler
      * attribute, no `javascript:` address, and no http(s) URL other than the
      * configured source link. At most one `script` element is allowed: in
-     * `head`, with a same-origin `src` naming one of the two scripts under
+     * `head`, with a same-origin `src` naming one of the three scripts under
      * `/assets/js/`, `defer`, no other attribute, and no content.
      *
      * Only markup is checked (elements, attributes, the addresses in

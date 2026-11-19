@@ -628,19 +628,17 @@ final class EndToEndTest extends TestCase
         $db->close();
         $before = self::projectChecksum($file);
 
-        // As built, the save POST answers with the 500 error page (the
-        // committer marks the job Failed and passes the error on, and
-        // neither ImportOperations::commit nor the controller turns it into
-        // the failure page; reported to M3-WP8/WP9). The failure page is
-        // reached at the job's address.
+        // The failed save answers 303 to the job's address, which shows the
+        // failure page (the commit error is logged, so the log check is off
+        // for this one request).
         $admin->allowFailure = true;
         $saved = $admin->submit($jobPath . '/continue', ['step' => 'save']);
         $admin->allowFailure = false;
-        self::assertContains($saved->status, [303, 500], $saved->body);
-        self::assertStringNotContainsString('injected failure', $saved->body, 'No internal detail is shown.');
+        self::assertSame(303, $saved->status, $saved->body);
+        self::assertSame($jobPath, $saved->header('Location'));
         self::assertSame($before, self::projectChecksum($file), 'The project file holds exactly what it held before.');
 
-        $failed = $admin->get($jobPath);
+        $failed = $admin->follow($saved);
         self::assertSame(200, $failed->status);
         self::assertScreen($failed->body);
         self::assertSame('The import did not finish - TiffinDB', HtmlAssertions::text($failed->body, '//title'));

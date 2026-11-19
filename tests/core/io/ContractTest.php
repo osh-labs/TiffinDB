@@ -62,7 +62,8 @@ final class ContractTest extends TestCase
         yield 'column not text' => [static fn () => new SourceTable('Sheet', [1], 1)];
         yield 'columns not a list' => [static fn () => new SourceTable('Sheet', ['a' => 'A'], 1)];
         yield 'negative row count' => [static fn () => new SourceTable('Sheet', ['A'], -1)];
-        yield 'table name with a control character' => [static fn () => new SourceTable("She\x00et", ['A'], 1)];
+        yield 'table name too long' => [static fn () => new SourceTable(str_repeat('n', 1025), ['A'], 1)];
+        yield 'heading too long' => [static fn () => new SourceTable('Sheet', [str_repeat('h', 80001)], 1)];
         yield 'inspection without tables' => [static fn () => new Inspection([], 'CSV')];
         yield 'inspection holding another value' => [static fn () => new Inspection(['Sheet'], 'CSV')];
         yield 'relative source path' => [static fn () => new SourceFile('upload.bin', 'csv', 1, '/tmp')];
@@ -99,6 +100,7 @@ final class ContractTest extends TestCase
         self::assertCount(200, $table->columns);
         self::assertTrue($table->hidden);
         self::assertSame('', (new SourceTable('', ["Line one\nline two"], 0))->name);
+        self::assertSame(["Bad \xFF\x00 heading"], (new SourceTable("She\x00et", ["Bad \xFF\x00 heading"], 0))->columns, 'Taken as given; cleaned where used.');
     }
 
     public function testPluginFailureReasons(): void

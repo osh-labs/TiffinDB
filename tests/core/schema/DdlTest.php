@@ -24,7 +24,8 @@ require_once __DIR__ . '/ProjectFixture.php';
  * T-SCH-20: the DDL that Ddl writes equals the text M2's SchemaEditor wrote
  * before the refactor (the templates below are that text, copied from the
  * M2 code), for every type with a column, every relation cardinality, and
- * a self-relation; sqlite_master is compared statement by statement.
+ * a self-relation; sqlite_master is compared statement by statement. The
+ * T-SCH-5 name rule is checked on what Ddl alone writes.
  */
 #[CoversClass(Ddl::class)]
 #[CoversClass(SchemaEditor::class)]
@@ -170,6 +171,10 @@ final class DdlTest extends TestCase
                 }
             });
             $fromDdl = $this->userObjects($plain);
+            // T-SCH-5 for Ddl: it takes keys, never names, so every object name is a generated one.
+            foreach ($plain->all('SELECT "name" FROM "sqlite_master"') as $row) {
+                self::assertMatchesRegularExpression('/^(_tiffin_\w+|sqlite_\w+|[tfj]_[a-z2-7]{12}|x_[tfj]_[a-z2-7]{12}_(trash|u|r|l1|r1))$/', (string) $row['name']);
+            }
         } finally {
             $plain->close();
         }

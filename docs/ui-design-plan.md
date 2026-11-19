@@ -58,14 +58,14 @@ WCAG 2 contrast ratios computed from the token values during the design session.
 | Accent text on surface | 9.43 | 9.70 | 12.49 | 16.39 |
 | Accent text on selected tint | 7.84 | 7.51 | 10.41 | 11.24 |
 | Text on accent (buttons) | 9.43 | 10.16 | 12.49 | 16.39 |
-| Warning text on warning tint | 6.81 | 7.79 | 11.09 | 9.76 |
+| Warning text on warning tint | 7.61 | 7.79 | 11.09 | 9.76 |
 | Sidebar text on sidebar | 9.43 | 13.45 | 21.00 | 21.00 |
 | Sidebar secondary text on sidebar | 7.43 | 8.65 | 21.00 | 21.00 |
 | Control border on surface (3:1 needed) | 4.36 | 5.62 | 21.00 | 21.00 |
 
 Alternative accents, lowest text ratio in each (accent text on selected tint): Indigo 8.10 light, 7.09 dark; Plum 8.54 light, 7.26 dark; Graphite 10.97 light, 9.18 dark.
 
-One pair misses the 7:1 target: warning text on the warning tint in the light theme (6.81:1). It passes WCAG AA (4.5:1). Darken `--warn` or lighten `--warn-soft` before M2 exit. These figures must be reproduced by the automated token contrast tests planned in section 5 of the plan.
+The design session measured warning text on the warning tint in the light theme at 6.81:1, the one pair below the 7:1 target. The M2 design corrected it by darkening the light-theme `--warn` from `#7A4300` to `#703D00` (same hue), giving 7.61:1; `--warn` takes part in no other pair in this table, so no other figure changed, and warning text on the page ground and on surfaces rises from 7.29 and 7.98 to 8.14 and 8.91 (`docs/specs/M2-screens.md` section 9). The mock-ups in `docs/design/model-ui/` keep the old value. These figures must be reproduced by the automated token contrast tests planned in section 5 of the plan; section 4.5 gives the same pairs for all ten theme and accent combinations.
 
 ### 4.3 Type
 
@@ -90,6 +90,25 @@ Fixed roles relative to the base: page title 34 px at Standard, section title 22
 - Focus: 3 px outline in the accent colour, 2 px offset, on every focusable element.
 - Spacing steps in use: 4, 8, 12, 16, 20, 24, 32, 48 px.
 - Content widths: forms 800 px (1120 px when laid out in columns), lists full width beside the sidebar, settings and import 1120 px.
+
+### 4.5 Contrast in every theme and accent combination
+
+WCAG 2 contrast ratios for the pairs of section 4.2 in all ten combinations the application can show (four accents in the light and dark themes; the two high-contrast themes ignore the accent), computed from `docs/design/tokens.css` after the M2 warning correction and rounded to two decimals. Text pairs target 7:1; the control border needs 3:1. The light and the high-contrast columns repeat section 4.2; the M2 contrast test (`docs/specs/M2-records.md`, T-DES-7) asserts every cell.
+
+| Pair | Light teal | Light indigo | Light plum | Light graphite | Dark teal | Dark indigo | Dark plum | Dark graphite | High-contrast light | High-contrast dark |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Primary text on page ground | 16.19 | 16.19 | 16.19 | 16.19 | 16.22 | 16.22 | 16.22 | 16.22 | 21.00 | 21.00 |
+| Secondary text on page ground | 8.86 | 8.86 | 8.86 | 8.86 | 10.43 | 10.43 | 10.43 | 10.43 | 21.00 | 21.00 |
+| Secondary text on inset areas | 8.05 | 8.05 | 8.05 | 8.05 | 11.01 | 11.01 | 11.01 | 11.01 | 21.00 | 21.00 |
+| Accent text on surface | 9.43 | 10.07 | 10.63 | 13.74 | 9.70 | 8.59 | 8.72 | 11.66 | 12.49 | 16.39 |
+| Accent text on selected tint | 7.84 | 8.10 | 8.54 | 10.97 | 7.51 | 7.09 | 7.26 | 9.18 | 10.41 | 11.24 |
+| Text on accent (buttons) | 9.43 | 10.07 | 10.63 | 13.74 | 10.16 | 8.99 | 9.12 | 12.21 | 12.49 | 16.39 |
+| Warning text on warning tint | 7.61 | 7.61 | 7.61 | 7.61 | 7.79 | 7.79 | 7.79 | 7.79 | 11.09 | 9.76 |
+| Sidebar text on sidebar | 9.43 | 10.07 | 10.63 | 13.74 | 13.45 | 14.01 | 14.56 | 14.02 | 21.00 | 21.00 |
+| Sidebar secondary text on sidebar | 7.43 | 7.54 | 8.01 | 9.93 | 8.65 | 9.01 | 9.37 | 9.02 | 21.00 | 21.00 |
+| Control border on surface (3:1 needed) | 4.36 | 4.36 | 4.36 | 4.36 | 5.62 | 5.62 | 5.62 | 5.62 | 21.00 | 21.00 |
+
+Every text pair meets 7:1 in every combination; the lowest is accent text on the selected tint with Dark indigo (7.09).
 
 ## 5. Application shell
 
@@ -178,7 +197,7 @@ Each needs a decision from the lead developer; none has been changed in the plan
 | 1 | Record form layout at wide widths | Details fields flow into two or three columns (minimum 300 px each), one column on narrow screens | ADR 0003 and plan section 4: auto-generated form is a single column | Keep single-column source order; let the default form CSS use a reflowing grid. Confirm, then amend plan section 4 |
 | 2 | Mark colour inside the application | Follows the user's accent | Not specified | Accept; fixed brand colours are for use outside the interface |
 | 3 | Sidebar on record screens | Replaced by a breadcrumb | Not specified | Accept; keeps editing focused |
-| 4 | Warning contrast in light theme | 6.81:1 | Plan section 5 targets 7:1 | Adjust the token before M2 exit |
+| 4 | Warning contrast in light theme | 6.81:1 | Plan section 5 targets 7:1 | Adjust the token before M2 exit. Done in the M2 design: light `--warn` `#703D00`, 7.61:1 (section 4.2) |
 | 5 | Sign out placement | Visible link in the top bar | Not specified | Accept |
 
 ## 10. Implementation rules for this stack

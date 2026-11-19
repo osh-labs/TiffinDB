@@ -37,9 +37,6 @@ final class ContrastTest extends TestCase
     /** Root-element classes per accent; null means the default (Teal, no class). */
     private const ACCENTS = ['teal' => null, 'indigo' => 'a-indigo', 'plum' => 'a-plum', 'graphite' => 'a-graphite'];
 
-    private const KNOWN_SHORTFALL_WARNING = 'Known shortfall against the 7:1 target (ADR 0009 row A4); '
-        . 'to be fixed before M2 exit, in both token files. Asserted here as the measured value.';
-
     /**
      * (theme, accent, foreground token, background token, expected ratio, note).
      * Light rows follow the row order of ui-design-plan section 4.2.
@@ -55,7 +52,7 @@ final class ContrastTest extends TestCase
             ['--accent', '--surface', 9.43, null],
             ['--accent', '--soft', 7.84, null],
             ['--on-accent', '--accent', 9.43, null],
-            ['--warn', '--warn-soft', 6.81, self::KNOWN_SHORTFALL_WARNING],
+            ['--warn', '--warn-soft', 7.61, null],
             ['--side-ink', '--side', 9.43, null],
             ['--side-ink2', '--side', 7.43, null],
             ['--ctl', '--surface', 4.36, null],

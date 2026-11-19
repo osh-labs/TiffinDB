@@ -90,11 +90,11 @@ final class SchemaOperationsTest extends AppTestCase
         $this->fx->insertRecord($this->project, $this->table, [$number->key => '12']);
 
         self::assertSame([1, 1], [$schema->previewTypeChange($this->admin, $this->project, $this->table, $number->key, 'number', [])->records, $schema->previewTypeChange($this->admin, $this->project, $this->table, $number->key, 'number', [])->values]);
-        $impact = $schema->changeFieldType($this->admin, $this->project, $this->table, $number->key, 'number', [], true);
+        $impact = $schema->changeFieldType($this->admin, $this->project, $this->table, $number->key, 'number', [], 1);
         self::assertSame(1, $impact->values);
         self::assertSame(['type' => 'number', 'type_from' => 'text', 'values_cleared' => 1], $this->lastAudit('schema.field_changed')->detail);
 
-        $updated = $schema->updateField($this->admin, $this->project, $this->table, $number->key, 'Height (cm)', ['decimals' => 1], true, 'In centimetres', false);
+        $updated = $schema->updateField($this->admin, $this->project, $this->table, $number->key, 'Height (cm)', ['decimals' => 1], true, 'In centimetres', 0);
         self::assertSame(['Height (cm)', true, 'In centimetres'], [$updated->name, $updated->required, $updated->help]);
         self::assertSame(0, $schema->previewFieldUpdate($this->admin, $this->project, $this->table, $number->key, [])->values);
 
@@ -119,9 +119,9 @@ final class SchemaOperationsTest extends AppTestCase
         yield 'deleteTable' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->deleteTable($a, $p, $t)];
         yield 'addField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->addField($a, $p, $t, 'Notes', 'long_text', [], false, '')];
         yield 'addRelationField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->addRelationField($a, $p, $t, 'Bed', $o, Cardinality::Many, Cardinality::Many, 'Plants', false, '')];
-        yield 'updateField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->updateField($a, $p, $t, $f, 'Title', [], false, '', false)];
+        yield 'updateField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->updateField($a, $p, $t, $f, 'Title', [], false, '', 0)];
         yield 'previewFieldUpdate' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->previewFieldUpdate($a, $p, $t, $f, [])];
-        yield 'changeFieldType' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->changeFieldType($a, $p, $t, $f, 'long_text', [], true)];
+        yield 'changeFieldType' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->changeFieldType($a, $p, $t, $f, 'long_text', [], 0)];
         yield 'previewTypeChange' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->previewTypeChange($a, $p, $t, $f, 'long_text', [])];
         yield 'moveField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->moveField($a, $p, $t, $f, 1)];
         yield 'deleteField' => [static fn (SchemaOperations $s, Actor $a, string $p, string $t, string $f, string $o) => $s->deleteField($a, $p, $t, $f)];
@@ -155,7 +155,7 @@ final class SchemaOperationsTest extends AppTestCase
 
         $cases = [
             'field of another table' => fn () => $schema->field($this->admin, $this->project, $this->table, $otherField),
-            'field of another table, update' => fn () => $schema->updateField($this->admin, $this->project, $this->table, $otherField, 'X', [], false, '', false),
+            'field of another table, update' => fn () => $schema->updateField($this->admin, $this->project, $this->table, $otherField, 'X', [], false, '', 0),
             'field of another table, delete' => fn () => $schema->deleteField($this->admin, $this->project, $this->table, $otherField),
             'field of another table, move' => fn () => $schema->moveField($this->admin, $this->project, $this->table, $otherField, 1),
             'table of another project' => fn () => $schema->design($this->admin, $this->project, $elsewhereTable),

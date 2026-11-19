@@ -328,9 +328,12 @@ final class SchemaEditor
     /**
      * Changes a field's name, options, requiredness, and help. Choice
      * renames rewrite stored values; removed choices and values above a
-     * lowered rating maximum are cleared, which needs $confirmLoss
-     * (ConfirmationRequired before anything changes). A `field-options`
-     * snapshot is taken when any stored value changes.
+     * lowered rating maximum are cleared. $acceptedLoss is the number of
+     * values the person was shown and accepted (0 when nothing was shown):
+     * when the change would clear more than that, ConfirmationRequired
+     * carries the real counts and nothing changes (P82, M2 spec section
+     * 7.5). A `field-options` snapshot is taken when any stored value
+     * changes.
      *
      * For relation fields the options are `{"links": "one"|"many"}`, this
      * side's maximum; the stored `relation` and `side` are kept. For
@@ -338,23 +341,25 @@ final class SchemaEditor
      *
      * @param array<string, mixed> $options
      */
-    public function updateField(string $fieldKey, string $name, array $options, bool $required, string $help, bool $confirmLoss): FieldDef
+    public function updateField(string $fieldKey, string $name, array $options, bool $required, string $help, int $acceptedLoss): FieldDef
     {
         $snapshotTaken = false;
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $schema = $this->schema();
             $plan = $this->planUpdate($schema, $schema->field($fieldKey), $name, $options, $required, $help);
-            if ($plan->cleared > 0 && !$confirmLoss) {
+            if ($plan->cleared > max(0, $acceptedLoss)) {
                 throw new ConfirmationRequired($plan->cleared, $plan->cleared);
             }
             if ($plan->changes !== [] && !$snapshotTaken) {
                 $this->snapshot(SnapshotReason::FieldOptions);
                 $snapshotTaken = true;
             }
-            $result = $this->db->write(function () use ($fieldKey, $name, $options, $required, $help, $confirmLoss, $snapshotTaken): ?FieldDef {
+            $result = $this->db->write(function () use ($fieldKey, $name, $options, $required, $help, $acceptedLoss, $snapshotTaken): ?FieldDef {
                 $schema = $this->schema();
                 $plan = $this->planUpdate($schema, $schema->field($fieldKey), $name, $options, $required, $help);
-                if ($plan->cleared > 0 && !$confirmLoss) {
+                if ($plan->cleared > max(0, $acceptedLoss)) {
+                    // More values to clear than the person accepted (a record changed
+                    // since the confirmation was shown): ask again, change nothing.
                     throw new ConfirmationRequired($plan->cleared, $plan->cleared);
                 }
                 if ($plan->changes !== [] && !$snapshotTaken) {
@@ -393,27 +398,28 @@ final class SchemaEditor
     /**
      * Changes a field's type (M1 spec section 7.4, P53, P54). Values are
      * converted through text with lenient parsing; values that fail are
-     * cleared, which needs $confirmLoss. A `field-type-change` snapshot is
+     * cleared, which needs $acceptedLoss to be at least their number (the
+     * count the person was shown, P82). A `field-type-change` snapshot is
      * taken first; the values are then read and converted inside one
      * BEGIN IMMEDIATE transaction, so a record changed after the check is
      * converted from its current value.
      *
      * @param array<string, mixed> $options
      */
-    public function changeType(string $fieldKey, string $newType, array $options, bool $confirmLoss): Impact
+    public function changeType(string $fieldKey, string $newType, array $options, int $acceptedLoss): Impact
     {
         $schema = $this->schema();
         $plan = $this->planConversion($schema, $schema->field($fieldKey), $newType, $options);
-        if ($plan->failures > 0 && !$confirmLoss) {
+        if ($plan->failures > max(0, $acceptedLoss)) {
             throw new ConfirmationRequired($plan->failures, $plan->failures);
         }
         $this->snapshot(SnapshotReason::FieldTypeChange);
 
-        return $this->change(function (Schema $schema) use ($fieldKey, $newType, $options, $confirmLoss): Impact {
+        return $this->change(function (Schema $schema) use ($fieldKey, $newType, $options, $acceptedLoss): Impact {
             $field = $schema->field($fieldKey);
             $table = $schema->table($field->tableKey);
             $plan = $this->planConversion($schema, $field, $newType, $options);
-            if ($plan->failures > 0 && !$confirmLoss) {
+            if ($plan->failures > max(0, $acceptedLoss)) {
                 throw new ConfirmationRequired($plan->failures, $plan->failures);
             }
             $to = $this->types->get($newType);

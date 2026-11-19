@@ -90,10 +90,10 @@ final class AuditTrailTest extends AppTestCase
         $expect(AuditAction::TABLE_CHANGED, $admin, $project->id, 'table', $plants->key);
         $height = $schema->addField($this->admin, $p, $plants->key, 'Height', 'text', [], false, '');
         $expect(AuditAction::FIELD_CREATED, $admin, $project->id, 'field', $height->key, ['type' => 'text']);
-        $schema->updateField($this->admin, $p, $plants->key, $height->key, 'Height (cm)', [], false, '', false);
+        $schema->updateField($this->admin, $p, $plants->key, $height->key, 'Height (cm)', [], false, '', 0);
         $expect(AuditAction::FIELD_CHANGED, $admin, $project->id, 'field', $height->key, ['type' => 'text']);
         $this->fx->insertRecord($p, $plants->key, [$height->key => 'tall']);
-        $schema->changeFieldType($this->admin, $p, $plants->key, $height->key, 'number', [], true);
+        $schema->changeFieldType($this->admin, $p, $plants->key, $height->key, 'number', [], 1);
         $expect(AuditAction::FIELD_CHANGED, $admin, $project->id, 'field', $height->key, ['type' => 'number', 'type_from' => 'text', 'values_cleared' => 1]);
         $before = $this->ops->audit()->recent($this->admin, 2)[1];
         self::assertSame([AuditAction::SNAPSHOT_TAKEN, ['reason' => 'field-type-change']], [$before->action, $before->detail]);

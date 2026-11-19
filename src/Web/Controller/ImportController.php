@@ -168,6 +168,11 @@ final class ImportController
         $input = self::mappingInput($request);
         $actor = $this->context->actor();
         if ($request->input('action') === 'recheck') {
+            // The existing-table page sends an empty name for the new table:
+            // leave it out, so the stored or proposed name stays (X-12).
+            if (trim((string) ($input['table_name'] ?? '')) === '') {
+                unset($input['table_name']);
+            }
             $this->imports()->recheck($actor, $projectKey, $jobKey, $input);
 
             return $this->context->redirect($this->jobPath($projectKey, $jobKey));

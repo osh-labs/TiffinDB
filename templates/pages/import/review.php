@@ -5,7 +5,9 @@
  *
  * Import step 2, check the fields (docs/design/m3/import.md section 4;
  * mock-up docs/design/model-ui/import.html, with M3 D-15 and D-18). Data:
- * `steps`, `facts` (the facts partial's items, plain text), `action`,
+ * `steps`, `facts` (list of {term (key), value (plain text)}; written
+ * here, as the facts partial's markup, so the reading link sits inside
+ * the panel as in the mock-up), `action`,
  * `reading`, `cancel`, `existing` (the target is an existing table),
  * `tableName`, `tableNameError`, `tableError`, `tables` (list of {value,
  * label, selected}), `columns` (the mapping table's rows), `warnings`
@@ -18,9 +20,21 @@ declare(strict_types=1);
 ?>
 <h1><?= $this->t('import.title') ?></h1>
 <?= $this->partial('steps', ['label' => 'steps.import.label', 'steps' => $data['steps']]) ?>
-<?= $this->partial('facts', ['heading' => 'import.review.found', 'id' => 'file', 'items' => $data['facts']]) ?>
-<p><a class="button" href="<?= $this->url($data['reading']) ?>"><?= $this->t('import.review.change_reading') ?></a></p>
-<form id="<?= $this->id('import', 'review') ?>" method="post" action="<?= $this->url($data['action']) ?>">
+<section class="panel" aria-labelledby="<?= $this->id('i', 'file') ?>">
+<h2 id="<?= $this->id('i', 'file') ?>"><?= $this->t('import.review.found') ?></h2>
+<dl class="facts">
+<?php foreach ($data['facts'] as $item) : ?>
+<div>
+<dt><?= $this->t($item['term']) ?></dt>
+<dd><?= $this->e($item['value']) ?></dd>
+</div>
+<?php endforeach; ?>
+</dl>
+<div class="link-row">
+<a href="<?= $this->url($data['reading']) ?>"><?= $this->t('import.review.change_reading') ?></a>
+</div>
+</section>
+<form class="form" id="<?= $this->id('import', 'review') ?>" method="post" action="<?= $this->url($data['action']) ?>">
 <?= $this->partial('csrf') ?>
 <fieldset class="panel">
 <legend><?= $this->t('import.review.target') ?></legend>

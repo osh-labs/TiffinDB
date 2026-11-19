@@ -345,7 +345,8 @@ final class ImportScreenTest extends TestCase
             ['File inventory.csv', 'Read as ' . self::texts($x, '//dl[@class="facts"]/div[2]/dd')[0], 'Rows 12 rows, plus a heading row', 'Columns 7'],
             self::texts($x, '//section[@class="panel"]/dl[@class="facts"]/div'),
         );
-        self::assertSame("{$this->base()}/{$job}/reading", $x->query('//a[normalize-space()="Change how the file is read"]')->item(0)?->getAttribute('href'));
+        self::assertSame("{$this->base()}/{$job}/reading", $x->query('//section[@class="panel"][@aria-labelledby="i-file"]/div[@class="link-row"]/a[normalize-space()="Change how the file is read"]')->item(0)?->getAttribute('href'), 'The reading link is a plain link inside the panel.');
+        self::assertSame(1, $x->query('//form[@id="import-review"][@class="form"]/section[@aria-labelledby="i-fields"]')->length, 'The Fields section sits in the form\'s gap.');
 
         // Item 2: the target radios are a fieldset with a legend.
         $fieldset = $x->query('//form[@id="import-review"]/fieldset[@class="panel"]')->item(0);
@@ -465,6 +466,24 @@ final class ImportScreenTest extends TestCase
         self::assertSame('Field for Name', $x->query('//select[@id="f-field-0"]')->item(0)?->getAttribute('aria-label'));
         self::assertSame('Leave out', HtmlAssertions::text($response->body, '//select[@id="f-field-0"]/option[1]'));
         self::assertSame('Name (Text)', HtmlAssertions::text($response->body, '//select[@id="f-field-0"]/option[@selected]'));
+
+        // Back to a new table: the existing-table page sends an empty name, and the proposed name stays (X-12).
+        $back = self::formValues($x);
+        $back['target'] = 'new';
+        $back['action'] = 'recheck';
+        self::assertSame('', $back['table_name']);
+        self::assertSame(303, $this->send('POST', "{$this->base()}/{$job}", $back)->status);
+        $again = self::page($this->send('GET', "{$this->base()}/{$job}"));
+        self::assertSame('inventory', $again->query('//input[@id="f-tablename"]')->item(0)?->getAttribute('value'));
+        self::assertSame(0, $again->query('//div[@class="error-summary"]')->length);
+        // A name typed for the new table is kept by Check again.
+        $typed = self::formValues($again);
+        $typed['table_name'] = 'Kitchen things';
+        $typed['action'] = 'recheck';
+        $this->send('POST', "{$this->base()}/{$job}", $typed);
+        self::assertSame('Kitchen things', self::page($this->send('GET', "{$this->base()}/{$job}"))->query('//input[@id="f-tablename"]')->item(0)?->getAttribute('value'));
+        $this->send('POST', "{$this->base()}/{$job}", $post);
+        $x = self::page($this->send('GET', "{$this->base()}/{$job}"));
 
         // The same field twice.
         $post = self::formValues($x);
@@ -589,9 +608,9 @@ final class ImportScreenTest extends TestCase
         $this->continueUntilReady($job);
         $this->send('POST', "{$this->base()}/{$job}/continue", ['step' => 'save']);
         $x = self::page($this->send('GET', "{$this->base()}/{$job}/report"));
-        self::assertSame(['Field', 'Values', 'Rows'], self::texts($x, '//table[@class="report-table"]/thead/tr/th'));
+        self::assertSame(['Field', 'Values', 'Rows'], self::texts($x, '//div[@class="table-scroll"]/table[@class="report-table"]/thead/tr/th'), 'The report table scrolls inside its box.');
         self::assertSame(['Purchased', '3', '3, 6, 8'], self::texts($x, '//table[@class="report-table"]/tbody/tr/*'));
-        self::assertSame('Row 1 is the first row after the heading row.', self::texts($x, '//table[@class="report-table"]/following-sibling::p')[0]);
+        self::assertSame('Row 1 is the first row after the heading row.', self::texts($x, '//div[@class="table-scroll"]/following-sibling::p')[0]);
     }
 
     public function testTargetChangedShowsTheReviewAgain(): void

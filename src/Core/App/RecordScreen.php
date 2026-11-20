@@ -35,6 +35,8 @@ final class RecordScreen
         public readonly ?string $updatedAt,
         public readonly ?string $updatedByName,
         public readonly ListRequest $request,
+        public readonly bool $canEdit = false,
+        public readonly ?LinkOrigin $origin = null,
     ) {
     }
 }

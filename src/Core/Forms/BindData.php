@@ -13,7 +13,8 @@ use TiffinDB\Core\Error\Problem;
 /**
  * What FormBinder joins with a form: plain values by field key (Core\App
  * reads them through Core\Query), the text a person typed, problems,
- * links, and files.
+ * links, files, and the form images Core\App found servable (M4 spec
+ * section 9: linked from a live record, with an inline media type).
  */
 final class BindData
 {
@@ -23,6 +24,7 @@ final class BindData
      * @param array<string, list<Problem>> $problems field key => problems
      * @param array<string, list<LinkItem>> $links relation field key => linked records
      * @param array<string, list<FileItem>> $files attachment field key => files
+     * @param list<int> $servableImages attachment ids a form image may show
      */
     public function __construct(
         public readonly array $values = [],
@@ -31,6 +33,7 @@ final class BindData
         public readonly array $links = [],
         public readonly array $files = [],
         public readonly bool $isNew = false,
+        public readonly array $servableImages = [],
     ) {
     }
 }

@@ -136,7 +136,7 @@ final class ExportOperations
         }
         $extension = $manifest->extensions[0];
 
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $db);
         [$jobKey, $folder] = $this->c->staging()->create(self::EXPORTS);
         $target = $folder . '/export.' . $extension;
         try {
@@ -183,7 +183,7 @@ final class ExportOperations
     {
         $project = $this->authorise($actor, $projectKey);
         $db = $this->c->opener->open($project);
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $db);
         [$jobKey, $folder] = $this->c->staging()->create(self::EXPORTS);
         $target = $folder . '/archive.zip';
         try {

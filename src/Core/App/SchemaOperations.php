@@ -121,6 +121,7 @@ final class SchemaOperations
         $table = $schema->table($tableKey);
         $records = $this->c->editor($project, $db, $actor)->deleteTable($table->key);
         $this->record(AuditAction::TABLE_DELETED, $actor, $project, 'table', $table->key, ['records' => $records]);
+        $this->sweep($project, $db);
     }
 
     /** @param array<string, mixed> $options */
@@ -239,6 +240,24 @@ final class SchemaOperations
         $field = self::fieldOf($schema, $tableKey, $fieldKey);
         $this->c->editor($project, $db, $actor)->deleteField($fieldKey);
         $this->record(AuditAction::FIELD_DELETED, $actor, $project, 'field', $fieldKey, ['type' => $field->type]);
+        if ($field->type === 'attachment') {
+            $this->sweep($project, $db);
+        }
+    }
+
+    /**
+     * After an editor write that removed attachment links has committed
+     * (M4 spec section 10.6): the full attachment sweep. The change is
+     * done already, so a failure is logged (no path or hash) and left for
+     * the next sweep.
+     */
+    private function sweep(ProjectRecord $project, Database $db): void
+    {
+        try {
+            $this->c->attachments($project, $db, new Schema($db, $this->c->types))->sweep();
+        } catch (\Throwable $error) {
+            error_log('TiffinDB: the attachment sweep after a schema change failed (' . $error::class . ').');
+        }
     }
 
     /** @return array{0: ProjectRecord, 1: Database, 2: Schema} */

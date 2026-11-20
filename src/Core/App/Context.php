@@ -27,10 +27,14 @@ use TiffinDB\Core\Io\Plugin\PluginInfo;
 use TiffinDB\Core\Io\Plugin\PluginLoader;
 use TiffinDB\Core\Io\Plugin\PluginScanner;
 use TiffinDB\Core\Io\StagingArea;
+use TiffinDB\Core\Query\Attachments;
+use TiffinDB\Core\Query\CollectionRules;
+use TiffinDB\Core\Query\CollectionStore;
 use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Schema\SchemaEditor;
+use TiffinDB\Core\Storage\AttachmentStore;
 use TiffinDB\Core\Storage\Clock;
 use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\Storage\Database;
@@ -72,6 +76,7 @@ final class Context
     private ?StagingArea $staging = null;
     private ?PluginScanner $scanner = null;
     private ?PluginLoader $loader = null;
+    private ?Listings $listings = null;
 
     /** @param (\Closure(string): void)|null $seam test seam, see Operations */
     public function __construct(
@@ -121,6 +126,12 @@ final class Context
     public function staging(): StagingArea
     {
         return $this->staging ??= new StagingArea($this->data, $this->clock, $this->keys);
+    }
+
+    /** List building and collection counts shared by the record, search, and collection operations. */
+    public function listings(): Listings
+    {
+        return $this->listings ??= new Listings($this);
     }
 
     public function pluginScanner(): PluginScanner
@@ -258,6 +269,53 @@ final class Context
     public function records(ProjectRecord $project, Database $db, Schema $schema): Records
     {
         return new Records($db, $schema, $this->types, $this->clock);
+    }
+
+    /**
+     * The attachment rows and links of an opened project (M4 spec section
+     * 10). The caller has already authorised $project; $schema must be
+     * current.
+     */
+    public function attachments(ProjectRecord $project, Database $db, Schema $schema): Attachments
+    {
+        return new Attachments($db, $schema, $this->store($project), $this->clock);
+    }
+
+    /** The attachment file store of a project's folder; the caller has already authorised the project. */
+    public function store(ProjectRecord $project): AttachmentStore
+    {
+        return new AttachmentStore($this->opener->folder($project->key));
+    }
+
+    /** Saved collections of an opened project; the caller has already authorised it. */
+    public function collectionStore(Database $db, Schema $schema): CollectionStore
+    {
+        return new CollectionStore($db, $schema, $this->keys, $this->clock);
+    }
+
+    /** Collection rules checked against an opened project's schema; the caller has already authorised it. */
+    public function collectionRules(Database $db, Schema $schema): CollectionRules
+    {
+        return new CollectionRules($db, $schema, $this->types);
+    }
+
+    /**
+     * The staging sweep (M3) and, for an opened and authorised project,
+     * the orphan-file part of the attachment sweep (P175, ADR 0018
+     * decision 6). A failure of the file sweep is logged without a path
+     * or hash and never stops the caller: the next sweep tries again.
+     */
+    public function sweepStaging(?ProjectRecord $project = null, ?Database $db = null): void
+    {
+        $this->staging()->sweep();
+        if ($project === null || $db === null) {
+            return;
+        }
+        try {
+            $this->attachments($project, $db, new Schema($db, $this->types))->sweepFiles();
+        } catch (\Throwable $error) {
+            error_log('TiffinDB: the attachment file sweep failed (' . $error::class . ').');
+        }
     }
 
     /** Stored forms of an opened project; the caller has already authorised it. */

@@ -43,6 +43,8 @@ final class Operations
     private ?ExportOperations $exports = null;
     private ?ArchiveOperations $archives = null;
     private ?PluginOperations $plugins = null;
+    private ?AttachmentOperations $attachments = null;
+    private ?CollectionOperations $collections = null;
 
     /**
      * @param (\Closure(string): void)|null $seam Test seam (T-APP-30), not for
@@ -125,6 +127,16 @@ final class Operations
     public function plugins(): PluginOperations
     {
         return $this->plugins ??= new PluginOperations($this->context);
+    }
+
+    public function attachments(): AttachmentOperations
+    {
+        return $this->attachments ??= new AttachmentOperations($this->context);
+    }
+
+    public function collections(): CollectionOperations
+    {
+        return $this->collections ??= new CollectionOperations($this->context);
     }
 
     /**

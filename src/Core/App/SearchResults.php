@@ -17,6 +17,7 @@ final class SearchResults
     /**
      * @param list<SearchResultGroup> $groups
      * @param list<TableSummary> $tables for the sidebar
+     * @param list<CollectionSummary> $collections for the sidebar
      */
     public function __construct(
         public readonly ProjectRecord $project,
@@ -27,6 +28,7 @@ final class SearchResults
         public readonly array $tables,
         public readonly int $trashCount,
         public readonly bool $canImportExport = false,
+        public readonly array $collections = [],
     ) {
     }
 }

@@ -78,11 +78,19 @@ final class RecordPermissionMapTest extends AppTestCase
         yield 'records restore' => [$records, 'restore', Permission::TrashRecords];
         yield 'records setLinks' => [$records, 'setLinks', Permission::EditRecords];
         yield 'records search' => [$records, 'search', Permission::ViewRecords];
+        // M4 (T-APP-150, spec section 10.7).
+        yield 'records linkOrigin' => [$records, 'linkOrigin', Permission::EditRecords];
+        yield 'records picker' => [$records, 'picker', Permission::EditRecords];
+        yield 'records link' => [$records, 'link', Permission::EditRecords];
+        yield 'records unlink' => [$records, 'unlink', Permission::EditRecords];
         yield 'trash moveToTrash' => [$trash, 'moveToTrash', Permission::TrashRecords];
         yield 'trash restore' => [$trash, 'restore', Permission::TrashRecords];
         yield 'trash list' => [$trash, 'list', Permission::ViewRecords];
         yield 'trash count' => [$trash, 'count', Permission::ViewRecords];
         yield 'trash empty' => [$trash, 'empty', Permission::EmptyTrash];
+        yield 'trash screen' => [$trash, 'screen', Permission::ViewRecords];
+        yield 'trash restoreAll' => [$trash, 'restoreAll', Permission::TrashRecords];
+        yield 'trash emptyImpact' => [$trash, 'emptyImpact', Permission::EmptyTrash];
     }
 
     /** Every public method of the two classes is in the map, so a new one cannot be left out silently. */
@@ -167,11 +175,18 @@ final class RecordPermissionMapTest extends AppTestCase
             RecordOperations::class . '::restore' => fn (Actor $a): mixed => $records->restore($a, $p, $t, (string) $this->trashed),
             RecordOperations::class . '::setLinks' => static fn (Actor $a): mixed => $records->setLinks($a, $p, $t, $live, 'nokey0000000', []),
             RecordOperations::class . '::search' => static fn (Actor $a): mixed => $records->search($a, $p, 'kitchen'),
+            RecordOperations::class . '::linkOrigin' => static fn (Actor $a): mixed => $records->linkOrigin($a, $p, $t, 'nokey0000000-' . $live),
+            RecordOperations::class . '::picker' => static fn (Actor $a): mixed => $records->picker($a, $p, $t, $live, 'nokey0000000', null, 1),
+            RecordOperations::class . '::link' => static fn (Actor $a): mixed => $records->link($a, $p, $t, $live, 'nokey0000000', $live),
+            RecordOperations::class . '::unlink' => static fn (Actor $a): mixed => $records->unlink($a, $p, $t, $live, 'nokey0000000', $live),
             TrashOperations::class . '::moveToTrash' => fn (Actor $a): mixed => $trash->moveToTrash($a, $p, $t, [$this->live]),
             TrashOperations::class . '::restore' => fn (Actor $a): mixed => $trash->restore($a, $p, $t, [$this->trashed]),
             TrashOperations::class . '::list' => static fn (Actor $a): mixed => $trash->list($a, $p, $t, 10, 0),
             TrashOperations::class . '::count' => static fn (Actor $a): mixed => $trash->count($a, $p, null),
             TrashOperations::class . '::empty' => static fn (Actor $a): mixed => $trash->empty($a, $p, null),
+            TrashOperations::class . '::screen' => static fn (Actor $a): mixed => $trash->screen($a, $p, null, 1),
+            TrashOperations::class . '::restoreAll' => static fn (Actor $a): mixed => $trash->restoreAll($a, $p, $t),
+            TrashOperations::class . '::emptyImpact' => static fn (Actor $a): mixed => $trash->emptyImpact($a, $p),
         };
     }
 

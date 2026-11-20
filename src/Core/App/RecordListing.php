@@ -21,6 +21,7 @@ final class RecordListing
      * @param list<FieldDef> $columns the title field (when set), then up to six more fields, skipping long text
      * @param list<ListRow> $rows
      * @param list<SortOption> $sortOptions
+     * @param list<CollectionSummary> $collections for the sidebar
      */
     public function __construct(
         public readonly ProjectRecord $project,
@@ -46,6 +47,8 @@ final class RecordListing
         public readonly bool $hasFilterable,
         public readonly bool $canChangeSchema,
         public readonly bool $canImportExport = false,
+        public readonly ?CollectionFacts $collection = null,
+        public readonly array $collections = [],
     ) {
     }
 }

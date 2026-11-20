@@ -276,6 +276,86 @@ final class SqlStringsTest extends TestCase
         }
     }
 
+    // ------------------------------------------------------------ the attachment store (M4 spec section 2.2)
+
+    /**
+     * The attachment store touches files only (M4 spec sections 2.1 and
+     * 2.2, T-STO-16): no string literal in src/Core/Storage/Attachment*.php,
+     * MediaType.php, or StoredUpload.php holds an SQL keyword (SQL_WORD, any
+     * letter case), and none calls a query or PDO method.
+     *
+     * @return list<string> repository-relative paths
+     */
+    public static function storageFiles(): array
+    {
+        $files = [];
+        foreach (glob(RepoFiles::path('src/Core/Storage') . '/Attachment*.php') ?: [] as $path) {
+            $files[] = 'src/Core/Storage/' . basename($path);
+        }
+        $files[] = 'src/Core/Storage/MediaType.php';
+        $files[] = 'src/Core/Storage/StoredUpload.php';
+        sort($files);
+
+        return $files;
+    }
+
+    public function testTheAttachmentStoreHoldsNoSql(): void
+    {
+        $files = self::storageFiles();
+        self::assertContains('src/Core/Storage/AttachmentStore.php', $files);
+        foreach ($files as $file) {
+            self::assertSame([], self::storageViolations(RepoFiles::read($file)), $file);
+        }
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function storageSqlSources(): iterable
+    {
+        yield 'statement literal' => ["<?php\n\$q = 'SELECT 1';"];
+        yield 'lower-case keyword' => ["<?php\n\$q = 'delete from t';"];
+        yield 'double-quoted keyword' => ["<?php\n\$q = \"UPDATE t\";"];
+        yield 'interpolated keyword' => ["<?php\n\$q = \"WHERE {\$x}\";"];
+        yield 'run' => ["<?php\n\$db->run(\$q);"];
+        yield 'value' => ["<?php\n\$db->value(\$q, []);"];
+        yield 'nullsafe one' => ["<?php\n\$db?->one(\$q);"];
+        yield 'all with spaces' => ["<?php\n\$db -> all (\$q);"];
+        yield 'pdo exec' => ["<?php\n\$pdo->exec(\$q);"];
+        yield 'pdo prepare' => ["<?php\n\$pdo->prepare(\$q);"];
+        yield 'pdo query' => ["<?php\n\$pdo->query(\$q);"];
+    }
+
+    #[DataProvider('storageSqlSources')]
+    public function testTheStorageRuleCatches(string $source): void
+    {
+        self::assertNotSame([], self::storageViolations($source));
+    }
+
+    public function testTheStorageRuleAccepts(): void
+    {
+        self::assertSame([], self::storageViolations("<?php\n// SELECT in a comment\n\$m = 'Cannot open the file.';\n\$db->inTransaction();\n\$db->path();\n"));
+    }
+
+    /** @return list<string> */
+    private static function storageViolations(string $source): array
+    {
+        $violations = [];
+        $tokens = self::tokens($source);
+        foreach ($tokens as $index => $token) {
+            if (is_array($token) && in_array($token[0], [T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE], true) && preg_match(self::SQL_WORD, $token[1]) === 1) {
+                $violations[] = 'SQL keyword in a string: ' . $token[1];
+            }
+            if (is_array($token) && in_array($token[0], [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)) {
+                $name = $tokens[$index + 1] ?? null;
+                $open = $tokens[$index + 2] ?? null;
+                if (is_array($name) && $name[0] === T_STRING && $open === '(' && in_array(strtolower($name[1]), [...self::QUERY_METHODS, ...self::PDO_METHODS], true)) {
+                    $violations[] = 'query call: ' . $name[1];
+                }
+            }
+        }
+
+        return $violations;
+    }
+
     // ------------------------------------------------------------ the scanner on synthetic code
 
     /** @return iterable<string, array{string, string}> */

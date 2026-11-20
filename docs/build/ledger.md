@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merged: WP0 to WP3, WP5, WP10 and the three security reviews (suite and lint green at the merge). Running: WP4. Next: WP6, WP7, WP8 in parallel when WP4 merges (P181 items), then WP9 (CF-2, CF-5, CF-9, no-statistics case), M4-X (nosniff and sandbox CSP check, spec 8.1 wording, P183). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | PAUSED by the maintainer until 11:31 EST on 2026-11-20 (usage limit). No agents running. M4-WP4 was stopped mid-work: two commits (`44f2ed7`, `ac6f3f7`) are pushed on branch `claude/wizardly-allen-m81ni0--M4-WP4`; an uncommitted `tests/core/app/M4AppTestCase.php` and the link tests were in progress in worktree `.claude/worktrees/wp4` (local only, lost if the container is reclaimed). On resume: resume the WP4 agent by SendMessage (it keeps its transcript) or redispatch WP4 from that branch, finish with P175, P180, P181, P182 items, merge; then WP6, WP7, WP8 in parallel, WP9, M4-X. Rebuild the trimmed vendor if the container was reclaimed (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

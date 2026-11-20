@@ -18,15 +18,19 @@ use TiffinDB\Core\Storage\Keys;
  * Job folders under `<data>/staging/<kind>/<key>/` (M3 spec section 5.1,
  * P127). Every name inside a job folder is chosen by the application; the
  * uploaded file's own name is never a path. A new folder holds `tmp/` (the
- * plugin's temporary folder) and `job.lock` (the job lock, section 5.2).
- * Recursive removal (Fs::removeTree) is used only here.
+ * plugin's temporary folder) and `job.lock` (the job lock, section 5.2),
+ * except an `uploads` folder (an attachment upload, M4 spec section 3.3),
+ * which is made empty and later holds `upload.bin` only. Recursive removal
+ * (Fs::removeTree) is used only here.
  */
 final class StagingArea
 {
     public const FOLDER = 'staging';
-    public const KINDS = ['imports', 'exports', 'archives'];
+    public const KINDS = ['imports', 'exports', 'archives', 'uploads'];
     /** @var array<string, int> seconds */
-    public const MAX_AGE = ['imports' => 86400, 'exports' => 3600, 'archives' => 3600];
+    public const MAX_AGE = ['imports' => 86400, 'exports' => 3600, 'archives' => 3600, 'uploads' => 3600];
+    /** The kind whose job folders hold only the uploaded file (no tmp/, no job.lock). */
+    public const UPLOADS = 'uploads';
     public const TEMP = 'tmp';
     public const LOCK = 'job.lock';
 
@@ -45,7 +49,8 @@ final class StagingArea
 
     /**
      * Creates `<data>/staging/<kind>/<new key>/` (mode 0750) with `tmp/`
-     * and an empty `job.lock`, and returns [key, path]. The staging and kind
+     * and an empty `job.lock` (an `uploads` folder is left empty), and
+     * returns [key, path]. The staging and kind
      * folders are made when missing; \RuntimeException when one of them is
      * anything but a real directory (a symbolic link included).
      *
@@ -65,8 +70,10 @@ final class StagingArea
         $key = $this->keys->generateUnique(fn (string $candidate): bool => Fs::exists($this->kindFolder($kind) . '/' . $candidate));
         $path = $this->kindFolder($kind) . '/' . $key;
         Fs::makeDir($path);
-        Fs::makeDir($path . '/' . self::TEMP);
-        Fs::writeNew($path . '/' . self::LOCK, '');
+        if ($kind !== self::UPLOADS) {
+            Fs::makeDir($path . '/' . self::TEMP);
+            Fs::writeNew($path . '/' . self::LOCK, '');
+        }
 
         return [$key, $path];
     }

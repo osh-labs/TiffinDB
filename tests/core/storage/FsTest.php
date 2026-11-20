@@ -13,9 +13,11 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use TiffinDB\Core\Storage\ErrorTrap;
 use TiffinDB\Core\Storage\Fs;
+use TiffinDB\Tests\Support\FileFixture;
+use TiffinDB\Tests\Support\RepoFiles;
 use TiffinDB\Tests\Support\TempDir;
 
-/** T-STO-7: Fs modes, writeNew, remove, nearestExisting, isInside. */
+/** T-STO-7: Fs modes, writeNew, remove, nearestExisting, isInside; T-STO-14: sha256 and freeBytes. */
 #[CoversClass(Fs::class)]
 #[CoversClass(ErrorTrap::class)]
 final class FsTest extends TestCase
@@ -380,5 +382,76 @@ final class FsTest extends TestCase
         self::assertTrue(Fs::isInside($root . '/link-in', $root . '/docroot'), 'A link outside pointing in is inside.');
         self::assertTrue(Fs::isInside($root . '/link-in/new', $root . '/docroot'));
         self::assertTrue(Fs::isInside($root . '/docroot/sub', $root . '/docroot-alias'), 'The root may be a link too.');
+    }
+
+    public function testSha256MatchesHashFile(): void
+    {
+        foreach (['empty' => '', 'small' => 'synthetic', 'png' => FileFixture::png(4, 4), 'block' => FileFixture::bytes(200000)] as $name => $bytes) {
+            $path = $this->temp->path($name);
+            file_put_contents($path, $bytes);
+            self::assertSame(hash_file('sha256', $path), Fs::sha256($path), $name);
+            self::assertMatchesRegularExpression('/^[0-9a-f]{64}\z/', Fs::sha256($path));
+        }
+    }
+
+    public function testSha256RefusesLinksFoldersAndMissingFiles(): void
+    {
+        $file = $this->temp->path('file');
+        file_put_contents($file, 'synthetic');
+        mkdir($this->temp->path('folder'));
+        $this->symlinkOrSkip($file, $this->temp->path('link'));
+        symlink($this->temp->path('missing'), $this->temp->path('dangling'));
+        foreach (['link', 'dangling', 'folder', 'missing'] as $name) {
+            try {
+                Fs::sha256($this->temp->path($name));
+                self::fail($name . ' was hashed.');
+            } catch (RuntimeException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        foreach (['', "{$file}\0"] as $bad) {
+            try {
+                Fs::sha256($bad);
+                self::fail('A bad path was hashed.');
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    /** The file is larger than the child process's memory limit, so only a streamed hash can pass. */
+    public function testSha256Streams(): void
+    {
+        $path = $this->temp->path('large.bin');
+        $block = FileFixture::bytes(1024 * 1024, 'stream');
+        $handle = fopen($path, 'wb');
+        self::assertIsResource($handle);
+        for ($i = 0; $i < 24; $i++) {
+            fwrite($handle, $block);
+        }
+        fclose($handle);
+        $script = 'require $argv[1]; echo \TiffinDB\Core\Storage\Fs::sha256($argv[2]);';
+        $process = proc_open(
+            [PHP_BINARY, '-n', '-d', 'memory_limit=8M', '-r', $script, RepoFiles::path('vendor/autoload.php'), $path],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+        self::assertIsResource($process);
+        $out = stream_get_contents($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        self::assertSame(0, proc_close($process), (string) $err . (string) $out);
+        self::assertSame(hash_file('sha256', $path), $out);
+    }
+
+    public function testFreeBytes(): void
+    {
+        $free = Fs::freeBytes($this->temp->path());
+        self::assertTrue($free === null || $free >= 0);
+        self::assertIsInt(Fs::freeBytes($this->temp->path()), 'The temporary directory reports its free space here.');
+        self::assertNull(Fs::freeBytes($this->temp->path('missing/deeper')));
+        self::assertNull(Fs::freeBytes(''));
+        self::assertNull(Fs::freeBytes($this->temp->path() . "\0"));
     }
 }

@@ -18,7 +18,7 @@ use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 
-/** T-IO-2 (StagingArea part; the Fs part is tests/core/storage/FsTreeTest.php). */
+/** T-IO-2 (StagingArea part; the Fs part is tests/core/storage/FsTreeTest.php), T-STO-15 (kind `uploads`). */
 #[CoversClass(StagingArea::class)]
 final class StagingAreaTest extends TestCase
 {
@@ -123,7 +123,7 @@ final class StagingAreaTest extends TestCase
         foreach (StagingArea::KINDS as $kind) {
             foreach (['old' => StagingArea::MAX_AGE[$kind] + 1, 'young' => StagingArea::MAX_AGE[$kind] - 1] as $age => $seconds) {
                 [$key, $path] = $this->staging->create($kind);
-                file_put_contents($path . '/tmp/x', 'synthetic');
+                file_put_contents($path . ($kind === 'uploads' ? '/upload.bin' : '/tmp/x'), 'synthetic');
                 touch($path, $now - $seconds);
                 $jobs[$kind][$age] = $key;
             }
@@ -141,7 +141,7 @@ final class StagingAreaTest extends TestCase
         }
         self::assertNotNull($this->staging->folder('imports', $hourImport));
         self::assertDirectoryExists($this->temp->path('staging/imports/not-a-key'), 'Entries that are not job keys are left alone.');
-        self::assertSame(['imports' => 86400, 'exports' => 3600, 'archives' => 3600], StagingArea::MAX_AGE);
+        self::assertSame(['imports' => 86400, 'exports' => 3600, 'archives' => 3600, 'uploads' => 3600], StagingArea::MAX_AGE);
 
         // Sweeping a data folder with no staging area does nothing.
         $empty = TempDir::create();
@@ -151,5 +151,33 @@ final class StagingAreaTest extends TestCase
         } finally {
             $empty->remove();
         }
+    }
+
+    public function testUploadsKind(): void
+    {
+        self::assertContains('uploads', StagingArea::KINDS);
+        self::assertSame(3600, StagingArea::MAX_AGE['uploads']);
+        [$key, $path] = $this->staging->create('uploads');
+        self::assertTrue(Keys::isValid($key));
+        self::assertSame($this->temp->path('staging/uploads/' . $key), $path);
+        self::assertSame(Fs::DIR_MODE, fileperms($path) & 0777);
+        self::assertSame([], Fs::entries($path), 'An upload job folder is made empty; it later holds upload.bin only.');
+        self::assertSame($path, $this->staging->folder('uploads', $key));
+        self::assertNull($this->staging->folder('imports', $key));
+
+        file_put_contents($path . '/upload.bin', 'synthetic');
+        $now = $this->clock->now()->getTimestamp();
+        touch($path, $now - 3600);
+        $this->staging->sweep();
+        self::assertSame($path, $this->staging->folder('uploads', $key), 'Exactly one hour old is kept.');
+        touch($path, $now - 3601);
+        $this->staging->sweep();
+        self::assertNull($this->staging->folder('uploads', $key), 'Older than an hour is swept.');
+        self::assertFalse(Fs::exists($path));
+
+        [$second, $secondPath] = $this->staging->create('uploads');
+        file_put_contents($secondPath . '/upload.bin', 'synthetic');
+        $this->staging->remove('uploads', $second);
+        self::assertFalse(Fs::exists($secondPath));
     }
 }

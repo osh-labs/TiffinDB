@@ -60,11 +60,12 @@ final class HtmlAssertions
     /**
      * The scripts a page may load (M1 spec part 2 sections 4.1 and 6; M2
      * spec part 2 section 3.3; M3 spec part 2 section 7): show-password.js,
-     * settings-preview.js, or import-continue.js, a
+     * settings-preview.js, import-continue.js, or (M4 spec part 2 section
+     * 8) collection-editor.js, a
      * same-origin file under the assets directory, after an optional base
      * path, with the version parameter.
      */
-    private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/(?:show-password|settings-preview|import-continue)\.js\?v=[A-Za-z0-9._~%-]+$#';
+    private const SCRIPT_SRC = '#^(?:/[^/\\\\\s"\'<>?\#]+)*/assets/js/(?:show-password|settings-preview|import-continue|collection-editor)\.js\?v=[A-Za-z0-9._~%-]+$#';
 
     /**
      * Attributes that load or link to an address. Their values (each
@@ -266,7 +267,9 @@ final class HtmlAssertions
      * 6. Every checkbox and radio has a name from a wrapping `label`, a
      *    `label for`, or `aria-label`; ids in the page are unique.
      *
-     * Also: every button has a type and a name (text or `aria-label`).
+     * Also: every button has a type and a name (text or `aria-label`);
+     * every `form` attribute names a form on the page, and no form is
+     * nested (M4 spec part 2 section 10.1).
      */
     public static function assertForm(string $html): void
     {
@@ -278,6 +281,15 @@ final class HtmlAssertions
             $ids[] = (string) $id->nodeValue;
         }
         Assert::assertSame(array_values(array_unique($ids)), $ids, 'Element ids are unique.');
+
+        // A control's form attribute names an existing form (M4 spec part 2
+        // section 10.1, check 2), and no form holds another.
+        foreach ($xpath->query('//*[@form]') as $owned) {
+            /** @var DOMElement $owned */
+            $owner = $owned->getAttribute('form');
+            Assert::assertSame(1, $xpath->query('//form[@id="' . str_replace('"', '', $owner) . '"]')->length, "The form attribute {$owner} names a form on the page.");
+        }
+        Assert::assertSame(0, $xpath->query('//form//form')->length, 'No form is nested.');
 
         foreach ($xpath->query('//form') as $form) {
             /** @var DOMElement $form */

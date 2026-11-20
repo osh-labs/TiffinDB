@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Dispatch M4-D1 (design tier, Opus floor met) to write `docs/specs/M4-core.md`, `docs/specs/M4-screens.md`, `docs/design/m4/`, ADRs 0018 and 0019, format version 4; then M4-R1 spec review; no work package before M4-R1 is merged (M4 session plan section 4). Build state is recorded here, not in a PROGRESS file. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9: `composer install` in an empty scratch directory, strip `.git`, `tests`, `tools`, `build`, copy to `vendor/`, `composer dump-autoload`) |
+| Next action | M4-R1 (independent design-tier spec review of `docs/specs/M4-core.md`, `M4-screens.md`, `docs/design/m4/`, ADRs 0018 and 0019, format v4) is running. M4-D1 merged (suite 8414 OK, 1 skipped; lint 684 files 0 failed). After M4-R1 merges: wave 1 per the specs' work-package table (M4 plan section 6, amended by M4-D1). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 

@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merged: WP1, WP3, WP5, WP2, WP0 and both security reviews (suite and lint recorded at the merge; see git log). Running: WP10, WP1 fixes (P180). Next: WP4 once WP10 merges (P175, P180, P181 items); WP6 to WP8 carry P181 items; WP9 takes CF-2, CF-5, CF-9 (P179) and the no-statistics plan case. Then M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | Merged: WP1 (with P180 fixes 1 and 2), WP3, WP5, WP2, WP0, both security reviews (b23d171; suite 8979 OK, 1 skipped; lint 728 files 0 failed). Running: WP10. Next: WP4 once WP10 merges (P175, P180 items 3 and 4, P181 items); WP6 to WP8 carry P181 items; WP9 takes CF-2, CF-5, CF-9 (P179) and the no-statistics plan case. Then M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

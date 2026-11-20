@@ -236,7 +236,7 @@ public function addLink(string $fieldKey, int $id, int $targetId, string $userKe
 public function removeLink(string $fieldKey, int $id, int $targetId, string $userKey): bool;
 /**
  * The required relation and attachment fields among $fieldKeys that the record has no live link or no file in:
- * one problem.value.required per field (P157).
+ * one problem.link.required or problem.attachment.required per field (P157).
  * @param list<string> $fieldKeys
  * @return list<Problem>
  */
@@ -259,7 +259,7 @@ Both run in `transaction()` (own write, or the caller's in joined mode). `setLin
 
 #### 4.3.2 `requiredLinkProblems`
 
-For each key that is a field of the table, required, and of type `relation` (no live linked record: the `linksOf` query restricted to one id) or `attachment` (no row in `_tiffin_attachment_links` for field and record): `new Problem($key, 'problem.value.required')`. Keys of other types or tables are ignored.
+For each key that is a field of the table, required, and of type `relation` (no live linked record: the `linksOf` query restricted to one id) or `attachment` (no row in `_tiffin_attachment_links` for field and record): `new Problem($key, 'problem.link.required')` or `new Problem($key, 'problem.attachment.required')`. Keys of other types or tables are ignored.
 
 #### 4.3.3 `linkDetails`
 
@@ -540,6 +540,8 @@ English text in `strings/en/problems.php` (owned by M4-WP5), exactly. `tests/cor
 | Key | Text |
 |---|---|
 | `problem.upload.empty` | That file is empty. Choose a file with something in it. |
+| `problem.link.required` | Link at least one record here. |
+| `problem.attachment.required` | Add at least one file here. |
 | `problem.attachment.not_image` | This field takes images only: PNG, JPEG, GIF, or WebP. |
 | `problem.attachment.too_many` | This {item} already has {max} files here. Remove one first. |
 | `problem.attachment.store_failed` | The file could not be stored. Try again. |
@@ -561,7 +563,7 @@ English text in `strings/en/problems.php` (owned by M4-WP5), exactly. `tests/cor
 | `collection.broken.choice` | The value this rule used has been removed from the list. |
 | `collection.broken.record` | The record this rule used is in the trash or has been deleted. |
 
-M1 to M3 keys reused: `problem.upload.missing`, `problem.upload.too_large`, `problem.upload.failed`, `problem.upload.no_space`, `problem.name.*`, `problem.text.*`, `problem.value.required`, `problem.link.*`. `{item}` in `problem.attachment.too_many` and `problem.link.trashed_holds` is the table's item name, passed as a parameter by the core. The `collection.broken.*` keys are message keys for reasons, printed by the editor and listed in `strings/en/collections.php` by WP7 (not `problems.php`); they are listed here so `MessageKeysTest` sees every key the core produces, and WP5 adds `collection.broken.` to the runtime prefixes of `TemplateRulesTest`.
+M1 to M3 keys reused: `problem.upload.missing`, `problem.upload.too_large`, `problem.upload.failed`, `problem.upload.no_space`, `problem.name.*`, `problem.text.*`, `problem.link.target_missing`, `problem.link.one_only`, `problem.link.target_taken`. `{item}` in `problem.attachment.too_many` and `problem.link.trashed_holds` is the table's item name, passed as a parameter by the core. The `collection.broken.*` keys are message keys for reasons, printed by the editor and listed in `strings/en/collections.php` by WP7 (not `problems.php`); they are listed here so `MessageKeysTest` sees every key the core produces, and WP5 adds `collection.broken.` to the runtime prefixes of `TemplateRulesTest`.
 
 ## 12. Test plan
 

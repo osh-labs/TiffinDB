@@ -10,6 +10,7 @@ References: "plan N" is `docs/plan.md` section N; "ui N" is `docs/ui-design-plan
 - Most of the storage already exists. Join tables, `_tiffin_attachments`, `_tiffin_attachment_links`, `RecordOperations::setLinks`, `TrashOperations` (list, restore, empty), the `collections.manage` permission, the reusable filter `Condition`, uploaded files in `Request`, and streamed download responses are in the tree. M4 is mainly screens plus three new core pieces: an attachment store, a multi-rule list query, and a collection store.
 - One project-format step (version 4) adds `_tiffin_collections`. Attachments need no format change (format 8 already defines the storage).
 - Size: 1 design package, 1 spec review, about 10 work packages, 1 exit audit. Estimate 3 to 4 usage windows. Basis: M1 (13 packages, 2 specs) took about 3 windows. This is an extrapolation, not a measurement.
+- All design-tier work (specs, ADRs, screen designs, spec review, security reviews, exit audit) runs on an Opus model at a minimum (section 4).
 - Seven maintainer answers would remove rework (section 3). None blocks the start; each has a provisional default.
 
 ## 2. Scope and exit criteria
@@ -45,6 +46,8 @@ Carried into the session: P105 (requiredness for relation and attachment fields)
 | 1 | M4 design (M4-D1), spec review (M4-R1), rulings applied | design |
 | 2 | Implementation, waves 1 to 5 | implementation, mechanical |
 | 3 | Exit audit (M4-X), fixes, as-built notes, ledger close, end-of-session notification | design |
+
+Model floor for design work (maintainer instruction, overrides the session prompt's mapping where that is lower): every design-tier agent runs on an Opus model at a minimum; a more capable model is allowed, a less capable one is not. This covers M4-D1 and every spec, ADR, format document, and screen design it produces, the spec review M4-R1, design rulings and root-cause redesigns, the design-tier security reviews of section 6, and the exit audit M4-X. The orchestrator sets the model explicitly on each of these calls (orch 2 rule 1) and does not dispatch a design-tier task if no such model is available; that is a blocker (orch 7). The ledger stays free of model names (orch 8); it records only that the floor was met.
 
 Rules in addition to orch 2 and 3: no package is dispatched before M4-R1 is merged; checkpoint (commit, push, ledger) after every merge; each agent brief names its own scratch subfolder and port.
 
@@ -145,7 +148,7 @@ Independent design-tier audit against section 2, plus: the matrix of section 5.3
 
 ## 9. Assumptions
 
-1. The tier-to-model mapping is given in the session prompt (orch introduction).
+1. The tier-to-model mapping is given in the session prompt (orch introduction), subject to the design-tier floor in section 4.
 2. The integration branch is the branch assigned to that session; it starts from `main`, which holds all of M0 to M3.
 3. The build environment is as in orch 9: no Apache, headless Chromium available.
 4. Provisional decisions P1 to P144 stand unless the maintainer changes them; new open points are settled under orch 5.

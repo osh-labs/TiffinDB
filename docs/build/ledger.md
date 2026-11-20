@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merged: WP1, WP3, WP5, WP2, WP0 (46992ad; suite 8956 OK, 1 skipped; lint 726 files 0 failed). Running: WP10, design-tier security review of WP1 and WP2. Next: WP4 once WP10 merges (wire `Attachments::sweepFiles()` with the staging sweep per P175; file deletion and sweep after `TrashOperations::empty`); owed reviews of WP3 (SQL) and WP5 (templates, headers); WP9 takes CF-2, CF-5, CF-9 (P179). Then WP6 to WP8, WP9, M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | Merged: WP1, WP3, WP5, WP2, WP0, security review WP1/WP2 (6a2e4a0; suite 8970 OK, 1 skipped; lint 727 files 0 failed). Running: WP10, WP1 fixes (P180), security review of WP3 and WP5. Next: WP4 once WP10 merges (P175 sweep wiring, P180 items); WP9 takes CF-2, CF-5, CF-9 (P179). Then WP6 to WP8, WP9, M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
@@ -237,6 +237,7 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P177 | Trash and file-helper details (M4-R1 ruling 3) | `TrashOperations::empty` returns `TrashEmptied` and the two M1 assertions change to `->records`; `Fs::sha256` and `Fs::freeBytes` may duplicate the `IoSupport` helpers (a later cleanup may unify them); `Cache-Control` stays `no-store` (P150) | M4 orchestrator ruling |
 | P178 | WP5 may update two non-owned tests | `ListScreenTest.php` and `KeyboardStructureTest.php` change only to reflect the trash line becoming a link (spec'd); no other assertion weakened | M4 orchestrator ruling |
 | P179 | Residue of WP0 carried-forward items | CF-3 done with both P176 rules held. CF-2 (narrow `.report-table` right-alignment to `.num` in `app.css`), CF-5 (ExportController passes `projectSize`) and CF-9 (the abandoned-row recheck mutation still survives; needs a test) are assigned to WP9; CF-8 checks permissions from source because Authorizer and Context are final | M4 orchestrator ruling |
+| P180 | Security review of WP1 and WP2: no blocking or high findings; five low | Findings 1 and 2 (place() trusts an existing same-size file; StoredUpload not re-verified at place time) go back to WP1 for fixing. Finding 3 (sweepFiles case-sensitive hash compare) and 4 (Trash::empty link deletion only for given fields) go to WP4, as do the hand-over items: refuse zero-byte files and files over the cap, check the URL table matches the field's table, permission first. Finding 5 (signature plus HTML typed as image, served inline) is intended; M4-X must verify nosniff and the sandbox CSP | M4 orchestrator ruling; review at docs/build/reviews/M4-sec-wp1-wp2.md |
 
 ## 5. Blockers
 

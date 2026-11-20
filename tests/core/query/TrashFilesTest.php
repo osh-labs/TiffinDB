@@ -153,8 +153,9 @@ final class TrashFilesTest extends TestCase
         self::assertSame([$this->items->key => 2], $itemsOnly->records);
         self::assertSame(3, $itemsOnly->files, 'C stays linked from the room.');
 
+        // P180 item 4: links through every field of each table count, whatever fields are listed.
         $oneField = $this->trash->impact([$this->items, $this->rooms], [$this->items->key => [$this->f['files']]]);
-        self::assertSame(2, $oneField->files, 'A and E; C keeps a link through Photos, G through Extra.');
+        self::assertSame(4, $oneField->files, 'As with every field listed.');
 
         $none = $this->trash->impact([], []);
         self::assertSame([], $none->records);
@@ -202,18 +203,20 @@ final class TrashFilesTest extends TestCase
         self::assertNotNull($this->storedFile(hash('sha256', 'also live')));
     }
 
-    public function testEmptyLeavesLinksThroughFieldsItWasNotGiven(): void
+    public function testEmptyRemovesLinksThroughEveryFieldOfTheTable(): void
     {
+        // P180 item 4 (review L4): a field left out of the list cannot leave a link to a deleted record.
         $ids = $this->scene();
         $emptied = $this->trash->empty([$this->items], [$this->items->key => [$this->f['files']]], self::USER_KEY);
         self::assertSame(1, $emptied->records);
-        $expected = [hash('sha256', 'only trashed'), hash('sha256', 'twin freed'), hash('sha256', 'twin kept')];
+        $expected = [hash('sha256', 'only trashed'), hash('sha256', 'twin freed'), hash('sha256', 'twin kept'), hash('sha256', 'second field')];
         $freed = $emptied->freedHashes;
         sort($expected);
         sort($freed);
         self::assertSame($expected, $freed);
         self::assertNotNull($this->attachments()->get($ids['C']), 'Still linked from the trashed room.');
-        self::assertNotNull($this->attachments()->get($ids['G']), 'Its link was not given: left for the sweep.');
+        self::assertNull($this->attachments()->get($ids['G']), 'Its link went although its field was not given.');
+        self::assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM "_tiffin_attachment_links" WHERE "field_key" = ?', [$this->extra->key]));
     }
 
     public function testAFailedEmptyChangesNothing(): void
@@ -231,11 +234,16 @@ final class TrashFilesTest extends TestCase
         self::assertSame($before, $this->dump());
     }
 
-    public function testEmptyWithNoAttachmentFieldsFreesNothing(): void
+    public function testEmptyWithNoAttachmentFieldsListedStillFreesTheirRows(): void
     {
         $this->scene();
         $emptied = $this->trash->empty([$this->items, $this->rooms], [], self::USER_KEY);
         self::assertSame(2, $emptied->records);
-        self::assertSame([], $emptied->freedHashes);
+        $expected = array_map(static fn (string $c): string => hash('sha256', $c), ['only trashed', 'two tables', 'twin kept', 'twin freed', 'second field']);
+        $freed = $emptied->freedHashes;
+        sort($expected);
+        sort($freed);
+        self::assertSame($expected, $freed, 'P180 item 4: as with every field listed.');
+        self::assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM "_tiffin_attachment_links" WHERE "record_id" NOT IN (SELECT "id" FROM ' . $this->items->sql() . ') AND "field_key" <> ?', [$this->photos->key]));
     }
 }

@@ -16,8 +16,9 @@ use TiffinDB\Core\Schema\FieldTypes;
  * spec section 5.7). Core\Forms does not read records: Core\App reads them
  * through Core\Query and passes the values in (ADR 0014 decision 5).
  *
- * Slots naming a key that is not a field of the table are dropped, and so
- * are images (M2 shows none).
+ * Slots naming a key that is not a field of the table are dropped. Each
+ * image becomes a BoundImage, servable only when BindData lists its
+ * attachment id (P173); a template prints nothing for one that is not.
  */
 final class FormBinder
 {
@@ -69,6 +70,12 @@ final class FormBinder
             $block instanceof Heading => new BoundHeading($block->level, $block->children),
             $block instanceof Paragraph => new BoundParagraph($block->children),
             $block instanceof Divider => new BoundDivider(),
+            $block instanceof Image => new BoundImage(
+                $block->attachmentId,
+                $block->alt,
+                in_array($block->attachmentId, $data->servableImages, true),
+                $block->placement,
+            ),
             default => null,
         };
     }

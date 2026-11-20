@@ -162,8 +162,10 @@ final class Trash
      * What empty() over the same tables and fields would delete (M4 spec
      * section 4.5): records in the trash per table, and the stored files
      * that would go: the distinct hashes of the attachment rows linked only
-     * from trashed records of those tables through those fields, leaving
-     * out a hash that a row empty() keeps also has.
+     * from trashed records of those tables, leaving out a hash that a row
+     * empty() keeps also has. Links through every field of each table are
+     * counted, as empty() deletes them (P180 item 4); $attachmentFields is
+     * checked only.
      *
      * @param list<TableDef> $tables
      * @param array<string, list<FieldDef>> $attachmentFields by table key
@@ -175,10 +177,8 @@ final class Trash
         $trashedLinks = [];
         foreach ($tables as $table) {
             $records[$table->key] = $this->count($table);
-            foreach ($attachmentFields[$table->key] ?? [] as $field) {
-                foreach (self::trashedLinkCounts($this->db, $table, $field->key) as $attachmentId => $count) {
-                    $trashedLinks[$attachmentId] = ($trashedLinks[$attachmentId] ?? 0) + $count;
-                }
+            foreach (self::trashedLinkCounts($this->db, $table) as $attachmentId => $count) {
+                $trashedLinks[$attachmentId] = ($trashedLinks[$attachmentId] ?? 0) + $count;
             }
         }
         $freed = [];
@@ -218,7 +218,9 @@ final class Trash
      * CASCADE), then the attachment rows among those ids that nothing links
      * to any more. Returns the records deleted and the deleted rows'
      * distinct hashes; the caller deletes the files after the write
-     * (Attachments::deleteFiles, ADR 0018 decision 6).
+     * (Attachments::deleteFiles, ADR 0018 decision 6). The links through
+     * every field of each table go, whatever $attachmentFields lists
+     * (P180 item 4); $attachmentFields is checked only.
      *
      * @param list<TableDef> $tables
      * @param array<string, list<FieldDef>> $attachmentFields by table key
@@ -228,16 +230,14 @@ final class Trash
         self::checkTargets($tables, $attachmentFields);
         self::person($userKey);
 
-        return $this->db->write(function (Database $db) use ($tables, $attachmentFields, $userKey): EmptiedTrash {
+        return $this->db->write(function (Database $db) use ($tables, $userKey): EmptiedTrash {
             $deleted = 0;
             $held = [];
             foreach ($tables as $table) {
-                foreach ($attachmentFields[$table->key] ?? [] as $field) {
-                    foreach (array_keys(self::trashedLinkCounts($db, $table, $field->key)) as $attachmentId) {
-                        $held[$attachmentId] = true;
-                    }
+                foreach (array_keys(self::trashedLinkCounts($db, $table)) as $attachmentId) {
+                    $held[$attachmentId] = true;
                 }
-                $deleted += self::emptyTable($db, $table, $attachmentFields[$table->key] ?? []);
+                $deleted += self::emptyTable($db, $table);
             }
             $hashes = [];
             foreach (array_chunk(array_keys($held), self::CHUNK) as $chunk) {
@@ -258,16 +258,18 @@ final class Trash
 
     /**
      * Attachment id => links to it from trashed records of the table
-     * through the field.
+     * through any field of the table (P180 item 4: whatever fields the
+     * caller lists, so no link of a deleted record can be left behind).
      *
      * @return array<int, int>
      */
-    private static function trashedLinkCounts(Database $db, TableDef $table, string $fieldKey): array
+    private static function trashedLinkCounts(Database $db, TableDef $table): array
     {
         $rows = $db->all(
-            'SELECT "attachment_id" AS "id", COUNT(*) AS "links" FROM "_tiffin_attachment_links" WHERE "field_key" = ? AND "record_id" IN (SELECT "id" FROM '
+            'SELECT "attachment_id" AS "id", COUNT(*) AS "links" FROM "_tiffin_attachment_links"'
+            . ' WHERE "field_key" IN (SELECT "key" FROM "_tiffin_fields" WHERE "table_key" = ?) AND "record_id" IN (SELECT "id" FROM '
             . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL) GROUP BY "attachment_id"',
-            [$fieldKey],
+            [$table->key],
         );
         $counts = [];
         foreach ($rows as $row) {
@@ -303,16 +305,14 @@ final class Trash
         }
     }
 
-    /** @param list<FieldDef> $attachmentFields */
-    private static function emptyTable(Database $db, TableDef $table, array $attachmentFields): int
+    /** Deletes the table's trashed records and their attachment links through every field of the table (P180 item 4). */
+    private static function emptyTable(Database $db, TableDef $table): int
     {
-        foreach ($attachmentFields as $field) {
-            $db->run(
-                'DELETE FROM "_tiffin_attachment_links" WHERE "field_key" = ? AND "record_id" IN (SELECT "id" FROM '
-                . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL)',
-                [$field->key],
-            );
-        }
+        $db->run(
+            'DELETE FROM "_tiffin_attachment_links" WHERE "field_key" IN (SELECT "key" FROM "_tiffin_fields" WHERE "table_key" = ?) AND "record_id" IN (SELECT "id" FROM '
+            . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL)',
+            [$table->key],
+        );
 
         return $db->run('DELETE FROM ' . $table->sql() . ' WHERE "_trashed_at" IS NOT NULL');
     }

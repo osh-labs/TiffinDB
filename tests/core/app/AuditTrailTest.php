@@ -17,6 +17,7 @@ use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditEntry;
 use TiffinDB\Tests\Support\CoreFixture;
+use TiffinDB\Tests\Support\FileFixture;
 
 require_once __DIR__ . '/AppTestCase.php';
 require_once __DIR__ . '/ImportOperationsTest.php';
@@ -109,7 +110,7 @@ final class AuditTrailTest extends AppTestCase
         $expect(AuditAction::SNAPSHOT_TAKEN, $admin, $project->id, 'snapshot', $snapshot->file, ['reason' => 'manual']);
         $this->fx->insertRecord($p, $plants->key, [], true);
         $this->ops->trash()->empty($this->admin, $p, null);
-        $expect(AuditAction::TRASH_EMPTIED, $admin, $project->id, null, null, ['records' => 1]);
+        $expect(AuditAction::TRASH_EMPTIED, $admin, $project->id, null, null, ['records' => 1, 'files' => 0]);
         $schema->deleteTable($this->admin, $p, $beds->key);
         $expect(AuditAction::TABLE_DELETED, $admin, $project->id, 'table', $beds->key, ['records' => 0]);
 
@@ -137,8 +138,26 @@ final class AuditTrailTest extends AppTestCase
             'tables' => 2, 'records' => 2, 'values_emptied' => 0, 'links_dropped' => 0, 'forms_dropped' => 0, 'files_missing' => 0,
         ]);
         $exports->finish($this->admin, $p, $archive->jobKey);
+
+        // M4 (spec section 10.8, P169): ids, sizes, and counts only; never a file name or a rule value.
+        $photos = $schema->addField($this->admin, $p, $plants->key, 'Photos', 'attachment', [], false, '');
+        $plant = $this->fx->insertRecord($p, $plants->key, []);
+        $png = FileFixture::png();
+        $attachments = $this->ops->attachments();
+        $file = $attachments->add($this->admin, $p, $plants->key, (string) $plant, $photos->key, $this->fx->upload($png), 'synthetic-leaf.png', null);
+        $fileDetail = ['field' => $photos->key, 'record' => $plant, 'attachment' => $file->id, 'size' => strlen($png)];
+        $expect(AuditAction::ATTACHMENT_ADDED, $admin, $project->id, 'table', $plants->key, $fileDetail);
+        $attachments->remove($this->admin, $p, $plants->key, (string) $plant, $photos->key, (string) $file->id);
+        $expect(AuditAction::ATTACHMENT_REMOVED, $admin, $project->id, 'table', $plants->key, $fileDetail);
+        $collections = $this->ops->collections();
+        $draft = ['name' => 'Synthetic tall herbs', 'match' => 'any', 'rules' => [['field' => $height->key, 'test' => 'more', 'value' => '987']]];
+        $collection = $collections->save($this->admin, $p, $plants->key, null, $draft);
+        $expect(AuditAction::COLLECTION_SAVED, $admin, $project->id, 'collection', $collection, ['table' => $plants->key, 'rules' => 1, 'match' => 'any']);
+        $collections->delete($this->admin, $p, $collection);
+        $expect(AuditAction::COLLECTION_DELETED, $admin, $project->id, 'collection', $collection, ['table' => $plants->key, 'rules' => 1, 'match' => 'any']);
+
         $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
-        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv'] as $text) {
+        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987'] as $text) {
             self::assertStringNotContainsString($text, $all);
         }
 

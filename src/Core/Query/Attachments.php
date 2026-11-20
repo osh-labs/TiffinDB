@@ -251,7 +251,7 @@ final class Attachments
         return $this->db->write(function (Database $db) use ($valid): int {
             $deleted = 0;
             foreach ($valid as $hash) {
-                if ((int) $db->value('SELECT COUNT(*) FROM "_tiffin_attachments" WHERE "sha256" = ?', [$hash]) === 0) {
+                if ((int) $db->value('SELECT COUNT(*) FROM "_tiffin_attachments" WHERE lower("sha256") = ?', [$hash]) === 0) {
                     $deleted += $this->deleteFile($db, $hash);
                 }
             }
@@ -278,15 +278,18 @@ final class Attachments
      * The orphan-file part of the sweep, in one write: every stored file
      * whose hash no row names is deleted (stray entries that are not
      * stored files are left alone by the store). The list of stored hashes
-     * is read inside the write, so no placement can interleave. Also run
-     * with the staging sweep (P175). Returns the files deleted.
+     * is read inside the write, so no placement can interleave. Row hashes
+     * are compared in lower case, so a row naming a hash in another case
+     * still keeps its file (P180 item 3). Also run with the staging sweep
+     * (P175). Returns the files deleted.
      */
     public function sweepFiles(): int
     {
         return $this->db->write(function (Database $db): int {
             $named = [];
             foreach ($db->all('SELECT DISTINCT "sha256" FROM "_tiffin_attachments"') as $row) {
-                $named[(string) $row['sha256']] = true;
+                // Compared in lower case (P180 item 3): a row naming the hash in another case still keeps its file.
+                $named[strtolower((string) $row['sha256'])] = true;
             }
             $deleted = 0;
             foreach ($this->store->storedHashes() as $hash) {

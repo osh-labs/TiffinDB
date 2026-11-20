@@ -111,7 +111,7 @@ final class ImportOperations
         $plugin = $this->choosePlugin($pluginRef, $extension);
         $name = $plugin->manifest?->name ?? $plugin->id;
 
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $this->c->opener->open($project));
         [$key, $folder] = $this->c->staging()->create(self::IMPORTS);
         $job = null;
         try {

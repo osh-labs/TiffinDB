@@ -16,6 +16,7 @@ final class TrashedRecord
         public readonly string $trashedAt,
         public readonly ?string $trashedBy,
         public readonly ?string $title,
+        public readonly ?string $trashedByName = null,
     ) {
     }
 }

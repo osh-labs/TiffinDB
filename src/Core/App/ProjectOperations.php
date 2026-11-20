@@ -147,6 +147,19 @@ final class ProjectOperations
         return $this->c->project($actor, Permission::ViewProject, $projectKey);
     }
 
+    /**
+     * Distinct stored files of the project and their total size, for the
+     * settings page (M4 spec section 10.3, ADR 0018 decision 3).
+     */
+    public function attachmentTotals(Actor $actor, string $projectKey): AttachmentTotals
+    {
+        $project = $this->c->project($actor, Permission::ManageProject, $projectKey);
+        $db = $this->c->opener->open($project);
+        $totals = $this->c->attachments($project, $db, new Schema($db, $this->c->types))->totals();
+
+        return new AttachmentTotals($totals['files'], $totals['bytes']);
+    }
+
     /** Renames a project: the file's meta first, then the registry. */
     public function rename(Actor $actor, string $projectKey, string $name): ProjectRecord
     {

@@ -14,7 +14,7 @@ namespace TiffinDB\Core\Storage;
  * mode 0750, files with 0640 (ADR 0011 decision 1). Calls that can warn run
  * under ErrorTrap, never with `@`. No method accepts a path containing a
  * NUL byte. The listing and stat helpers (entries, exists, isFile, isDir,
- * size) never follow a symbolic link (T-CF-4). Recursive removal exists
+ * size, sha256) never follow a symbolic link (T-CF-4). Recursive removal exists
  * only for the staging area (removeTree, P127).
  */
 final class Fs
@@ -272,6 +272,65 @@ final class Fs
         }
 
         return (int) $stat['size'];
+    }
+
+    /**
+     * The SHA-256 of the regular file at the path, as 64 lower-case hex
+     * characters, read in a stream (hash_init and hash_update_stream), so
+     * the file is never held in memory (M4 spec section 3.2). Throws
+     * \RuntimeException when nothing is there, when the path is a symbolic
+     * link (never followed) or anything but a regular file, when the file
+     * opened is not the one checked (it was swapped between the check and
+     * the open), or when it cannot be read to the end.
+     */
+    public static function sha256(string $path): string
+    {
+        self::refuseNul($path);
+        $stat = self::lstat($path);
+        if ($stat === null || self::type($stat) !== self::TYPE_FILE) {
+            throw new \RuntimeException('Cannot hash the file: the path is not a regular file.');
+        }
+        $handle = ErrorTrap::run(static fn (): mixed => fopen($path, 'rb'), 'Cannot open the file.');
+        if (!is_resource($handle)) {
+            throw new \RuntimeException('Cannot open the file.');
+        }
+        try {
+            $opened = ErrorTrap::run(static fn (): array|false => fstat($handle), 'Cannot read the file status.');
+            if ($opened === false || self::type($opened) !== self::TYPE_FILE || $opened['dev'] !== $stat['dev'] || $opened['ino'] !== $stat['ino']) {
+                throw new \RuntimeException('Cannot hash the file: it changed while it was opened.');
+            }
+            $context = hash_init('sha256');
+            $read = ErrorTrap::run(static fn (): int => hash_update_stream($context, $handle), 'Cannot read the file.');
+            if ($read !== (int) $opened['size'] || !feof($handle)) {
+                throw new \RuntimeException('Cannot hash the file: it was not read to the end.');
+            }
+
+            return hash_final($context);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * The free space in bytes of the file system holding the path
+     * (disk_free_space under ErrorTrap), or null when it is unknown: the
+     * call failed or is disabled, or the path is empty or holds a NUL byte.
+     */
+    public static function freeBytes(string $path): ?int
+    {
+        if ($path === '' || str_contains($path, "\0") || !function_exists('disk_free_space')) {
+            return null;
+        }
+        try {
+            $free = ErrorTrap::run(static fn (): float|false => disk_free_space($path), 'Cannot read the free space.');
+        } catch (\RuntimeException) {
+            return null;
+        }
+        if (!is_float($free) || is_nan($free) || $free < 0) {
+            return null;
+        }
+
+        return (int) min($free, (float) PHP_INT_MAX);
     }
 
     /**

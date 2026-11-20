@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | M4-R1 (independent design-tier spec review of `docs/specs/M4-core.md`, `M4-screens.md`, `docs/design/m4/`, ADRs 0018 and 0019, format v4) is running. M4-D1 merged (suite 8414 OK, 1 skipped; lint 684 files 0 failed). After M4-R1 merges: wave 1 per the specs' work-package table (M4 plan section 6, amended by M4-D1). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | M4-D1 and M4-R1 merged; rulings P175 to P177 recorded. Wave 1 dispatching: WP1, WP3, WP5 (then WP0 as a slot frees). Then wave 2 WP2 and WP10, wave 3 WP4, wave 4 WP6 to WP8, wave 5 WP9, exit audit M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 
 ### Phase 0 record (2026-11-19)
 
@@ -242,6 +242,9 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P172 | File page | One page per attached file (`.../records/{r}/files/{field}/{a}`): the image large for the four types, facts, Download, Replace, Remove; the record form's "Open" goes there for every file | `docs/design/m4/files.md` (M4-D1) |
 | P173 | Form images | Form format 1 `img` elements render through the serving route only when servable (inline type, linked from a live record); otherwise nothing | `docs/formats/tiffin.md` 12.4; `docs/specs/M4-core.md` 9 (M4-D1) |
 | P174 | Picker page size and order | 50 candidates per page in the other table's default order; candidates exclude records already linked (live or in the trash) | `docs/specs/M4-core.md` 4.4 (M4-D1) |
+| P175 | Orphan-file sweep trigger (M4-R1 ruling 1) | Also runs with the staging sweep, as the session plan says, in addition to the ADR 0018 decision 6 triggers; WP1 implements both and WP2/WP4 wire it. ADR 0018 decision 6 to be amended by WP1 | M4 orchestrator ruling under orchestration 5 (cheapest to reverse) |
+| P176 | CSV hostile-input item CF-3 (M4-R1 ruling 2) | WP0 attempts it, including the `CsvFile.php` change, but `CsvHostileTest` must still pin `too_large`; if both cannot hold, WP0 defers CF-3 and records it in the ledger carried-forward paragraph | M4 orchestrator ruling |
+| P177 | Trash and file-helper details (M4-R1 ruling 3) | `TrashOperations::empty` returns `TrashEmptied` and the two M1 assertions change to `->records`; `Fs::sha256` and `Fs::freeBytes` may duplicate the `IoSupport` helpers (a later cleanup may unify them); `Cache-Control` stays `no-store` (P150) | M4 orchestrator ruling |
 
 ## 5. Blockers
 

@@ -287,6 +287,53 @@ final class AttachmentStoreTest extends TestCase
         self::assertFalse(Fs::exists($this->project . '/attachments/' . substr($swapped->sha256, 0, 2) . '/' . $swapped->sha256));
     }
 
+    /** Review L1: a same-size file whose content does not match its hash name is replaced, not trusted. */
+    public function testPlaceReplacesASameSizeFileWithOtherContent(): void
+    {
+        $bytes = FileFixture::png(3, 3);
+        $upload = $this->store->inspect($this->stage($bytes));
+        $target = $this->target($upload->sha256);
+        mkdir(dirname($target), 0750, true);
+        file_put_contents($target, str_repeat('X', strlen($bytes)));
+        chmod($target, 0600);
+        self::assertTrue($this->place($upload), 'The planted file was replaced.');
+        self::assertSame($bytes, file_get_contents($target));
+        self::assertSame($upload->sha256, hash_file('sha256', $target));
+        self::assertFalse(Fs::exists($upload->path));
+        clearstatcache();
+        self::assertSame(0640, fileperms($target) & 0777);
+        self::assertSame([$upload->sha256], $this->store->storedHashes());
+
+        // The genuine file is then trusted: a second identical upload is not moved.
+        $again = $this->store->inspect($this->stage($bytes));
+        self::assertFalse($this->place($again));
+        self::assertTrue(Fs::isFile($again->path));
+    }
+
+    /** Review L2: place() hashes and types the staged file again, so a swap after inspect or a hand-built upload is refused. */
+    public function testPlaceRechecksTheHashAndTheType(): void
+    {
+        $bytes = FileFixture::png(2, 2);
+        $swapped = $this->store->inspect($this->stage($bytes));
+        $html = '<html><script>alert(1)</script></html>';
+        file_put_contents($swapped->path, str_pad($html, strlen($bytes), ' '));
+        self::assertSame($swapped->size, filesize($swapped->path), 'The swap keeps the size.');
+        self::assertRefused(\RuntimeException::class, fn (): bool => $this->place($swapped), 'same-size content swap');
+        self::assertFalse(Fs::exists($this->target($swapped->sha256)));
+
+        $arbitrary = $this->stage('synthetic arbitrary content');
+        $madeUp = new StoredUpload($arbitrary, str_repeat('a', 64), (int) filesize($arbitrary), MediaType::PNG);
+        self::assertRefused(\RuntimeException::class, fn (): bool => $this->place($madeUp), 'made-up hash');
+        $rightHash = new StoredUpload($arbitrary, hash_file('sha256', $arbitrary), (int) filesize($arbitrary), MediaType::PNG);
+        self::assertRefused(\RuntimeException::class, fn (): bool => $this->place($rightHash), 'made-up type');
+        self::assertTrue(Fs::isFile($arbitrary), 'Every refusal left the staged file.');
+        self::assertSame([], $this->store->storedHashes(), 'Nothing was stored.');
+
+        $honest = new StoredUpload($arbitrary, hash_file('sha256', $arbitrary), (int) filesize($arbitrary), MediaType::OTHER);
+        self::assertTrue($this->place($honest), 'A hand-built upload whose values match the file is placed.');
+        self::assertSame([$honest->sha256], $this->store->storedHashes());
+    }
+
     /** T-STO-11: outside a write, or with another project's database, \LogicException and nothing moved. */
     public function testPlaceAndDeleteNeedThisProjectsWrite(): void
     {

@@ -11,8 +11,9 @@ namespace TiffinDB\Core\Storage;
 /**
  * A staged upload after AttachmentStore::inspect (M4 spec section 3.2):
  * where it is, its SHA-256 (64 lower-case hex characters), its size in
- * bytes, and the type MediaType decided from its leading bytes. Made only
- * by inspect, so the hash always comes from the file's own bytes.
+ * bytes, and the type MediaType decided from its leading bytes. Made by
+ * inspect; AttachmentStore::place checks every value again against the
+ * staged file, so a hand-built or outdated upload is refused there.
  */
 final class StoredUpload
 {

@@ -4,8 +4,8 @@
  * Copyright (C) TiffinDB contributors
  *
  * Message keys produced by the core (M1 spec part 1 section 12, then M2
- * spec part 1 section 8, then M3 spec part 1 section 14), with their English text exactly as specified
- * there. {name} placeholders are
+ * spec part 1 section 8, then M3 spec part 1 section 14, then M4 spec
+ * part 1 section 11), with their English text exactly as specified there. {name} placeholders are
  * the problem's parameters, except {wait}, which Format::problem() builds
  * from the `seconds` parameter.
  */
@@ -114,4 +114,24 @@ return [
     'problem.archive.bad_table' => 'The project file in this archive has a table that does not match its fields.',
     'problem.archive.rebuild_failed' => 'The project could not be rebuilt from this archive.',
     'problem.plugin.not_available' => 'This plugin cannot be turned on.',
+
+    // M4 core spec section 11.
+    'problem.upload.empty' => 'That file is empty. Choose a file with something in it.',
+    'problem.link.required' => 'Link at least one record here.',
+    'problem.attachment.required' => 'Add at least one file here.',
+    'problem.attachment.not_image' => 'This field takes images only: PNG, JPEG, GIF, or WebP.',
+    'problem.attachment.too_many' => 'This {item} already has {max} files here. Remove one first.',
+    'problem.attachment.store_failed' => 'The file could not be stored. Try again.',
+    'problem.link.trashed_holds' => 'This {item} is linked to a record in the trash. Restore that record and unlink it, or empty the trash, before choosing another.',
+    'problem.collection.name_taken' => 'Another collection already has this name.',
+    'problem.collection.too_many' => 'This project already has {max} collections. Delete one first.',
+    'problem.collection.too_many_rules' => 'A collection can have at most {max} rules.',
+    'problem.collection.field' => 'Choose a field for this rule.',
+    'problem.collection.test' => 'Choose a test for this rule.',
+    'problem.collection.value' => 'Enter a value for this rule.',
+    'problem.collection.text' => 'Use 1 to {max} characters.',
+    'problem.collection.number' => 'Enter a number, for example 12 or 12.5.',
+    'problem.collection.date' => 'Enter a date.',
+    'problem.collection.choice' => 'Choose one of the listed values.',
+    'problem.collection.record' => 'Choose a record.',
 ];

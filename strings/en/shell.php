@@ -6,7 +6,8 @@
  * Shell, shared form, and shared notice strings (M0 spec section 9.4;
  * M1 spec part 2 section 5.2; M2 spec part 2 section 6.3: the Display
  * link, the project search, and the sidebar; M3 spec part 2 section 4:
- * the Plugins link and the sidebar's Data group).
+ * the Plugins link and the sidebar's Data group; M4 spec part 2 section 7:
+ * the sidebar's Collections group).
  */
 
 declare(strict_types=1);
@@ -40,6 +41,8 @@ return [
     'sidebar.data' => 'Data',
     'sidebar.import' => 'Import a file',
     'sidebar.export' => 'Export',
+    'sidebar.collections' => 'Collections',
+    'sidebar.new_collection' => 'New collection',
 
     'count.problems.one' => 'There is a problem',
     'count.problems.many' => 'There are {count} problems',

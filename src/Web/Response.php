@@ -40,6 +40,9 @@ final class Response
     /** Media types download() accepts. */
     private const MEDIA_TYPE = '/^[a-z]+\/[a-z0-9.+-]+\z/';
 
+    /** The only media types file() may send inline (M4 spec part 2 section 2). */
+    public const INLINE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
     /** Media types sent with `; charset=utf-8`. */
     private const UTF8_TYPES = ['text/csv', 'application/json'];
 
@@ -51,6 +54,12 @@ final class Response
 
     /** Runs at most once, after a download is sent. */
     private ?Closure $afterSend = null;
+
+    /**
+     * Whether the response is a stored file (file()): SecurityHeaders
+     * then sends its sandboxed policy instead of the page policy.
+     */
+    private bool $sandboxed = false;
 
     /** @var array<string, string> Header name to value; names unique ignoring case. */
     public readonly array $headers;
@@ -126,19 +135,7 @@ final class Response
         if (preg_match(self::MEDIA_TYPE, $mediaType) !== 1) {
             throw new InvalidArgumentException('Invalid media type.');
         }
-        if (
-            $path === ''
-            || str_contains($path, "\0")
-            || preg_match('#^(/|[A-Za-z]:[\\\\/])#', $path) !== 1
-            || !is_file($path)
-            || is_link($path)
-        ) {
-            throw new InvalidArgumentException('A download needs an absolute path to a regular file.');
-        }
-        $size = filesize($path);
-        if ($size === false) {
-            throw new InvalidArgumentException('The download file cannot be read.');
-        }
+        $size = self::fileSize($path);
         $type = in_array($mediaType, self::UTF8_TYPES, true) ? $mediaType . '; charset=utf-8' : $mediaType;
 
         $response = new self(200, [
@@ -154,23 +151,87 @@ final class Response
     }
 
     /**
+     * A 200 response whose body is a stored file (an attachment), for the
+     * serving route (M4 spec part 2 section 2).
+     *
+     * Headers: `Content-Type` ($mediaType exactly, no charset),
+     * `Content-Length`, `Content-Disposition` (contentDisposition() with
+     * $inline), and `Cache-Control: no-store`. The response is sandboxed:
+     * SecurityHeaders sends SecurityHeaders::FILE_CSP for it. The file is
+     * never removed after sending, and withAfterSend() refuses it.
+     *
+     * @param string $path      An absolute path to a regular file (the core's ServedFile path).
+     * @param string $mediaType `type/subtype`, lower case (MEDIA_TYPE).
+     * @param string $fileName  The name offered to the browser, valid UTF-8; never used as a path.
+     * @param bool   $inline    Shown in the browser; only for INLINE_TYPES.
+     * @throws InvalidArgumentException for a bad media type, path, or name, or inline for another type
+     */
+    public static function file(string $path, string $mediaType, string $fileName, bool $inline): self
+    {
+        if (preg_match(self::MEDIA_TYPE, $mediaType) !== 1) {
+            throw new InvalidArgumentException('Invalid media type.');
+        }
+        if ($inline && !in_array($mediaType, self::INLINE_TYPES, true)) {
+            throw new InvalidArgumentException('Only the four image types may be sent inline.');
+        }
+        $size = self::fileSize($path);
+
+        $response = new self(200, [
+            'Content-Type' => $mediaType,
+            'Content-Length' => (string) $size,
+            'Content-Disposition' => self::contentDisposition($fileName, $inline),
+            'Cache-Control' => 'no-store',
+        ]);
+        $response->file = $path;
+        $response->sandboxed = true;
+
+        return $response;
+    }
+
+    /**
+     * The size of the file at $path, which must be an absolute path to a
+     * regular file that is not a link.
+     *
+     * @throws InvalidArgumentException otherwise
+     */
+    private static function fileSize(string $path): int
+    {
+        if (
+            $path === ''
+            || str_contains($path, "\0")
+            || preg_match('#^(/|[A-Za-z]:[\\\\/])#', $path) !== 1
+            || !is_file($path)
+            || is_link($path)
+        ) {
+            throw new InvalidArgumentException('A download needs an absolute path to a regular file.');
+        }
+        $size = filesize($path);
+        if ($size === false) {
+            throw new InvalidArgumentException('The download file cannot be read.');
+        }
+
+        return $size;
+    }
+
+    /**
      * `attachment; filename="<ascii>"; filename*=UTF-8''<percent-encoded>`
      * (RFC 6266 with RFC 8187): <ascii> is the name with every byte outside
      * printable ASCII, and `"`, `\`, `/`, and `;`, replaced by `_`; the
      * second form is rawurlencode() of the UTF-8 name, so it holds only
      * letters, digits, `-`, `.`, `_`, `~`, and `%`. Neither can end the
-     * header line, close the quoted string, or add a parameter.
+     * header line, close the quoted string, or add a parameter. With
+     * $inline the first word is `inline` instead of `attachment`.
      *
      * @throws InvalidArgumentException for an empty name or one that is not valid UTF-8
      */
-    public static function contentDisposition(string $fileName): string
+    public static function contentDisposition(string $fileName, bool $inline = false): string
     {
         if ($fileName === '' || preg_match('//u', $fileName) !== 1) {
             throw new InvalidArgumentException('A download name is non-empty UTF-8 text.');
         }
         $ascii = (string) preg_replace('/[^\x20-\x7E]|["\\\\\/;]/', '_', $fileName);
 
-        return 'attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($fileName);
+        return ($inline ? 'inline' : 'attachment') . '; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($fileName);
     }
 
     /**
@@ -180,11 +241,11 @@ final class Response
      * the file and its job folder (ExportOperations::finish).
      *
      * @param Closure(): void $done
-     * @throws LogicException when the response is not a download
+     * @throws LogicException when the response is not a download, or is a stored file (file())
      */
     public function withAfterSend(Closure $done): self
     {
-        if ($this->file === null) {
+        if ($this->file === null || $this->sandboxed) {
             throw new LogicException('Only a download takes an after-send callback.');
         }
         $ran = false;
@@ -200,7 +261,13 @@ final class Response
         return $copy;
     }
 
-    /** True for a response with a file body (download()). */
+    /** True for a stored file sent by file(): it takes the sandboxed policy. */
+    public function isSandboxed(): bool
+    {
+        return $this->sandboxed;
+    }
+
+    /** True for a response with a file body (download() or file()). */
     public function isDownload(): bool
     {
         return $this->file !== null;
@@ -247,6 +314,7 @@ final class Response
         $copy->file = $this->file;
         $copy->removeAfter = $this->removeAfter;
         $copy->afterSend = $this->afterSend;
+        $copy->sandboxed = $this->sandboxed;
 
         return $copy;
     }

@@ -221,7 +221,7 @@ final class FormStore
     }
 
     /**
-     * A key not used by any table, field, relation, or form of this project
+     * A key not used by any table, field, relation, form, or collection of this project
      * (one key scope, `docs/formats/tiffin.md` section 4.6), nor by any SQL
      * object; the same check as SchemaEditor's.
      */
@@ -233,8 +233,9 @@ final class FormStore
                 . ' UNION ALL SELECT 1 FROM "_tiffin_fields" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "_tiffin_relations" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "_tiffin_forms" WHERE "key" = ?'
+                . ' UNION ALL SELECT 1 FROM "_tiffin_collections" WHERE "key" = ?'
                 . ' UNION ALL SELECT 1 FROM "sqlite_master" WHERE "name" IN (?, ?)',
-                [$key, $key, $key, $key, Identifier::tableName($key), Identifier::joinName($key)],
+                [$key, $key, $key, $key, $key, Identifier::tableName($key), Identifier::joinName($key)],
             );
 
             return $used !== null;

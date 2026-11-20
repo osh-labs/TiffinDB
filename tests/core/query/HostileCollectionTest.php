@@ -119,11 +119,16 @@ final class HostileCollectionTest extends TestCase
             [$total, $broken] = $this->listTampered((string) $json);
             self::assertGreaterThanOrEqual(0, $total, $name);
         }
-        // Eleven or more: only ten are read; a 20,000-rule row is read as ten.
-        $this->listTampered('[' . implode(',', array_fill(0, 20000, $valid)) . ']');
+        // Eleven or more: only ten are read. Rules text over MAX_RULES_BYTES (P181, L-5) is
+        // not decoded at all: a 20,000-rule row is read with no rules.
         $previous = ini_set('error_log', $this->temp->path('error.log'));
         try {
+            $this->listTampered('[' . implode(',', array_fill(0, 11, $valid)) . ']');
             self::assertCount(10, CollectionStore::read($this->db)[0]->rules);
+            $many = '[' . implode(',', array_fill(0, 20000, $valid)) . ']';
+            self::assertGreaterThan(CollectionStore::MAX_RULES_BYTES, strlen($many));
+            $this->listTampered($many);
+            self::assertSame([], CollectionStore::read($this->db)[0]->rules);
         } finally {
             ini_set('error_log', $previous === false ? '' : $previous);
         }

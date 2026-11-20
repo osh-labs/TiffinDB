@@ -32,6 +32,13 @@ final class CollectionStore
     public const MAX_COLLECTIONS = 50;
     public const MAX_RULES = 10;
     public const MAX_NAME = 60;
+    /**
+     * Longest stored rules text read (P181, review L-5): ten rules of two
+     * 200-character values each fit in far less. Longer text is not read
+     * from the file (the SQL bound) nor decoded; the row is read with no
+     * rules and logged, like any other damaged rules text.
+     */
+    public const MAX_RULES_BYTES = 65536;
 
     private const SORT_TOKEN = '/^(?:added\.(?:asc|desc)|changed\.desc|[a-z2-7]{12}\.(?:asc|desc))\z/';
 
@@ -54,8 +61,9 @@ final class CollectionStore
     {
         $collections = [];
         foreach ($db->all(
-            'SELECT "key", "table_key", "name", "match_mode", "rules", "sort", "position", "created_at", "created_by", "updated_at", "updated_by"'
+            'SELECT "key", "table_key", "name", "match_mode", CASE WHEN length(CAST("rules" AS BLOB)) <= ? THEN "rules" END AS "rules", "sort", "position", "created_at", "created_by", "updated_at", "updated_by"'
             . ' FROM "_tiffin_collections" ORDER BY "position", "key"',
+            [self::MAX_RULES_BYTES],
         ) as $row) {
             $collection = self::fromRow($row);
             if ($collection !== null) {
@@ -72,9 +80,9 @@ final class CollectionStore
             return null;
         }
         $row = $this->db->one(
-            'SELECT "key", "table_key", "name", "match_mode", "rules", "sort", "position", "created_at", "created_by", "updated_at", "updated_by"'
+            'SELECT "key", "table_key", "name", "match_mode", CASE WHEN length(CAST("rules" AS BLOB)) <= ? THEN "rules" END AS "rules", "sort", "position", "created_at", "created_by", "updated_at", "updated_by"'
             . ' FROM "_tiffin_collections" WHERE "key" = ?',
-            [$key],
+            [self::MAX_RULES_BYTES, $key],
         );
 
         return $row === null ? null : self::fromRow($row);
@@ -258,8 +266,9 @@ final class CollectionStore
             $damaged = true;
         }
         $rules = [];
+        $text = is_string($row['rules']) && strlen($row['rules']) <= self::MAX_RULES_BYTES ? $row['rules'] : '';
         try {
-            $decoded = json_decode(is_string($row['rules']) ? $row['rules'] : '', true, 8, JSON_THROW_ON_ERROR);
+            $decoded = json_decode($text, true, 8, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             $decoded = null;
         }

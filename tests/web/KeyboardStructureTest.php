@@ -820,7 +820,8 @@ final class KeyboardStructureTest extends TestCase
      */
     private function sidebar(int $itemsDelta = 0): array
     {
-        return ['Switch project', 'Items ' . (48 + $itemsDelta), 'Rooms 9', 'Warranties 12', 'Loans 0', 'Samples 1', 'Tables and fields'];
+        // M4 spec part 2 section 5: the trash line is a link after "Tables and fields".
+        return ['Switch project', 'Items ' . (48 + $itemsDelta), 'Rooms 9', 'Warranties 12', 'Loans 0', 'Samples 1', 'Tables and fields', 'In the trash ' . (3 - $itemsDelta)];
     }
 
     /** @return list<string> The 48 live item names in the list's default order (Name, A to Z, ASCII case-insensitive). */

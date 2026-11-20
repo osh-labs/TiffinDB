@@ -255,9 +255,14 @@ final class ImportOperationsTest extends AppTestCase
         $this->captureLog();
         $wide = implode(',', array_map(static fn (int $i): string => 'c' . $i, range(1, IoLimits::MAX_COLUMNS + 1))) . "\n";
         $problems = self::problems(fn () => $imports->start($this->admin, $p, $this->fx->upload($wide), 'wide.csv', null));
-        // The CSV plugin refuses a heading row over the column limit as too large, which reads as unsupported.
-        self::assertSame([['file', 'problem.import.unsupported', []]], $problems);
+        // T-CF-6 (CF-3): the CSV plugin refuses a heading row over the column limit as too large,
+        // which reads as too many columns; a record over 1 MiB still reads as unsupported.
+        self::assertSame([['file', 'problem.import.too_many_columns', ['max' => 200]]], $problems);
         self::assertStringContainsString('plugin import/csv failed (too-large)', $this->errorLog());
+        self::assertSame([], $this->stagedJobs('imports'));
+        $long = "Name\n\"" . str_repeat('a', IoLimits::MAX_CSV_RECORD_BYTES + 1) . "\"\n";
+        $problems = self::problems(fn () => $imports->start($this->admin, $p, $this->fx->upload($long), 'long.csv', null));
+        self::assertSame([['file', 'problem.import.unsupported', []]], $problems);
         self::assertSame([], $this->stagedJobs('imports'));
     }
 

@@ -24,6 +24,7 @@ use TiffinDB\Core\Io\Contract\PluginFailure;
 use TiffinDB\Core\Io\Contract\Settings;
 use TiffinDB\Core\Io\Contract\SourceFile;
 use TiffinDB\Core\Io\Contract\SourceTable;
+use TiffinDB\Core\Io\Csv\CsvFile;
 use TiffinDB\Core\Io\ImportJob;
 use TiffinDB\Core\Io\ImportLog;
 use TiffinDB\Core\Io\Inference;
@@ -1032,6 +1033,11 @@ final class ImportOperations
 
     private static function readProblem(PluginFailure $failure, string $pluginName): Problem
     {
+        if ($failure->reason === PluginFailure::REASON_TOO_LARGE && $failure->getMessage() === CsvFile::TOO_MANY_COLUMNS) {
+            // CF-3: the column limit has its own message; an over-long record stays `unsupported`.
+            return new Problem('file', 'problem.import.too_many_columns', ['max' => IoLimits::MAX_COLUMNS]);
+        }
+
         return match ($failure->reason) {
             PluginFailure::REASON_UNREADABLE => new Problem('file', 'problem.import.unreadable', ['format' => $pluginName]),
             PluginFailure::REASON_UNSUPPORTED, PluginFailure::REASON_TOO_LARGE => new Problem('file', 'problem.import.unsupported'),

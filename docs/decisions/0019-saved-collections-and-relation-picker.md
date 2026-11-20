@@ -67,7 +67,7 @@ A candidate that the other side allows to be linked only once and that is alread
 
 - "Choose a different room", "Link a warranty", "Add a file", "Open", "Replace", and "Remove" are links to their own pages (picker, upload page, file page, confirmation). "Unlink" is a submit button that belongs, through the HTML `form` attribute, to one small form per relation field placed after the record form (forms cannot be nested).
 - Unsaved edits in the record form are not carried to those pages (carrying them needs server-side drafts). The record form says so next to these controls: "Save your changes first: the buttons here leave this page."
-- On a new record that has never been saved, the relation and file sections show what they will hold and the note "You can add links once this {item} is saved." (or "files"); the first Save returns to the same record, where they work.
+- On a new record that has never been saved, the relation and file sections show what they will hold and a note such as "You can add links once this record is saved." (exact texts in `docs/design/m4/components.md` section 3); the first Save returns to the same record, where they work.
 
 ### 11. Adding a new record from the picker
 

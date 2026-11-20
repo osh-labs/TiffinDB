@@ -8,7 +8,10 @@
  * match wins, so literal segments such as `new` come before placeholders.
  * M2 adds the settings, search, list, and record routes (M2 spec part 2
  * section 2), M3 the import, export, archive, and plugins routes (M3 spec
- * part 2 section 3; their controllers arrive with M3-WP9 and WP10).
+ * part 2 section 3; their controllers arrive with M3-WP9 and WP10), M4
+ * the file, collection, trash, link, and upload routes (M4 spec part 2
+ * section 3; their controllers arrive with M4-WP6 to WP8). `/files/{field}/new`
+ * comes before `/files/{field}/{attachment}`.
  */
 
 declare(strict_types=1);
@@ -17,10 +20,13 @@ namespace TiffinDB\Web;
 
 use TiffinDB\Web\Controller\AccountController;
 use TiffinDB\Web\Controller\ArchiveController;
+use TiffinDB\Web\Controller\CollectionController;
 use TiffinDB\Web\Controller\ExportController;
 use TiffinDB\Web\Controller\FieldController;
+use TiffinDB\Web\Controller\FileController;
 use TiffinDB\Web\Controller\HomeController;
 use TiffinDB\Web\Controller\ImportController;
+use TiffinDB\Web\Controller\LinkController;
 use TiffinDB\Web\Controller\PeopleController;
 use TiffinDB\Web\Controller\PluginController;
 use TiffinDB\Web\Controller\ProjectController;
@@ -32,11 +38,15 @@ use TiffinDB\Web\Controller\SetupController;
 use TiffinDB\Web\Controller\SharingController;
 use TiffinDB\Web\Controller\SignInController;
 use TiffinDB\Web\Controller\TableController;
+use TiffinDB\Web\Controller\TrashController;
 
 $field = '/projects/{project}/tables/{table}/fields/{field}';
 $table = '/projects/{project}/tables/{table}';
 $import = '/projects/{project}/import';
 $plugin = '/admin/plugins/{kind}/{plugin}';
+$record = $table . '/records/{record}';
+$collection = '/projects/{project}/collections/{collection}';
+$trash = '/projects/{project}/trash';
 
 return [
     ['GET', '/', [HomeController::class, 'show'], 'any'],
@@ -79,6 +89,17 @@ return [
     ['GET', '/projects/{project}/export', [ExportController::class, 'form'], 'user'],
     ['POST', '/projects/{project}/export', [ExportController::class, 'export'], 'user'],
     ['POST', '/projects/{project}/export/archive', [ExportController::class, 'archive'], 'user'],
+    ['GET', '/projects/{project}/files/{attachment}', [FileController::class, 'serve'], 'user'],
+    ['GET', $collection, [CollectionController::class, 'show'], 'user'],
+    ['GET', $collection . '/edit', [CollectionController::class, 'editForm'], 'user'],
+    ['POST', $collection . '/edit', [CollectionController::class, 'update'], 'user'],
+    ['GET', $collection . '/delete', [CollectionController::class, 'deleteForm'], 'user'],
+    ['POST', $collection . '/delete', [CollectionController::class, 'delete'], 'user'],
+    ['GET', $trash, [TrashController::class, 'index'], 'user'],
+    ['POST', $trash . '/restore', [TrashController::class, 'restore'], 'user'],
+    ['POST', $trash . '/restore-all', [TrashController::class, 'restoreAll'], 'user'],
+    ['GET', $trash . '/empty', [TrashController::class, 'emptyForm'], 'user'],
+    ['POST', $trash . '/empty', [TrashController::class, 'empty'], 'user'],
     ['GET', '/projects/{project}/search', [SearchController::class, 'index'], 'user'],
 
     ['GET', '/projects/{project}/tables', [TableController::class, 'index'], 'user'],
@@ -91,12 +112,22 @@ return [
 
     ['GET', $table, [RecordListController::class, 'index'], 'user'],
     ['GET', $table . '/filter', [RecordListController::class, 'filter'], 'user'],
+    ['GET', $table . '/collections/new', [CollectionController::class, 'newForm'], 'user'],
+    ['POST', $table . '/collections', [CollectionController::class, 'create'], 'user'],
     ['GET', $table . '/records/new', [RecordController::class, 'newForm'], 'user'],
     ['POST', $table . '/records', [RecordController::class, 'create'], 'user'],
     ['GET', $table . '/records/{record}', [RecordController::class, 'show'], 'user'],
     ['POST', $table . '/records/{record}', [RecordController::class, 'update'], 'user'],
     ['POST', $table . '/records/{record}/trash', [RecordController::class, 'trash'], 'user'],
     ['POST', $table . '/records/{record}/restore', [RecordController::class, 'restore'], 'user'],
+    ['GET', $record . '/links/{field}', [LinkController::class, 'picker'], 'user'],
+    ['POST', $record . '/links/{field}/add', [LinkController::class, 'add'], 'user'],
+    ['POST', $record . '/links/{field}/remove', [LinkController::class, 'remove'], 'user'],
+    ['GET', $record . '/files/{field}/new', [FileController::class, 'uploadForm'], 'user'],
+    ['POST', $record . '/files/{field}', [FileController::class, 'upload'], 'user'],
+    ['GET', $record . '/files/{field}/{attachment}', [FileController::class, 'show'], 'user'],
+    ['GET', $record . '/files/{field}/{attachment}/remove', [FileController::class, 'removeForm'], 'user'],
+    ['POST', $record . '/files/{field}/{attachment}/remove', [FileController::class, 'remove'], 'user'],
 
     ['GET', '/projects/{project}/tables/{table}/fields/new', [FieldController::class, 'newForm'], 'user'],
     ['POST', '/projects/{project}/tables/{table}/fields', [FieldController::class, 'create'], 'user'],

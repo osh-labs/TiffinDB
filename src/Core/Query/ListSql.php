@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Core\Query;
 
 use TiffinDB\Core\Error\NotFound;
+use TiffinDB\Core\Error\Text;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\Identifier;
@@ -29,6 +30,12 @@ use TiffinDB\Core\Schema\TableDef;
  * With a plain JOIN, statistics that make the other table's trash index
  * look selective lead SQLite to scan that index for every record.
  *
+ * Conditions of the list filter and of collection rules are built by one
+ * method, condition() (`docs/specs/M4-core.md` sections 5.2 to 5.4): the
+ * filter is the one-rule case, kept to the FILTERS operators. Rules are
+ * each wrapped in parentheses, joined with AND or OR, and the group
+ * wrapped again, so no fragment's own AND can bind to a neighbour.
+ *
  * Internal helper of Core\Query (not part of the record layer's API).
  */
 final class ListSql
@@ -47,6 +54,27 @@ final class ListSql
         'date' => ['between', 'empty'],
         'date_time' => ['between', 'empty'],
     ];
+    /** Field type => operators a collection rule takes (ADR 0019 decision 3, P160). */
+    public const RULES = [
+        'text' => ['contains', 'is', 'empty', 'not-empty'],
+        'long_text' => ['contains', 'is', 'empty', 'not-empty'],
+        'url' => ['contains', 'is', 'empty', 'not-empty'],
+        'email' => ['contains', 'is', 'empty', 'not-empty'],
+        'phone' => ['contains', 'is', 'empty', 'not-empty'],
+        'number' => ['is', 'less', 'more', 'empty'],
+        'currency' => ['is', 'less', 'more', 'empty'],
+        'rating' => ['is', 'less', 'more', 'empty'],
+        'duration' => ['is', 'less', 'more', 'empty'],
+        'date' => ['on', 'before', 'after', 'empty'],
+        'date_time' => ['on', 'before', 'after', 'empty'],
+        'choice' => ['is', 'empty'],
+        'checkbox' => ['is'],
+        'relation' => ['links-to', 'empty'],
+    ];
+    /** Types whose rule operands are numbers compared as stored (currency in minor units, duration in seconds). */
+    public const NUMBER_LIKE = ['number', 'currency', 'rating', 'duration'];
+    /** Longest text operand of a rule, in characters. */
+    public const MAX_OPERAND = 200;
 
     public function __construct(private readonly Schema $schema, private readonly FieldTypes $types)
     {
@@ -110,10 +138,16 @@ final class ListSql
         return $relation->sideOf($fieldKey) === 'left' ? 'right_id' : 'left_id';
     }
 
-    /** `r."_trashed_at" IS NULL`, AND the query's condition, AND its search. */
+    /**
+     * `r."_trashed_at" IS NULL`, AND the query's rules as one parenthesised
+     * group, AND its filter, AND its search (section 5.4).
+     */
     public function where(TableDef $table, ListQuery $query): Sql
     {
         $parts = [Sql::of('r."_trashed_at" IS NULL')];
+        if ($query->rules !== null) {
+            $parts[] = $this->rules($table, $query->rules);
+        }
         if ($query->filter !== null) {
             $parts[] = $this->filter($table, $query->filter);
         }
@@ -122,6 +156,26 @@ final class ListSql
         }
 
         return Sql::join(' AND ', $parts);
+    }
+
+    /** The rules' conditions, each in parentheses, joined by AND (all) or OR (any), the whole in parentheses. */
+    public function rules(TableDef $table, RuleSet $rules): Sql
+    {
+        $terms = [];
+        foreach ($rules->conditions as $condition) {
+            $terms[] = $this->condition($table, $condition)->wrap();
+        }
+        if ($rules->match === MatchMode::Any) {
+            return Sql::join(' OR ', $terms)->wrap();
+        }
+
+        return Sql::join(' AND ', $terms)->wrap();
+    }
+
+    /** @return list<string> the operators condition() accepts for a field type: the union of FILTERS and RULES */
+    public static function operators(string $type): array
+    {
+        return array_values(array_unique([...(self::FILTERS[$type] ?? []), ...(self::RULES[$type] ?? [])]));
     }
 
     /**
@@ -198,16 +252,34 @@ final class ListSql
     }
 
     /**
-     * The condition on the record row "r" (section 3.6 table). The
-     * condition must already be valid (Records::query() makes it so);
-     * a combination the table does not list is \InvalidArgumentException.
+     * The list filter (M2 spec section 3.6): one condition whose operator
+     * FILTERS lists for the field's type, built by condition().
      */
     public function filter(TableDef $table, Condition $condition): Sql
     {
         $field = $this->fieldOf($table, $condition->fieldKey);
-        $operator = $condition->operator->value;
-        if (!in_array($operator, self::FILTERS[$field->type] ?? [], true)) {
+        if (!in_array($condition->operator->value, self::FILTERS[$field->type] ?? [], true)) {
             throw new \InvalidArgumentException('That filter cannot be used with this field.');
+        }
+
+        return $this->condition($table, $condition);
+    }
+
+    /**
+     * The condition on the record row "r" (M2 spec section 3.6, M4 spec
+     * section 5.3), for the filter and for collection rules. The operator
+     * must be one operators() lists for the field's type, and the operands
+     * must already be in query form; anything else is
+     * \InvalidArgumentException (a field of another table is NotFound).
+     * Every operand is checked here again and bound, never written into
+     * the text.
+     */
+    public function condition(TableDef $table, Condition $condition): Sql
+    {
+        $field = $this->fieldOf($table, $condition->fieldKey);
+        $operator = $condition->operator->value;
+        if (!in_array($operator, self::operators($field->type), true)) {
+            throw new \InvalidArgumentException('That condition cannot be used with this field.');
         }
         $operands = $condition->operands;
 
@@ -231,6 +303,29 @@ final class ListSql
         }
         if ($operator === 'empty') {
             return Sql::of('r.' . $field->sql() . ' IS NULL');
+        }
+        if ($operator === 'not-empty') {
+            return Sql::of('r.' . $field->sql() . ' IS NOT NULL');
+        }
+        if ($operator === 'contains') {
+            return Sql::of('r.' . $field->sql() . ' LIKE ? ESCAPE \'\\\'', ['%' . self::escapeLike(self::textOperand($operands)) . '%']);
+        }
+        if ($operator === 'is' && in_array($field->type, self::TEXT_LIKE, true)) {
+            return Sql::of('r.' . $field->sql() . ' = ? COLLATE NOCASE', [self::textOperand($operands)]);
+        }
+        if (in_array($field->type, self::NUMBER_LIKE, true)) {
+            $number = $this->numberOperand($field, $operands);
+            if ($operator === 'less') {
+                return Sql::of('r.' . $field->sql() . ' < ?', [$number]);
+            }
+            if ($operator === 'more') {
+                return Sql::of('r.' . $field->sql() . ' > ?', [$number]);
+            }
+
+            return Sql::of('r.' . $field->sql() . ' = ?', [$number]);
+        }
+        if ($operator === 'on' || $operator === 'before' || $operator === 'after') {
+            return $this->dateCondition($field, $operator, $this->dateOperand($operands));
         }
         if ($field->type === 'checkbox') {
             $ticked = $operands[0] ?? '';
@@ -322,6 +417,77 @@ final class ListSql
             . ' = r."id" AND "o"."_trashed_at" IS NULL AND "o".' . $title->sql() . ' LIKE ? ESCAPE \'\\\')',
             [$pattern],
         );
+    }
+
+    /** The one text operand: valid UTF-8, no control character, 1 to MAX_OPERAND characters. */
+    private static function textOperand(array $operands): string
+    {
+        if (count($operands) !== 1 || !is_string($operands[0])) {
+            throw new \InvalidArgumentException('This condition takes one text.');
+        }
+        $text = $operands[0];
+        if (!Text::isUtf8($text) || Text::hasControl($text) || $text === '' || Text::length($text) > self::MAX_OPERAND) {
+            throw new \InvalidArgumentException('A rule text is 1 to 200 characters without control characters.');
+        }
+
+        return $text;
+    }
+
+    /** The one number-like operand, parsed with the field's type and options, as stored. */
+    private function numberOperand(FieldDef $field, array $operands): int|float|string
+    {
+        if (count($operands) !== 1 || !is_string($operands[0]) || Text::hasControl($operands[0])) {
+            throw new \InvalidArgumentException('This condition takes one value.');
+        }
+        $type = $this->types->get($field->type);
+        $checked = $type->parse($operands[0], $field->options, false);
+        if (!$checked->isOk() || $checked->value() === null) {
+            throw new \InvalidArgumentException('The value does not fit the field.');
+        }
+        $stored = $type->toStorage($checked->value(), $field->options);
+        if ($stored === null) {
+            throw new \InvalidArgumentException('The value does not fit the field.');
+        }
+
+        return $stored;
+    }
+
+    /** The one date operand: `YYYY-MM-DD` that the date type reads as itself. */
+    private function dateOperand(array $operands): string
+    {
+        $date = $operands[0] ?? null;
+        if (count($operands) !== 1 || !is_string($date) || preg_match('/^\d{4}-\d{2}-\d{2}\z/', $date) !== 1) {
+            throw new \InvalidArgumentException('This condition takes one date.');
+        }
+        $checked = $this->types->get('date')->parse($date, [], false);
+        if (!$checked->isOk() || $checked->value() !== $date) {
+            throw new \InvalidArgumentException('This condition takes one date.');
+        }
+
+        return $date;
+    }
+
+    /** on, before, after for a date (the day itself) or a date-time (the whole day). */
+    private function dateCondition(FieldDef $field, string $operator, string $date): Sql
+    {
+        if ($field->type === 'date_time') {
+            if ($operator === 'on') {
+                return Sql::of('r.' . $field->sql() . ' >= ? AND r.' . $field->sql() . ' <= ?', [$date . 'T00:00:00', $date . 'T23:59:59']);
+            }
+            if ($operator === 'before') {
+                return Sql::of('r.' . $field->sql() . ' < ?', [$date . 'T00:00:00']);
+            }
+
+            return Sql::of('r.' . $field->sql() . ' > ?', [$date . 'T23:59:59']);
+        }
+        if ($operator === 'on') {
+            return Sql::of('r.' . $field->sql() . ' = ?', [$date]);
+        }
+        if ($operator === 'before') {
+            return Sql::of('r.' . $field->sql() . ' < ?', [$date]);
+        }
+
+        return Sql::of('r.' . $field->sql() . ' > ?', [$date]);
     }
 
     /** A field of the table; NotFound for an unknown key or a field of another table. */

@@ -43,14 +43,56 @@ final class MessageKeysTest extends TestCase
 
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {
-        // M1 spec section 12, M2 spec section 8, and M3 spec section 14; the strings file test stays M1-only.
-        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::PENDING_SPEC_KEYS];
+        // M1 spec section 12, M2 spec section 8, M3 spec section 14, and M4 spec section 11; the strings file test stays M1-only.
+        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::m4Keys(), ...self::PENDING_SPEC_KEYS];
         foreach (self::PENDING_SPEC_KEYS as $pending) {
             self::assertNotContains($pending, self::m3Keys(), $pending . ' is listed now: remove it from PENDING_SPEC_KEYS.');
         }
         $used = self::coreKeys('src/Core');
         self::assertNotEmpty($used);
-        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, and M3 spec section 14.');
+        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, M3 spec section 14, and M4 spec section 11.');
+    }
+
+    /** @return list<string> problem keys listed in `docs/specs/M4-core.md` section 11 */
+    private static function m4Keys(): array
+    {
+        return array_values(array_filter(self::m4Section(), static fn (string $key): bool => str_starts_with($key, 'problem.')));
+    }
+
+    /** @return list<string> every key listed in `docs/specs/M4-core.md` section 11 (problem keys and broken-rule reasons) */
+    private static function m4Section(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M4-core.md'));
+        $start = strpos($spec, "\n## 11. Message keys produced by the core");
+        $end = strpos($spec, "\n## 12.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        preg_match_all('/^\| `((?:problem|collection\.broken)\.[a-z_.]+)` \|/m', substr($spec, $start, $end - $start), $matches);
+        self::assertGreaterThanOrEqual(23, count($matches[1]));
+        self::assertContains('problem.collection.name_taken', $matches[1]);
+        self::assertContains('collection.broken.record', $matches[1]);
+
+        return $matches[1];
+    }
+
+    public function testEveryBrokenRuleReasonIsListedAndProduced(): void
+    {
+        // The reasons are message keys printed by the editor (section 6.3); every one the core uses is listed, and each listed one is used.
+        $listed = array_values(array_filter(self::m4Section(), static fn (string $key): bool => str_starts_with($key, 'collection.broken.')));
+        $used = array_keys(self::coreKeys('src/Core', '/^collection\.broken\.[a-z_]+\z/'));
+        sort($listed);
+        sort($used);
+        self::assertSame($listed, $used);
+    }
+
+    public function testTheCollectionStoreAndRulesProduceTheirKeys(): void
+    {
+        $query = self::coreKeys('src/Core/Query');
+        foreach (self::m4Keys() as $key) {
+            if (str_starts_with($key, 'problem.collection.')) {
+                self::assertArrayHasKey($key, $query, $key . ' is produced by Core\Query.');
+            }
+        }
     }
 
     /** @return list<string> keys listed in `docs/specs/M3-io.md` section 14 */
@@ -120,8 +162,8 @@ final class MessageKeysTest extends TestCase
         return $matches[1];
     }
 
-    /** @return array<string, true> problem keys written as whole string literals under $dir */
-    private static function coreKeys(string $dir): array
+    /** @return array<string, true> problem keys (or keys matching $pattern) written as whole string literals under $dir */
+    private static function coreKeys(string $dir, string $pattern = '/^problem\.[a-z_]+(?:\.[a-z_]+)*\z/'): array
     {
         $keys = [];
         $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(RepoFiles::path($dir), RecursiveDirectoryIterator::SKIP_DOTS));
@@ -132,7 +174,7 @@ final class MessageKeysTest extends TestCase
             foreach (token_get_all((string) file_get_contents($file->getPathname())) as $token) {
                 if (is_array($token) && $token[0] === T_CONSTANT_ENCAPSED_STRING) {
                     $value = substr($token[1], 1, -1);
-                    if (preg_match('/^problem\.[a-z_]+(?:\.[a-z_]+)*\z/', $value) === 1) {
+                    if (preg_match($pattern, $value) === 1) {
                         $keys[$value] = true;
                     }
                 }

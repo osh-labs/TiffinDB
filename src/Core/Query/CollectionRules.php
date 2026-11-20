@@ -114,7 +114,11 @@ final class CollectionRules
         if ($value === '') {
             return [new Problem($input, 'problem.collection.value')];
         }
-        $stored = $this->storedOperand($field, $value);
+        if ($field->type === 'choice') {
+            $stored = is_array($this->queryOperand($field, $value)) ? $value : null;
+        } else {
+            $stored = $this->storedOperand($field, $value);
+        }
 
         return $stored === null ? [new Problem($input, $problem[0], $problem[1])] : new CollectionRule($field->key, $test, [$stored]);
     }

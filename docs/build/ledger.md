@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Merged: WP1 (7817cf5), WP3 (822dddb), WP5 (fe9078f); suite 8748 OK (1 skipped), lint 707 files 0 failed. Running: WP2. Dispatching WP10 and WP0. Owed: design-tier security reviews of WP1, WP3 (SQL), WP5 (templates, headers); note for WP10/WP4: SchemaEditor new-key check must look in `_tiffin_collections`. Then WP4, WP6 to WP8, WP9, exit audit M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | Merged: WP1, WP3, WP5, WP2 (135d3c9; suite 8901 OK, 1 skipped; lint 723 files 0 failed). Running: WP10, WP0, design-tier security review of WP1 and WP2. Next: WP4 once WP10 merges (must wire `Attachments::sweepFiles()` with the staging sweep per P175, and the file deletion and sweep after `TrashOperations::empty`); owed reviews of WP3 (SQL) and WP5 (templates, headers). Then WP6 to WP8, WP9, M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

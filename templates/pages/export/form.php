@@ -14,7 +14,9 @@
  * CSV and Excel workbook formats are on, P135); `hasSettings` (bool);
  * `tables`: a list of {key, label (plain)}; `scope` ('table' or
  * 'project'); `table` (the chosen table key); `errors` (element id =>
- * problem text, for f-format, f-scope, f-table).
+ * problem text, for f-format, f-scope, f-table); optional `projectSize`
+ * (ExportScreen::$projectBytes through Format::fileSize, M4 CF-5): the
+ * archive panel shows "About {size}." when it is given.
  *
  * Every option is visible without JavaScript; the server applies only the
  * chosen format's settings.
@@ -28,6 +30,9 @@ declare(strict_types=1);
 <section class="panel" aria-labelledby="<?= $this->id('x', 'archive') ?>">
 <h2 id="<?= $this->id('x', 'archive') ?>"><?= $this->t('export.archive.heading') ?></h2>
 <p><?= $this->t('export.archive.body') ?></p>
+<?php if (is_string($data['projectSize'] ?? null)) : ?>
+<p class="help"><?= $this->t('export.archive.size', ['size' => $data['projectSize']]) ?></p>
+<?php endif; ?>
 <form class="io-actions" method="post" action="<?= $this->url('/projects/' . $data['projectKey'] . '/export/archive') ?>">
 <?= $this->partial('csrf') ?>
 <button class="button button-primary button-large" type="submit"><?= $this->t('export.archive.download') ?></button>

@@ -206,9 +206,9 @@ Every key argument is checked like `Records` (unknown or foreign keys are `NotFo
 #### 4.2.1 `add`, in one `Database::write()`
 
 1. The record is live (`NotFound` otherwise) and the field is an attachment field of its table.
-2. `$originalName` is cleaned (`Attachments::cleanName`: `Text` checks; Unicode categories Cc, Cf, Zl, Zp removed (P61, so bidirectional and zero-width characters go too); `/` and `\` become `_`; trimmed; cut to 255 characters by `Text::length`; `file` when empty).
+2. `$originalName` is cleaned (`Attachments::cleanName`: not valid UTF-8 gives `file`; Unicode categories Cc, Cf, Zl, Zp removed (P61, so bidirectional and zero-width characters go too); `/` and `\` become `_`; trimmed; cut to 255 characters by `Text::length`; `file` when empty).
 3. Problems (all collected, then `ValidationFailed` with field = `$fieldKey`): the field's option `images_only` is true and the upload is not inline (`problem.attachment.not_image`); the record already has `MAX_PER_FIELD` files in the field and `$replaceId` is null (`problem.attachment.too_many`); `$replaceId` is not linked from this record and field (`NotFound`, not a problem).
-4. `AttachmentStore::place($db, $upload)` (section 3.2).
+4. `AttachmentStore::place($db, $upload)` (section 3.2). When `place` refuses because a regular file of a different size is at the target and no `_tiffin_attachments` row has that `sha256`, the file is an orphan (for example a copy cut short by a crash in `Fs::moveIn`'s copy fallback): `AttachmentStore::delete` it and `place` once more, so one interrupted copy cannot block that content for good. Any other refusal is a `\RuntimeException` that rolls back.
 5. Insert the `_tiffin_attachments` row (`sha256`, `size`, `media_type` = the sniffed type, `original_name`, `created_at` now, `created_by`) and the link at position `MAX(position) + 1` for that field and record (1 when none).
 6. With `$replaceId`: delete that link; when no link to the replaced row remains, delete the row and add its `sha256` to `freedHashes` (unless another row still has the same hash; `deleteFiles` checks again).
 7. Update the record's `_updated_at`, `_updated_by` and `ProjectFile::touch`.
@@ -263,7 +263,7 @@ For each key that is a field of the table, required, and of type `relation` (no 
 
 #### 4.3.3 `linkDetails`
 
-The detail field is chosen once per table with the M2 list-column rule (`RecordOperations::columns`: field order, skipping the title field, long text, relation, and attachment; ADR 0013 decision 9.1), taking the first such field; per id, the field and its value, or null when the record has no value there. One `SELECT "id", <column> FROM <table> WHERE "id" IN (...)` per chunk of 500 ids.
+The detail field is chosen once per table: the first field in field order that the M2 list-column rule would show (`RecordOperations::columns`, as built: skipping the title field and long text; ADR 0013 decision 9.1), also skipping relation and attachment fields (they have no single column value); per id, the field and its value, or null when the record has no value there. One `SELECT "id", <column> FROM <table> WHERE "id" IN (...)` per chunk of 500 ids.
 
 ### 4.4 `Picker`
 
@@ -344,7 +344,7 @@ Dates are checked with `^\d{4}-\d{2}-\d{2}\z` and the date type's parse. Empty v
 
 ### 5.4 Composition
 
-`ListSql::where(TableDef, ListQuery)`: `r."_trashed_at" IS NULL`, then when `rules` is set the conditions joined by `AND` (all) or `OR` (any) and wrapped in parentheses, then the filter, then the search, all joined by `AND`. Every part is an `Sql` fragment; `Sql::join` is the only joining. `Records::page`, `position`, and the picker reuse `where` and need no change (`Records.php` is not touched by WP3).
+`ListSql::where(TableDef, ListQuery)`: `r."_trashed_at" IS NULL`, then when `rules` is set the conditions, **each wrapped in parentheses** (`Sql::wrap`, because some fragments such as date-time `on` already hold `AND`), joined by `AND` (all) or `OR` (any), and the whole group wrapped in parentheses, then the filter, then the search, all joined by `AND`. Every part is an `Sql` fragment; `Sql::join` is the only joining. `Records::page`, `position`, and the picker reuse `where` and need no change (`Records.php` is not touched by WP3).
 
 ### 5.5 Query plans
 
@@ -376,6 +376,8 @@ final class CollectionStore
     public function __construct(Database $db, Schema $schema, Keys $keys, Clock $clock);
     /** @return list<Collection> every collection of the project, by position */
     public function all(): array;
+    /** @return list<Collection> what all() returns, read from $db without a store (reading rules below; used by ProjectExportSource, WP10) */
+    public static function read(Database $db): array;
     public function get(string $key): ?Collection;
     /** Creates; returns the new key. Runs its own write. */
     public function create(string $tableKey, string $name, MatchMode $match, array $rules, ?string $sort, string $userKey): string;
@@ -431,7 +433,7 @@ Working rules become query-form `Condition`s in a `RuleSet` (null when none work
 
 ### 8.1 `UntrustedProject`
 
-- `user_version` 1 to 4 (the check is against `ProjectFile::VERSION`); `_tiffin_collections` and its two indexes are allowed from version 4 (the `$since` mapping gains `_tiffin_collections` => 4); `sqlite_autoindex__tiffin_collections_1` allowed.
+- `user_version` 1 to 4 (the check is against `ProjectFile::VERSION`); `_tiffin_collections` and its two indexes are allowed from version 4 (the `$since` mapping gains `_tiffin_collections` => 4); the table is `WITHOUT ROWID`, so SQLite makes no `sqlite_autoindex__tiffin_collections_1` (checked with SQLite 3.45 on a version 3 file made by the current `ProjectFile::create` and upgraded with the statements of format section 11.3); one present is refused like any undocumented object.
 - Metadata read with an explicit column list (`key`, `table_key`, `name`, `match_mode`, `rules`, `sort`, `position`, `created_at`, `created_by`, `updated_at`, `updated_by`), at most 1,000 rows and 1 MiB of `rules` text in total (else `bad-metadata`); keys valid and unique across tables, fields, relations, forms, and collections (`bad-metadata`). Everything else about a collection row is checked by the rebuild, not refused.
 
 ### 8.2 `ProjectRebuilder`
@@ -444,7 +446,8 @@ After forms (M3 section 11.5 step 6), new step 6b, inside the same write: for ea
 
 - `Core\Io\Contract\ExportSource` gains `/** @return list<ExportCollection> */ public function collections(): array;` (API stays 1: plugins consume the source and never implement it; the test double `tests/plugins/json/FakeExportSource.php` is updated).
 - `ExportCollection { string $key; string $tableKey; string $name; string $match; list<ExportRule> $rules; ?string $sort; string $createdAt; string $updatedAt; }`, `ExportRule { string $field; string $op; list<string> $values; }`, both `final` with `readonly` properties and constructor shape checks like the other contract values.
-- `ProjectExportSource::collections()` reads `CollectionStore::all()` (rules as stored, broken ones included).
+- `ProjectExportSource::collections()` reads `CollectionStore::read($db)` (section 6.2; rules as stored, broken ones included) and keeps the collections whose table is among the exported tables (as `relations()` keeps only relations between exported tables).
+- `ExportSource` has three implementers that WP10 updates: `ProjectExportSource`, `tests/plugins/json/FakeExportSource.php`, and `FakeSource` in `tests/plugins/csv/CsvExporterTest.php`.
 - `plugins/export/json`: after `tables`, a final member `"collections": [...]` per `docs/formats/json-export.md` section 7, one collection per line; `match` from `match_mode`. WP10 also adds a `collections` member to the example of that document's section 1 (one line, after `tables`), in the same commit, because `JsonExportFormatTest` compares the example's member order with the output.
 - CSV and XLSX exporters ignore collections.
 
@@ -476,7 +479,7 @@ After forms (M3 section 11.5 step 6), new step 6b, inside the same write: for ea
 | Method (after `Actor, string $projectKey`) | Permission | Returns or does |
 |---|---|---|
 | `uploadScreen(string $tableKey, string $recordId, string $fieldKey, ?string $replaceId)` | `records.edit` | `UploadScreen { ProjectRecord $project; TableDef $table; RecordRef $record; FieldDef $field; ?AttachmentSummary $replacing; int $maxBytes; bool $imagesOnly; int $count }`; `maxBytes` = `AttachmentOperations::MAX_BYTES` (64 MiB; the web layer takes the smaller PHP limit) |
-| `add(string $tableKey, string $recordId, string $fieldKey, string $uploadPath, string $clientName, ?string $replaceId)` | `records.edit` | `AttachmentSummary` of the new file. Order: permission; table, field, live record; `replaceId` canonical (else `NotFound`); `Fs::freeBytes` of the project folder minus 100 MiB at least the upload's size (else `problem.upload.no_space`); staging job `uploads`, `Fs::moveIn($uploadPath, <job>/upload.bin)`; `AttachmentStore::inspect`; size 0 (`problem.upload.empty`) or over `MAX_BYTES` (`problem.upload.too_large` with `{max}`); `Attachments::add`; in a `finally`, the staging job removed; after success `Attachments::deleteFiles($freed)`; audit `attachment.added` (and `attachment.removed` for a replaced file). Problems are `ValidationFailed` with field `file` |
+| `add(string $tableKey, string $recordId, string $fieldKey, string $uploadPath, string $clientName, ?string $replaceId)` | `records.edit` | `AttachmentSummary` of the new file. Order: permission; table, field, live record; `replaceId` canonical (else `NotFound`); `Fs::freeBytes` of the project folder minus 100 MiB at least the upload's size (else `problem.upload.no_space`); staging job `uploads`, `Fs::moveIn($uploadPath, <job>/upload.bin)`; size by `Fs::size` before any hashing: 0 (`problem.upload.empty`) or over `MAX_BYTES` (`problem.upload.too_large` with `{max}`); `AttachmentStore::inspect`; `Attachments::add` (a `\RuntimeException` from the store, section 4.2.1 step 4, becomes `problem.attachment.store_failed` and one `error_log` line without the name); in a `finally`, the staging job removed; after success `Attachments::deleteFiles($freed)`; audit `attachment.added` (and `attachment.removed` for a replaced file). Problems are `ValidationFailed` with field `file` |
 | `file(string $tableKey, string $recordId, string $fieldKey, string $attachmentId)` | `records.view` | `FileScreen { ProjectRecord $project; TableDef $table; RecordRef $record; FieldDef $field; AttachmentSummary $file; ?string $addedBy (display name); bool $inline; bool $canEdit }`; the record must be live and link the attachment through the field |
 | `remove(string $tableKey, string $recordId, string $fieldKey, string $attachmentId)` | `records.edit` | `AttachmentSummary` removed; `Attachments::remove`, then `deleteFiles`; audit `attachment.removed` |
 | `serve(string $attachmentId, bool $download)` | `records.view` | `ServedFile { string $path; string $mediaType; string $fileName; int $size; bool $inline }`. `NotFound` unless the row exists, `isServable`, and `AttachmentStore::path($sha256)` is a regular file (a missing file is also logged: `error_log('TiffinDB: an attachment file is missing; attachment=' . $id)`, no name). `mediaType` is the stored type when `MediaType::isInline`, else `application/octet-stream`; `inline` is true only for inline types without `$download`. The size is the file's own (`Fs::size`), not the row's |
@@ -485,7 +488,7 @@ Each `AttachmentOperations` method opens the project with `ProjectOpener` exactl
 
 ### 10.3 `ProjectOperations` (changed)
 
-`settings` (the project settings screen, M1) gains `int $attachmentFiles` and `int $attachmentBytes` from `Attachments::totals()` (Admin, `project.manage`, as M1).
+`ProjectOperations` has no settings result as built (the settings page uses `get` and the project name). New: `attachmentTotals(Actor $actor, string $projectKey): AttachmentTotals { int $files; int $bytes }` from `Attachments::totals()`, permission `project.manage` (as the settings page); `ProjectController` calls it for the settings page (200 and 422).
 
 ### 10.4 `CollectionOperations` (new)
 
@@ -498,9 +501,11 @@ Each `AttachmentOperations` method opens the project with `ProjectOpener` exactl
 | `deleteScreen(string $collectionKey)` | `collections.manage` | `CollectionSummary` |
 | `delete(string $collectionKey)` | `collections.manage` | void; audit `collection.deleted` |
 
-`CollectionEditor { ProjectRecord $project; TableDef $table; ?string $key; string $name; MatchMode $match; list<EditorRule> $rules; list<SortOption> $sorts; ?string $sort; list<FieldDef> $fields (usable in rules: types of section 5.2); int $matchCount; list<ListRow> $preview (first 5); list<ListColumn> $previewColumns (title plus at most 3, P163); list<Problem> $problems; bool $canAddRule }`; `EditorRule { int $index; ?FieldDef $field; string $test; list<array{op, label}> $tests; string $value; ?string $record; list<LinkItem> $records (relation: up to 500 from Records::pickList); bool $moreRecords; list<array{key, label}> $choices; ?string $brokenReason }`.
+`CollectionEditor { ProjectRecord $project; TableDef $table; ?string $key; string $name; MatchMode $match; list<EditorRule> $rules; list<SortOption> $sorts; ?string $sort; list<FieldDef> $fields (usable in rules: types of section 5.2); int $matchCount; list<ListRow> $preview (first 5); list<FieldDef> $previewColumns (title plus at most 3, P163; the same type as `RecordListing::$columns`); list<Problem> $problems; bool $canAddRule }`; `EditorRule { int $index; ?FieldDef $field; string $test; list<array{op, label}> $tests; string $value; ?string $record; list<LinkItem> $records (relation: up to 500 from Records::pickList); bool $moreRecords; list<array{key, label}> $choices; ?string $brokenReason }`.
 
 Posted draft shape (from the editor form, part 2): `name`, `match` (`all`|`any`), `sort` (a token or empty), `rules[<n>][field]`, `rules[<n>][test]`, `rules[<n>][value]`, `rules[<n>][record]`, n from 1 in posted order, at most 10 rows read (extra rows ignored). Strings only; arrays where a string is expected are dropped.
+
+`RecordListing` and `SearchResults` gain a last constructor argument `list<CollectionSummary> $collections = []` (filled by `RecordOperations::listing`, `RecordOperations::search`, and `CollectionOperations::listing` with the `summaries()` of the project), which the list and search controllers pass to `Sidebar::build` as plain data.
 
 `ListRequest` gains `?string $collection` (query parameter `collection`, a key or null); `RecordOperations::screen` with a `collection` uses that collection's resolved rules and sort for the record's position and Previous/Next (P162); an unknown collection key in the state is dropped silently (the record still opens).
 
@@ -509,10 +514,10 @@ Posted draft shape (from the editor form, part 2): `name`, `match` (`all`|`any`)
 | Method (after `Actor, string $projectKey`) | Permission | Returns or does |
 |---|---|---|
 | `screen(?string $tableKey, int $page)` | `records.view` | `TrashScreen { ProjectRecord $project; list<TrashSection { TableDef $table; int $count; list<TrashedRecord> $records; int $page; int $pages }> $sections; int $total; bool $canRestore; bool $canEmpty }`. Without `tableKey`: every table with at least one trashed record, first 50 each (page 1). With `tableKey`: that table only, paged 50; pages clamp. `TrashedRecord` gains `?string $trashedByName` (display name) |
-| `restore(string $tableKey, list<int> $ids)` (M1) | `records.trash` | unchanged; the screen restores one id; `RecordOperations::restore` stays for the record page |
-| `restoreAll(string $tableKey)` | `records.trash` | `int` restored; `Trash::restoreAll` |
+| `restore(string $tableKey, list<int> $ids)` (M1) | `records.trash` | unchanged. The trash screen restores one record through `RecordOperations::restore` (M2, `records.trash`), which returns the `RecordRef` whose title the notice needs and leaves a live record as it is |
+| `restoreAll(string $tableKey)` | `records.trash` | `RestoredAll { TableDef $table; int $count }` (the table's name is in the notice); `Trash::restoreAll` |
 | `emptyImpact()` | `trash.empty` | `TrashImpact` over every table and attachment field |
-| `empty(?string $tableKey, ?int $expectedRecords = null)` (M1, changed) | `trash.empty` | As M1 (snapshot when anything waits, then delete, audit); new: when `$expectedRecords` is given and the real count is larger, `ConfirmationRequired($records, $files)` before anything happens (P82 pattern; the screen asks again); after the write, `Attachments::deleteFiles($emptied->freedHashes)` then `Attachments::sweep()`; audit detail gains `files` (files deleted) |
+| `empty(?string $tableKey, ?int $expectedRecords = null)` (M1, changed) | `trash.empty` | Returns `TrashEmptied { int $records; int $files }` (was `int`; the two M1 assertions in `TrashAndSnapshotOperationsTest` read `->records`). As M1 (snapshot when anything waits, then delete, audit); new: when `$expectedRecords` is given and the real count is larger, `new ConfirmationRequired($records, $files)` (the existing class; its `values` argument carries the file count) before anything happens (P82 pattern; the screen asks again); after the write, `Attachments::deleteFiles($emptied->freedHashes)` then `Attachments::sweep()`; audit detail gains `files` (files deleted) |
 
 ### 10.6 `SchemaOperations` (changed)
 
@@ -535,7 +540,7 @@ After `deleteField` of an attachment field and after `deleteTable` (each once it
 
 ## 11. Message keys produced by the core (new)
 
-English text in `strings/en/problems.php` (owned by M4-WP5), exactly. `tests/core/app/MessageKeysTest.php` and `tests/web/StringsTest.php` read this section as they read M3 section 14 (WP5 for `StringsTest`, WP4 for `MessageKeysTest`).
+English text in `strings/en/problems.php` (owned by M4-WP5), exactly. `tests/core/app/MessageKeysTest.php` and `tests/web/StringsTest.php` read this section as they read M3 section 14 (WP5 for `StringsTest`; WP3 for `MessageKeysTest`, because `MessageKeysTest` fails as soon as any `src/Core` file uses a `problem.*` key no spec section lists, and WP3 (wave 1) and WP2 (wave 2) add such keys before WP4 runs).
 
 | Key | Text |
 |---|---|
@@ -591,7 +596,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-ATT-3 | `images_only` refuses a PDF and an SVG with `problem.attachment.not_image`; accepts the four images |
 | T-ATT-4 | `MAX_PER_FIELD`: the 101st refused; with `replaceId` at the limit accepted |
 | T-ATT-5 | Replace: old link gone, new link at the end, old row deleted only when unlinked, its hash reported; a `replaceId` of another record or field is `NotFound` |
-| T-ATT-6 | Failure injected after `place` and before the row insert (trigger on `_tiffin_attachments`): no row, no link, record unchanged; the moved file is an orphan that `sweep` deletes |
+| T-ATT-6 | Failure injected after `place` and before the row insert (trigger on `_tiffin_attachments`): no row, no link, record unchanged; the moved file is an orphan that `sweep` deletes; a shorter orphan file at the target (no row names it) is replaced by the next upload of that content; a different-size file that a row names is refused (`\RuntimeException`, nothing written) |
 | T-ATT-7 | `remove`: link deleted; row deleted when last; hash reported; `deleteFiles` deletes the file only when no row has the hash (two rows sharing a file: file kept after the first removal) |
 | T-ATT-8 | Interleaving: a second connection holds a write while `deleteFiles` waits; an upload of the same content committed first keeps the file (run with two `Database` objects on one file, `busy_timeout`) |
 | T-ATT-9 | `sweep`: unlinked rows deleted, orphan files deleted, stray entries kept; idempotent |
@@ -678,7 +683,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-APP-112 | `add` with replace: one transaction, old file deleted after commit when unshared; audit entries |
 | T-APP-113 | `file`: facts; attachment of another record or field `NotFound` |
 | T-APP-114 | `remove`: link and row and file; audit `attachment.removed` |
-| T-APP-115 | `settings` totals |
+| T-APP-115 | `attachmentTotals`: distinct files and bytes; a Member `AccessDenied` |
 | T-APP-116 | Audit detail holds no file name or value (scan of the stored detail JSON) |
 | T-APP-120 to T-APP-129 | The access-control matrix at core level (section 12.9) |
 | T-APP-130 | `summaries` counts; broken counts |
@@ -715,7 +720,7 @@ Part 2 section 11.1 (T-WEB-50 to T-WEB-70, T-SCR-4, T-KBD-3, T-E2E-11 to T-E2E-1
 | Signed out, any attachment address | n/a (no actor) | T-WEB-60: 303 to `/sign-in`, no body bytes of the file |
 | Member without a grant, valid id | T-APP-120: `NotFound` | T-WEB-61: 404, body equal to a nonexistent id's |
 | Member with a grant, linked from a live record | T-APP-121: `ServedFile` | T-WEB-62: 200, headers of ADR 0018 decision 5 exactly (type, disposition, length, nosniff, sandbox CSP), bytes equal |
-| Member with a grant, id from another project | T-APP-122: `NotFound` | T-WEB-63: 404 |
+| Member with a grant, id from another project | T-APP-122: `NotFound` (an id that exists only in the other project; ids are numbered per project) | T-WEB-63: 404 |
 | Member with a grant, linked only from a trashed record | T-APP-123: `NotFound` | T-WEB-64: 404 |
 | Member with a grant, row present, file missing | T-APP-124: `NotFound`, one `error_log` line without the name | T-WEB-65: 404 |
 | Any, upload without CSRF or over the cap | T-APP-125: over the cap `ValidationFailed`, nothing stored | T-WEB-66: 403 without CSRF; 413 over `post_max_size`; 422 over the core cap; staging and attachments folders unchanged |
@@ -732,13 +737,15 @@ From plan section 2 and the ledger ("Open low items carried forward", M2 open te
 |---|---|---|
 | CF-1 | "Check again" loses a typed table name after switching to an existing target and back (M3 X-12) | `ImportOperations::recheck` keeps the stored new-table name when the posted one is empty or absent |
 | CF-2 | Import report: the "Rows" column is right-aligned like the count column | `templates/pages/import/report.php`: only the count cell carries `num` |
-| CF-3 | A CSV over 200 columns or a record over 1 MiB shows "uses something TiffinDB cannot read yet" | The CSV import plugin reports `problem.import.too_many_columns` with `{max}` for the column case; the 1 MiB record case keeps `unsupported` with a test pinning it |
+| CF-3 | A CSV over 200 columns or a record over 1 MiB shows "uses something TiffinDB cannot read yet" | The column case gives `problem.import.too_many_columns` with `{max}`; the 1 MiB record case keeps `unsupported` with a test pinning it. As built the column check is in `src/Core/Io/Csv/CsvFile.php` (which the CSV plugin calls) and throws `PluginFailure` reason `too_large`, which `ImportOperations::readProblem` maps to `unsupported` together with the record case; a plugin can only throw the four `PluginFailure` reasons, so the change is in `CsvFile` or in `ImportOperations`' failure mapping, not in the plugin alone. `tests/core/io/csv/CsvHostileTest.php` pins reason `too_large` for "a million delimiters on one line" and must keep passing unchanged; if CF-3 cannot be met within the owned files, WP0 reports it instead |
 | CF-4 | No test pins the XLSX early stop on entries holding more bytes than declared | New test in `tests/plugins/xlsx/` |
-| CF-5 | Export page project size (`export.archive.size`, M3 open gap) | `ExportScreen` gains `int $projectBytes` (database file size plus stored attachments); the archive panel shows "About {size}." |
+| CF-5 | Export page project size (`export.archive.size`, M3 open gap) | `ExportScreen` gains `int $projectBytes` (database file size plus the sizes of the regular files under the project's `attachments/<2>/` folders, read with `Fs::entries` and `Fs::size`; WP0 runs before WP1 and WP2 and uses neither); the archive panel shows "About {size}." |
 | CF-6 | M2: no test for the class-name pattern in `settings-preview.js` | Static test of the script's class-name list against `Appearance` |
 | CF-7 | M2: no test for a symbolic-link `projects/` folder | `ProjectOperations::create` fails closed; test |
 | CF-8 | M2: no test pins which record permission each method checks | Data-provider test over `RecordOperations` and `TrashOperations` M2 methods with a spy authorizer; WP4 extends it to the new methods (T-APP-150) |
 | CF-9 | M2: WP0 abandoned-row recheck mutation not re-checked | Mutation run recorded in the WP0 report (no code change expected) |
+
+Tests: T-CF-5 covers CF-1 (a recheck test in `ImportOperationsTest`) and CF-2 (the report's `num` cells in `ImportScreenTest`); T-CF-6 covers CF-3 (a CSV of 201 columns gives `problem.import.too_many_columns` with `max` 200; a record over 1 MiB gives `problem.import.unsupported`) and CF-4 (`XlsxLimitsTest`: an entry holding more bytes than declared stops early); T-CF-7 covers CF-5 (`ExportOperationsTest` with a stored attachment file, `ExportScreenTest` for the text); T-CF-8 covers CF-6 to CF-8 (the three new test files of WP0).
 
 P74 (typed trash listing) is in WP2 (section 4.5). P105 is closed by P157 (WP2, WP4). The older M1 carried items in ledger section 7 not named here stay carried.
 
@@ -763,7 +770,7 @@ Waves (at most three agents at once). Changes from plan section 6, with reasons:
 | Tier | implementation |
 | Depends on | none |
 | Security-critical | No |
-| Owned files | `src/Core/App/ImportOperations.php` (recheck only); `src/Core/App/ExportOperations.php`, `src/Core/App/ExportScreen.php` (project size only); `templates/pages/import/report.php`; `templates/pages/export/form.php`; `strings/en/export.php` (`export.archive.size`); `plugins/import/csv/src/*`; `tests/core/app/ImportOperationsTest.php`, `ExportOperationsTest.php`; `tests/web/ImportScreenTest.php`, `ExportScreenTest.php` (the new assertions only); `tests/plugins/csv/CsvImporterTest.php`; `tests/plugins/xlsx/XlsxLimitsTest.php`; new `tests/web/SettingsScriptTest.php`, `tests/core/app/ProjectLinkFolderTest.php`, `tests/core/app/RecordPermissionMapTest.php` |
+| Owned files | `src/Core/App/ImportOperations.php` (recheck and, for CF-3, the plugin-failure mapping only); `src/Core/Io/Csv/CsvFile.php` (CF-3 column case only); `tests/core/io/csv/CsvReaderTest.php` (CF-3 cases); `src/Core/App/ExportOperations.php`, `src/Core/App/ExportScreen.php` (project size only); `templates/pages/import/report.php`; `templates/pages/export/form.php`; `strings/en/export.php` (`export.archive.size`); `plugins/import/csv/src/*` (only if CF-3 needs it); `tests/core/app/ImportOperationsTest.php`, `ExportOperationsTest.php`; `tests/web/ImportScreenTest.php`, `ExportScreenTest.php` (the new assertions only); `tests/plugins/csv/CsvImporterTest.php`; `tests/plugins/xlsx/XlsxLimitsTest.php`; new `tests/web/SettingsScriptTest.php`, `tests/core/app/ProjectLinkFolderTest.php`, `tests/core/app/RecordPermissionMapTest.php` |
 | Scope | Section 13 |
 | Acceptance | Tests T-CF-5 (CF-1 and CF-2), T-CF-6 (CF-3 and CF-4), T-CF-7 (CF-5), T-CF-8 (CF-6 to CF-8) pass; CF-9 reported; implementation-tier review |
 
@@ -796,7 +803,7 @@ Waves (at most three agents at once). Changes from plan section 6, with reasons:
 | Tier | implementation |
 | Depends on | none |
 | Security-critical | Yes (SQL composition) |
-| Owned files | `src/Core/Query/ListQuery.php`, `ListSql.php`, `Operator.php`; `src/Core/Query/MatchMode.php`, `RuleSet.php`, `Collection.php`, `CollectionRule.php`, `CollectionStore.php`, `CollectionRules.php`, `ResolvedRules.php`, `RuleState.php` (new); `tests/core/query/RuleSqlTest.php`, `RulePlanTest.php`, `CollectionStoreTest.php`, `CollectionRulesTest.php` (new); `tests/core/query/RecordsListTest.php` (new cases only) |
+| Owned files | `src/Core/Query/ListQuery.php`, `ListSql.php`, `Operator.php`; `src/Core/Query/MatchMode.php`, `RuleSet.php`, `Collection.php`, `CollectionRule.php`, `CollectionStore.php`, `CollectionRules.php`, `ResolvedRules.php`, `RuleState.php` (new); `tests/core/query/RuleSqlTest.php`, `RulePlanTest.php`, `CollectionStoreTest.php`, `CollectionRulesTest.php` (new); `tests/core/query/RecordsListTest.php` (new cases only); `tests/core/app/MessageKeysTest.php` (reads section 11 as well) |
 | Scope | Sections 5 and 6. Tests create `_tiffin_collections` from the fourth block of `docs/formats/tiffin.md` section 4 on files made by the version 3 `ProjectFile::create` (WP10 makes it part of the file) |
 | Acceptance | T-RUL-1 to T-RUL-12, T-COL-1 to T-COL-10 pass; M2 list tests pass unchanged; design-tier security review of the SQL composition |
 
@@ -807,7 +814,7 @@ Waves (at most three agents at once). Changes from plan section 6, with reasons:
 | Tier | implementation |
 | Depends on | WP2, WP3, WP10 |
 | Security-critical | Yes (authorization boundary) |
-| Owned files | `src/Core/App/AttachmentOperations.php`, `CollectionOperations.php`, `PickerScreen.php`, `LinkOrigin.php`, `UploadScreen.php`, `FileScreen.php`, `ServedFile.php`, `CollectionSummary.php`, `CollectionFacts.php`, `CollectionEditor.php`, `EditorRule.php`, `TrashScreen.php`, `TrashSection.php`, `ListColumn.php` (new if not present) ; `src/Core/App/RecordOperations.php`, `TrashOperations.php`, `SchemaOperations.php`, `ProjectOperations.php`, `Operations.php`, `Context.php`, `ListRequest.php`, `RecordListing.php`, `SearchResults.php`, `RecordScreen.php`, `TrashedRecord.php`, and the project settings result class; `src/Core/Forms/BoundImage.php` (new), `FileItem.php`, `LinkItem.php`, `BindData.php`, `FormBinder.php`; `src/Core/System/AuditAction.php`; `tests/core/app/AttachmentOperationsTest.php`, `LinkOperationsTest.php`, `CollectionOperationsTest.php`, `TrashScreenOperationsTest.php`, `AttachmentAccessTest.php`, `M4PermissionsTest.php` (new), `tests/core/app/RecordOperationsTest.php`, `RecordListingTest.php`, `TrashAndSnapshotOperationsTest.php`, `SchemaOperationsTest.php`, `ProjectOperationsTest.php`, `AuditTrailTest.php`, `MessageKeysTest.php` (reading section 11), `RecordPermissionMapTest.php` (extended); `tests/core/forms/FormBinderTest.php`; `tests/Support/CoreFixture.php` |
+| Owned files | `src/Core/App/AttachmentOperations.php`, `CollectionOperations.php`, `PickerScreen.php`, `LinkOrigin.php`, `UploadScreen.php`, `FileScreen.php`, `ServedFile.php`, `CollectionSummary.php`, `CollectionFacts.php`, `CollectionEditor.php`, `EditorRule.php`, `TrashScreen.php`, `TrashSection.php`, `RestoredAll.php`, `TrashEmptied.php`, `AttachmentTotals.php` (new); `src/Core/App/RecordOperations.php`, `TrashOperations.php`, `SchemaOperations.php`, `ProjectOperations.php`, `Operations.php`, `Context.php`, `ListRequest.php`, `RecordListing.php`, `SearchResults.php`, `RecordScreen.php`, `TrashedRecord.php`; `src/Core/Forms/BoundImage.php` (new), `FileItem.php`, `LinkItem.php`, `BindData.php`, `FormBinder.php`; `src/Core/System/AuditAction.php`; `tests/core/app/AttachmentOperationsTest.php`, `LinkOperationsTest.php`, `CollectionOperationsTest.php`, `TrashScreenOperationsTest.php`, `AttachmentAccessTest.php`, `M4PermissionsTest.php` (new), `tests/core/app/RecordOperationsTest.php`, `RecordListingTest.php`, `TrashAndSnapshotOperationsTest.php`, `SchemaOperationsTest.php`, `ProjectOperationsTest.php`, `AuditTrailTest.php`, `RecordPermissionMapTest.php` (extended); `tests/core/forms/FormBinderTest.php`; `tests/Support/CoreFixture.php` |
 | Scope | Sections 9 and 10 |
 | Acceptance | T-FORM-11, T-APP-100 to T-APP-150 pass; M1 to M3 T-APP tests pass; design-tier security review |
 
@@ -873,7 +880,7 @@ Waves (at most three agents at once). Changes from plan section 6, with reasons:
 | Tier | implementation |
 | Depends on | WP3 |
 | Security-critical | Yes (opens untrusted files) |
-| Owned files | `src/Core/Schema/ProjectFile.php`, `FormatMigrations.php`; `src/Core/Io/Archive/UntrustedProject.php`, `ProjectRebuilder.php`, `RebuildReport.php`; `src/Core/Io/Contract/ExportSource.php`, `ExportCollection.php`, `ExportRule.php` (new); `src/Core/Io/ProjectExportSource.php`; `plugins/export/json/src/*`; `docs/formats/json-export.md` (the section 1 example's `collections` member and the removal of the two M4-D1 design notes, one in each format document); `docs/formats/tiffin.md` (that design note only); `tests/core/schema/ProjectFileTest.php`, `FormatUpgradeTest.php`; `tests/core/io/archive/ArchiveImportTest.php`, `RebuildCollectionsTest.php` (new), `SqliteCorpusTest.php`; `tests/core/io/ExportSourceTest.php`; `tests/plugins/json/*`; `tests/formats/JsonExportFormatTest.php`; `tests/roundtrip/ArchiveRoundTripTest.php`, `JsonRoundTripTest.php` (collections assertions) |
+| Owned files | `src/Core/Schema/ProjectFile.php`, `FormatMigrations.php`; `src/Core/Io/Archive/UntrustedProject.php`, `ProjectRebuilder.php`, `RebuildReport.php`; `src/Core/Io/Contract/ExportSource.php`, `ExportCollection.php`, `ExportRule.php` (new); `src/Core/Io/ProjectExportSource.php`; `plugins/export/json/src/*`; `docs/formats/json-export.md` (the section 1 example's `collections` member and the removal of the two M4-D1 design notes, one in each format document); `docs/formats/tiffin.md` (that design note only); `tests/core/schema/ProjectFileTest.php`, `FormatUpgradeTest.php`; `tests/core/io/archive/ArchiveImportTest.php`, `RebuildCollectionsTest.php` (new), `SqliteCorpusTest.php`; `tests/core/io/ExportSourceTest.php`; `tests/plugins/json/*`; `tests/plugins/csv/CsvExporterTest.php` (its `FakeSource` gains `collections()` only); `tests/formats/JsonExportFormatTest.php`; `tests/roundtrip/ArchiveRoundTripTest.php`, `JsonRoundTripTest.php` (collections assertions) |
 | Scope | Sections 7 and 8 |
 | Acceptance | T-FMT-6, T-FMT-7, T-ARC-10 to T-ARC-13, T-JSON-3 pass; M3 archive and JSON tests pass; design-tier security review of the rebuild |
 
@@ -895,7 +902,7 @@ Waves (at most three agents at once). Changes from plan section 6, with reasons:
 
 Design-tier security reviews (orch 2 rule 4; plan section 6): WP1 (store), WP2 (removal order), WP3 (multi-rule SQL), WP4 (authorization, download authorization), WP5 (file headers, templates), WP6 (upload path, serving controller), WP10 (untrusted archive rows).
 
-Ownership check. Wave 1: WP0 holds the M3 import and export operation files named, two templates, `export.php` strings, the CSV import plugin, and its own tests; WP1 holds the Storage files, `StagingArea.php`, its tests, the Storage rule of `SqlStringsTest.php`, `FileFixture.php`; WP3 holds `ListQuery`, `ListSql`, `Operator`, the new collection files, its tests, and new cases in `RecordsListTest.php`; WP5 holds the web files of part 2 section 12. `tests/web/ImportScreenTest.php` and `ExportScreenTest.php` are WP0's only; `TemplateRulesTest.php` is WP5's. No file is shared in wave 1. Wave 2: WP2 holds `Records.php`, `Trash.php`, `AttachmentSummary.php`, its new Query files, the two call sites of `TrashOperations.php`, `RecordsFixture.php`; WP10 holds the two Schema files, the archive files, the contract and export source files, the JSON plugin, and the format documents' notes; disjoint. Wave 3: WP4 alone (it changes `TrashOperations.php` after WP2). Wave 4: WP6, WP7, WP8 own their controllers, templates, strings, and tests (part 2 section 12); `routes.php`, `app.css`, `layout.php`, shared partials, `Sidebar.php`, and shared strings are WP5's (merged). Files touched by two waves: `TrashOperations.php` (WP2 call sites, then WP4), `tests/core/app/RecordPermissionMapTest.php` (WP0, then WP4), `docs/formats/*.md` (this design, then WP10's notes).
+Ownership check. Wave 1: WP0 holds the M3 import and export operation files named, `CsvFile.php`, two templates, `export.php` strings, the CSV import plugin, and its own tests; WP1 holds the Storage files, `StagingArea.php`, its tests, the Storage rule of `SqlStringsTest.php`, `FileFixture.php`; WP3 holds `ListQuery`, `ListSql`, `Operator`, the new collection files, its tests, new cases in `RecordsListTest.php`, and `MessageKeysTest.php`; WP5 holds the web files of part 2 section 12. `tests/web/ImportScreenTest.php` and `ExportScreenTest.php` are WP0's only; `TemplateRulesTest.php` is WP5's. No file is shared in wave 1. Wave 2: WP2 holds `Records.php`, `Trash.php`, `AttachmentSummary.php`, its new Query files, the two call sites of `TrashOperations.php`, `RecordsFixture.php`; WP10 holds the two Schema files, the archive files, the contract and export source files, the JSON plugin, `CsvExporterTest.php`, and the format documents' notes; disjoint (WP0, which owns `CsvImporterTest.php`, ran in wave 1). Wave 3: WP4 alone (it changes `TrashOperations.php` after WP2). Wave 4: WP6, WP7, WP8 own their controllers, templates, strings, and tests (part 2 section 12); `routes.php`, `app.css`, `layout.php`, shared partials, `Sidebar.php`, and shared strings are WP5's (merged). Files touched by two waves: `TrashOperations.php` (WP2 call sites, then WP4), `tests/core/app/RecordPermissionMapTest.php` (WP0, then WP4), `docs/formats/*.md` (this design, then WP10's notes).
 
 ## 15. Provisional decisions (for the ledger, from P146)
 

@@ -62,8 +62,8 @@ Order: the project-level routes after `/projects/{project}/export/archive` and b
 | `FileController` (new) | Upload, file page, remove confirmation, serving (`files.md`) | `AttachmentOperations::*` |
 | `CollectionController` (new) | Collection view, editor, delete (`collections.md`) | `CollectionOperations::*` |
 | `RecordListController`, `SearchController` (changed) | Sidebar arguments | `RecordOperations::listing`, `search`, `CollectionOperations::summaries` (through `RecordListing`/`SearchResults`) |
-| `TrashController` (new) | Trash, empty confirmation (`trash.md`) | `TrashOperations::screen`, `restore`, `restoreAll`, `emptyImpact`, `empty` |
-| `ProjectController` (changed) | Project settings: attachment totals | `ProjectOperations::settings` |
+| `TrashController` (new) | Trash, empty confirmation (`trash.md`) | `TrashOperations::screen`, `restoreAll`, `emptyImpact`, `empty`; `RecordOperations::restore` for one record (its `RecordRef` gives the notice's title) |
+| `ProjectController` (changed) | Project settings: attachment totals | `ProjectOperations::attachmentTotals` (new, part 1 section 10.3) |
 
 Rules (M1 section 2.8, M2 section 2.1, M3 section 3.1): no authorization decision in controllers; `AccessDenied` reaches the kernel (403 page), `NotFound` (404); `ValidationFailed` re-renders the same page with 422 and the error summary. Every POST answers 303 on success (to the page named in the design), so reloading never repeats a POST. Specific rules:
 
@@ -73,7 +73,8 @@ Rules (M1 section 2.8, M2 section 2.1, M3 section 3.1): no authorization decisio
 4. `RecordController::newForm` and `create` read `from` from the query string or the POST body; with `from`, `linkOrigin` must succeed (else 404); success answers 303 to the picker of the origin record and field with a flash notice.
 5. `CollectionController::create`/`update` read `action` (`save`, `preview`, `add`, `remove-<n>`); anything but `save` re-renders the editor with 200 (no state is stored); `save` with problems re-renders with 422.
 6. `TrashController::empty` posts back `expected` (the record count shown); `ConfirmationRequired` re-renders the confirmation page (200) with the new counts and a notice that the trash changed.
-7. `TrashController::restore` reads `table`, `record`, `view` (exactly `table`, else all tables), and `page`, and answers 303 to `/projects/{p}/trash` (with `table` and `page` when `view=table`); `restoreAll` reads `table` and answers 303 to `/projects/{p}/trash`.
+7. `TrashController::restore` reads `table`, `record`, `view` (exactly `table`, else all tables), and `page`, calls `RecordOperations::restore`, and answers 303 to `/projects/{p}/trash` (with `table` and `page` when `view=table`); `restoreAll` reads `table` and answers 303 to `/projects/{p}/trash` (notice from `RestoredAll`); `empty` takes its notice counts from `TrashEmptied`.
+8. `RecordController` with `collection` in the list state: "Back to list", and every redirect that M2 sends to the table's list, go to `/projects/{p}/collections/{c}` with the state (the record page's Previous and Next already follow the collection through the core, P162).
 
 ## 5. Shell changes (WP5)
 

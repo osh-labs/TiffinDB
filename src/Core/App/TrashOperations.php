@@ -34,6 +34,9 @@ final class TrashOperations
     /** Trashed records per table on the trash screen (P168). */
     public const PAGE_SIZE = 50;
 
+    /** @var array<string, ?string> display names by person key, read once per request */
+    private array $names = [];
+
     public function __construct(private readonly Context $c)
     {
     }
@@ -65,9 +68,8 @@ final class TrashOperations
             throw new \InvalidArgumentException('The limit must be 1 to ' . self::MAX_LIST . ' and the offset 0 or more.');
         }
         [, $db, $schema] = $this->open($actor, $projectKey, Permission::ViewRecords);
-        $names = [];
 
-        return $this->trashed($db, $schema, $schema->table($tableKey), $limit, $offset, $names);
+        return $this->trashed($db, $schema, $schema->table($tableKey), $limit, $offset);
     }
 
     /** Records in the trash of one table, or of every table when $tableKey is null. */
@@ -96,7 +98,6 @@ final class TrashOperations
         $trash = new Trash($db, $this->c->clock);
         $sections = [];
         $total = 0;
-        $names = [];
         foreach ($schema->tables() as $table) {
             $count = $trash->count($table);
             $total += $count;
@@ -105,7 +106,7 @@ final class TrashOperations
             }
             $pages = max(1, intdiv($count + self::PAGE_SIZE - 1, self::PAGE_SIZE));
             $current = $chosen === null ? 1 : max(1, min($page, $pages));
-            $records = $count === 0 ? [] : $this->trashed($db, $schema, $table, self::PAGE_SIZE, ($current - 1) * self::PAGE_SIZE, $names);
+            $records = $count === 0 ? [] : $this->trashed($db, $schema, $table, self::PAGE_SIZE, ($current - 1) * self::PAGE_SIZE);
             $sections[] = new TrashSection($table, $count, $records, $current, $pages);
         }
 
@@ -217,12 +218,11 @@ final class TrashOperations
 
     /**
      * Trashed records of the table, newest first, with the display name of
-     * who trashed each ($names caches display names by person key).
+     * who trashed each (display names are read once per person).
      *
-     * @param array<string, ?string> $names
      * @return list<TrashedRecord>
      */
-    private function trashed(Database $db, Schema $schema, TableDef $table, int $limit, int $offset, array &$names): array
+    private function trashed(Database $db, Schema $schema, TableDef $table, int $limit, int $offset): array
     {
         $title = null;
         if ($table->titleFieldKey !== null) {
@@ -233,10 +233,10 @@ final class TrashOperations
         foreach ((new Trash($db, $this->c->clock))->list($table, $title, $this->c->types, $limit, $offset) as $row) {
             $name = null;
             if ($row->trashedBy !== null) {
-                if (!array_key_exists($row->trashedBy, $names)) {
-                    $names[$row->trashedBy] = $this->c->users->byKey($row->trashedBy)?->displayName;
+                if (!array_key_exists($row->trashedBy, $this->names)) {
+                    $this->names[$row->trashedBy] = $this->c->users->byKey($row->trashedBy)?->displayName;
                 }
-                $name = $names[$row->trashedBy];
+                $name = $this->names[$row->trashedBy];
             }
             $list[] = new TrashedRecord($row->id, $row->trashedAt, $row->trashedBy, $row->title, $name);
         }

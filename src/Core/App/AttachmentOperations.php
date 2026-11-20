@@ -38,7 +38,9 @@ use TiffinDB\Core\System\ProjectRecord;
  * Authorization (security-critical): every method starts with
  * Context::project for its permission, before any key, id, or file is
  * looked at, so a Member without a grant, an unknown project, and an
- * inactive project are NotFound. Then: the table must be a table of the
+ * inactive project are NotFound; a person deactivated (or changed) since
+ * the session began is AccessDenied (Context::requireCurrentActor). Then:
+ * the table must be a table of the
  * project, the field an attachment field of that table (the field in the
  * address must belong to the table in the address), the record live, and
  * an attachment id must be linked from that record through that field;
@@ -237,6 +239,8 @@ final class AttachmentOperations
     private function open(Actor $actor, string $projectKey, Permission $permission): array
     {
         $project = $this->c->project($actor, $permission, $projectKey);
+        // Files are the one place a stale session could carry bytes away: the person must still be who it says (T-APP-127).
+        $this->c->requireCurrentActor($actor);
         $db = $this->c->opener->open($project);
         $schema = new Schema($db, $this->c->types);
 

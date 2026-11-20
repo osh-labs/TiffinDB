@@ -60,6 +60,9 @@ final class CollectionOperations
     private const ROW_PARTS = ['field', 'test', 'value', 'record'];
     private const REMOVE = '/^remove-([1-9]|10)\z/';
 
+    /** @var array<string, array{0: list<LinkItem>, 1: bool}> records a relation rule offers, by table key, for one editor call */
+    private array $picks = [];
+
     public function __construct(private readonly Context $c)
     {
     }
@@ -134,6 +137,7 @@ final class CollectionOperations
     ): CollectionEditor {
         [$project, $db, $schema] = $this->open($actor, $projectKey, Permission::ManageCollections);
         [$collection, $table] = $this->target($db, $schema, $tableKey, $collectionKey);
+        $this->picks = [];
         foreach ($problems as $problem) {
             if (!$problem instanceof Problem) {
                 throw new \InvalidArgumentException('Problems must be Problem values.');
@@ -164,7 +168,6 @@ final class CollectionOperations
 
         $editorRules = [];
         $working = [];
-        $picks = [];
         foreach ($draft['rows'] as $i => $row) {
             $field = $fields[$row['field']] ?? null;
             $tests = $field === null ? [] : $rules->testsFor($field);
@@ -175,7 +178,7 @@ final class CollectionOperations
             if ($result instanceof CollectionRule) {
                 $working[] = $result;
             }
-            [$linkable, $more] = $field !== null && $field->type === 'relation' ? $this->linkable($schema, $records, $field, $picks) : [[], false];
+            [$linkable, $more] = $field !== null && $field->type === 'relation' ? $this->linkable($schema, $records, $field) : [[], false];
             $editorRules[] = new EditorRule(
                 $i + 1,
                 $field,
@@ -373,25 +376,24 @@ final class CollectionOperations
      * Up to Records::PICKER_LIMIT live records of the field's other table,
      * and whether there are more (read once per table per editor).
      *
-     * @param array<string, array{0: list<LinkItem>, 1: bool}> $picks
      * @return array{0: list<LinkItem>, 1: bool}
      */
-    private function linkable(Schema $schema, Records $records, FieldDef $field, array &$picks): array
+    private function linkable(Schema $schema, Records $records, FieldDef $field): array
     {
         $relation = $schema->relationOf($field);
         if ($relation === null) {
             return [[], false];
         }
         $other = $relation->otherTable($field->key);
-        if (!isset($picks[$other])) {
+        if (!isset($this->picks[$other])) {
             $items = [];
             foreach ($records->pickList($other, Records::PICKER_LIMIT) as $linked) {
                 $items[] = new LinkItem($linked->tableKey, $linked->id, $linked->title);
             }
-            $picks[$other] = [$items, $records->count($other) > Records::PICKER_LIMIT];
+            $this->picks[$other] = [$items, $records->count($other) > Records::PICKER_LIMIT];
         }
 
-        return $picks[$other];
+        return $this->picks[$other];
     }
 
     /** @return list<array{key: string, label: string}> */

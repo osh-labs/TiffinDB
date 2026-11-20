@@ -314,9 +314,61 @@ final class StringsTest extends TestCase
         $m3 = self::problemRows('docs/specs/M3-io.md', "\n## 14. Message keys produced by the core", "\n## 15. ");
         self::assertCount(33, $m3, 'The M3 specification table was read.');
         self::assertSame([], array_intersect_key($m1 + $m2, $m3), 'The M3 table adds keys only.');
+        $m4 = self::problemRows('docs/specs/M4-core.md', "\n## 11. Message keys produced by the core", "\n## 12. ");
+        self::assertCount(18, $m4, 'The M4 specification table was read.');
+        self::assertSame([], array_intersect_key($m1 + $m2 + $m3, $m4), 'The M4 table adds keys only.');
 
         $problems = require RepoFiles::path('strings/en/problems.php');
-        self::assertSame($m1 + $m2 + $m3, $problems);
+        self::assertSame($m1 + $m2 + $m3 + $m4, $problems);
+    }
+
+    /**
+     * M4 spec part 2 section 7 and docs/design/m4/components.md sections 2
+     * and 3: the sidebar and shared partial strings, exactly.
+     */
+    public function testM4SharedStringsAreTheDesign(): void
+    {
+        $strings = require RepoFiles::path('strings/en.php');
+        self::assertIsArray($strings);
+        $expected = [
+            'sidebar.collections' => 'Collections',
+            'sidebar.new_collection' => 'New collection',
+            'sidebar.trash' => 'In the trash',
+            'components.link.none' => 'No {item} chosen',
+            'components.link.choose' => 'Choose a record',
+            'components.link.choose_other' => 'Choose a different {item}',
+            'components.link.after_save' => 'You can choose one once this record is saved.',
+            'components.link.unlink' => 'Unlink',
+            'components.link.unlink_label' => 'Unlink {title}',
+            'components.link.add_first' => 'Link a record',
+            'components.link.add' => 'Link another {item}',
+            'components.link.unlink_help' => 'Unlinking does not delete the {item} record.',
+            'components.link.after_save_many' => 'You can add links once this record is saved.',
+            'components.file.open' => 'Open',
+            'components.file.open_label' => 'Open {name}',
+            'components.file.replace' => 'Replace',
+            'components.file.replace_label' => 'Replace {name}',
+            'components.file.remove' => 'Remove',
+            'components.file.remove_label' => 'Remove {name}',
+            'components.file.add' => 'Add a file',
+            'components.file.add_image' => 'Add an image',
+            'components.file.after_save' => 'You can add files once this record is saved.',
+            'components.leave_note' => 'Save your changes first: the buttons here leave this page.',
+            'input.links.help' => 'Linked to the {table} table.',
+            'input.links.none' => 'No linked records',
+            'input.files.none' => 'No files',
+            'input.file.facts' => '({type}, {size})',
+            'file.type.pdf' => 'PDF',
+            'file.type.image' => 'image',
+            'file.type.other' => 'file',
+        ];
+        foreach ($expected as $key => $text) {
+            self::assertSame($text, $strings[$key] ?? null, $key);
+        }
+        $components = require RepoFiles::path('strings/en/components.php');
+        self::assertIsArray($components);
+        $m4 = array_filter(array_keys($components), static fn (string $key): bool => str_starts_with($key, 'components.'));
+        self::assertSame(20, count($m4), 'Every components.* key is listed above.');
     }
 
     /** M3 spec part 2 sections 2.3, 4, and 6, and docs/design/m3/import.md section 1. */

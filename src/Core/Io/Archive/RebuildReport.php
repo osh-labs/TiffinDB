@@ -10,7 +10,7 @@ namespace TiffinDB\Core\Io\Archive;
 
 /**
  * What a rebuild copied, emptied, dropped, and replaced (M3 spec sections
- * 11.5 and 13.4): counts, field keys, and names from the rebuilt
+ * 11.5 and 13.4, M4 spec section 8.2): counts, field keys, and names from the rebuilt
  * project's own metadata, never a record value.
  */
 final class RebuildReport
@@ -32,6 +32,8 @@ final class RebuildReport
         public readonly int $personKeysCleared,
         public readonly int $recordsSkipped,
         public readonly int $attachmentsDropped,
+        public readonly int $collectionsDropped = 0,
+        public readonly int $collectionRulesDropped = 0,
     ) {
     }
 
@@ -46,7 +48,8 @@ final class RebuildReport
     {
         return $this->valuesEmptied === [] && $this->linksDropped === 0 && $this->formsDropped === 0 && $this->formsExtended === 0
             && $this->filesMissing === 0 && $this->filesSkipped === 0 && $this->timesReplaced === 0 && $this->personKeysCleared === 0
-            && $this->recordsSkipped === 0 && $this->attachmentsDropped === 0;
+            && $this->recordsSkipped === 0 && $this->attachmentsDropped === 0
+            && $this->collectionsDropped === 0 && $this->collectionRulesDropped === 0;
     }
 
     /**
@@ -63,6 +66,8 @@ final class RebuildReport
             'forms_dropped' => $this->formsDropped,
             'forms_extended' => $this->formsExtended,
             'files_missing' => $this->filesMissing,
+            'collections_dropped' => $this->collectionsDropped,
+            'collection_rules_dropped' => $this->collectionRulesDropped,
         ];
     }
 }

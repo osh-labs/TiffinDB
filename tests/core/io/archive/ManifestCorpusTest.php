@@ -50,7 +50,7 @@ final class ManifestCorpusTest extends TestCase
         yield 'archive version 0' => [['archive_version' => 0], ArchiveRefused::MANIFEST];
         yield 'archive version as text' => [['archive_version' => '1'], ArchiveRefused::MANIFEST];
         yield 'archive version 2' => [['archive_version' => 2], ArchiveRefused::NEWER];
-        yield 'project format version 4' => [['project_format_version' => 4], ArchiveRefused::NEWER];
+        yield 'project format version 5' => [['project_format_version' => 5], ArchiveRefused::NEWER];
         yield 'project format version 0' => [['project_format_version' => 0], ArchiveRefused::MANIFEST];
         yield 'project format version real' => [['project_format_version' => 2.5], ArchiveRefused::MANIFEST];
         yield 'size mismatch' => [['project_size' => 1], ArchiveRefused::MANIFEST];
@@ -87,7 +87,7 @@ final class ManifestCorpusTest extends TestCase
         $copy = $this->copyOfSource();
         $bytes = (string) file_get_contents($copy);
         $members = '"format":"tiffindb-archive","archive_version":1,"created_at":"' . self::CREATED . '","created_with":"0.3.0-dev",'
-            . '"project_format_version":3,"project_name":"Example Project","project_size":' . strlen($bytes)
+            . '"project_format_version":4,"project_name":"Example Project","project_size":' . strlen($bytes)
             . ',"project_sha256":"' . hash('sha256', $bytes) . '","attachments":0';
         $cases = [
             'repeated' => '{' . $members . ',"project_name":"Other Project"}',
@@ -110,7 +110,7 @@ final class ManifestCorpusTest extends TestCase
     {
         [$reader] = $this->check($this->zipFor($this->copyOfSource(), ['project_name' => '  Example Project  ']));
         self::assertSame('Example Project', $reader->manifest->projectName);
-        self::assertSame(3, $reader->manifest->projectFormatVersion);
+        self::assertSame(4, $reader->manifest->projectFormatVersion);
         self::assertSame(self::CREATED, $reader->manifest->createdAt);
     }
 }

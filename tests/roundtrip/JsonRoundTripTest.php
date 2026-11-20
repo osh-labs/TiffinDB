@@ -49,7 +49,7 @@ final class JsonRoundTripTest extends RoundTripCase
         $db = $this->core->projectDb($p);
         $meta = array_column($db->all('SELECT key, value FROM _tiffin_meta'), 'value', 'key');
         self::assertSame(
-            [$meta['project_key'], $meta['project_name'], $meta['created_at'], $meta['updated_at'], 3],
+            [$meta['project_key'], $meta['project_name'], $meta['created_at'], $meta['updated_at'], 4],
             [$doc['project']['key'], $doc['project']['name'], $doc['project']['created_at'], $doc['project']['updated_at'], $doc['project']['file_format_version']],
         );
 

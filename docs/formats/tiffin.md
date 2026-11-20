@@ -2,8 +2,6 @@
 
 Status: format version 4, written by TiffinDB from milestone M4 (version 1 was written in M1, version 2 in M2, and version 3 in M3; section 11 says how an older file is upgraded). Everything marked "version 4" is absent from version 3 files, everything marked "version 3" from version 2 files; the rest describes all of them. Section 13 describes the project archive (a zip file for backup and transfer). Provisional until the maintainer confirms ADR 0010, ADR 0014, ADR 0015, ADR 0017, ADR 0018, and ADR 0019. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
 
-Design note (M4-D1): this document describes version 4 as designed; until milestone M4's format work package is merged, TiffinDB still writes version 3 files.
-
 Every example in this document is synthetic.
 
 ## 1. What a project is

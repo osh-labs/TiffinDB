@@ -39,7 +39,7 @@ use TiffinDB\Core\Storage\Sqlite;
  *    (WAL) is rewritten to 1 in the copy so it opens without a `-wal`
  *    file (`not-sqlite`).
  * 2. Sqlite::openUntrusted: read-only, `trusted_schema` off, `query_only`
- *    on. `application_id`, and `user_version` from 1 to 3 and equal to
+ *    on. `application_id`, and `user_version` from 1 to 4 and equal to
  *    the manifest's (`not-project`, `newer`).
  * 3. Every `sqlite_master` row, before any user data is read: no trigger,
  *    view, or virtual table; every `_tiffin_*` table and index of that
@@ -49,14 +49,19 @@ use TiffinDB\Core\Storage\Sqlite;
  *    `sqlite_sequence` and `sqlite_stat1` exactly as SQLite writes them;
  *    `t_<key>` and `j_<key>` tables whose SQL holds no CHECK constraint
  *    (TiffinDB never writes one) and no hidden or generated column;
- *    `sqlite_autoindex_<table>_<n>` of an allowed table; and `x_<object>_
+ *    `sqlite_autoindex_<table>_<n>` of an allowed table (of a metadata
+ *    table only when its documented SQL has a UNIQUE column); and `x_<object>_
  *    <purpose>` indexes on a user table that are neither partial nor on
  *    an expression (`unexpected-object`, `bad-table`). This comes before
  *    `integrity_check`, which evaluates index expressions and conditions.
  * 4. `PRAGMA integrity_check(1)` is `ok` (`damaged`).
  * 5. `_tiffin_meta` `format` and `format_version` (`not-project`).
  * 6. Metadata read with explicit column lists and validated as the M1
- *    schema engine would have written it (`bad-metadata`).
+ *    schema engine would have written it (`bad-metadata`). Collection
+ *    rows (version 4) are only bounded here (row count, total `rules`
+ *    text, each column's length) and their keys checked for uniqueness;
+ *    everything else about them is left to the rebuild, which repairs or
+ *    drops them (`docs/specs/M4-core.md` section 8).
  * 7. User and join table columns exactly as documented, and every user
  *    table's `id` equal to its rowid, so ids are whole numbers and unique
  *    (`bad-table`).
@@ -80,6 +85,10 @@ final class UntrustedProject
     public const MAX_SCHEMA_OBJECTS = 10000;
     /** All field options together; one choice field with 200 labels needs about 30 KiB. */
     public const MAX_OPTIONS_TOTAL = 16777216;
+    /** Collection rows read from a version 4 file (`docs/specs/M4-core.md` section 8.1). */
+    public const MAX_COLLECTION_ROWS = 1000;
+    /** All collections' `rules` text together, in bytes. */
+    public const MAX_RULES_TOTAL = 1048576;
 
     private const HEADER = "SQLite format 3\0";
     private const USER_OBJECT = '/^[tj]_[a-z2-7]{12}\z/';
@@ -98,6 +107,7 @@ final class UntrustedProject
      * @param array<string, RelationDef> $relations by key
      * @param array<string, array<string, mixed>> $rows the times of each table, field, and relation by key
      * @param array<string, int> $sequences `sqlite_sequence` values by table name
+     * @param list<array<string, mixed>> $collections the `_tiffin_collections` rows (version 4), length-guarded, by position then key
      */
     private function __construct(
         private ?Database $db,
@@ -108,6 +118,7 @@ final class UntrustedProject
         public readonly array $relations,
         public readonly array $rows,
         public readonly array $sequences,
+        public readonly array $collections,
     ) {
     }
 
@@ -235,9 +246,8 @@ final class UntrustedProject
         $fields = self::readFields($db, $types, $tables, $rows);
         $relations = self::readRelations($db, $fields, $rows);
         self::checkTitles($tables, $fields, $types);
-        if ($version >= 2) {
-            self::checkFormKeys($db, $rows);
-        }
+        $formKeys = $version >= 2 ? self::checkFormKeys($db, $rows) : [];
+        $collections = $version >= 4 ? self::readCollections($db, $rows, $formKeys) : [];
         $expected = [];
         foreach ($tables as $key => $table) {
             $expected[] = Identifier::tableName($key);
@@ -273,7 +283,7 @@ final class UntrustedProject
             }
         }
 
-        return new self($db, $version, $meta, $tables, $fields, $relations, $rows, $sequences);
+        return new self($db, $version, $meta, $tables, $fields, $relations, $rows, $sequences, $collections);
     }
 
     /**
@@ -337,6 +347,10 @@ final class UntrustedProject
                 continue;
             }
             if ($type === 'index' && preg_match(self::AUTO_INDEX, $name, $match) === 1 && $match[1] === $table && $sql === null) {
+                if (isset($documented[$table]) && preg_match('/\bUNIQUE\b/', $documented[$table][2]) !== 1) {
+                    // SQLite makes automatic indexes only for UNIQUE columns; `_tiffin_collections` (WITHOUT ROWID) and the other metadata tables without one never have any.
+                    throw new ArchiveRefused(ArchiveRefused::UNEXPECTED_OBJECT, 'automatic index on a metadata table without a unique column');
+                }
                 $userIndexes[] = [$name, $table, true];
                 continue;
             }
@@ -423,7 +437,12 @@ final class UntrustedProject
                 throw new \LogicException('A DDL statement has an unexpected form.');
             }
             $name = $match[3];
-            $since = str_starts_with($name, '_tiffin_forms') ? 2 : (str_starts_with($name, '_tiffin_import_log') ? 3 : 1);
+            $since = match (true) {
+                str_starts_with($name, '_tiffin_forms') => 2,
+                str_starts_with($name, '_tiffin_import_log') => 3,
+                str_starts_with($name, '_tiffin_collections') => 4,
+                default => 1,
+            };
             if ($since > $version) {
                 continue;
             }
@@ -595,16 +614,67 @@ final class UntrustedProject
     /**
      * Form keys share the key scope of tables, fields, and relations
      * (format section 4.6); a form whose key is not a key at all is left
-     * to the rebuild, which drops it.
+     * to the rebuild, which drops it. Returns the valid form keys.
      *
      * @param array<string, array<string, mixed>> $rows
+     * @return array<string, true>
      */
-    private static function checkFormKeys(Database $db, array $rows): void
+    private static function checkFormKeys(Database $db, array $rows): array
     {
         self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_forms"') <= self::MAX_FORMS, 'too many forms');
+        $keys = [];
         foreach ($db->all('SELECT "key" FROM "_tiffin_forms" WHERE length("key") <= 64') as $row) {
-            self::require(!Keys::isValid($row['key']) || !isset($rows[$row['key']]), 'form key used twice');
+            if (!Keys::isValid($row['key'])) {
+                continue;
+            }
+            self::require(!isset($rows[$row['key']]) && !isset($keys[$row['key']]), 'form key used twice');
+            $keys[$row['key']] = true;
         }
+
+        return $keys;
+    }
+
+    /**
+     * Version 4: the collection rows, bounded before they are read (at
+     * most MAX_COLLECTION_ROWS rows and MAX_RULES_TOTAL bytes of `rules`),
+     * with an explicit column list and every column's length guarded, so a
+     * value longer than TiffinDB could have written arrives as null. A
+     * collection key that is a key must not be the key of a table, field,
+     * relation, form, or other collection; a key that is not a key is left
+     * to the rebuild, which drops the row (`docs/specs/M4-core.md` 8.1).
+     *
+     * @param array<string, array<string, mixed>> $rows
+     * @param array<string, true> $formKeys
+     * @return list<array<string, mixed>>
+     */
+    private static function readCollections(Database $db, array $rows, array $formKeys): array
+    {
+        self::require((int) $db->value('SELECT COUNT(*) FROM "_tiffin_collections"') <= self::MAX_COLLECTION_ROWS, 'too many collections');
+        self::require((int) $db->value('SELECT COALESCE(SUM(length(CAST("rules" AS BLOB))), 0) FROM "_tiffin_collections"') <= self::MAX_RULES_TOTAL, 'collection rules too large');
+        $result = $db->all('SELECT CASE WHEN length("key") <= 64 THEN "key" END AS "key",'
+            . ' CASE WHEN length("table_key") <= 64 THEN "table_key" END AS "table_key",'
+            . ' CASE WHEN length("name") <= 400 THEN "name" END AS "name",'
+            . ' CASE WHEN length("match_mode") <= 16 THEN "match_mode" END AS "match_mode",'
+            . ' "rules",'
+            . ' CASE WHEN length("sort") <= 64 THEN "sort" END AS "sort",'
+            . ' CASE WHEN typeof("position") = \'integer\' THEN "position" END AS "position",'
+            . ' CASE WHEN length("created_at") > 64 THEN x\'00\' ELSE "created_at" END AS "created_at",'
+            . ' CASE WHEN length("created_by") > 64 THEN x\'00\' ELSE "created_by" END AS "created_by",'
+            . ' CASE WHEN length("updated_at") > 64 THEN x\'00\' ELSE "updated_at" END AS "updated_at",'
+            . ' CASE WHEN length("updated_by") > 64 THEN x\'00\' ELSE "updated_by" END AS "updated_by"'
+            // Ordered by the stored columns, not the guarded values: a position that is not a whole number sorts after every one that is.
+            . ' FROM "_tiffin_collections" ORDER BY "_tiffin_collections"."position", "_tiffin_collections"."key"');
+        $keys = [];
+        foreach ($result as $row) {
+            $key = $row['key'];
+            if (!Keys::isValid($key)) {
+                continue;
+            }
+            self::require(!isset($rows[$key]) && !isset($formKeys[$key]) && !isset($keys[$key]), 'collection key used twice');
+            $keys[$key] = true;
+        }
+
+        return $result;
     }
 
     /** @param array<string, FieldDef> $fields */

@@ -21,6 +21,7 @@ use TiffinDB\Core\Io\Archive\ArchiveRefused;
 use TiffinDB\Core\Io\Archive\ProjectRebuilder;
 use TiffinDB\Core\Io\Archive\UntrustedProject;
 use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\ProjectFile;
 use TiffinDB\Core\Storage\Keys;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\SeededRandom;
@@ -30,7 +31,7 @@ require $argv[1];
 $types = FieldTypes::standard(new Keys(new SeededRandom('memory-probe-choices')));
 $reader = ArchiveReader::open($argv[2], $argv[3], 1 << 40);
 try {
-    $source = UntrustedProject::check($argv[4], 3, $types);
+    $source = UntrustedProject::check($argv[4], ProjectFile::VERSION, $types);
     $report = (new ProjectRebuilder($types, new FixedClock('2026-11-19T10:15:00Z'), new Keys(new SeededRandom('memory-probe')), '0.3.0-dev'))
         ->rebuild($source, $reader, $argv[5], 'n3wk2yq7zx4b', 'Imported Project', 'p5rk3wq2zn7x', 'example.zip');
     $source->close();

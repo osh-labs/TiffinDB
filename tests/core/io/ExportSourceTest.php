@@ -72,7 +72,7 @@ final class ExportSourceTest extends TestCase
         $source = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, null, $this->clock, '0.3.0-dev');
         self::assertSame(['Rooms', 'Bins', 'Items'], array_map(static fn ($t): string => $t->name, $source->tables()));
         $project = $source->project();
-        self::assertSame([self::PROJECT_KEY, 'Example Project', self::START, 3, '2026-11-12T03:16:00Z', '0.3.0-dev'], [$project->key, $project->name, $project->createdAt, $project->fileFormatVersion, $project->exportedAt, $project->exportedWith]);
+        self::assertSame([self::PROJECT_KEY, 'Example Project', self::START, 4, '2026-11-12T03:16:00Z', '0.3.0-dev'], [$project->key, $project->name, $project->createdAt, $project->fileFormatVersion, $project->exportedAt, $project->exportedWith]);
         self::assertSame(2, count($source->relations()));
 
         $one = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $this->items->key, $this->clock, '0.3.0-dev');

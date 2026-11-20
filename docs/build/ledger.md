@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | M4-D1 and M4-R1 merged; rulings P175 to P177 recorded. Wave 1 dispatching: WP1, WP3, WP5 (then WP0 as a slot frees). Then wave 2 WP2 and WP10, wave 3 WP4, wave 4 WP6 to WP8, wave 5 WP9, exit audit M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
+| Next action | Wave 1: WP1 merged (7817cf5; suite 8503 OK, 1 skipped; lint 690 files 0 failed; design-tier security review of WP1 still owed, run when a slot frees). WP3 and WP5 running; WP2 dispatched; WP0 when a slot frees. Then WP10 (after WP3), WP4, WP6 to WP8, WP9, exit audit M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9); unmerged work lives only in worktrees until pushed branches `claude/wizardly-allen-m81ni0--M4-WP<n>` | 
 
 ### Phase 0 record (2026-11-19)
 

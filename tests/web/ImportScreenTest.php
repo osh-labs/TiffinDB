@@ -610,6 +610,10 @@ final class ImportScreenTest extends TestCase
         $x = self::page($this->send('GET', "{$this->base()}/{$job}/report"));
         self::assertSame(['Field', 'Values', 'Rows'], self::texts($x, '//div[@class="table-scroll"]/table[@class="report-table"]/thead/tr/th'), 'The report table scrolls inside its box.');
         self::assertSame(['Purchased', '3', '3, 6, 8'], self::texts($x, '//table[@class="report-table"]/tbody/tr/*'));
+        // T-CF-5 (CF-2): only the count column carries `num`; the rows column is a list, not a number.
+        self::assertSame(['Values'], self::texts($x, '//table[@class="report-table"]/thead/tr/th[@class="num"]'));
+        self::assertSame(['3'], self::texts($x, '//table[@class="report-table"]/tbody/tr/*[@class="num"]'));
+        self::assertSame(0, $x->query('//table[@class="report-table"]/tbody/tr/td[3][@class]')->length);
         self::assertSame('Row 1 is the first row after the heading row.', self::texts($x, '//div[@class="table-scroll"]/following-sibling::p')[0]);
     }
 

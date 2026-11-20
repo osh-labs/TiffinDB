@@ -17,6 +17,7 @@ return [
 
     'export.archive.heading' => 'The whole project, for TiffinDB',
     'export.archive.body' => 'A project archive holds every table, record, form, and attached file, including records in the trash. Use it as a backup, or to move the project to another TiffinDB installation.',
+    'export.archive.size' => 'About {size}.',
     'export.archive.download' => 'Download the project archive',
 
     'export.format.legend' => 'Records, for other programs',

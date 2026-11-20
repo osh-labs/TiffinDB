@@ -120,7 +120,7 @@ Each partial prints its own strings (`strings/en/components.php`), escapes every
 
 | File | Owner | Content |
 |---|---|---|
-| `strings/en/components.php` | WP5 | `components.*` and `links.*`/`files.*` texts the shared partials print (`docs/design/m4/components.md`) |
+| `strings/en/components.php` | WP5 | `components.*` texts the shared partials print (`docs/design/m4/components.md`) |
 | `strings/en/shell.php` | WP5 | `sidebar.collections`, `sidebar.new_collection` |
 | `strings/en/problems.php` | WP5 | Part 1 section 11 `problem.*` rows, exactly |
 | `strings/en/records.php` | WP6 | New-record notes, notices for links and files (`record-controls.md`) |

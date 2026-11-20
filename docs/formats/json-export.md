@@ -96,7 +96,7 @@ Only files attached to at least one live record are listed, by `id` ascending; a
 
 ## 7. Collections
 
-From M4 the document ends with a `collections` member: an array with one object per saved collection (`docs/formats/tiffin.md` section 4.8), in sidebar order, possibly empty. Each object: `key`, `table` (the table key), `name`, `match` (`"all"` or `"any"`), `rules` (an array of rule objects, each with `field`, `op`, and `values` exactly as stored, `docs/formats/tiffin.md` section 4.8.1), `sort` (a sort token such as `"t5kq2zm7wn4x.desc"`, or `null` for the table's default order), `created_at`, `updated_at`. Rules are written as stored, including rules that no longer fit the table (a deleted field, a removed choice); a reader that applies them should check each against `tables`. Example (synthetic):
+From M4 the document ends with a `collections` member: an array with one object per saved collection (`docs/formats/tiffin.md` section 4.8) whose table is in `tables`, in sidebar order, possibly empty. Each object: `key`, `table` (the table key), `name`, `match` (`"all"` or `"any"`), `rules` (an array of rule objects, each with `field`, `op`, and `values` exactly as stored, `docs/formats/tiffin.md` section 4.8.1), `sort` (a sort token such as `"t5kq2zm7wn4x.desc"`, or `null` for the table's default order), `created_at`, `updated_at`. Rules are written as stored, including rules that no longer fit the table (a deleted field, a removed choice); a reader that applies them should check each against `tables`. Example (synthetic):
 
 ```json
 {"collections": [

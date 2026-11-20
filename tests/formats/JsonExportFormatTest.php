@@ -10,6 +10,11 @@ namespace TiffinDB\Tests\Formats;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Io\Contract\Exporter;
+use TiffinDB\Core\Io\ExportSourceBuilder;
+use TiffinDB\Core\Io\Plugin\PluginLoader;
+use TiffinDB\Core\Io\Plugin\PluginScanner;
+use TiffinDB\Core\Io\Plugin\PluginStatus;
 use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\Identifier;
 use TiffinDB\Tests\Plugins\Json\JsonFixture;
@@ -27,6 +32,13 @@ require_once __DIR__ . '/../plugins/json/JsonFixture.php';
  * byte order mark, U+2028 and U+2029 escaped, `/` not escaped, invalid
  * stored UTF-8 written as U+FFFD, one line per record, and the same bytes
  * from two separate builds of the fixture.
+ *
+ * T-JSON-3 (M4 spec section 12.4): `collections` is the last member, each
+ * collection and rule has the members of the example of section 7 in its
+ * order, values equal what plain SQL reads from `_tiffin_collections`
+ * (rules as stored, broken ones included), one collection per line, and
+ * the CSV and XLSX exporters write the same bytes with or without
+ * collections.
  */
 #[CoversNothing]
 final class JsonExportFormatTest extends TestCase
@@ -390,5 +402,103 @@ final class JsonExportFormatTest extends TestCase
         $this->f = [];
         $this->buildInventory();
         self::assertSame($hash, hash('sha256', $this->export($this->source())), 'A second build of the seeded fixture.');
+    }
+
+    /** @return array<string, mixed> the example of section 7 */
+    private static function collectionsExample(): array
+    {
+        $text = (string) file_get_contents(self::DOCUMENT);
+        self::assertSame(1, preg_match('/\n## 7\. Collections\n(.*?)\n## 8\./s', $text, $section));
+        self::assertSame(1, preg_match('/```json\n(.*?)\n```/s', $section[1], $m), 'Section 7 has a JSON example.');
+
+        return self::decode($m[1]);
+    }
+
+    public function testCollectionsAreTheLastMemberWithTheMembersOfSection7(): void
+    {
+        $doc = $this->doc;
+        self::assertSame('collections', array_key_last($doc));
+        self::assertSame('collections', array_key_last(self::example()), 'The example of section 1 shows the member last.');
+        $example = self::collectionsExample()['collections'][0];
+        self::assertCount(3, $doc['collections']);
+        foreach ($doc['collections'] as $collection) {
+            self::assertSame(array_keys($example), array_keys($collection));
+            foreach ($collection['rules'] as $rule) {
+                self::assertSame(array_keys($example['rules'][0]), array_keys($rule));
+            }
+        }
+
+        // Values equal the plain SQL reading, in sidebar order; rules exactly as stored.
+        $rows = $this->db->all('SELECT "key", "table_key", "name", "match_mode", "rules", "sort", "created_at", "updated_at" FROM "_tiffin_collections" ORDER BY "position"');
+        $expected = [];
+        foreach ($rows as $row) {
+            $expected[] = [
+                'key' => $row['key'], 'table' => $row['table_key'], 'name' => $row['name'], 'match' => $row['match_mode'],
+                'rules' => json_decode((string) $row['rules'], true, 8, JSON_THROW_ON_ERROR), 'sort' => $row['sort'],
+                'created_at' => $row['created_at'], 'updated_at' => $row['updated_at'],
+            ];
+        }
+        self::assertSame($expected, $doc['collections']);
+        self::assertSame(['Tools in use', 'No longer working', 'Every room'], array_column($doc['collections'], 'name'));
+        self::assertSame([$this->items->key, $this->items->key, $this->rooms->key], array_column($doc['collections'], 'table'));
+        self::assertSame(['all', 'any', 'all'], array_column($doc['collections'], 'match'));
+        self::assertSame([$this->f['date']->key . '.desc', null, 'added.asc'], array_column($doc['collections'], 'sort'));
+
+        // Broken rules are written too: a deleted field and a removed choice.
+        $broken = $doc['collections'][1]['rules'];
+        self::assertSame(['field' => 'z7zz7zz7zz7z', 'op' => 'more', 'values' => ['10']], $broken[0]);
+        self::assertSame(['field' => $this->f['choice']->key, 'op' => 'is', 'values' => ['zzzzzzzzzzzz']], $broken[1]);
+        self::assertSame([], $doc['collections'][2]['rules']);
+
+        // One line per collection, after the tables.
+        $lines = explode("\n", rtrim($this->json, "\n"));
+        self::assertSame('"collections":[', $lines[count($lines) - 5]);
+        foreach ([1, 2, 3] as $n) {
+            self::assertStringStartsWith('{"key":"' . $doc['collections'][$n - 1]['key'] . '","table":', $lines[count($lines) - 5 + $n]);
+        }
+        self::assertSame(']}', end($lines));
+    }
+
+    public function testCollectionsOfTablesOutsideTheExportAreLeftOut(): void
+    {
+        $doc = self::decode($this->export(ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $this->rooms->key, $this->clock, self::APP_VERSION), 'rooms.json'));
+        self::assertSame(['Every room'], array_column($doc['collections'], 'name'));
+    }
+
+    private function exporterFor(string $ref): Exporter
+    {
+        $root = dirname(__DIR__, 2) . '/plugins';
+        foreach ((new PluginScanner($root))->scan([$ref => true]) as $plugin) {
+            if ($plugin->ref() === $ref) {
+                self::assertSame(PluginStatus::Enabled, $plugin->status, (string) $plugin->brokenReason);
+
+                return (new PluginLoader($root))->exporter($plugin);
+            }
+        }
+        self::fail('The ' . $ref . ' plugin was not found.');
+    }
+
+    public function testCsvAndXlsxOutputDoesNotChangeWithCollections(): void
+    {
+        $refs = ['export/csv' => 'table', 'export/xlsx' => 'project'];
+        // The XLSX writer needs a `tmp` folder beside its target, as in a job folder.
+        mkdir($this->temp->path('tmp'), 0750);
+        $with = [];
+        foreach ($refs as $ref => $scope) {
+            $exporter = $this->exporterFor($ref);
+            $tableKey = $scope === 'table' ? $this->items->key : null;
+            $path = $this->temp->path(str_replace('/', '-', $ref) . '-with');
+            $exporter->write(ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $tableKey, $this->clock, self::APP_VERSION), $exporter->settings($scope), $path);
+            $with[$ref] = (string) file_get_contents($path);
+        }
+        $this->db->run('DELETE FROM "_tiffin_collections"');
+        foreach ($refs as $ref => $scope) {
+            $exporter = $this->exporterFor($ref);
+            $tableKey = $scope === 'table' ? $this->items->key : null;
+            $path = $this->temp->path(str_replace('/', '-', $ref) . '-without');
+            $exporter->write(ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $tableKey, $this->clock, self::APP_VERSION), $exporter->settings($scope), $path);
+            self::assertNotSame('', $with[$ref]);
+            self::assertSame(hash('sha256', $with[$ref]), hash('sha256', (string) file_get_contents($path)), $ref);
+        }
     }
 }

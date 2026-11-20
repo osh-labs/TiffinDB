@@ -9,8 +9,15 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Roundtrip;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
+use TiffinDB\Core\Query\MatchMode;
+use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Storage\Database;
+use TiffinDB\Core\Storage\Keys;
 use TiffinDB\Tests\Support\IoFixture;
+use TiffinDB\Tests\Support\SeededRandom;
 
 require_once __DIR__ . '/RoundTripCase.php';
 
@@ -35,6 +42,7 @@ final class JsonRoundTripTest extends RoundTripCase
     {
         $fx = IoFixture::project($this->core, $this->ops);
         $p = $fx['m2']->project;
+        $this->addCollections($fx);
         $json = $this->export($p, 'export/json', null);
         $doc = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         self::assertIsArray($doc);
@@ -129,6 +137,20 @@ final class JsonRoundTripTest extends RoundTripCase
         self::assertSame($expected, $doc['attachments']);
         self::assertNotContains('trashed.txt', array_column($doc['attachments'], 'original_name'), 'A file attached only to a record in the trash is left out.');
         self::assertSame(array_keys($example['attachments'][0]), array_keys($doc['attachments'][0]));
+
+        // Collections: last member, in sidebar order, rules as stored (the broken one included).
+        self::assertSame('collections', array_key_last($doc));
+        $collections = [];
+        foreach ($db->all('SELECT * FROM _tiffin_collections ORDER BY position') as $c) {
+            $collections[] = [
+                'key' => $c['key'], 'table' => $c['table_key'], 'name' => $c['name'], 'match' => $c['match_mode'],
+                'rules' => json_decode((string) $c['rules'], true, 8, JSON_THROW_ON_ERROR), 'sort' => $c['sort'],
+                'created_at' => $c['created_at'], 'updated_at' => $c['updated_at'],
+            ];
+        }
+        self::assertCount(2, $collections);
+        self::assertSame($collections, $doc['collections']);
+        self::assertSame('z7zz7zz7zz7z', $doc['collections'][0]['rules'][1]['field']);
 
         // Layout: one line per record; numbers never with an exponent.
         $records = array_sum(array_map(static fn (array $t): int => count($t['records']), $doc['tables']));
@@ -225,5 +247,25 @@ final class JsonRoundTripTest extends RoundTripCase
         }
 
         return $rows;
+    }
+
+    /**
+     * Two collections in the fixture project, written with the store as the
+     * collection screens will: one on Items (with a rule on a deleted
+     * field, kept broken), one on Rooms.
+     */
+    /** @param array<string, mixed> $fx */
+    private function addCollections(array $fx): void
+    {
+        $m2 = $fx['m2'];
+        $db = $this->core->projectDb($m2->project);
+        $store = new CollectionStore($db, new Schema($db, FieldTypes::standard()), new Keys(new SeededRandom('roundtrip-collections')), $this->core->clock);
+        $store->create($m2->items, 'Bought after 2023', MatchMode::All, [
+            new CollectionRule($m2->itemFields['Purchased'], 'after', ['2023-01-01']),
+            new CollectionRule('z7zz7zz7zz7z', 'contains', ['gone']),
+        ], $m2->itemFields['Purchased'] . '.desc', $this->admin->userKey);
+        $this->core->clock->advance(60);
+        $store->create($m2->rooms, 'Every room', MatchMode::Any, [], null, $this->admin->userKey);
+        $db->close();
     }
 }

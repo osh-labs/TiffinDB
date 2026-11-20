@@ -10,8 +10,10 @@ namespace TiffinDB\Tests\Plugins\Json;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
+use TiffinDB\Core\Io\Contract\ExportCollection;
 use TiffinDB\Core\Io\Contract\ExportField;
 use TiffinDB\Core\Io\Contract\ExportRecord;
+use TiffinDB\Core\Io\Contract\ExportRule;
 use TiffinDB\Core\Io\Contract\ExportTable;
 use TiffinDB\Core\Io\Contract\ExportValue;
 use TiffinDB\Core\Io\Contract\PluginFailure;
@@ -279,6 +281,29 @@ final class JsonExporterTest extends TestCase
         $this->exporter()->write($source, $this->exporter()->settings('project'), $this->temp->path('missing/folder/export.json'));
     }
 
+    public function testCollectionsAreTheLastMemberOnePerLine(): void
+    {
+        $collections = [
+            new ExportCollection('w4kz7mq2nx3b', 'h3kq7vn2xbma', 'Under "warranty" / ok', 'all', [
+                new ExportRule('q2mz7k4wnx3b', 'is', ['1']),
+                new ExportRule('t5kq2zm7wn4x', 'after', ['2023-01-01']),
+            ], 't5kq2zm7wn4x.desc', '2026-11-20T10:00:00Z', '2026-11-20T10:05:00Z'),
+            new ExportCollection('b3kz7mq2nx3c', 'h3kq7vn2xbma', 'Empty ones', 'any', [new ExportRule('z7zz7zz7zz7z', 'empty', [])], null, '2026-11-20T10:00:00Z', '2026-11-20T10:00:00Z'),
+        ];
+        $json = $this->export(new FakeExportSource([], static fn (string $key): array => [], [], [], $collections));
+        self::assertStringEndsWith(
+            "\"tables\":[],\n\"collections\":[\n"
+            . '{"key":"w4kz7mq2nx3b","table":"h3kq7vn2xbma","name":"Under \\"warranty\\" / ok","match":"all",'
+            . '"rules":[{"field":"q2mz7k4wnx3b","op":"is","values":["1"]},{"field":"t5kq2zm7wn4x","op":"after","values":["2023-01-01"]}],'
+            . '"sort":"t5kq2zm7wn4x.desc","created_at":"2026-11-20T10:00:00Z","updated_at":"2026-11-20T10:05:00Z"},' . "\n"
+            . '{"key":"b3kz7mq2nx3c","table":"h3kq7vn2xbma","name":"Empty ones","match":"any","rules":[{"field":"z7zz7zz7zz7z","op":"empty","values":[]}],'
+            . '"sort":null,"created_at":"2026-11-20T10:00:00Z","updated_at":"2026-11-20T10:00:00Z"}' . "\n]}\n",
+            $json,
+        );
+        $doc = json_decode($json, true, 16, JSON_THROW_ON_ERROR);
+        self::assertSame('collections', array_key_last($doc));
+    }
+
     public function testNoSettingsAndAnEmptyProject(): void
     {
         $exporter = $this->exporter();
@@ -288,7 +313,7 @@ final class JsonExporterTest extends TestCase
         self::assertSame(
             "{\"format\":\"tiffindb-json\",\n\"format_version\":1,\n\"exported_at\":\"2026-11-19T10:15:00Z\",\n\"exported_with\":\"0.3.0-dev\",\n"
             . "\"project\":{\"key\":\"q7mzk2wbx4ae\",\"name\":\"Example Project\",\"created_at\":\"2026-11-12T03:15:00Z\",\"updated_at\":\"2026-11-19T09:58:12Z\",\"file_format_version\":3},\n"
-            . "\"relations\":[],\n\"attachments\":[],\n\"tables\":[]}\n",
+            . "\"relations\":[],\n\"attachments\":[],\n\"tables\":[],\n\"collections\":[]}\n",
             $json,
         );
     }

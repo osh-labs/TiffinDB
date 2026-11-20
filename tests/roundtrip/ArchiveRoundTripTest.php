@@ -9,14 +9,22 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Roundtrip;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
+use TiffinDB\Core\Query\MatchMode;
+use TiffinDB\Core\Schema\FieldTypes;
+use TiffinDB\Core\Schema\Schema;
+use TiffinDB\Core\Storage\Keys;
 use TiffinDB\Tests\Support\IoFixture;
+use TiffinDB\Tests\Support\SeededRandom;
 
 require_once __DIR__ . '/RoundTripCase.php';
 
 /**
  * T-RT-4 and T-RT-5 (M3 spec section 15.7): the fixture project
  * (IoFixture::project, with records and a file in the trash, a
- * self-relation, forms, and attachment files on disk) exported as a
+ * self-relation, forms, attachment files on disk, and, from M4, two
+ * collections, one with a broken rule) exported as a
  * project archive and imported again under a new name through the core
  * operations.
  *
@@ -37,6 +45,7 @@ final class ArchiveRoundTripTest extends RoundTripCase
     {
         $fx = IoFixture::project($this->core, $this->ops);
         $p = $fx['m2']->project;
+        $this->addCollections($fx);
         $zip = $this->archive($p);
         $this->core->clock->advance(3600);
         $result = $this->ops->archives()->import($this->admin, $this->core->upload($zip), 'home-inventory.tiffindb.zip', 'Home Inventory copy');
@@ -46,8 +55,8 @@ final class ArchiveRoundTripTest extends RoundTripCase
         // The M2 data set's attachment rows have no files (M2Fixture); every other count is zero.
         $withoutFiles = (int) $this->core->projectDb($p)->value('SELECT COUNT(*) FROM _tiffin_attachments') - count($fx['files']);
         self::assertSame(
-            [4, 92, [], 0, 0, 0, $withoutFiles, 0, 0, 0, 0, 0],
-            [$r->tables, $r->records, $r->valuesEmptied, $r->linksDropped, $r->formsDropped, $r->formsExtended, $r->filesMissing, $r->filesSkipped, $r->timesReplaced, $r->personKeysCleared, $r->recordsSkipped, $r->attachmentsDropped],
+            [4, 92, [], 0, 0, 0, $withoutFiles, 0, 0, 0, 0, 0, 0, 0],
+            [$r->tables, $r->records, $r->valuesEmptied, $r->linksDropped, $r->formsDropped, $r->formsExtended, $r->filesMissing, $r->filesSkipped, $r->timesReplaced, $r->personKeysCleared, $r->recordsSkipped, $r->attachmentsDropped, $r->collectionsDropped, $r->collectionRulesDropped],
         );
 
         $before = self::dump($this->projectFile($p));
@@ -68,6 +77,7 @@ final class ArchiveRoundTripTest extends RoundTripCase
         unset($before['_tiffin_meta'], $after['_tiffin_meta'], $before['_tiffin_import_log'], $after['_tiffin_import_log']);
 
         self::assertSame(array_keys($before), array_keys($after), 'The same tables.');
+        self::assertCount(2, $before['_tiffin_collections'], 'The collections are compared too.');
         $userTables = 0;
         foreach ($before as $name => $rows) {
             $userTables += preg_match('/^[tj]_/', $name) === 1 ? 1 : 0;
@@ -87,6 +97,7 @@ final class ArchiveRoundTripTest extends RoundTripCase
     {
         $fx = IoFixture::project($this->core, $this->ops);
         $p = $fx['m2']->project;
+        $this->addCollections($fx);
         $original = json_decode($this->export($p, 'export/json', null), true, 512, JSON_THROW_ON_ERROR);
         $zip = $this->archive($p);
         $this->core->clock->advance(3600);
@@ -101,6 +112,7 @@ final class ArchiveRoundTripTest extends RoundTripCase
         }
         unset($doc);
         self::assertSame($original, $imported, 'Equal apart from the project key, name, last change, and export time.');
+        self::assertCount(2, $original['collections']);
         self::assertGreaterThan(80, array_sum(array_map(static fn (array $t): int => count($t['records']), $original['tables'])));
     }
 
@@ -120,5 +132,25 @@ final class ArchiveRoundTripTest extends RoundTripCase
         ksort($files);
 
         return $files;
+    }
+
+    /**
+     * Two collections in the fixture project, written with the store as the
+     * collection screens will: one on Items (with a rule on a deleted
+     * field, kept broken), one on Rooms.
+     */
+    /** @param array<string, mixed> $fx */
+    private function addCollections(array $fx): void
+    {
+        $m2 = $fx['m2'];
+        $db = $this->core->projectDb($m2->project);
+        $store = new CollectionStore($db, new Schema($db, FieldTypes::standard()), new Keys(new SeededRandom('roundtrip-collections')), $this->core->clock);
+        $store->create($m2->items, 'Bought after 2023', MatchMode::All, [
+            new CollectionRule($m2->itemFields['Purchased'], 'after', ['2023-01-01']),
+            new CollectionRule('z7zz7zz7zz7z', 'contains', ['gone']),
+        ], $m2->itemFields['Purchased'] . '.desc', $this->admin->userKey);
+        $this->core->clock->advance(60);
+        $store->create($m2->rooms, 'Every room', MatchMode::Any, [], null, $this->admin->userKey);
+        $db->close();
     }
 }

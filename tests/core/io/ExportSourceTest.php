@@ -11,12 +11,17 @@ namespace TiffinDB\Tests\Core\Io;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Error\NotFound;
+use TiffinDB\Core\Io\Contract\ExportCollection;
 use TiffinDB\Core\Io\Contract\ExportField;
 use TiffinDB\Core\Io\Contract\ExportRecord;
+use TiffinDB\Core\Io\Contract\ExportRule;
 use TiffinDB\Core\Io\Contract\ExportValue;
 use TiffinDB\Core\Io\ExportSourceBuilder;
 use TiffinDB\Core\Io\ProjectExportSource;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
 use TiffinDB\Core\Query\InputMode;
+use TiffinDB\Core\Query\MatchMode;
 use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\FieldDef;
@@ -72,7 +77,7 @@ final class ExportSourceTest extends TestCase
         $source = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, null, $this->clock, '0.3.0-dev');
         self::assertSame(['Rooms', 'Bins', 'Items'], array_map(static fn ($t): string => $t->name, $source->tables()));
         $project = $source->project();
-        self::assertSame([self::PROJECT_KEY, 'Example Project', self::START, 3, '2026-11-12T03:16:00Z', '0.3.0-dev'], [$project->key, $project->name, $project->createdAt, $project->fileFormatVersion, $project->exportedAt, $project->exportedWith]);
+        self::assertSame([self::PROJECT_KEY, 'Example Project', self::START, 4, '2026-11-12T03:16:00Z', '0.3.0-dev'], [$project->key, $project->name, $project->createdAt, $project->fileFormatVersion, $project->exportedAt, $project->exportedWith]);
         self::assertSame(2, count($source->relations()));
 
         $one = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $this->items->key, $this->clock, '0.3.0-dev');
@@ -94,6 +99,59 @@ final class ExportSourceTest extends TestCase
         }
         $this->expectException(NotFound::class);
         ExportSourceBuilder::build($this->db, $this->schema(), $this->types, 'zzzzzzzzzzzz', $this->clock, '0.3.0-dev');
+    }
+
+    /** M4 spec section 8.3: collections of exported tables, by position, rules as stored (broken ones included). */
+    public function testCollectionsOfTheTablesInScope(): void
+    {
+        $store = new CollectionStore($this->db, $this->schema(), $this->keys, $this->clock);
+        $rooms = $store->create($this->rooms->key, 'Every room', MatchMode::All, [], null, self::USER_KEY);
+        $this->clock->advance(60);
+        $items = $store->create($this->items->key, 'Named things', MatchMode::Any, [
+            new CollectionRule($this->f['name']->key, 'contains', ['lamp']),
+            new CollectionRule('z7zz7zz7zz7z', 'empty', []),
+        ], 'changed.desc', self::OTHER_USER_KEY);
+
+        $all = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, null, $this->clock, '0.3.0-dev')->collections();
+        self::assertSame([$rooms, $items], array_map(static fn (ExportCollection $c): string => $c->key, $all));
+        $named = $all[1];
+        self::assertSame(
+            [$this->items->key, 'Named things', 'any', 'changed.desc', '2026-11-12T03:16:00Z', '2026-11-12T03:16:00Z'],
+            [$named->tableKey, $named->name, $named->match, $named->sort, $named->createdAt, $named->updatedAt],
+        );
+        self::assertSame(
+            [[$this->f['name']->key, 'contains', ['lamp']], ['z7zz7zz7zz7z', 'empty', []]],
+            array_map(static fn (ExportRule $r): array => [$r->field, $r->op, $r->values], $named->rules),
+        );
+        self::assertNull($all[0]->sort);
+        self::assertSame([], $all[0]->rules);
+
+        $one = ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $this->items->key, $this->clock, '0.3.0-dev')->collections();
+        self::assertSame([$items], array_map(static fn (ExportCollection $c): string => $c->key, $one), 'Only collections whose table is exported.');
+    }
+
+    public function testContractValuesCheckTheirShape(): void
+    {
+        $rule = new ExportRule('z7zz7zz7zz7z', 'is', ['1']);
+        $cases = [
+            static fn () => new ExportRule('', 'is', []),
+            static fn () => new ExportRule('z7zz7zz7zz7z', '', []),
+            static fn () => new ExportRule('z7zz7zz7zz7z', 'is', ['a' => '1']),
+            static fn () => new ExportRule('z7zz7zz7zz7z', 'is', [1]),
+            static fn () => new ExportCollection('', 'h3kq7vn2xbma', 'A', 'all', [], null, self::START, self::START),
+            static fn () => new ExportCollection('w4kz7mq2nx3b', 'h3kq7vn2xbma', 'A', 'none', [], null, self::START, self::START),
+            static fn () => new ExportCollection('w4kz7mq2nx3b', 'h3kq7vn2xbma', 'A', 'all', ['x' => $rule], null, self::START, self::START),
+            static fn () => new ExportCollection('w4kz7mq2nx3b', 'h3kq7vn2xbma', 'A', 'all', ['not a rule'], null, self::START, self::START),
+        ];
+        foreach ($cases as $i => $case) {
+            try {
+                $case();
+                self::fail('Case ' . $i . ' was accepted.');
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame([$rule], (new ExportCollection('w4kz7mq2nx3b', 'h3kq7vn2xbma', 'A', 'any', [$rule], 'added.asc', self::START, self::START))->rules);
     }
 
     public function testValuesAndTextsPerType(): void

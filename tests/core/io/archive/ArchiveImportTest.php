@@ -72,9 +72,9 @@ final class ArchiveImportTest extends TestCase
         self::assertSame('0.2.0-dev', $meta['created_with']);
         self::assertSame('2026-11-20T08:00:00Z', $meta['updated_at']);
         self::assertSame(self::IMPORTER_KEY, $meta['updated_by']);
-        self::assertSame('3', $meta['format_version']);
+        self::assertSame('4', $meta['format_version']);
 
-        foreach (['_tiffin_tables', '_tiffin_fields', '_tiffin_relations', '_tiffin_attachments', '_tiffin_attachment_links'] as $table) {
+        foreach (['_tiffin_tables', '_tiffin_fields', '_tiffin_relations', '_tiffin_attachments', '_tiffin_attachment_links', '_tiffin_collections'] as $table) {
             self::assertSame($this->rows($this->db, $table), $this->rows($db, $table), $table);
         }
         foreach ([Identifier::tableName($this->items->key), Identifier::tableName($this->rooms->key), Identifier::joinName($this->room->key)] as $table) {
@@ -106,10 +106,46 @@ final class ArchiveImportTest extends TestCase
         self::assertSame(5, $entry->rowsImported);
         self::assertSame(0, $entry->valuesEmptied);
         self::assertSame(self::IMPORTER_KEY, $entry->importedBy);
-        self::assertSame(['archive' => ['values_emptied' => 0, 'links_dropped' => 0, 'forms_dropped' => 0, 'forms_extended' => 0, 'files_missing' => 0]], $entry->report);
+        self::assertSame(['archive' => [
+            'values_emptied' => 0, 'links_dropped' => 0, 'forms_dropped' => 0, 'forms_extended' => 0, 'files_missing' => 0,
+            'collections_dropped' => 0, 'collection_rules_dropped' => 0,
+        ]], $entry->report);
 
         self::assertSame(['ok'], array_column($db->all('PRAGMA integrity_check'), 'integrity_check'));
         self::assertSame([], $db->all('PRAGMA foreign_key_check'));
+    }
+
+    /** T-ARC-13: an archive of a version 3 project (the M3 writer's layout, no `_tiffin_collections`) still imports. */
+    public function testVersionThreeArchiveStillImports(): void
+    {
+        $copy = $this->copyOfSource();
+        self::rawEdit(
+            $copy,
+            'DROP TABLE _tiffin_collections',
+            'PRAGMA user_version = 3',
+            "UPDATE _tiffin_meta SET value = '3' WHERE key = 'format_version'",
+        );
+        $entries = [];
+        foreach ([self::FILE_ONE, self::FILE_TWO] as $content) {
+            $sha256 = hash('sha256', $content);
+            $entries['attachments/' . substr($sha256, 0, 2) . '/' . $sha256] = $content;
+        }
+        $zip = $this->zipFor($copy, ['project_format_version' => 3], $entries);
+        [$report, $db, $folder] = $this->import($zip);
+
+        self::assertTrue($report->isClean());
+        self::assertSame(5, $report->records);
+        self::assertSame(4, $db->value('PRAGMA user_version'));
+        self::assertSame('4', $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(0, $db->value('SELECT COUNT(*) FROM "_tiffin_collections"'));
+        foreach (['_tiffin_tables', '_tiffin_fields', '_tiffin_relations', '_tiffin_attachments', '_tiffin_attachment_links'] as $table) {
+            self::assertSame($this->rows($this->db, $table), $this->rows($db, $table), $table);
+        }
+        foreach ([self::FILE_ONE, self::FILE_TWO] as $content) {
+            $sha256 = hash('sha256', $content);
+            self::assertSame($content, file_get_contents($folder . '/attachments/' . substr($sha256, 0, 2) . '/' . $sha256));
+        }
+        self::assertSame(['ok'], array_column($db->all('PRAGMA integrity_check'), 'integrity_check'));
     }
 
     public function testNewIdsContinueAfterTheSource(): void

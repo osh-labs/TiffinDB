@@ -132,6 +132,7 @@ final class RebuildFormsTest extends TestCase
         $copy = $this->copyOfSource();
         self::rawEdit(
             $copy,
+            'DROP TABLE _tiffin_collections',
             'DROP TABLE _tiffin_import_log',
             'DROP TABLE _tiffin_forms',
             'PRAGMA user_version = 1',
@@ -140,6 +141,6 @@ final class RebuildFormsTest extends TestCase
         [$report, $db] = $this->import($this->zipFor($copy));
         self::assertSame(0, $report->formsDropped);
         self::assertSame(2, $db->value('SELECT COUNT(*) FROM "_tiffin_forms" WHERE "is_default" = 1 AND "generated" = 1'));
-        self::assertSame('3', $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame('4', $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
     }
 }

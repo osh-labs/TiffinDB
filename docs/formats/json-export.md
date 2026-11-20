@@ -1,6 +1,6 @@
 # TiffinDB JSON export format, version 1
 
-Status: format version 1, written by TiffinDB from milestone M3 (export plugin `export/json`); milestone M4 adds the `collections` member (section 7) without changing the version, because the change only adds a member (section 9). Provisional until the maintainer confirms ADR 0017 and ADR 0019. Design note (M4-D1): until milestone M4's export work package is merged, TiffinDB does not yet write `collections`, and the example below does not show it. This document lets anyone read a TiffinDB JSON export with ordinary tools and no TiffinDB code. Every example is synthetic.
+Status: format version 1, written by TiffinDB from milestone M3 (export plugin `export/json`); milestone M4 adds the `collections` member (section 7) without changing the version, because the change only adds a member (section 9). Provisional until the maintainer confirms ADR 0017 and ADR 0019. This document lets anyone read a TiffinDB JSON export with ordinary tools and no TiffinDB code. Every example is synthetic.
 
 A JSON export holds one whole project: its tables, fields, live records, links between records, the descriptions of the files attached to live records, and its saved collections (from M4). It does not hold the files themselves, records in the trash, files not attached to any live record, forms, or anything about people other than their keys. For a complete backup that TiffinDB can import again, use a project archive (`docs/formats/tiffin.md` section 13).
 
@@ -41,7 +41,8 @@ One UTF-8 JSON text (RFC 8259), no byte order mark, one top-level object. String
        {"id": 9, "created_at": "2026-11-12T03:16:00Z", "created_by": "a2kq7vn3xbmz", "updated_at": "2026-11-18T14:32:00Z", "updated_by": "a2kq7vn3xbmz",
         "values": {"m4pz7k2qsw3n": "Stand mixer", "b7xk2mq4nz3p": "329.00", "r5vk3pn7qx2m": [3]}}
      ]}
-  ]
+  ],
+  "collections": []
 }
 ```
 

@@ -90,7 +90,7 @@ final class ArchiveWriterTest extends TestCase
             'archive_version' => 1,
             'created_at' => self::CREATED,
             'created_with' => self::VERSION_TEXT,
-            'project_format_version' => 3,
+            'project_format_version' => 4,
             'project_name' => 'Example Project',
             'project_size' => strlen($copy),
             'project_sha256' => hash('sha256', $copy),

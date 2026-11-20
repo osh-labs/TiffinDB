@@ -14,7 +14,10 @@ use TiffinDB\Core\Io\ExportSourceBuilder;
 use TiffinDB\Core\Io\Plugin\PluginLoader;
 use TiffinDB\Core\Io\Plugin\PluginScanner;
 use TiffinDB\Core\Io\Plugin\PluginStatus;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
 use TiffinDB\Core\Query\InputMode;
+use TiffinDB\Core\Query\MatchMode;
 use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\FieldDef;
@@ -33,7 +36,9 @@ require_once __DIR__ . '/../../core/schema/ProjectFixture.php';
  * field type, a relation between the tables and one from Items to itself,
  * attachments, records and links in the trash, and text that needs
  * escaping (quotes, backslash, slash, U+2028, U+2029, a line break, non-ASCII
- * letters, an emoji, and a stored value with invalid UTF-8). Keys come from
+ * letters, an emoji, and a stored value with invalid UTF-8), and three
+ * saved collections, one with rules that no longer fit the table (M4
+ * spec section 12.4, T-JSON-3). Keys come from
  * SeededRandom and times from FixedClock, so the same build always gives the
  * same file.
  */
@@ -51,6 +56,8 @@ trait JsonFixture
     /** Stored invalid UTF-8 (an `é` cut after its first byte), and what the export writes for it. */
     private const BAD_UTF8 = "Caf\xC3 sign";
     private const BAD_UTF8_WRITTEN = "Caf\u{FFFD} sign";
+    /** A key of the right shape that names no field: a rule on a deleted field. */
+    private const GONE_FIELD = 'z7zz7zz7zz7z';
     private const ESCAPES = "Quote \" back \\ slash / sep \u{2028} para \u{2029} na\u{EF}ve \u{1F9C0}";
 
     private TableDef $rooms;
@@ -181,7 +188,30 @@ trait JsonFixture
         foreach ($this->trashedRooms as $id) {
             $this->db->run('UPDATE ' . $this->rooms->sql() . ' SET "_trashed_at" = ? WHERE "id" = ?', [self::START, $id]);
         }
+        $this->addCollections();
         $this->clock->advance(3600);
+    }
+
+    /** Three collections: two on Items (one with broken rules), one on Rooms, in that sidebar order. */
+    private function addCollections(): void
+    {
+        $store = new CollectionStore($this->db, $this->schema(), $this->keys, $this->clock);
+        $tool = $this->f['choice']->options['choices'][1]['key'];
+        $this->clock->advance(60);
+        $store->create($this->items->key, 'Tools in use', MatchMode::All, [
+            new CollectionRule($this->f['checkbox']->key, 'is', ['1']),
+            new CollectionRule($this->f['choice']->key, 'is', [$tool]),
+            new CollectionRule($this->f['date']->key, 'after', ['2023-01-01']),
+            new CollectionRule($this->f['name']->key, 'contains', ['Quote " back \\ slash /']),
+        ], $this->f['date']->key . '.desc', self::USER_KEY);
+        $this->clock->advance(60);
+        $store->create($this->items->key, 'No longer working', MatchMode::Any, [
+            new CollectionRule(self::GONE_FIELD, 'more', ['10']),
+            new CollectionRule($this->f['choice']->key, 'is', ['zzzzzzzzzzzz']),
+            new CollectionRule($this->f['long_text']->key, 'empty', []),
+        ], null, self::OTHER_USER_KEY);
+        $this->clock->advance(60);
+        $store->create($this->rooms->key, 'Every room', MatchMode::All, [], 'added.asc', self::USER_KEY);
     }
 
     private function column(FieldDef $field): string

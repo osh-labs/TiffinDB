@@ -19,17 +19,17 @@ use TiffinDB\Core\Storage\Timestamp;
 
 /**
  * Creates and opens project files (M1 spec section 7.2). The file format
- * is `docs/formats/tiffin.md`, version 3; DDL holds the statements of
- * the three SQL blocks of its section 4 verbatim, in order (T-SCH-1 and
+ * is `docs/formats/tiffin.md`, version 4; DDL holds the statements of
+ * the four SQL blocks of its section 4 verbatim, in order (T-SCH-1 and
  * T-FMT-4 compare them).
  */
 final class ProjectFile
 {
     public const FORMAT = 'tiffindb-project';
-    public const VERSION = 3;
+    public const VERSION = 4;
     public const APPLICATION_ID = 1413891138;
 
-    /** `docs/formats/tiffin.md` section 4: the version 1, 2, and 3 blocks, in order. */
+    /** `docs/formats/tiffin.md` section 4: the version 1, 2, 3, and 4 blocks, in order. */
     public const DDL = [
         'CREATE TABLE _tiffin_meta (
     key   TEXT PRIMARY KEY,
@@ -123,6 +123,21 @@ final class ProjectFile
     report         TEXT NOT NULL DEFAULT \'{}\'
 ) WITHOUT ROWID',
         'CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at)',
+        'CREATE TABLE _tiffin_collections (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    match_mode TEXT NOT NULL DEFAULT \'all\',
+    rules      TEXT NOT NULL DEFAULT \'[]\',
+    sort       TEXT,
+    position   INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+) WITHOUT ROWID',
+        'CREATE UNIQUE INDEX _tiffin_collections_name ON _tiffin_collections (name COLLATE NOCASE)',
+        'CREATE INDEX _tiffin_collections_table ON _tiffin_collections (table_key, position)',
     ];
 
     private function __construct()
@@ -130,7 +145,7 @@ final class ProjectFile
     }
 
     /**
-     * Creates project.tiffin at $path with every format-3 table and the nine
+     * Creates project.tiffin at $path with every format-4 table and the nine
      * meta rows of `docs/formats/tiffin.md` section 4.1. On any failure after
      * the file was made, the file (and its -wal and -shm) is removed again.
      */
@@ -148,7 +163,7 @@ final class ProjectFile
         $db = Sqlite::create($path);
         try {
             $db->run('PRAGMA application_id = 1413891138');
-            $db->run('PRAGMA user_version = 3');
+            $db->run('PRAGMA user_version = 4');
             $now = Timestamp::format($clock->now());
             $db->write(static function (Database $db) use ($projectKey, $name, $createdByKey, $appVersion, $now): void {
                 foreach (self::DDL as $statement) {

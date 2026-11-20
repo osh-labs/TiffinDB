@@ -10,12 +10,16 @@ namespace TiffinDB\Core\Io;
 
 use TiffinDB\Core\Error\NotFound;
 use TiffinDB\Core\Io\Contract\ExportAttachment;
+use TiffinDB\Core\Io\Contract\ExportCollection;
 use TiffinDB\Core\Io\Contract\ExportProject;
 use TiffinDB\Core\Io\Contract\ExportRecord;
 use TiffinDB\Core\Io\Contract\ExportRelation;
+use TiffinDB\Core\Io\Contract\ExportRule;
 use TiffinDB\Core\Io\Contract\ExportSource;
 use TiffinDB\Core\Io\Contract\ExportTable;
 use TiffinDB\Core\Io\Contract\ExportValue;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Schema\Identifier;
@@ -179,6 +183,33 @@ final class ProjectExportSource implements ExportSource
                 yield new ExportAttachment((int) $row['id'], (string) $row['sha256'], (int) $row['size'], (string) $row['media_type'], (string) $row['original_name'], (string) $row['created_at']);
             }
         }
+    }
+
+    /**
+     * The project's collections whose table is exported, by position, with
+     * their rules as stored (CollectionStore::read; M4 spec section 8.3).
+     */
+    public function collections(): array
+    {
+        $keys = $this->tableKeys();
+        $collections = [];
+        foreach (CollectionStore::read($this->db) as $collection) {
+            if (!in_array($collection->tableKey, $keys, true)) {
+                continue;
+            }
+            $collections[] = new ExportCollection(
+                $collection->key,
+                $collection->tableKey,
+                $collection->name,
+                $collection->match->value,
+                array_map(static fn (CollectionRule $rule): ExportRule => new ExportRule($rule->field, $rule->op, $rule->values), $collection->rules),
+                $collection->sort,
+                $collection->createdAt,
+                $collection->updatedAt,
+            );
+        }
+
+        return $collections;
     }
 
     /** @return list<string> */

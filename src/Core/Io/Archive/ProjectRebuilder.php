@@ -14,6 +14,9 @@ use TiffinDB\Core\Forms\FormRejected;
 use TiffinDB\Core\Forms\FormStore;
 use TiffinDB\Core\Io\ImportLog;
 use TiffinDB\Core\Io\ImportReport;
+use TiffinDB\Core\Query\CollectionRule;
+use TiffinDB\Core\Query\CollectionStore;
+use TiffinDB\Core\Query\MatchMode;
 use TiffinDB\Core\Query\Sql;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\Ddl;
@@ -49,7 +52,10 @@ use TiffinDB\Core\Storage\Timestamp;
  * link are dropped, forms that the M2 parser rejects are dropped, and
  * every table's default form is then regenerated, so an edited default
  * form gains a slot for every field it does not name (ADR 0017 decision
- * 5). The source's import log is not copied; the new project's log gets
+ * 5). Collections (version 4) are repaired or dropped row by row, and
+ * rules that break the shape of format section 4.8.1 dropped; rules that
+ * do not fit the rebuilt tables are kept, as in a live project (M4 spec
+ * section 8.2). The source's import log is not copied; the new project's log gets
  * one `archive` row.
  */
 final class ProjectRebuilder
@@ -178,6 +184,7 @@ final class ProjectRebuilder
         $this->copyAttachmentLinks($src, $source, $db);
         [$filesMissing, $filesSkipped] = $this->copyFiles($archive, $folder, $files);
         [$formsDropped, $formsExtended] = $this->copyForms($src, $source, $db);
+        [$collectionsDropped, $collectionRulesDropped] = $this->copyCollections($src, $db);
         $this->copyMeta($src, $db);
 
         $valuesEmptied = [];
@@ -200,6 +207,8 @@ final class ProjectRebuilder
             $this->keysCleared,
             $skipped,
             $attachmentsDropped,
+            $collectionsDropped,
+            $collectionRulesDropped,
         );
         $columns = [];
         foreach ($valuesEmptied as $key => $entry) {
@@ -751,6 +760,114 @@ final class ProjectRebuilder
         $defaults[$tableKey] = true;
 
         return $generated ? '' : hash('sha256', $html);
+    }
+
+    /**
+     * Step 6b (M4 spec section 8.2): the collections of a version 4 file,
+     * in position then key order. A row is dropped unless its key is a key
+     * not yet used in the new file, its table is a rebuilt table, its name
+     * is a valid name not taken by an earlier kept collection (ignoring
+     * ASCII case), and fewer than CollectionStore::MAX_COLLECTIONS are
+     * kept. `match_mode` other than `all` or `any` becomes `all`; a sort
+     * that is not a sort token becomes null; `rules` that do not decode to
+     * a list become `[]` (one dropped rule); each rule is kept when it
+     * passes CollectionRule's shape check and fewer than
+     * CollectionStore::MAX_RULES are kept. Positions are renumbered from 1.
+     * Returns the collections and the rules dropped.
+     *
+     * @return array{0: int, 1: int}
+     */
+    private function copyCollections(UntrustedProject $src, Database $db): array
+    {
+        $dropped = 0;
+        $rulesDropped = 0;
+        $names = [];
+        $position = 0;
+        foreach ($src->collections as $row) {
+            $key = $row['key'] ?? null;
+            $tableKey = $row['table_key'] ?? null;
+            $name = $row['name'] ?? null;
+            if (
+                !Keys::isValid($key) || !is_string($tableKey) || !isset($src->tables[$tableKey])
+                || !is_string($name) || Text::nameProblems($name, 'name', CollectionStore::MAX_NAME) !== []
+                || $position >= CollectionStore::MAX_COLLECTIONS || $this->keyUsed($db, $key)
+            ) {
+                $dropped++;
+                continue;
+            }
+            $name = Text::trim($name);
+            $folded = strtolower($name);
+            if (isset($names[$folded])) {
+                $dropped++;
+                continue;
+            }
+            [$rules, $lost] = self::collectionRules($row['rules'] ?? null);
+            $rulesDropped += $lost;
+            $match = MatchMode::tryFrom(is_string($row['match_mode'] ?? null) ? $row['match_mode'] : '') ?? MatchMode::All;
+            $sort = CollectionStore::isSortToken($row['sort'] ?? null) ? $row['sort'] : null;
+            $names[$folded] = true;
+            $position++;
+            $db->run(
+                'INSERT INTO "_tiffin_collections" ("key", "table_key", "name", "match_mode", "rules", "sort", "position", "created_at", "created_by", "updated_at", "updated_by")'
+                . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    $key, $tableKey, $name, $match->value, $rules, $sort, $position,
+                    $this->time($row['created_at'] ?? null), $this->personKey($row['created_by'] ?? null),
+                    $this->time($row['updated_at'] ?? null), $this->personKey($row['updated_by'] ?? null),
+                ],
+            );
+        }
+
+        return [$dropped, $rulesDropped];
+    }
+
+    /**
+     * The stored `rules` text of a kept collection, re-encoded from the
+     * rules that pass CollectionRule's shape check (at most
+     * CollectionStore::MAX_RULES), and the number dropped.
+     *
+     * @return array{0: string, 1: int}
+     */
+    private static function collectionRules(mixed $text): array
+    {
+        try {
+            // Decoded without associative arrays, so a JSON object can never pass for a list.
+            $decoded = is_string($text) ? json_decode($text, false, 8, JSON_THROW_ON_ERROR) : null;
+        } catch (\JsonException) {
+            $decoded = null;
+        }
+        if (!is_array($decoded)) {
+            return ['[]', 1];
+        }
+        $kept = [];
+        $lost = 0;
+        foreach ($decoded as $entry) {
+            if (count($kept) >= CollectionStore::MAX_RULES || !$entry instanceof \stdClass) {
+                $lost++;
+                continue;
+            }
+            try {
+                $kept[] = CollectionRule::fromArray(get_object_vars($entry))->toArray();
+            } catch (\InvalidArgumentException) {
+                $lost++;
+            }
+        }
+
+        return [json_encode($kept, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $lost];
+    }
+
+    /** Whether a key is already used in the new file by a table, field, relation, form, collection, or SQL object. */
+    private function keyUsed(Database $db, string $key): bool
+    {
+        return $db->value(
+            'SELECT 1 FROM "_tiffin_tables" WHERE "key" = ?'
+            . ' UNION ALL SELECT 1 FROM "_tiffin_fields" WHERE "key" = ?'
+            . ' UNION ALL SELECT 1 FROM "_tiffin_relations" WHERE "key" = ?'
+            . ' UNION ALL SELECT 1 FROM "_tiffin_forms" WHERE "key" = ?'
+            . ' UNION ALL SELECT 1 FROM "_tiffin_collections" WHERE "key" = ?'
+            . ' UNION ALL SELECT 1 FROM "sqlite_master" WHERE "name" IN (?, ?)',
+            [$key, $key, $key, $key, $key, Identifier::tableName($key), Identifier::joinName($key)],
+        ) !== null;
     }
 
     /** Step 8: creation facts from the source when valid; `updated_*` stay the import's (ProjectFile::create). */

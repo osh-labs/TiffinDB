@@ -40,7 +40,7 @@ use TiffinDB\Core\Storage\Timestamp;
  * (ListSql builds the list fragments). Every value is bound.
  *
  * Joined mode (M3 spec section 6.6, P130): within() returns a copy whose
- * create, update, and setLinks run inside the caller's open transaction
+ * create, update, setLinks, addLink, and removeLink (M4) run inside the caller's open transaction
  * instead of their own Database::write(), over the Schema this instance
  * was built with (a caller that changed the schema in that transaction
  * builds a new Records first). Validation and ProjectFile::touch() are
@@ -62,6 +62,8 @@ final class Records
     public const PICKER_LIMIT = 500;
     /** Ids per IN (...) list when reading titles. */
     private const CHUNK = 500;
+    /** Types linkDetails skips besides the title field (M2 list columns skip long text; links and files have no column). */
+    private const NOT_DETAIL = ['long_text', 'relation', 'attachment'];
 
     private readonly ListSql $lists;
 
@@ -299,102 +301,140 @@ final class Records
     {
         self::id($id);
         $field = $this->schema->field($fieldKey);
-        $relation = $this->lists->relation($field);
+        $this->lists->relation($field);
         $targets = $targetIds === [] ? [] : self::idList($targetIds, self::MAX_LINK_IDS);
         self::person($userKey);
-        $table = $this->schema->table($field->tableKey);
-        $other = $this->schema->table($relation->otherTable($field->key));
-        $thisSide = ListSql::thisSide($relation, $field->key);
-        $otherSide = ListSql::otherSide($relation, $field->key);
-        $onlyOne = $relation->maxFor($field->key) === Cardinality::One;
-        $targetOnce = $relation->maxFor($relation->otherField($field->key)) === Cardinality::One;
-        $now = Timestamp::format($this->clock->now());
 
-        $this->transaction(function (Database $db) use (
-            $field, $relation, $table, $other, $thisSide, $otherSide, $onlyOne, $targetOnce, $targets, $id, $userKey, $now,
-        ): void {
-            $live = $db->value('SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE "id" = ? AND "_trashed_at" IS NULL', [$id]);
-            if ((int) $live !== 1) {
-                throw new NotFound('No such live record.');
-            }
-            $existing = $db->all(
-                'SELECT "jj".' . Identifier::system($otherSide) . ' AS "id", "o"."_trashed_at" AS "trashed" FROM ' . $relation->sql()
-                . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
-                . ' WHERE "jj".' . Identifier::system($thisSide) . ' = ?',
-                [$id],
-            );
-            $keptTrashed = 0;
-            $liveLinked = [];
-            foreach ($existing as $row) {
-                if ($row['trashed'] === null) {
-                    $liveLinked[] = (int) $row['id'];
-                } else {
-                    $keptTrashed++;
-                }
-            }
-
-            $problems = [];
-            if ($targets !== []) {
-                $liveTargets = array_map(
-                    static fn (mixed $v): int => (int) $v,
-                    array_column($db->all(
-                        'SELECT "id" FROM ' . $other->sql() . ' WHERE "_trashed_at" IS NULL AND "id" IN (' . Database::placeholders(count($targets)) . ')',
-                        $targets,
-                    ), 'id'),
-                );
-                if (array_diff($targets, $liveTargets) !== []) {
-                    $problems[] = new Problem($field->key, 'problem.link.target_missing');
-                }
-            }
-            if ($onlyOne && count($targets) + $keptTrashed > 1) {
-                $problems[] = new Problem($field->key, 'problem.link.one_only');
-            }
-            if ($targetOnce && $targets !== []) {
-                $taken = array_map(
-                    static fn (mixed $v): int => (int) $v,
-                    array_column($db->all(
-                        'SELECT DISTINCT "jj".' . Identifier::system($otherSide) . ' AS "id" FROM ' . $relation->sql() . ' AS "jj" WHERE "jj".'
-                        . Identifier::system($thisSide) . ' <> ? AND "jj".' . Identifier::system($otherSide) . ' IN (' . Database::placeholders(count($targets)) . ')',
-                        [$id, ...$targets],
-                    ), 'id'),
-                );
-                $titles = $taken === [] ? [] : $this->titles($other->key, $taken);
-                foreach ($targets as $target) {
-                    if (in_array($target, $taken, true)) {
-                        $problems[] = new Problem($field->key, 'problem.link.target_taken', ['title' => $titles[$target] ?? (string) $target]);
-                    }
-                }
-            }
-            if ($problems !== []) {
-                throw new ValidationFailed($problems);
-            }
-
-            $remove = array_values(array_diff($liveLinked, $targets));
-            if ($remove !== []) {
-                $db->run(
-                    'DELETE FROM ' . $relation->sql() . ' WHERE ' . Identifier::system($thisSide) . ' = ? AND '
-                    . Identifier::system($otherSide) . ' IN (' . Database::placeholders(count($remove)) . ')',
-                    [$id, ...$remove],
-                );
-            }
-            foreach ($targets as $index => $target) {
-                if (in_array($target, $liveLinked, true)) {
-                    $db->run(
-                        'UPDATE ' . $relation->sql() . ' SET "position" = ? WHERE ' . Identifier::system($thisSide) . ' = ? AND '
-                        . Identifier::system($otherSide) . ' = ?',
-                        [$index + 1, $id, $target],
-                    );
-                } else {
-                    $db->run(
-                        'INSERT INTO ' . $relation->sql() . ' (' . Identifier::system($thisSide) . ', ' . Identifier::system($otherSide)
-                        . ', "position") VALUES (?, ?, ?)',
-                        [$id, $target, $index + 1],
-                    );
-                }
-            }
-            $db->run('UPDATE ' . $table->sql() . ' SET "_updated_at" = ?, "_updated_by" = ? WHERE "id" = ?', [$now, $userKey, $id]);
-            ProjectFile::touch($db, $userKey, $this->clock);
+        $this->transaction(function (Database $db) use ($field, $targets, $id, $userKey): void {
+            $this->applyLinks($db, $field, $id, $targets, $userKey);
         });
+    }
+
+    /**
+     * Ensures the record links $targetId through the relation field (M4
+     * spec section 4.3.1); no version token, idempotent. A field allowing
+     * many appends the target after the live links; one allowing one
+     * replaces the live link. Already linked: no change.
+     *
+     * @throws ValidationFailed problem.link.target_missing, target_taken, or (one link, a link to a
+     *     record in the trash kept) problem.link.trashed_holds (field = $fieldKey)
+     * @throws NotFound when the record is absent or in the trash
+     */
+    public function addLink(string $fieldKey, int $id, int $targetId, string $userKey): void
+    {
+        self::id($id);
+        self::id($targetId);
+        $field = $this->schema->field($fieldKey);
+        $relation = $this->lists->relation($field);
+        self::person($userKey);
+        $onlyOne = $relation->maxFor($field->key) === Cardinality::One;
+
+        $this->transaction(function (Database $db) use ($field, $id, $targetId, $userKey, $onlyOne): void {
+            $this->requireLive($db, $this->schema->table($field->tableKey), $id);
+            $live = $this->liveLinks($db, $field, $id);
+            if (in_array($targetId, $live, true)) {
+                return;
+            }
+            $targets = $onlyOne ? [$targetId] : [...$live, $targetId];
+            $this->applyLinks($db, $field, $id, $targets, $userKey, $onlyOne);
+        });
+    }
+
+    /**
+     * Ensures the record does not link $targetId through the relation
+     * field (M4 spec section 4.3.1); returns whether a live link was
+     * removed. Links to records in the trash are never touched.
+     *
+     * @throws NotFound when the record is absent or in the trash
+     */
+    public function removeLink(string $fieldKey, int $id, int $targetId, string $userKey): bool
+    {
+        self::id($id);
+        self::id($targetId);
+        $field = $this->schema->field($fieldKey);
+        $this->lists->relation($field);
+        self::person($userKey);
+
+        return $this->transaction(function (Database $db) use ($field, $id, $targetId, $userKey): bool {
+            $this->requireLive($db, $this->schema->table($field->tableKey), $id);
+            $live = $this->liveLinks($db, $field, $id);
+            if (!in_array($targetId, $live, true)) {
+                return false;
+            }
+            $this->applyLinks($db, $field, $id, array_values(array_diff($live, [$targetId])), $userKey);
+
+            return true;
+        });
+    }
+
+    /**
+     * The required relation and attachment fields among $fieldKeys that
+     * the record has no live link or no file in (M4 spec section 4.3.2,
+     * P157): one problem.link.required or problem.attachment.required per
+     * field, in the table's field order. Keys that are not required
+     * relation or attachment fields of the table are ignored.
+     *
+     * @param list<string> $fieldKeys
+     * @return list<Problem>
+     */
+    public function requiredLinkProblems(string $tableKey, int $id, array $fieldKeys): array
+    {
+        self::id($id);
+        $table = $this->schema->table($tableKey);
+        $problems = [];
+        foreach ($this->schema->fields($table->key) as $field) {
+            if (!$field->required || !in_array($field->key, $fieldKeys, true)) {
+                continue;
+            }
+            if ($field->type === 'relation') {
+                if ($this->liveLinks($this->db, $field, $id) === []) {
+                    $problems[] = new Problem($field->key, 'problem.link.required');
+                }
+            } elseif ($field->type === 'attachment') {
+                $files = $this->db->value('SELECT COUNT(*) FROM "_tiffin_attachment_links" WHERE "field_key" = ? AND "record_id" = ?', [$field->key, $id]);
+                if ((int) $files === 0) {
+                    $problems[] = new Problem($field->key, 'problem.attachment.required');
+                }
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * The secondary line of linked-record rows (M4 spec section 4.3.3,
+     * P158): the table's first field in field order that the list shows as
+     * a column other than its title (not long text, relation, or
+     * attachment), with each record's value there; null for a record
+     * without a value, an absent record, or a table without such a field.
+     *
+     * @param list<int> $ids
+     * @return array<int, LinkDetail|null> by id, in the given order
+     */
+    public function linkDetails(string $tableKey, array $ids): array
+    {
+        $table = $this->schema->table($tableKey);
+        $ids = self::idList($ids, PHP_INT_MAX);
+        $details = array_fill_keys($ids, null);
+        $field = $this->detailField($table);
+        if ($field === null || $ids === []) {
+            return $details;
+        }
+        $type = $this->types->get($field->type);
+        foreach (array_chunk($ids, self::CHUNK) as $chunk) {
+            $rows = $this->db->all(
+                'SELECT "id", ' . $field->sql() . ' AS "value" FROM ' . $table->sql() . ' WHERE "id" IN (' . Database::placeholders(count($chunk)) . ')',
+                $chunk,
+            );
+            foreach ($rows as $row) {
+                $value = $type->fromStorage($row['value'], $field->options);
+                if ($value !== null) {
+                    $details[(int) $row['id']] = new LinkDetail($field, $value);
+                }
+            }
+        }
+
+        return $details;
     }
 
     // ------------------------------------------------------------------ lists
@@ -543,6 +583,155 @@ final class Records
 
     // ------------------------------------------------------------------ internals
 
+    /**
+     * The link writes of setLinks, addLink, and removeLink, inside the
+     * caller's transaction: checks the record is live, then makes
+     * $targets exactly its live links in that order (section 3.4).
+     * $replacingOne (addLink on a field allowing one) reports a kept link
+     * to a record in the trash as problem.link.trashed_holds instead of
+     * problem.link.one_only.
+     *
+     * @param list<int> $targets positive ids without duplicates
+     * @throws ValidationFailed problem.link.target_missing, one_only (or trashed_holds), target_taken
+     */
+    private function applyLinks(Database $db, FieldDef $field, int $id, array $targets, string $userKey, bool $replacingOne = false): void
+    {
+        $relation = $this->lists->relation($field);
+        $table = $this->schema->table($field->tableKey);
+        $other = $this->schema->table($relation->otherTable($field->key));
+        $thisSide = ListSql::thisSide($relation, $field->key);
+        $otherSide = ListSql::otherSide($relation, $field->key);
+        $onlyOne = $relation->maxFor($field->key) === Cardinality::One;
+        $targetOnce = $relation->maxFor($relation->otherField($field->key)) === Cardinality::One;
+        $now = Timestamp::format($this->clock->now());
+
+        $this->requireLive($db, $table, $id);
+        $existing = $db->all(
+            'SELECT "jj".' . Identifier::system($otherSide) . ' AS "id", "o"."_trashed_at" AS "trashed" FROM ' . $relation->sql()
+            . ' AS "jj" CROSS JOIN ' . $other->sql() . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide)
+            . ' WHERE "jj".' . Identifier::system($thisSide) . ' = ?',
+            [$id],
+        );
+        $keptTrashed = 0;
+        $liveLinked = [];
+        foreach ($existing as $row) {
+            if ($row['trashed'] === null) {
+                $liveLinked[] = (int) $row['id'];
+            } else {
+                $keptTrashed++;
+            }
+        }
+
+        $problems = [];
+        if ($targets !== []) {
+            $liveTargets = array_map(
+                static fn (mixed $v): int => (int) $v,
+                array_column($db->all(
+                    'SELECT "id" FROM ' . $other->sql() . ' WHERE "_trashed_at" IS NULL AND "id" IN (' . Database::placeholders(count($targets)) . ')',
+                    $targets,
+                ), 'id'),
+            );
+            if (array_diff($targets, $liveTargets) !== []) {
+                $problems[] = new Problem($field->key, 'problem.link.target_missing');
+            }
+        }
+        if ($onlyOne && count($targets) + $keptTrashed > 1) {
+            $problems[] = $replacingOne && $keptTrashed > 0
+                ? new Problem($field->key, 'problem.link.trashed_holds', ['item' => $table->itemName])
+                : new Problem($field->key, 'problem.link.one_only');
+        }
+        if ($targetOnce && $targets !== []) {
+            $taken = array_map(
+                static fn (mixed $v): int => (int) $v,
+                array_column($db->all(
+                    'SELECT DISTINCT "jj".' . Identifier::system($otherSide) . ' AS "id" FROM ' . $relation->sql() . ' AS "jj" WHERE "jj".'
+                    . Identifier::system($thisSide) . ' <> ? AND "jj".' . Identifier::system($otherSide) . ' IN (' . Database::placeholders(count($targets)) . ')',
+                    [$id, ...$targets],
+                ), 'id'),
+            );
+            $titles = $taken === [] ? [] : $this->titles($other->key, $taken);
+            foreach ($targets as $target) {
+                if (in_array($target, $taken, true)) {
+                    $problems[] = new Problem($field->key, 'problem.link.target_taken', ['title' => $titles[$target] ?? (string) $target]);
+                }
+            }
+        }
+        if ($problems !== []) {
+            throw new ValidationFailed($problems);
+        }
+
+        $remove = array_values(array_diff($liveLinked, $targets));
+        if ($remove !== []) {
+            $db->run(
+                'DELETE FROM ' . $relation->sql() . ' WHERE ' . Identifier::system($thisSide) . ' = ? AND '
+                . Identifier::system($otherSide) . ' IN (' . Database::placeholders(count($remove)) . ')',
+                [$id, ...$remove],
+            );
+        }
+        foreach ($targets as $index => $target) {
+            if (in_array($target, $liveLinked, true)) {
+                $db->run(
+                    'UPDATE ' . $relation->sql() . ' SET "position" = ? WHERE ' . Identifier::system($thisSide) . ' = ? AND '
+                    . Identifier::system($otherSide) . ' = ?',
+                    [$index + 1, $id, $target],
+                );
+            } else {
+                $db->run(
+                    'INSERT INTO ' . $relation->sql() . ' (' . Identifier::system($thisSide) . ', ' . Identifier::system($otherSide)
+                    . ', "position") VALUES (?, ?, ?)',
+                    [$id, $target, $index + 1],
+                );
+            }
+        }
+        $db->run('UPDATE ' . $table->sql() . ' SET "_updated_at" = ?, "_updated_by" = ? WHERE "id" = ?', [$now, $userKey, $id]);
+        ProjectFile::touch($db, $userKey, $this->clock);
+    }
+
+    /** NotFound unless the record is in the table and not in the trash. */
+    private function requireLive(Database $db, TableDef $table, int $id): void
+    {
+        $live = $db->value('SELECT COUNT(*) FROM ' . $table->sql() . ' WHERE "id" = ? AND "_trashed_at" IS NULL', [$id]);
+        if ((int) $live !== 1) {
+            throw new NotFound('No such live record.');
+        }
+    }
+
+    /**
+     * The ids of the record's live links in the relation field, in link
+     * order (position, then id). The record itself is not checked.
+     *
+     * @return list<int>
+     */
+    private function liveLinks(Database $db, FieldDef $field, int $id): array
+    {
+        $relation = $this->lists->relation($field);
+        $other = $this->schema->table($relation->otherTable($field->key));
+        $thisSide = ListSql::thisSide($relation, $field->key);
+        $otherSide = ListSql::otherSide($relation, $field->key);
+        $rows = $db->all(
+            'SELECT "jj".' . Identifier::system($otherSide) . ' AS "id" FROM ' . $relation->sql() . ' AS "jj" CROSS JOIN ' . $other->sql()
+            . ' AS "o" ON "o"."id" = "jj".' . Identifier::system($otherSide) . ' WHERE "jj".' . Identifier::system($thisSide)
+            . ' = ? AND "o"."_trashed_at" IS NULL ORDER BY "jj"."position", "jj".' . Identifier::system($otherSide),
+            [$id],
+        );
+
+        return array_map(static fn (array $row): int => (int) $row['id'], $rows);
+    }
+
+    /** The field linkDetails shows (section 4.3.3), or null when the table has none. */
+    private function detailField(TableDef $table): ?FieldDef
+    {
+        foreach ($this->schema->fields($table->key) as $candidate) {
+            if ($candidate->key === $table->titleFieldKey || !$candidate->hasColumn || in_array($candidate->type, self::NOT_DETAIL, true)) {
+                continue;
+            }
+
+            return $candidate;
+        }
+
+        return null;
+    }
+
     private function searchTable(string $tableKey, string $text): ?SearchGroup
     {
         $table = $this->schema->table($tableKey);
@@ -678,8 +867,8 @@ final class Records
         return (int) $live === 1 ? new Condition($field->key, $op, [(string) $target]) : new Problem(null, 'problem.filter.value');
     }
 
-    /** Trimmed search text, null for none, or the problem that refuses it. */
-    private static function normaliseSearch(string $search): string|Problem|null
+    /** Trimmed search text, null for none, or the problem that refuses it (M4 spec section 4.3). */
+    public static function normaliseSearch(string $search): string|Problem|null
     {
         if (!Text::isUtf8($search)) {
             return new Problem(null, 'problem.text.control');
@@ -965,7 +1154,8 @@ final class Records
     private function attachmentsOf(string $fieldKey, array $ids): array
     {
         $rows = $this->db->all(
-            'SELECT "l"."record_id" AS "rid", "a"."id" AS "id", "a"."original_name" AS "name", "a"."media_type" AS "type", "a"."size" AS "size"'
+            'SELECT "l"."record_id" AS "rid", "a"."id" AS "id", "a"."original_name" AS "name", "a"."media_type" AS "type", "a"."size" AS "size",'
+            . ' "a"."created_at" AS "created_at", "a"."created_by" AS "created_by", "a"."sha256" AS "sha256"'
             . ' FROM "_tiffin_attachment_links" AS "l" CROSS JOIN "_tiffin_attachments" AS "a" ON "a"."id" = "l"."attachment_id"'
             . ' WHERE "l"."field_key" = ? AND "l"."record_id" IN (' . Database::placeholders(count($ids)) . ')'
             . ' ORDER BY "l"."record_id", "l"."position", "a"."id"',
@@ -973,7 +1163,15 @@ final class Records
         );
         $byRecord = [];
         foreach ($rows as $row) {
-            $byRecord[(int) $row['rid']][] = new AttachmentSummary((int) $row['id'], (string) $row['name'], (string) $row['type'], (int) $row['size']);
+            $byRecord[(int) $row['rid']][] = new AttachmentSummary(
+                (int) $row['id'],
+                (string) $row['name'],
+                (string) $row['type'],
+                (int) $row['size'],
+                (string) $row['created_at'],
+                is_string($row['created_by']) ? $row['created_by'] : null,
+                (string) $row['sha256'],
+            );
         }
 
         return $byRecord;

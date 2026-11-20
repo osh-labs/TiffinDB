@@ -81,6 +81,41 @@ final class SecurityHeadersTest extends TestCase
         self::assertSame(200, $applied->status);
     }
 
+    /** T-WEB-55 (M4 spec part 2 section 2, P150): a stored file gets the sandboxed policy and every other header unchanged. */
+    public function testSandboxedResponsesGetTheFilePolicy(): void
+    {
+        self::assertSame("default-src 'none'; frame-ancestors 'none'; sandbox", SecurityHeaders::FILE_CSP);
+        $expected = ['Content-Security-Policy' => SecurityHeaders::FILE_CSP] + self::EXPECTED;
+        self::assertSame($expected, SecurityHeaders::headers(true));
+        self::assertSame(self::EXPECTED, SecurityHeaders::headers(false));
+        self::assertSame(self::EXPECTED, SecurityHeaders::headers());
+
+        $path = tempnam(sys_get_temp_dir(), 'tiffindb-file-');
+        self::assertIsString($path);
+        try {
+            file_put_contents($path, 'GIF89a');
+            $file = Response::file($path, 'image/gif', 'a.gif', true)
+                ->withHeader('Content-Security-Policy', 'default-src *')
+                ->withHeader('X-Content-Type-Options', 'sniff');
+            $applied = (new SecurityHeaders())->apply($file);
+            self::assertSame(SecurityHeaders::FILE_CSP, $applied->header('Content-Security-Policy'));
+            foreach (self::EXPECTED as $name => $value) {
+                if ($name !== 'Content-Security-Policy') {
+                    self::assertSame($value, $applied->header($name), $name);
+                }
+            }
+            self::assertSame('image/gif', $applied->header('Content-Type'));
+            self::assertSame('inline; filename="a.gif"; filename*=UTF-8\'\'a.gif', $applied->header('Content-Disposition'));
+            self::assertCount(count(self::EXPECTED) + 3, $applied->headers, 'Content-Type, Content-Length, and Content-Disposition besides the security set.');
+
+            $download = (new SecurityHeaders())->apply(Response::download($path, 'application/zip', 'a.zip', false));
+            self::assertSame(self::CSP, $download->header('Content-Security-Policy'), 'A download keeps the page policy.');
+            self::assertSame(self::CSP, (new SecurityHeaders())->apply(new Response(200, [], 'x'))->header('Content-Security-Policy'));
+        } finally {
+            unlink($path);
+        }
+    }
+
     /** @return array<string, array{string, string, int}> */
     public static function responses(): array
     {

@@ -12,6 +12,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Query\Trash;
+use TiffinDB\Core\Query\TrashedRow;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\Identifier;
@@ -20,7 +21,7 @@ use TiffinDB\Tests\Core\Schema\ProjectFixture;
 
 require_once __DIR__ . '/../schema/ProjectFixture.php';
 
-/** T-TRASH-1, T-TRASH-2, T-TRASH-3: record trash. */
+/** T-TRASH-1, T-TRASH-2, T-TRASH-3: record trash; T-TRASH-7: with the typed list and EmptiedTrash. */
 #[CoversClass(Trash::class)]
 final class TrashTest extends TestCase
 {
@@ -149,7 +150,7 @@ final class TrashTest extends TestCase
         $this->attach($photos, $trashedRoom, 1);
         $this->attach($photos, $liveRoom, 1);
 
-        self::assertSame(2, $this->trash->empty([$this->items, $this->rooms], [$this->items->key => [$files], $this->rooms->key => [$photos]], self::USER_KEY));
+        self::assertSame(2, $this->trash->empty([$this->items, $this->rooms], [$this->items->key => [$files], $this->rooms->key => [$photos]], self::USER_KEY)->records);
 
         self::assertSame([$liveItem], array_column($this->db->all('SELECT "id" FROM ' . Identifier::table($this->items->key)), 'id'));
         self::assertSame([$liveRoom], array_column($this->db->all('SELECT "id" FROM ' . Identifier::table($this->rooms->key)), 'id'));
@@ -160,14 +161,14 @@ final class TrashTest extends TestCase
         sort($actual);
         self::assertSame($expected, $actual);
         self::assertSame(1, $this->db->value('SELECT COUNT(*) FROM "_tiffin_attachments"'));
-        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::USER_KEY));
+        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::USER_KEY)->records);
     }
 
     public function testEmptyOnlyTouchesTheGivenTables(): void
     {
         $this->insert($this->items->key, [], true);
         $this->insert($this->rooms->key, [], true);
-        self::assertSame(1, $this->trash->empty([$this->rooms], [], self::USER_KEY));
+        self::assertSame(1, $this->trash->empty([$this->rooms], [], self::USER_KEY)->records);
         self::assertSame(1, $this->trash->count($this->items));
         self::assertSame(0, $this->trash->count($this->rooms));
     }
@@ -235,7 +236,7 @@ final class TrashTest extends TestCase
 
         $this->trash->moveToTrash($this->items, [$id], self::USER_KEY);
         $this->clock->advance(60);
-        self::assertSame(1, $this->trash->empty([$this->items], [], self::OTHER_USER_KEY));
+        self::assertSame(1, $this->trash->empty([$this->items], [], self::OTHER_USER_KEY)->records);
         self::assertSame(['2026-11-12T03:18:00Z', self::OTHER_USER_KEY], $this->meta());
     }
 
@@ -246,7 +247,7 @@ final class TrashTest extends TestCase
         $this->clock->advance(60);
         self::assertSame(0, $this->trash->restore($this->items, [$id], self::OTHER_USER_KEY));
         self::assertSame(0, $this->trash->moveToTrash($this->items, [999], self::OTHER_USER_KEY));
-        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::OTHER_USER_KEY));
+        self::assertSame(0, $this->trash->empty([$this->items, $this->rooms], [], self::OTHER_USER_KEY)->records);
         self::assertSame($before, $this->meta());
     }
 
@@ -300,10 +301,11 @@ final class TrashTest extends TestCase
         $this->trash->moveToTrash($this->items, [$toaster, $blank], self::OTHER_USER_KEY);
 
         $list = $this->trash->list($this->items, $this->name, $this->types, 10, 0);
-        self::assertSame([
-            ['id' => $blank, 'trashed_at' => '2026-11-12T03:16:00Z', 'trashed_by' => self::OTHER_USER_KEY, 'title' => null],
-            ['id' => $toaster, 'trashed_at' => '2026-11-12T03:16:00Z', 'trashed_by' => self::OTHER_USER_KEY, 'title' => 'Toaster'],
-            ['id' => $kettle, 'trashed_at' => '2026-11-12T03:15:00Z', 'trashed_by' => self::USER_KEY, 'title' => 'Kettle'],
+        self::assertContainsOnlyInstancesOf(TrashedRow::class, $list);
+        self::assertEquals([
+            new TrashedRow($blank, '2026-11-12T03:16:00Z', self::OTHER_USER_KEY, null),
+            new TrashedRow($toaster, '2026-11-12T03:16:00Z', self::OTHER_USER_KEY, 'Toaster'),
+            new TrashedRow($kettle, '2026-11-12T03:15:00Z', self::USER_KEY, 'Kettle'),
         ], $list);
 
         self::assertSame(['329.00', '12.50'], array_column($this->trash->list($this->items, $this->schema()->field($price->key), $this->types, 2, 1), 'title'));

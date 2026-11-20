@@ -67,7 +67,7 @@ final class TrashOperations
         }
         $list = [];
         foreach ((new Trash($db, $this->c->clock))->list($table, $title, $this->c->types, $limit, $offset) as $row) {
-            $list[] = new TrashedRecord($row['id'], $row['trashed_at'], $row['trashed_by'], $row['title']);
+            $list[] = new TrashedRecord($row->id, $row->trashedAt, $row->trashedBy, $row->title);
         }
 
         return $list;
@@ -107,7 +107,7 @@ final class TrashOperations
                 static fn (FieldDef $field): bool => $field->type === 'attachment',
             ));
         }
-        $deleted = $waiting > 0 ? $trash->empty($tables, $attachments, $actor->userKey) : 0;
+        $deleted = $waiting > 0 ? $trash->empty($tables, $attachments, $actor->userKey)->records : 0;
         $this->c->audit->record(AuditAction::TRASH_EMPTIED, $actor->userId, $project->id, $tableKey === null ? null : 'table', $tableKey, [
             'records' => $deleted,
         ]);

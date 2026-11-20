@@ -583,4 +583,158 @@ final class ResponseTest extends TestCase
         $this->expectOutputString('plain');
         self::assertSame([], array_filter(self::sendAndRecord($response, false), static fn (array $s): bool => $s[0] === 'chunk'));
     }
+
+    // T-WEB-55: Response::file() (M4 spec part 2 section 2).
+
+    /** @return iterable<string, array{string}> */
+    public static function inlineTypes(): iterable
+    {
+        foreach (Response::INLINE_TYPES as $type) {
+            yield $type => [$type];
+        }
+    }
+
+    #[DataProvider('inlineTypes')]
+    public function testFileSendsTheFourImageTypesInline(string $type): void
+    {
+        $path = $this->file("\x89PNG\r\n\x1A\nbytes");
+        $response = Response::file($path, $type, 'stand-mixer.png', true);
+
+        self::assertSame(200, $response->status);
+        self::assertSame([
+            'Content-Type' => $type,
+            'Content-Length' => '13',
+            'Content-Disposition' => 'inline; filename="stand-mixer.png"; filename*=UTF-8\'\'stand-mixer.png',
+            'Cache-Control' => 'no-store',
+        ], $response->headers);
+        self::assertTrue($response->isSandboxed());
+        self::assertTrue($response->isDownload());
+        self::assertFalse($response->removesAfterSend());
+        self::assertSame("\x89PNG\r\n\x1A\nbytes", $response->body());
+
+        $attachment = Response::file($path, $type, 'stand-mixer.png', false);
+        self::assertSame('attachment; filename="stand-mixer.png"; filename*=UTF-8\'\'stand-mixer.png', $attachment->header('Content-Disposition'));
+        self::assertTrue($attachment->isSandboxed());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function attachmentOnlyTypes(): iterable
+    {
+        yield 'octet-stream' => ['application/octet-stream'];
+        yield 'pdf' => ['application/pdf'];
+        yield 'html' => ['text/html'];
+        yield 'svg' => ['image/svg+xml'];
+        yield 'bmp' => ['image/bmp'];
+        yield 'tiff' => ['image/tiff'];
+        yield 'xml' => ['text/xml'];
+        yield 'plain' => ['text/plain'];
+    }
+
+    #[DataProvider('attachmentOnlyTypes')]
+    public function testFileRefusesInlineForAnyOtherType(string $type): void
+    {
+        $path = $this->file('<html><script>alert(1)</script></html>');
+        $response = Response::file($path, $type, 'a.bin', false);
+        self::assertSame($type, $response->header('Content-Type'), 'The media type exactly, without a charset.');
+        self::assertStringStartsWith('attachment; ', (string) $response->header('Content-Disposition'));
+
+        $this->expectException(InvalidArgumentException::class);
+        Response::file($path, $type, 'a.bin', true);
+    }
+
+    #[DataProvider('downloadNames')]
+    public function testFileDispositionIsBuiltSafely(string $name, string $ascii, string $encoded): void
+    {
+        foreach ([true => 'inline', false => 'attachment'] as $inline => $word) {
+            $expected = $word . '; filename="' . $ascii . '"; filename*=UTF-8\'\'' . $encoded;
+            self::assertSame($expected, Response::contentDisposition($name, (bool) $inline));
+            $header = (string) Response::file($this->file('x'), 'image/png', $name, (bool) $inline)->header('Content-Disposition');
+            self::assertSame($expected, $header);
+            self::assertDoesNotMatchRegularExpression('/[\x00-\x1F\x7F-\xFF]/', $header, 'Printable ASCII only.');
+            self::assertMatchesRegularExpression('/^' . $word . '; filename="[\x20\x21\x23-\x2E\x30-\x3A\x3C-\x5B\x5D-\x7E]*"; filename\*=UTF-8\'\'[A-Za-z0-9%._~-]+$/', $header);
+        }
+        self::assertSame(Response::contentDisposition($name), Response::contentDisposition($name, false), 'The default stays attachment.');
+    }
+
+    public function testFileNamesWithBidiAndControlCharactersStayInTheirParameter(): void
+    {
+        $name = "receipt\u{202E}fdp.exe";
+        $header = (string) Response::file($this->file('x'), 'application/octet-stream', $name, false)->header('Content-Disposition');
+        self::assertSame('attachment; filename="receipt___fdp.exe"; filename*=UTF-8\'\'receipt%E2%80%AEfdp.exe', $header);
+    }
+
+    #[DataProvider('badNames')]
+    public function testFileRefusesBadNames(string $name): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::file($this->file('x'), 'image/png', $name, true);
+    }
+
+    #[DataProvider('badMediaTypes')]
+    public function testFileRefusesBadMediaTypes(string $type): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::file($this->file('x'), $type, 'a.png', false);
+    }
+
+    public function testFilePathMustBeAnAbsoluteRegularFile(): void
+    {
+        $file = $this->file('x');
+        $dir = sys_get_temp_dir() . '/tiffindb-file-dir-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $this->made[] = $dir;
+        $link = $dir . '/link.png';
+        symlink($file, $link);
+        $this->made[] = $link;
+        $relative = basename($file);
+
+        foreach (['', $relative, 'tmp/x.png', $dir, $dir . '/missing.png', $link, $file . "\0.png", '../' . $relative] as $path) {
+            try {
+                Response::file($path, 'image/png', 'a.png', true);
+                self::fail('Accepted ' . json_encode($path));
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testFileStreamsItsBytesAndKeepsTheFile(): void
+    {
+        $contents = str_repeat("\x00\xFFbinary", 9000);
+        $path = $this->file($contents);
+        $response = (new SecurityHeaders())->apply(Response::file($path, 'image/webp', 'a.webp', true));
+
+        $this->expectOutputString('');
+        $steps = self::sendAndRecord($response, false);
+        $chunks = array_values(array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'));
+        self::assertSame($contents, implode('', array_map(static fn (array $s): string => (string) $s[1], $chunks)));
+        $headers = array_column(array_filter($steps, static fn (array $s): bool => $s[0] === 'header'), 1);
+        self::assertContains('Content-Length: ' . strlen($contents), $headers);
+        self::assertContains('Content-Security-Policy: ' . SecurityHeaders::FILE_CSP, $headers);
+        self::assertContains('X-Content-Type-Options: nosniff', $headers);
+        self::assertFileExists($path, 'A stored file is never removed after sending.');
+
+        $head = self::sendAndRecord($response, true);
+        self::assertSame([], array_filter($head, static fn (array $s): bool => $s[0] === 'chunk'), 'HEAD sends the headers only.');
+        self::assertContains(['header', 'Content-Length: ' . strlen($contents)], $head);
+        self::assertFileExists($path);
+    }
+
+    public function testAFileTakesNoAfterSendCallback(): void
+    {
+        $this->expectException(LogicException::class);
+        Response::file($this->file('x'), 'image/png', 'a.png', true)->withAfterSend(static function (): void {
+        });
+    }
+
+    public function testTheSandboxedFlagSurvivesCopies(): void
+    {
+        $response = Response::file($this->file('x'), 'image/gif', 'a.gif', true);
+        self::assertTrue($response->withHeader('X-Test', 'kept')->isSandboxed());
+        self::assertTrue($response->withCookie(self::cookie('tdb_x'))->isSandboxed());
+        self::assertTrue((new SecurityHeaders())->apply($response)->isSandboxed());
+        self::assertFalse(Response::download($this->file('x'), 'text/csv', 'a.csv', false)->isSandboxed());
+        self::assertFalse((new Response(200, [], 'x'))->isSandboxed());
+        self::assertFalse(Response::redirect('/x')->isSandboxed());
+    }
 }

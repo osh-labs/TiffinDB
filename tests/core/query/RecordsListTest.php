@@ -17,10 +17,12 @@ use TiffinDB\Core\Query\InputMode;
 use TiffinDB\Core\Query\LinkedRecord;
 use TiffinDB\Core\Query\ListQuery;
 use TiffinDB\Core\Query\ListSql;
+use TiffinDB\Core\Query\MatchMode;
 use TiffinDB\Core\Query\Operator;
 use TiffinDB\Core\Query\Position;
 use TiffinDB\Core\Query\RecordData;
 use TiffinDB\Core\Query\Records;
+use TiffinDB\Core\Query\RuleSet;
 use TiffinDB\Core\Query\Sort;
 use TiffinDB\Core\Schema\Cardinality;
 
@@ -32,6 +34,7 @@ require_once __DIR__ . '/RecordsFixture.php';
 #[CoversClass(Sort::class)]
 #[CoversClass(Condition::class)]
 #[CoversClass(ListQuery::class)]
+#[CoversClass(RuleSet::class)]
 final class RecordsListTest extends TestCase
 {
     use RecordsFixture;
@@ -484,5 +487,41 @@ final class RecordsListTest extends TestCase
             $position = $records->position($this->items->key, new ListQuery(new Sort($this->f['choice']->key, false), null, null, 1), $id);
             self::assertSame($index + 1, $position?->index);
         }
+    }
+
+    // ------------------------------------------------------------ T-RUL-12 (M4 spec section 12.3)
+
+    public function testPageAndPositionHonourCollectionRules(): void
+    {
+        $records = $this->records();
+        $ids = [];
+        foreach (['Lamp b' => '1', 'lamp a' => '0', 'Kettle' => '1', 'Mug' => '0', 'Lamp d' => '0', 'Clock' => '1'] as $name => $ticked) {
+            $ids[$name] = $this->item(['name' => $name, 'checkbox' => $ticked, 'number' => (string) strlen($name)]);
+        }
+        $rules = new RuleSet(MatchMode::Any, [
+            new Condition($this->f['checkbox']->key, Operator::Is, ['1']),
+            new Condition($this->f['name']->key, Operator::Contains, ['lamp']),
+        ]);
+        // In the collection: Lamp b, lamp a, Kettle, Lamp d, Clock; by name descending: Lamp d, Lamp b, lamp a, Kettle, Clock.
+        $query = new ListQuery(new Sort($this->f['name']->key, true), null, null, 1, $rules);
+        $page = $records->page($this->items->key, $query);
+        self::assertSame([5, 6, 1, 1], [$page->total, $page->tableTotal, $page->pages, $page->page]);
+        self::assertSame([$ids['Lamp d'], $ids['Lamp b'], $ids['lamp a'], $ids['Kettle'], $ids['Clock']], $this->ids($query));
+        self::assertEquals(new Position(1, 5, null, $ids['Lamp b']), $records->position($this->items->key, $query, $ids['Lamp d']));
+        self::assertEquals(new Position(3, 5, $ids['Lamp b'], $ids['Kettle']), $records->position($this->items->key, $query, $ids['lamp a']));
+        self::assertEquals(new Position(5, 5, $ids['Kettle'], null), $records->position($this->items->key, $query, $ids['Clock']));
+        self::assertNull($records->position($this->items->key, $query, $ids['Mug']));
+
+        // All of the rules, with the list's search on top.
+        $all = new ListQuery(new Sort('added', false), null, 'lamp', 1, new RuleSet(MatchMode::All, [
+            new Condition($this->f['number']->key, Operator::More, ['5']),
+            new Condition($this->f['checkbox']->key, Operator::Is, ['0']),
+        ]));
+        self::assertSame([$ids['lamp a'], $ids['Lamp d']], $this->ids($all));
+        self::assertEquals(new Position(2, 2, $ids['lamp a'], null), $records->position($this->items->key, $all, $ids['Lamp d']));
+        self::assertNull($records->position($this->items->key, $all, $ids['Lamp b']));
+        $this->trashRecord($this->items, $ids['lamp a']);
+        self::assertEquals(new Position(1, 1, null, null), $records->position($this->items->key, $all, $ids['Lamp d']));
+        self::assertNull($records->position($this->items->key, $all, $ids['lamp a']));
     }
 }

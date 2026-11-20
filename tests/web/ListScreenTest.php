@@ -348,7 +348,7 @@ final class ListScreenTest extends TestCase
         self::assertSame(0, $x->query('//div[@class="empty-state"]/a')->length);
         self::assertSame(1, $x->query('//div[@class="page-actions"]/a')->length);
         self::assertSame(0, $x->query('//form[@class="list-controls"] | //table | //nav[@class="pager"]')->length);
-        self::assertSame('3', HtmlAssertions::text($html, '//div[@class="sidebar-item"]/span[@class="sidebar-count"]'), 'Trash count.');
+        self::assertSame('3', HtmlAssertions::text($html, '//div[@class="sidebar-foot"]/a[@href="/projects/' . $this->project . '/trash"]/span[@class="sidebar-count"]'), 'Trash count.');
         self::assertSame('Items 0', HtmlAssertions::text($html, '//nav[@class="sidebar"]//a[@aria-current="page"]'));
     }
 

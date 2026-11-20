@@ -158,6 +158,30 @@ final class CsvReaderTest extends TestCase
         $wide->columns();
     }
 
+    /** T-CF-6 (CF-3): the column limit is `too-large` with its own detail; an over-long record is `too-large` with another. */
+    public function testTheColumnLimitIsToldApartFromTheRecordCap(): void
+    {
+        $cases = [
+            'heading row' => [implode(',', range(1, 201)) . "\n", true],
+            'data record without headings' => ["a\n" . str_repeat(',', 200) . "\n", false],
+        ];
+        foreach ($cases as $label => [$bytes, $heading]) {
+            try {
+                (new CsvFile($this->file($bytes), new CsvDialect('utf-8', ',', $heading)))->columns();
+                self::fail('No failure for the ' . $label . '.');
+            } catch (PluginFailure $failure) {
+                self::assertSame([PluginFailure::REASON_TOO_LARGE, CsvFile::TOO_MANY_COLUMNS], [$failure->reason, $failure->getMessage()], $label);
+            }
+        }
+        try {
+            (new CsvFile($this->file('"' . str_repeat('a', 300) . "\"\n"), new CsvDialect('utf-8', ','), null, 200))->columns();
+            self::fail('No failure for the long record.');
+        } catch (PluginFailure $failure) {
+            self::assertSame(PluginFailure::REASON_TOO_LARGE, $failure->reason);
+            self::assertNotSame(CsvFile::TOO_MANY_COLUMNS, $failure->getMessage());
+        }
+    }
+
     public function testMissingFile(): void
     {
         $this->expectException(PluginFailure::class);

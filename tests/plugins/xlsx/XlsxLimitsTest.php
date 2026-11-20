@@ -198,6 +198,46 @@ echo json_encode(["reason" => $reason, "rows" => $rows, "rss" => isset($m[1]) ? 
         self::assertSame(PluginFailure::REASON_UNREADABLE, XlsxPlugins::failure(static fn () => WorkbookCheck::contents($path)), 'Fewer bytes than declared.');
     }
 
+    /**
+     * T-CF-6 (CF-4): an entry holding far more bytes than declared is
+     * refused as soon as the count passes the declared size, not after
+     * inflating the whole entry. The sheet is followed by 4 GiB of NUL
+     * bytes in about 4 MB of deflate data (one fully flushed block of
+     * 1 MiB repeated), which takes seconds to inflate in full; the check
+     * stops one read piece past the declared size.
+     */
+    public function testAnEntryHoldingMoreBytesThanDeclaredStopsEarly(): void
+    {
+        $parts = (new WorkbookBuilder())->sheet('S', WorkbookBuilder::textRow(1, ['Heading']))->parts();
+        $sheet = $parts['xl/worksheets/sheet1.xml'];
+        $deflate = deflate_init(ZLIB_ENCODING_RAW);
+        self::assertNotFalse($deflate);
+        $head = (string) deflate_add($deflate, $sheet, ZLIB_FULL_FLUSH);
+        $block = (string) deflate_add($deflate, str_repeat("\0", 1 << 20), ZLIB_FULL_FLUSH);
+        $data = $head . str_repeat($block, 4096) . (string) deflate_add($deflate, '', ZLIB_FINISH);
+        self::assertLessThan(8 * 1024 * 1024, strlen($data));
+        $entries = [];
+        foreach ($parts as $name => $bytes) {
+            $entries[] = $name === 'xl/worksheets/sheet1.xml'
+                ? ['name' => $name, 'data' => $data, 'method' => 8, 'size' => strlen($sheet), 'crc' => crc32($sheet)]
+                : ['name' => $name, 'data' => $bytes];
+        }
+        $path = $this->temp->path('bomb.bin');
+        file_put_contents($path, WorkbookBuilder::rawZip($entries));
+        unset($data);
+
+        $started = hrtime(true);
+        try {
+            WorkbookCheck::contents($path);
+            self::fail('The extra bytes were not found.');
+        } catch (PluginFailure $failure) {
+            self::assertSame(PluginFailure::REASON_UNREADABLE, $failure->reason);
+            self::assertStringContainsString('more bytes than its header declares', $failure->getMessage());
+        }
+        self::assertLessThan(1.0, (hrtime(true) - $started) / 1e9, 'The entry is not inflated to its end.');
+        self::assertSame(PluginFailure::REASON_UNREADABLE, XlsxPlugins::failure(fn () => $this->importer->detect($this->file($path))));
+    }
+
     public function testRepeatedCallsUseTheJobCache(): void
     {
         $rows = WorkbookBuilder::textRow(1, ['Name', 'Value']);

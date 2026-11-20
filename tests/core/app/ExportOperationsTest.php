@@ -37,6 +37,33 @@ final class ExportOperationsTest extends AppTestCase
         $this->fx->addRecord($this->project->key, $this->items->key, [$name => '=1+1']);
     }
 
+    /** T-CF-7 (CF-5): the export page's project size is the project file plus the stored attachment files. */
+    public function testTheScreenGivesTheProjectSize(): void
+    {
+        $p = $this->project->key;
+        $folder = $this->fx->projectFolder($p);
+        $file = $folder . '/project.tiffin';
+        clearstatcache();
+        self::assertSame(filesize($file), $this->ops->exports()->screen($this->admin, $p)->projectBytes, 'No attachments folder yet.');
+
+        $hash = hash('sha256', 'synthetic attachment one');
+        mkdir($folder . '/attachments/' . substr($hash, 0, 2), 0o700, true);
+        file_put_contents($folder . '/attachments/' . substr($hash, 0, 2) . '/' . $hash, str_repeat('a', 5000));
+        $other = hash('sha256', 'synthetic attachment two');
+        mkdir($folder . '/attachments/' . substr($other, 0, 2), 0o700, true);
+        file_put_contents($folder . '/attachments/' . substr($other, 0, 2) . '/' . $other, str_repeat('b', 300));
+        // Not counted: a link, a folder in a stored folder, a file directly under attachments/, and an odd folder.
+        symlink($file, $folder . '/attachments/' . substr($hash, 0, 2) . '/link');
+        mkdir($folder . '/attachments/' . substr($hash, 0, 2) . '/inner');
+        file_put_contents($folder . '/attachments/' . substr($hash, 0, 2) . '/inner/x', str_repeat('c', 70));
+        file_put_contents($folder . '/attachments/loose', str_repeat('d', 90));
+        mkdir($folder . '/attachments/zz');
+        file_put_contents($folder . '/attachments/zz/x', str_repeat('e', 110));
+
+        clearstatcache();
+        self::assertSame(filesize($file) + 5300, $this->ops->exports()->screen($this->admin, $p)->projectBytes);
+    }
+
     public function testEveryEnabledFormatAndScopeExports(): void
     {
         $exports = $this->ops->exports();

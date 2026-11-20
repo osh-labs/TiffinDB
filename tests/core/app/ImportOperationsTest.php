@@ -198,6 +198,40 @@ final class ImportOperationsTest extends AppTestCase
         self::assertSame([false, 2, $this->rooms->key], [$report->report->newTable, $report->report->rowsImported, $report->table?->key]);
     }
 
+    /** T-CF-5 (CF-1, M3 X-12): a typed table name survives a round trip through an existing target. */
+    public function testRecheckKeepsTheTypedTableNameAcrossAnExistingTarget(): void
+    {
+        $p = $this->project->key;
+        $imports = $this->ops->imports();
+        $job = $imports->start($this->admin, $p, $this->fx->upload("Name,Floor\nCellar,0\nAttic,2\n"), 'rooms.csv', null);
+        self::assertSame('rooms', $imports->review($this->admin, $p, $job, null, [])->newTableName);
+
+        $imports->recheck($this->admin, $p, $job, ['target' => 'new', 'table_name' => 'Example places']);
+        self::assertSame('Example places', $imports->review($this->admin, $p, $job, null, [])->newTableName);
+
+        // The new-table page posts the typed name with the existing target.
+        $imports->recheck($this->admin, $p, $job, ['target' => 'existing', 'table' => $this->rooms->key, 'table_name' => 'Example places']);
+        $review = $imports->review($this->admin, $p, $job, null, []);
+        self::assertSame(['existing', $this->rooms->key, null], [$review->target, $review->tableKey, $review->newTableName]);
+
+        // A second check on the existing target, with an empty name, keeps it too.
+        $imports->recheck($this->admin, $p, $job, ['target' => 'existing', 'table' => $this->rooms->key, 'table_name' => '']);
+
+        // Back to a new table with an empty name, then with none posted at all.
+        $imports->recheck($this->admin, $p, $job, ['target' => 'new', 'table_name' => '  ']);
+        $review = $imports->review($this->admin, $p, $job, null, []);
+        self::assertSame(['new', 'Example places'], [$review->target, $review->newTableName]);
+        $imports->recheck($this->admin, $p, $job, ['target' => 'existing', 'table' => $this->rooms->key]);
+        $imports->recheck($this->admin, $p, $job, ['target' => 'new']);
+        self::assertSame('Example places', $imports->review($this->admin, $p, $job, null, [])->newTableName);
+
+        // A posted name still replaces the stored one, and saving the existing target stores no name.
+        $imports->recheck($this->admin, $p, $job, ['target' => 'new', 'table_name' => 'Example rooms']);
+        self::assertSame('Example rooms', $imports->review($this->admin, $p, $job, null, [])->newTableName);
+        $imports->saveMapping($this->admin, $p, $job, ['target' => 'existing', 'table' => $this->rooms->key, 'include' => ['0' => '1'], 'field' => ['0' => $this->ops->schema()->design($this->admin, $p, $this->rooms->key)->fields[0]->field->key, '1' => '']]);
+        self::assertSame(ImportJobView::STATE_PREPARING, $imports->job($this->admin, $p, $job)->state);
+    }
+
     public function testTheTargetChangingDuringPreparationSendsTheJobBackToReview(): void
     {
         $p = $this->project->key;
@@ -221,9 +255,14 @@ final class ImportOperationsTest extends AppTestCase
         $this->captureLog();
         $wide = implode(',', array_map(static fn (int $i): string => 'c' . $i, range(1, IoLimits::MAX_COLUMNS + 1))) . "\n";
         $problems = self::problems(fn () => $imports->start($this->admin, $p, $this->fx->upload($wide), 'wide.csv', null));
-        // The CSV plugin refuses a heading row over the column limit as too large, which reads as unsupported.
-        self::assertSame([['file', 'problem.import.unsupported', []]], $problems);
+        // T-CF-6 (CF-3): the CSV plugin refuses a heading row over the column limit as too large,
+        // which reads as too many columns; a record over 1 MiB still reads as unsupported.
+        self::assertSame([['file', 'problem.import.too_many_columns', ['max' => 200]]], $problems);
         self::assertStringContainsString('plugin import/csv failed (too-large)', $this->errorLog());
+        self::assertSame([], $this->stagedJobs('imports'));
+        $long = "Name\n\"" . str_repeat('a', IoLimits::MAX_CSV_RECORD_BYTES + 1) . "\"\n";
+        $problems = self::problems(fn () => $imports->start($this->admin, $p, $this->fx->upload($long), 'long.csv', null));
+        self::assertSame([['file', 'problem.import.unsupported', []]], $problems);
         self::assertSame([], $this->stagedJobs('imports'));
     }
 

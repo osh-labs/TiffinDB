@@ -50,6 +50,18 @@ require_once __DIR__ . '/EndToEndTest.php';
 #[CoversNothing]
 final class ScreenStructureTest extends TestCase
 {
+    /**
+     * The M4 controllers (M4-WP6 to WP8) whose GET routes this test does not
+     * visit yet; M4-WP9 visits them and removes this list (M4 spec part 2
+     * section 12).
+     */
+    private const M4_CONTROLLERS_NOT_VISITED = [
+        \TiffinDB\Web\Controller\LinkController::class,
+        \TiffinDB\Web\Controller\FileController::class,
+        \TiffinDB\Web\Controller\CollectionController::class,
+        \TiffinDB\Web\Controller\TrashController::class,
+    ];
+
     private const PASSWORD = 'example admin passphrase 1';
     private const MEMBER_TEMPORARY = 'temporary words 0101';
     private const MEMBER_PASSWORD = 'example member passphrase 2';
@@ -316,10 +328,16 @@ final class ScreenStructureTest extends TestCase
 
         // Every GET route was visited, the M3 ones included (T-SCR-3). Routes
         // of controllers that do not exist yet are counted once their
-        // controller lands.
+        // controller lands; the M4 controllers are left out until M4-WP9
+        // visits their routes (M4 spec part 2 section 12).
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
+            if (
+                is_array($route)
+                && $route[0] === 'GET'
+                && class_exists($route[2][0])
+                && !in_array($route[2][0], self::M4_CONTROLLERS_NOT_VISITED, true)
+            ) {
                 $patterns[] = (string) $route[1];
             }
         }

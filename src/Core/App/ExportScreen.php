@@ -10,7 +10,11 @@ namespace TiffinDB\Core\App;
 
 use TiffinDB\Core\System\ProjectRecord;
 
-/** The export page (M3 spec section 13.2). */
+/**
+ * The export page (M3 spec section 13.2). `$projectBytes` is about the
+ * size of the project archive (M4 CF-5): the project file plus the
+ * regular files under its `attachments/<2>/` folders.
+ */
 final class ExportScreen
 {
     /**
@@ -22,6 +26,7 @@ final class ExportScreen
         public readonly array $tables,
         public readonly array $formats,
         public readonly bool $archive = true,
+        public readonly int $projectBytes = 0,
     ) {
     }
 }

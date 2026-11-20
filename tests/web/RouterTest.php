@@ -224,7 +224,8 @@ final class RouterTest extends TestCase
 
     /**
      * The complete table, in order: M1 (spec part 2 section 2.3), M2 (spec
-     * part 2 section 2), and M3 (spec part 2 section 3).
+     * part 2 section 2), M3 (spec part 2 section 3), and M4 (spec part 2
+     * section 3).
      *
      * @return list<array{string, string, string, string}>
      */
@@ -234,6 +235,9 @@ final class RouterTest extends TestCase
         $t = '/projects/{project}/tables/{table}';
         $i = '/projects/{project}/import';
         $p = '/admin/plugins/{kind}/{plugin}';
+        $r = $t . '/records/{record}';
+        $c = '/projects/{project}/collections/{collection}';
+        $x = '/projects/{project}/trash';
 
         return [
             ['GET', '/', 'HomeController::show', 'any'],
@@ -271,6 +275,17 @@ final class RouterTest extends TestCase
             ['GET', '/projects/{project}/export', 'ExportController::form', 'user'],
             ['POST', '/projects/{project}/export', 'ExportController::export', 'user'],
             ['POST', '/projects/{project}/export/archive', 'ExportController::archive', 'user'],
+            ['GET', '/projects/{project}/files/{attachment}', 'FileController::serve', 'user'],
+            ['GET', $c, 'CollectionController::show', 'user'],
+            ['GET', $c . '/edit', 'CollectionController::editForm', 'user'],
+            ['POST', $c . '/edit', 'CollectionController::update', 'user'],
+            ['GET', $c . '/delete', 'CollectionController::deleteForm', 'user'],
+            ['POST', $c . '/delete', 'CollectionController::delete', 'user'],
+            ['GET', $x, 'TrashController::index', 'user'],
+            ['POST', $x . '/restore', 'TrashController::restore', 'user'],
+            ['POST', $x . '/restore-all', 'TrashController::restoreAll', 'user'],
+            ['GET', $x . '/empty', 'TrashController::emptyForm', 'user'],
+            ['POST', $x . '/empty', 'TrashController::empty', 'user'],
             ['GET', '/projects/{project}/search', 'SearchController::index', 'user'],
             ['GET', '/projects/{project}/tables', 'TableController::index', 'user'],
             ['GET', '/projects/{project}/tables/new', 'TableController::newForm', 'user'],
@@ -281,12 +296,22 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/tables/{table}/delete', 'TableController::delete', 'user'],
             ['GET', $t, 'RecordListController::index', 'user'],
             ['GET', $t . '/filter', 'RecordListController::filter', 'user'],
+            ['GET', $t . '/collections/new', 'CollectionController::newForm', 'user'],
+            ['POST', $t . '/collections', 'CollectionController::create', 'user'],
             ['GET', $t . '/records/new', 'RecordController::newForm', 'user'],
             ['POST', $t . '/records', 'RecordController::create', 'user'],
             ['GET', $t . '/records/{record}', 'RecordController::show', 'user'],
             ['POST', $t . '/records/{record}', 'RecordController::update', 'user'],
             ['POST', $t . '/records/{record}/trash', 'RecordController::trash', 'user'],
             ['POST', $t . '/records/{record}/restore', 'RecordController::restore', 'user'],
+            ['GET', $r . '/links/{field}', 'LinkController::picker', 'user'],
+            ['POST', $r . '/links/{field}/add', 'LinkController::add', 'user'],
+            ['POST', $r . '/links/{field}/remove', 'LinkController::remove', 'user'],
+            ['GET', $r . '/files/{field}/new', 'FileController::uploadForm', 'user'],
+            ['POST', $r . '/files/{field}', 'FileController::upload', 'user'],
+            ['GET', $r . '/files/{field}/{attachment}', 'FileController::show', 'user'],
+            ['GET', $r . '/files/{field}/{attachment}/remove', 'FileController::removeForm', 'user'],
+            ['POST', $r . '/files/{field}/{attachment}/remove', 'FileController::remove', 'user'],
             ['GET', '/projects/{project}/tables/{table}/fields/new', 'FieldController::newForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/fields', 'FieldController::create', 'user'],
             ['GET', $f, 'FieldController::editForm', 'user'],
@@ -395,6 +420,84 @@ final class RouterTest extends TestCase
     }
 
     /**
+     * M4 spec part 2 section 3: the 21 routes, exactly as the table lists
+     * them, all for signed-in people, in the specified places: the
+     * project-level ones between the archive export and the search, the
+     * table-level ones after the filter, the record-level ones after the
+     * restore, and `/files/{field}/new` before `/files/{field}/{attachment}`.
+     */
+    public function testM4RoutesAreTheSpecification(): void
+    {
+        $table = '/projects/{project}/tables/{table}';
+        $record = $table . '/records/{record}';
+        $expected = [
+            ['GET', '/projects/{project}/files/{attachment}', 'FileController::serve'],
+            ['GET', '/projects/{project}/collections/{collection}', 'CollectionController::show'],
+            ['GET', '/projects/{project}/collections/{collection}/edit', 'CollectionController::editForm'],
+            ['POST', '/projects/{project}/collections/{collection}/edit', 'CollectionController::update'],
+            ['GET', '/projects/{project}/collections/{collection}/delete', 'CollectionController::deleteForm'],
+            ['POST', '/projects/{project}/collections/{collection}/delete', 'CollectionController::delete'],
+            ['GET', '/projects/{project}/trash', 'TrashController::index'],
+            ['POST', '/projects/{project}/trash/restore', 'TrashController::restore'],
+            ['POST', '/projects/{project}/trash/restore-all', 'TrashController::restoreAll'],
+            ['GET', '/projects/{project}/trash/empty', 'TrashController::emptyForm'],
+            ['POST', '/projects/{project}/trash/empty', 'TrashController::empty'],
+            ['GET', $table . '/collections/new', 'CollectionController::newForm'],
+            ['POST', $table . '/collections', 'CollectionController::create'],
+            ['GET', $record . '/links/{field}', 'LinkController::picker'],
+            ['POST', $record . '/links/{field}/add', 'LinkController::add'],
+            ['POST', $record . '/links/{field}/remove', 'LinkController::remove'],
+            ['GET', $record . '/files/{field}/new', 'FileController::uploadForm'],
+            ['POST', $record . '/files/{field}', 'FileController::upload'],
+            ['GET', $record . '/files/{field}/{attachment}', 'FileController::show'],
+            ['GET', $record . '/files/{field}/{attachment}/remove', 'FileController::removeForm'],
+            ['POST', $record . '/files/{field}/{attachment}/remove', 'FileController::remove'],
+        ];
+        $m4Controllers = ['LinkController', 'FileController', 'CollectionController', 'TrashController'];
+
+        $actual = [];
+        $positions = [];
+        foreach (Router::applicationRoutes() as $n => $route) {
+            [$method, $pattern, [$class, $name], $access] = $route;
+            $short = substr($class, strlen('TiffinDB\\Web\\Controller\\'));
+            $positions["{$method} {$pattern}"] = $n;
+            if (in_array($short, $m4Controllers, true)) {
+                self::assertSame('user', $access, "{$method} {$pattern}");
+                $actual[] = [$method, $pattern, $short . '::' . $name];
+            }
+        }
+        self::assertCount(21, $expected);
+        self::assertEqualsCanonicalizing($expected, $actual);
+
+        $at = static fn (string $route): int => $positions[$route] ?? -1;
+        $after = static function (string $route, string $anchor) use ($at): void {
+            self::assertGreaterThan($at($anchor), $at($route), "{$route} comes after {$anchor}");
+        };
+        foreach (array_slice($expected, 0, 11) as [$method, $pattern]) {
+            $after("{$method} {$pattern}", 'POST /projects/{project}/export/archive');
+            self::assertLessThan($at('GET /projects/{project}/search'), $at("{$method} {$pattern}"), "{$method} {$pattern} comes before the search");
+        }
+        foreach (array_slice($expected, 11, 2) as [$method, $pattern]) {
+            $after("{$method} {$pattern}", "GET {$table}/filter");
+        }
+        foreach (array_slice($expected, 13) as [$method, $pattern]) {
+            $after("{$method} {$pattern}", "POST {$record}/restore");
+        }
+        $after("GET {$record}/files/{field}/{attachment}", "GET {$record}/files/{field}/new");
+
+        $router = new Router(Router::applicationRoutes());
+        $base = '/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12';
+        self::assertSame('uploadForm', $router->match('GET', $base . '/files/abcdefghijkl/new')->handler[1] ?? null, 'files/{field}/new comes before files/{field}/{attachment}.');
+        self::assertSame('show', $router->match('GET', $base . '/files/abcdefghijkl/7')->handler[1] ?? null);
+        self::assertSame('serve', $router->match('GET', '/projects/abcdefghijkl/files/7')->handler[1] ?? null);
+        self::assertSame('show', $router->match('GET', '/projects/abcdefghijkl/collections/mnopqrstuvwx')->handler[1] ?? null);
+        self::assertSame('newForm', $router->match('GET', '/projects/abcdefghijkl/tables/mnopqrstuvwx/collections/new')->handler[1] ?? null);
+        self::assertTrue($router->match('GET', '/projects/abcdefghijkl/trash/restore')->isMethodNotAllowed());
+        self::assertTrue($router->match('GET', $base . '/links/abcdefghijkl/add')->isMethodNotAllowed());
+        self::assertTrue($router->match('GET', '/projects/abcdefghijkl/files/7/extra')->isNotFound());
+    }
+
+    /**
      * Controllers of later work packages (WP9 to WP11) may not exist yet;
      * once a class exists, every method the table names must exist on it.
      */
@@ -407,6 +510,8 @@ final class RouterTest extends TestCase
             'RecordListController', 'SearchController', 'RecordController', 'SettingsController',
             // M3 spec part 2 section 3: created by M3-WP9 and WP10.
             'ImportController', 'ExportController', 'ArchiveController', 'PluginController',
+            // M4 spec part 2 section 3: created by M4-WP6 to WP8.
+            'LinkController', 'FileController', 'CollectionController', 'TrashController',
         ];
         foreach (Router::applicationRoutes() as $route) {
             [, , [$class, $method]] = $route;

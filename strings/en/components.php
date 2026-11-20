@@ -6,6 +6,10 @@
  * Strings of the shared M2 components (M2 spec part 2 section 6.3): the
  * pager, value display, record form inputs, the undo notice, and currency
  * names. The sidebar and top-bar search strings are in shell.php.
+ *
+ * M4 (spec part 2 section 7; docs/design/m4/components.md section 3): the
+ * texts of the link-control, link-rows, file-rows, and leave-note partials.
+ * {item} is the other table's item name, plain text from the caller.
  */
 
 declare(strict_types=1);
@@ -43,6 +47,27 @@ return [
     'file.type.pdf' => 'PDF',
     'file.type.image' => 'image',
     'file.type.other' => 'file',
+
+    'components.link.none' => 'No {item} chosen',
+    'components.link.choose' => 'Choose a record',
+    'components.link.choose_other' => 'Choose a different {item}',
+    'components.link.after_save' => 'You can choose one once this record is saved.',
+    'components.link.unlink' => 'Unlink',
+    'components.link.unlink_label' => 'Unlink {title}',
+    'components.link.add_first' => 'Link a record',
+    'components.link.add' => 'Link another {item}',
+    'components.link.unlink_help' => 'Unlinking does not delete the {item} record.',
+    'components.link.after_save_many' => 'You can add links once this record is saved.',
+    'components.file.open' => 'Open',
+    'components.file.open_label' => 'Open {name}',
+    'components.file.replace' => 'Replace',
+    'components.file.replace_label' => 'Replace {name}',
+    'components.file.remove' => 'Remove',
+    'components.file.remove_label' => 'Remove {name}',
+    'components.file.add' => 'Add a file',
+    'components.file.add_image' => 'Add an image',
+    'components.file.after_save' => 'You can add files once this record is saved.',
+    'components.leave_note' => 'Save your changes first: the buttons here leave this page.',
 
     'notice.undo' => 'Undo',
     'notice.undo_label' => 'Undo: restore {title}',

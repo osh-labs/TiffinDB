@@ -10,17 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | M4-D1 and M4-R1 merged; rulings P175 to P177 recorded. Wave 1 dispatching: WP1, WP3, WP5 (then WP0 as a slot frees). Then wave 2 WP2 and WP10, wave 3 WP4, wave 4 WP6 to WP8, wave 5 WP9, exit audit M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
-
-### Phase 0 record (2026-11-19)
-
-Baseline on the integration branch: `composer test` OK (4777 tests, 1 skipped), `composer lint` 348 files 0 failed, as at M1 close.
-
-XLSX dependency probe (metadata read from Packagist; no code installed): `openspout/openspout` declares licence MIT. Releases v5.3 and later that were checked (v5.4.1, v5.5.0, v5.10.0, v5.15.x) require PHP `~8.4.0` or newer and do NOT admit PHP 8.3. Releases that admit 8.3: v5.0.0, v5.1.1, v5.2.2 (PHP `~8.3.0 || ~8.4.0 || ~8.5.0`) and v4.32.0. Required extensions: `dom`, `filter`, `libxml`, `xmlreader`, `zip` (v4.x also `fileinfo`). Not checked: v5.3.0 and v5.4.0 floors, transitive packages (none declared), the licence file at a tag. Consequence for M3-D1: ADR 0016 must pin a release admitting 8.3 (candidate v5.2.2 or v4.32.0, subject to a tag-level licence check) and note the extension additions (`dom`, `filter`, `libxml`) for the installer check and `tools/host-check/`. No download blocker was seen.
-
-## 2. Milestones
-
-| Milestone | Status | Exit-criteria results |
+| Next action | Merged: WP1, WP3, WP5, WP2, WP0, security review WP1/WP2 (6a2e4a0; suite 8970 OK, 1 skipped; lint 727 files 0 failed). Running: WP10, WP1 fixes (P180), security review of WP3 and WP5. Next: WP4 once WP10 merges (P175 sweep wiring, P180 items); WP9 takes CF-2, CF-5, CF-9 (P179). Then WP6 to WP8, WP9, M4-X. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
@@ -245,6 +235,9 @@ Not verified in M1: `.htaccess` behaviour on a real Apache server (host check); 
 | P175 | Orphan-file sweep trigger (M4-R1 ruling 1) | Also runs with the staging sweep, as the session plan says, in addition to the ADR 0018 decision 6 triggers; WP1 implements both and WP2/WP4 wire it. ADR 0018 decision 6 to be amended by WP1 | M4 orchestrator ruling under orchestration 5 (cheapest to reverse) |
 | P176 | CSV hostile-input item CF-3 (M4-R1 ruling 2) | WP0 attempts it, including the `CsvFile.php` change, but `CsvHostileTest` must still pin `too_large`; if both cannot hold, WP0 defers CF-3 and records it in the ledger carried-forward paragraph | M4 orchestrator ruling |
 | P177 | Trash and file-helper details (M4-R1 ruling 3) | `TrashOperations::empty` returns `TrashEmptied` and the two M1 assertions change to `->records`; `Fs::sha256` and `Fs::freeBytes` may duplicate the `IoSupport` helpers (a later cleanup may unify them); `Cache-Control` stays `no-store` (P150) | M4 orchestrator ruling |
+| P178 | WP5 may update two non-owned tests | `ListScreenTest.php` and `KeyboardStructureTest.php` change only to reflect the trash line becoming a link (spec'd); no other assertion weakened | M4 orchestrator ruling |
+| P179 | Residue of WP0 carried-forward items | CF-3 done with both P176 rules held. CF-2 (narrow `.report-table` right-alignment to `.num` in `app.css`), CF-5 (ExportController passes `projectSize`) and CF-9 (the abandoned-row recheck mutation still survives; needs a test) are assigned to WP9; CF-8 checks permissions from source because Authorizer and Context are final | M4 orchestrator ruling |
+| P180 | Security review of WP1 and WP2: no blocking or high findings; five low | Findings 1 and 2 (place() trusts an existing same-size file; StoredUpload not re-verified at place time) go back to WP1 for fixing. Finding 3 (sweepFiles case-sensitive hash compare) and 4 (Trash::empty link deletion only for given fields) go to WP4, as do the hand-over items: refuse zero-byte files and files over the cap, check the URL table matches the field's table, permission first. Finding 5 (signature plus HTML typed as image, served inline) is intended; M4-X must verify nosniff and the sandbox CSP | M4 orchestrator ruling; review at docs/build/reviews/M4-sec-wp1-wp2.md |
 
 ## 5. Blockers
 

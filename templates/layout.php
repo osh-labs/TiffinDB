@@ -24,7 +24,8 @@
  *
  * Data (see View for the full contract): `title`, `documentTitle`,
  * `hasError`, `sourceUrl`, `shell`, `wide`, `script` (`show-password`,
- * `settings-preview`, or `import-continue`, M3 spec part 2 section 7),
+ * `settings-preview`, `import-continue`, M3 spec part 2 section 7, or
+ * `collection-editor`, M4 spec part 2 section 8),
  * `layout`, `sidebar`, `search` (the top bar's project search),
  * `breadcrumb`, `problems`. Output is HTML5 in XML-well-formed syntax (ADR 0008
  * decision 4).
@@ -54,6 +55,8 @@ declare(strict_types=1);
 <script src="<?= $this->asset('js/settings-preview.js') ?>" defer="defer"></script>
 <?php elseif (($data['script'] ?? null) === 'import-continue') : ?>
 <script src="<?= $this->asset('js/import-continue.js') ?>" defer="defer"></script>
+<?php elseif (($data['script'] ?? null) === 'collection-editor') : ?>
+<script src="<?= $this->asset('js/collection-editor.js') ?>" defer="defer"></script>
 <?php endif; ?>
 </head>
 <body>

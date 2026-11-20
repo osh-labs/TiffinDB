@@ -22,6 +22,12 @@ use TiffinDB\Core\App\TableSummary;
  * answer for the person, P132), `data` holds the paths of the Data group's
  * "Import a file" and "Export" links; otherwise it is null and the group
  * is not drawn. Neither link is ever current: those pages use breadcrumbs.
+ *
+ * M4 (spec part 2 section 5): `collections` lists the project's
+ * collections (plain data from the caller, so no core class is named),
+ * each with its path and whether it is the one being viewed;
+ * `newCollectionPath` is the editor for a new collection on the table
+ * given, or null; `trashPath` is the trash screen (never current).
  */
 final class Sidebar
 {
@@ -32,8 +38,9 @@ final class Sidebar
     }
 
     /**
-     * @param list<TableSummary> $tables in table order
-     * @return array{projectName: string, switchPath: string, tables: list<array{name: string, count: string, path: string, current: bool}>, schemaPath: string, trashCount: string, data: array{importPath: string, exportPath: string}|null}
+     * @param list<TableSummary>                              $tables      in table order
+     * @param list<array{key: string, name: string, count: int}> $collections in the order to show
+     * @return array{projectName: string, switchPath: string, tables: list<array{name: string, count: string, path: string, current: bool}>, collections: list<array{name: string, count: string, path: string, current: bool}>, newCollectionPath: string|null, schemaPath: string, trashCount: string, trashPath: string, data: array{importPath: string, exportPath: string}|null}
      */
     public static function build(
         string $projectKey,
@@ -42,6 +49,9 @@ final class Sidebar
         int $trashCount,
         ?string $currentTableKey,
         bool $canImportExport = false,
+        array $collections = [],
+        ?string $currentCollectionKey = null,
+        ?string $newCollectionTableKey = null,
     ): array {
         if (preg_match(self::KEY, $projectKey) !== 1) {
             throw new InvalidArgumentException('Invalid project key.');
@@ -63,12 +73,44 @@ final class Sidebar
             ];
         }
 
+        $collectionItems = [];
+        foreach ($collections as $collection) {
+            if (
+                !is_array($collection)
+                || !is_string($collection['key'] ?? null)
+                || !is_string($collection['name'] ?? null)
+                || !is_int($collection['count'] ?? null)
+            ) {
+                throw new InvalidArgumentException('The sidebar lists collections as key, name, and count.');
+            }
+            $key = $collection['key'];
+            if (preg_match(self::KEY, $key) !== 1) {
+                throw new InvalidArgumentException('Invalid collection key.');
+            }
+            $collectionItems[] = [
+                'name' => $collection['name'],
+                'count' => number_format(max(0, $collection['count'])),
+                'path' => "/projects/{$projectKey}/collections/{$key}",
+                'current' => $key === $currentCollectionKey,
+            ];
+        }
+        $newCollectionPath = null;
+        if ($newCollectionTableKey !== null) {
+            if (preg_match(self::KEY, $newCollectionTableKey) !== 1) {
+                throw new InvalidArgumentException('Invalid table key.');
+            }
+            $newCollectionPath = "/projects/{$projectKey}/tables/{$newCollectionTableKey}/collections/new";
+        }
+
         return [
             'projectName' => $projectName,
             'switchPath' => '/projects',
             'tables' => $items,
+            'collections' => $collectionItems,
+            'newCollectionPath' => $newCollectionPath,
             'schemaPath' => "/projects/{$projectKey}/tables",
             'trashCount' => number_format(max(0, $trashCount)),
+            'trashPath' => "/projects/{$projectKey}/trash",
             'data' => $canImportExport
                 ? ['importPath' => "/projects/{$projectKey}/import", 'exportPath' => "/projects/{$projectKey}/export"]
                 : null,

@@ -6,11 +6,11 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M3 CLOSED; M4 not started (needs a new maintainer instruction) |
-| Phase | Stopped at the end of M3 per the session plan (section 11); no agents running. Integration branch `claude/gifted-archimedes-ix5bwy` holds all of M0 to M3, pushed. Suite 8414 tests OK (1 skipped), lint 684 files 0 failed |
-| Window start | 2026-11-19 (window 5) |
+| Milestone | M3 CLOSED; M4 in progress (Phase 0 done; M4-D1 design next) |
+| Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
+| Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Stopped. On the maintainer's instruction to continue: design M4 (relation picker, attachment upload and serving, trash screen, saved collections) per orchestration section 3, starting with the carried-forward items in the M2 and M3 sections below. If resuming after a reclaim: rebuild the offline PHPUnit install and the OpenSpout vendor (orchestration 9; scratchpad `vendor-m3` and STEPS.txt); everything is pushed |
+| Next action | Dispatch M4-D1 (design tier, Opus floor met) to write `docs/specs/M4-core.md`, `docs/specs/M4-screens.md`, `docs/design/m4/`, ADRs 0018 and 0019, format version 4; then M4-R1 spec review; no work package before M4-R1 is merged (M4 session plan section 4). Build state is recorded here, not in a PROGRESS file. If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9: `composer install` in an empty scratch directory, strip `.git`, `tests`, `tools`, `build`, copy to `vendor/`, `composer dump-autoload`) |
 
 ### Phase 0 record (2026-11-19)
 

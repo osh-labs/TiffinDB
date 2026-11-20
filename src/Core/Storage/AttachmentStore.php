@@ -64,15 +64,20 @@ final class AttachmentStore
     /**
      * Puts the staged file at `attachments/<first 2>/<64>`. Must be called
      * inside this project's Database::write() (\LogicException otherwise).
+     * First the staged file is checked again, whoever built $upload: it
+     * must still be a regular file (not a link) whose size, SHA-256
+     * (hashed again, Fs::sha256), and MediaType::ofFile equal the upload's;
+     * else \RuntimeException, nothing moved (a swap after inspect is caught).
      * Nothing at the target: makes `attachments/` and the `<2>` folder
      * (0750) when absent, then Fs::moveIn (a rename on the same file
      * system; mode 0640), and returns true. A regular file at the target
-     * whose size equals the upload's: nothing is moved, the staged file is
-     * left for the caller to remove, and false is returned. Anything else
-     * at the target (a link, a folder, a different size), a folder on the
-     * way that is not a real directory, or a staged file that is no longer
-     * the regular file of the inspected size: \RuntimeException, nothing
-     * moved.
+     * of the upload's size whose own SHA-256 equals the hash: nothing is
+     * moved, the staged file is left for the caller to remove, and false is
+     * returned. A regular file of that size whose content does not match
+     * its name (damaged or planted; it is no row's content) is removed and
+     * the staged file moved in its place (true). Anything else at the
+     * target (a link, a folder, a different size), or a folder on the way
+     * that is not a real directory: \RuntimeException, nothing moved.
      *
      * When the move succeeds and the caller's transaction then rolls back,
      * the file stays as an orphan that the sweep removes (ADR 0018 decision
@@ -83,7 +88,9 @@ final class AttachmentStore
         $this->requireWrite($inWrite);
         $folder = $this->folderPath($upload->sha256);
         $target = $this->filePath($upload->sha256);
-        if (!Fs::isFile($upload->path) || Fs::size($upload->path) !== $upload->size) {
+        if (!Fs::isFile($upload->path) || Fs::size($upload->path) !== $upload->size
+            || !hash_equals($upload->sha256, Fs::sha256($upload->path))
+            || MediaType::ofFile($upload->path) !== $upload->mediaType) {
             throw new \RuntimeException('The staged file is not the inspected upload.');
         }
         foreach ([$this->root, $folder] as $directory) {
@@ -95,11 +102,13 @@ final class AttachmentStore
             }
         }
         if (Fs::exists($target)) {
-            if (Fs::isFile($target) && Fs::size($target) === $upload->size) {
+            if (!Fs::isFile($target) || Fs::size($target) !== $upload->size) {
+                throw new \RuntimeException('Something else is stored under the hash.');
+            }
+            if (hash_equals($upload->sha256, Fs::sha256($target))) {
                 return false;
             }
-
-            throw new \RuntimeException('Something else is stored under the hash.');
+            Fs::remove($target);
         }
         Fs::moveIn($upload->path, $target);
 

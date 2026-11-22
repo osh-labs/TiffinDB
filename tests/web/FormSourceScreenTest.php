@@ -162,6 +162,15 @@ final class FormSourceScreenTest extends TestCase
         self::assertSame(0, $this->xpath($this->page($this->t() . '/form/source'))->query('//div[contains(@class, "notice-warn")]')->length);
     }
 
+    public function testTheStoredTextsProblemLineIsEscaped(): void
+    {
+        // The malformed message holds "&lt;" and "&amp;" as text; printed raw it would read "<" and "&".
+        $this->setHtml("<div data-tiffin-form=\"1\">\n<p>Example</div>\n");
+        $x = $this->xpath($this->page($this->t() . '/form/source'));
+        $line = $this->texts($x, '//div[@class="notice notice-warn"]/p')[1] ?? '';
+        self::assertStringContainsString('write a less-than sign as &lt; and an ampersand as &amp;.', $line);
+    }
+
     public function testCheckReportsAndStoresNothing(): void
     {
         $before = $this->storedHtml();

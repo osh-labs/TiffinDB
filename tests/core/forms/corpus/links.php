@@ -84,4 +84,11 @@ return [
         'canonical' => C::canonical($link('https://example.com/')),
     ],
     $bad('L50', "https://example.com/\u{200B}"),
+    // L51 to L55: an apostrophe, written plainly or as a reference, is refused (P242), though the url type allows it;
+    // its percent-encoded form is an ordinary address.
+    $bad('L51', "https://example.com/a'b"),
+    $bad('L52', 'https://example.com/a&apos;b'),
+    $bad('L53', 'https://example.com/a&#39;b'),
+    $bad('L54', 'https://example.com/?q=it&#x27;s'),
+    $good('L55', 'https://example.com/it%27s'),
 ];

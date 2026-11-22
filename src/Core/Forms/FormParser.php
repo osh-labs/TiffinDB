@@ -90,6 +90,9 @@ final class FormParser
     private const UTF8_PREFIX = '/\A(?:[\x00-\x7F]|[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}'
         . '|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2})*+/';
 
+    /** libxml options of the reader: no network access; line numbers past 65,535. Nothing that loads or expands. */
+    private const READER_OPTIONS = LIBXML_NONET | LIBXML_BIGLINES;
+
     /** The text being walked (line breaks normalized), for start-tag lines. */
     private string $text = '';
 
@@ -159,20 +162,32 @@ final class FormParser
         if ($html === '') {
             throw new FormRejected(FormRejected::ROOT);
         }
-        $reader = \XMLReader::XML($html, 'UTF-8', LIBXML_NONET | LIBXML_BIGLINES);
-        if (!$reader instanceof \XMLReader) {
-            throw new FormRejected(FormRejected::MALFORMED);
-        }
+        $reader = self::reader($html);
         try {
-            $reader->setParserProperty(\XMLReader::LOADDTD, false);
-            $reader->setParserProperty(\XMLReader::DEFAULTATTRS, false);
-            $reader->setParserProperty(\XMLReader::VALIDATE, false);
-            $reader->setParserProperty(\XMLReader::SUBST_ENTITIES, false);
-
             return $this->walkNodes($reader);
         } finally {
             $reader->close();
         }
+    }
+
+    /**
+     * The reader over $html with the settings of section 3.3: no network
+     * access, and no DTD loading, validation, default attributes, or entity
+     * substitution. Kept separate so a test can check these settings on
+     * texts the pre-scan would refuse (FormParserTest).
+     */
+    private static function reader(string $html): \XMLReader
+    {
+        $reader = \XMLReader::XML($html, 'UTF-8', self::READER_OPTIONS);
+        if (!$reader instanceof \XMLReader) {
+            throw new FormRejected(FormRejected::MALFORMED);
+        }
+        $reader->setParserProperty(\XMLReader::LOADDTD, false);
+        $reader->setParserProperty(\XMLReader::DEFAULTATTRS, false);
+        $reader->setParserProperty(\XMLReader::VALIDATE, false);
+        $reader->setParserProperty(\XMLReader::SUBST_ENTITIES, false);
+
+        return $reader;
     }
 
     /** The line of the start tag of element number $index (1 for the root), or null when unknown. */

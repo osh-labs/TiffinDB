@@ -50,7 +50,7 @@ final class FormFixture
 
     public const HREFS = [
         'https://example.com/', 'https://example.com/a?b=1&c=2#d', 'http://192.0.2.10:8080/path', 'HTTPS://example.org/x',
-        'https://xn--r8jz45g.example/', "https://example.com/it's",
+        'https://xn--r8jz45g.example/', 'https://example.com/it%27s',
     ];
 
     private const ROLES = ['details', 'files', 'links', 'my-role-1', 'a', null];

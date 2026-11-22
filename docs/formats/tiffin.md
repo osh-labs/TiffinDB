@@ -591,7 +591,7 @@ A form says which fields of a table appear on the screen that shows one record, 
 | `img` | In the root or a `fieldset` | `src` (required): `attachment:` followed by an attachment `id` from `_tiffin_attachments`. `alt` (required): 0 to 200 characters. Placement attributes | Empty |
 | `strong`, `em` | Inline content | none | Inline content |
 | `br` | Inline content | none | Empty |
-| `a` | Inline content | `href` (required): an `http` or `https` address following the rules of the `url` field type (section 6) | Inline content other than `a` |
+| `a` | Inline content | `href` (required): an `http` or `https` address following the rules of the `url` field type (section 6), and holding no apostrophe `'` (write `%27`; provisional decision P242) | Inline content other than `a` |
 
 Inline content is text and the inline elements `strong`, `em`, `br`, and `a`. No other element and no other attribute is allowed anywhere: in particular no `class`, `id`, `style`, event attributes, `script`, `style`, `iframe`, `form`, or `input`.
 

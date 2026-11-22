@@ -12,13 +12,20 @@
  * label}), `state` (the list's view state, carried on every address),
  * `action` (path the form posts to), `version` (the version token; not
  * printed on a new record), `nodes` (the bound form, for the record-form
- * partials), `list` (path of the list), `cancelLabel` (plain text, the
- * shared "Cancel"), `trash` (path of the trash action, or null), `meta`
- * (null, or {added, addedBy, changed, changedBy} plain text, names null
- * when unknown).
+ * partials), `unlinkForms` (list of {key, action}: the unlink form of
+ * each many-link relation field with Unlink buttons, docs/design/m4/
+ * record-controls.md section 2), `from` (null, or {value, item, title}
+ * on a new record opened from a picker: the hidden `from` input and the
+ * lead), `list` (path of "Back to list" or "Cancel": the list, the
+ * collection, or the picker) and `listQuery` (its query), `cancelLabel`
+ * (plain text, the shared "Cancel"), `trash` (path of the trash action,
+ * or null), `meta` (null, or {added, addedBy, changed, changedBy} plain
+ * text, names null when unknown).
  *
  * The Save button sits outside the form and names it with
- * form="record-form"; the trash form is a separate form (no nested forms).
+ * form="record-form"; the trash form and the unlink forms are separate
+ * forms after it (no nested forms). The Unlink buttons inside the record
+ * form name their unlink form with `form`.
  */
 
 declare(strict_types=1);
@@ -27,7 +34,9 @@ declare(strict_types=1);
 <div class="page-head">
 <div>
 <h1><?= $this->e($data['heading']) ?></h1>
-<?php if ($data['isNew'] === true) : ?>
+<?php if ($data['isNew'] === true && is_array($data['from'])) : ?>
+<p class="lead"><?= $this->t('records.new.lead_from', ['item' => $data['from']['item'], 'title' => $data['from']['title']]) ?></p>
+<?php elseif ($data['isNew'] === true) : ?>
 <p class="lead"><?= $this->t('records.new.lead') ?></p>
 <?php elseif (is_string($data['lead'])) : ?>
 <p class="lead"><?= $this->e($data['lead']) ?></p>
@@ -52,6 +61,8 @@ declare(strict_types=1);
 <?= $this->partial('csrf') ?>
 <?php if ($data['isNew'] !== true) : ?>
 <input type="hidden" name="version" value="<?= $this->e($data['version']) ?>" />
+<?php elseif (is_array($data['from'])) : ?>
+<input type="hidden" name="from" value="<?= $this->e($data['from']['value']) ?>" />
 <?php endif; ?>
 <?php foreach ($data['nodes'] as $node) : ?>
 <?php if ($node['kind'] === 'section') : ?>
@@ -63,14 +74,20 @@ declare(strict_types=1);
 <?php endif; ?>
 <?php endforeach; ?>
 </form>
+<?php foreach ($data['unlinkForms'] as $unlink) : ?>
+<form class="unlink-form" id="<?= $this->id('unlink', $unlink['key']) ?>" method="post" action="<?= $this->url($unlink['action']) ?>">
+<?= $this->partial('csrf') ?>
+<input type="hidden" name="back" value="record" />
+</form>
+<?php endforeach; ?>
 <div class="record-actions">
 <div class="record-actions-main">
 <?php if ($data['isNew'] === true) : ?>
 <button class="button button-primary button-large" type="submit" form="record-form"><?= $this->t('records.create') ?></button>
-<a class="button button-large" href="<?= $this->url($data['list'], $data['state']) ?>"><?= $this->e($data['cancelLabel']) ?></a>
+<a class="button button-large" href="<?= $this->url($data['list'], $data['listQuery']) ?>"><?= $this->e($data['cancelLabel']) ?></a>
 <?php else : ?>
 <button class="button button-primary button-large" type="submit" form="record-form"><?= $this->t('records.save') ?></button>
-<a class="button button-large" href="<?= $this->url($data['list'], $data['state']) ?>"><?= $this->t('records.back') ?></a>
+<a class="button button-large" href="<?= $this->url($data['list'], $data['listQuery']) ?>"><?= $this->t('records.back') ?></a>
 <?php endif; ?>
 </div>
 <?php if (is_string($data['trash'])) : ?>

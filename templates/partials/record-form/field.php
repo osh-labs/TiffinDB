@@ -17,17 +17,22 @@
  *   error, then the radios.
  * - `checkbox`: `div.field` with the control (which prints its own
  *   wrapping label), then help and error.
- * - `auto_number`, `relation`, `attachment`: shown, never edited (P105):
- *   `p.label` with id('f', key), then the number, the linked records as
- *   links, or the file names as text.
+ * - `auto_number`, `relation`, `attachment`: never edited through the
+ *   form (P105): `p.label` with id('f', key) (and "(required)" for a
+ *   required relation or attachment field), help, errors, then the
+ *   number, or the controls of docs/design/m4/record-controls.md section
+ *   1: the link-control partial (one link), the link-rows partial (many
+ *   links), or the file-rows partial. The error summary links to the
+ *   `p.label`.
  *
  * Data: `node`, as RecordController::field() builds it: `control`,
  * `field` (FieldDef), `key`, `label`, `currencyName`, `text`,
  * `submitted`, `required`, `invalid`, `errors` (plain texts), `help`,
  * `hasHelp`, `duration` (null, `minutes`, or `seconds`), `describedBy`,
- * `spanFull`, `labelHidden`, `isNew`, `value`, `links` ({path, title}),
- * `linkedTable`, `files` ({name, type, size}). Every text is plain and is
- * escaped here.
+ * `spanFull`, `labelHidden`, `isNew`, `value`, `relation` (null, or the
+ * link-control data with `onlyOne` true, or the link-rows data with
+ * `onlyOne` false), `attachment` (null or the file-rows data). Every text
+ * is plain and is escaped here or in the partials.
  */
 
 declare(strict_types=1);
@@ -53,9 +58,9 @@ declare(strict_types=1);
 <?= $this->partial('field-input', $input) ?>
 <?php elseif ($node['control'] === 'auto_number' || $node['control'] === 'relation' || $node['control'] === 'attachment') : ?>
 <?php if ($node['labelHidden'] === true) : ?>
-<p class="label visually-hidden" id="<?= $this->id('f', $node['key']) ?>"><?= $this->e($node['label']) ?></p>
+<p class="label visually-hidden" id="<?= $this->id('f', $node['key']) ?>"><?= $this->e($node['label']) ?><?php if ($node['required'] === true) : ?> <span class="label-optional"><?= $this->t('input.required') ?></span><?php endif; ?></p>
 <?php else : ?>
-<p class="label" id="<?= $this->id('f', $node['key']) ?>"><?= $this->e($node['label']) ?></p>
+<p class="label" id="<?= $this->id('f', $node['key']) ?>"><?= $this->e($node['label']) ?><?php if ($node['required'] === true) : ?> <span class="label-optional"><?= $this->t('input.required') ?></span><?php endif; ?></p>
 <?php endif; ?>
 <?php endif; ?>
 <?php if ($node['hasHelp'] === true && $node['duration'] === 'seconds' && $node['help'] !== '') : ?>
@@ -78,23 +83,12 @@ declare(strict_types=1);
 <p class="static-value"><?= $this->t('input.auto_number_new') ?></p>
 <?php elseif ($node['control'] === 'auto_number') : ?>
 <p class="static-value"><?= $this->value($node['field'], $node['value']) ?></p>
-<?php elseif ($node['control'] === 'relation' && count($node['links']) > 0) : ?>
-<ul class="link-list">
-<?php foreach ($node['links'] as $link) : ?>
-<li class="link-row"><a href="<?= $this->url($link['path']) ?>"><?= $this->e($link['title']) ?></a></li>
-<?php endforeach; ?>
-</ul>
+<?php elseif ($node['control'] === 'relation' && $node['relation']['onlyOne'] === true) : ?>
+<?= $this->partial('link-control', $node['relation']) ?>
 <?php elseif ($node['control'] === 'relation') : ?>
-<p class="static-value"><?= $this->t('input.links.none') ?></p>
-<?php elseif ($node['control'] === 'attachment' && count($node['files']) > 0) : ?>
-<?php foreach ($node['files'] as $file) : ?>
-<div class="file-row"><span><?= $this->e($file['name']) ?></span> <span class="help"><?= $this->t('input.file.facts', ['type' => $file['type'], 'size' => $file['size']]) ?></span></div>
-<?php endforeach; ?>
+<?= $this->partial('link-rows', $node['relation']) ?>
 <?php elseif ($node['control'] === 'attachment') : ?>
-<p class="static-value"><?= $this->t('input.files.none') ?></p>
-<?php endif; ?>
-<?php if ($node['control'] === 'relation') : ?>
-<p class="help"><?= $this->t('input.links.help', ['table' => $node['linkedTable']]) ?></p>
+<?= $this->partial('file-rows', $node['attachment']) ?>
 <?php endif; ?>
 <?php if ($node['control'] === 'rating') : ?>
 </fieldset>

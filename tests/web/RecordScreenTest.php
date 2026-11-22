@@ -158,20 +158,20 @@ final class RecordScreenTest extends TestCase
         self::assertSame('email', $this->attr($x, $input('Contact'), 'type'));
         self::assertSame('tel', $this->attr($x, $input('Phone'), 'type'));
 
-        // Shown, never edited (P105).
+        // Shown, never edited through the form (P105); M4 controls (record-controls.md section 1).
         self::assertSame('Item number', $this->text($x, '//p[@class="label"][@id="f-' . $keys['Item number'] . '"]'));
         self::assertSame('1', $this->text($x, '//div[p[@id="f-' . $keys['Item number'] . '"]]/p[@class="static-value"]'));
-        self::assertSame(['Kitchen'], $this->texts($x, '//div[p[@id="f-' . $keys['Room'] . '"]]/ul[@class="link-list"]/li[@class="link-row"]/a'));
+        self::assertSame('Kitchen', $this->text($x, '//div[p[@id="f-' . $keys['Room'] . '"]]/div[@class="link-control"]/a[@class="link-chosen"]'));
         self::assertSame($this->p('/tables/' . $keys['rooms'] . '/records/' . $kitchen), $this->attr($x, '//div[p[@id="f-' . $keys['Room'] . '"]]//a', 'href'));
         self::assertSame('Linked to the Rooms table.', $this->text($x, '//div[p[@id="f-' . $keys['Room'] . '"]]/p[@class="help"]'));
         self::assertSame(
             'receipt-stand-mixer.pdf (PDF, 84 KB)',
-            $this->text($x, '//div[p[@id="f-' . $keys['Receipt'] . '"]]/div[@class="file-row"]'),
+            $this->text($x, '//div[p[@id="f-' . $keys['Receipt'] . '"]]/ul[@class="file-list"]/li[@class="file-row"]/span[@class="file-name"]'),
         );
-        self::assertSame('(PDF, 84 KB)', $this->text($x, '//div[@class="file-row"]/span[@class="help"]'));
+        self::assertSame('(PDF, 84 KB)', $this->text($x, '//li[@class="file-row"]/span[@class="file-name"]/span[@class="file-facts"]'));
         self::assertSame('No files', $this->text($x, '//div[p[@id="f-' . $keys['Photo'] . '"]]/p[@class="static-value"]'));
         self::assertSame(1, $x->query('//p[@class="label visually-hidden"][@id="f-' . $keys['Warranties'] . '"]')->length, 'The only slot of a links section hides its label.');
-        self::assertSame(['Warranty 1'], $this->texts($x, '//div[p[@id="f-' . $keys['Warranties'] . '"]]//li/a'), 'Untitled links show "{Item} {id}".');
+        self::assertSame(['Warranty 1'], $this->texts($x, '//div[p[@id="f-' . $keys['Warranties'] . '"]]//li//a'), 'Untitled links show "{Item} {id}".');
         self::assertSame(0, $x->query('//form[@id="record-form"]//*[@name="f_' . $keys['Room'] . '" or @name="f_' . $keys['Receipt'] . '" or @name="f_' . $keys['Item number'] . '"]')->length);
 
         // Actions and meta line.
@@ -185,7 +185,8 @@ final class RecordScreenTest extends TestCase
             'Added today by Example Admin. Last changed today by Example Admin. Records in the trash can be restored.',
             $this->text($x, '//p[@class="record-meta"]'),
         );
-        self::assertSame(0, $x->query('//form[@id="record-form"]//button')->length, 'The Save button is outside the form.');
+        self::assertSame(0, $x->query('//form[@id="record-form"]//button[not(@form)]')->length, 'The Save button is outside the form.');
+        self::assertSame(0, $x->query('//form[@id="record-form"]//button[@form="record-form"]')->length, 'Only Unlink buttons, owned by their unlink forms, sit inside it.');
         self::assertSame(0, $x->query('//form//form')->length);
         self::assertSame(
             $this->ops->records()->screen($this->admin(), $this->project, $this->items, (string) $id, ListRequest::none())->version,
@@ -215,7 +216,15 @@ final class RecordScreenTest extends TestCase
         self::assertSame(0, $x->query('//input[@checked]')->length - 1, 'Only "Not rated" starts checked.');
         self::assertSame('', $this->attr($x, '//input[@checked="checked"]', 'value'));
         self::assertSame('', $this->attr($x, '//input[@id="f-' . $this->name . '"]', 'value'));
-        self::assertSame('No linked records', $this->text($x, '//div[p[@id="f-' . $keys['Room'] . '"]]/p[@class="static-value"]'));
+        // Links and files come after the first save (record-controls.md section 6, M4 D-38).
+        self::assertSame(0, $x->query('//div[p[@id="f-' . $keys['Room'] . '"]]/div[@class="link-control"]')->length);
+        self::assertSame(
+            ['Linked to the Rooms table.', 'You can choose one once this record is saved.'],
+            $this->texts($x, '//div[p[@id="f-' . $keys['Room'] . '"]]/p[@class="help"]'),
+        );
+        self::assertSame(['You can add links once this record is saved.'], $this->texts($x, '//div[p[@id="f-' . $keys['Warranties'] . '"]]/p[@class="help"]'));
+        self::assertSame(['You can add files once this record is saved.'], $this->texts($x, '//div[p[@id="f-' . $keys['Receipt'] . '"]]/p[@class="help"]'));
+        self::assertSame(0, $x->query('//p[contains(@class, "leave-note")] | //form[@class="unlink-form"] | //a[contains(@href, "/links/")] | //a[contains(@href, "/files/")]')->length);
     }
 
     public function testPositionAndNeighboursFollowTheListState(): void

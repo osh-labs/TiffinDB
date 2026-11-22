@@ -27,8 +27,10 @@ require_once __DIR__ . '/RecordsFixture.php';
  * T-RUL-11 (`docs/specs/M4-core.md` sections 5.5 and 12.3): query plans of
  * a 10-rule `any` collection with every operator family, on a fixture of
  * 20,000 items and 500 rooms joined by a many relation ("Stored in") and
- * a one relation ("Room"), each item linked once through each. With the
- * statistics ANALYZE writes, and again with forged statistics that make
+ * a one relation ("Room"), each item linked once through each. With no
+ * statistics at all (no sqlite_stat1, as a project that was never
+ * analysed; P181), with the statistics ANALYZE writes, and again with
+ * forged statistics that make
  * the trash indexes look selective (the M3 lesson, RecordsJoinOrderTest),
  * every relation subquery finds its join row by its key on r."id" and
  * the other record by its primary key: no SCAN of a join table or of the
@@ -126,6 +128,8 @@ final class RulePlanTest extends TestCase
     public function testTenRuleAnyCollectionPlans(): void
     {
         $times = ['items' => self::ITEMS, 'rooms' => self::ROOMS];
+        self::assertNull($this->db->value("SELECT name FROM sqlite_master WHERE name = 'sqlite_stat1'"), 'The fixture starts without statistics.');
+        $this->checkPlans($times, 'no statistics');
         $this->db->run('ANALYZE');
         $this->checkPlans($times, 'analyzed');
         $this->forgeStatistics();

@@ -12,7 +12,7 @@ M5 gives Admins a simple form editor (reorder, show and hide, width, grouping, l
 
 - ADR 0014 decision 4 stands for every path: the record screen, the editor, the source view, upload, download, archive import, and a project file edited by hand. `Core\Forms\FormParser` refuses a whole form on the first rule break; nothing is stripped, repaired, or kept from a refused form. There is no second, lenient path.
 - The typed "safe HTML" value that ADR 0008 decision 4 reserved is **not** introduced in v1. No markup from outside the templates reaches a page, so the type would only add a way around the template rule. The reservation in ADR 0008 is withdrawn for v1; M8 may reopen it only by a new ADR.
-- Form text reaches a page in exactly one place: as the escaped text content of the source view's `textarea`, and of nothing else. It is never placed in an attribute, never in markup, and never in a response other than the download of decision 8.
+- Form text reaches a page in exactly two places, both escaped and both on Admin-only pages: as the text content of the source view's `textarea`, and as the `value` of the editor's hidden `draft` field (decision 12), which holds the canonical text of the working copy and is parsed again when it comes back. It is never placed in any other attribute, never in markup, and never in a response other than the download of decision 8.
 
 ### 2. Problems are reported with a line, never with content in logs
 
@@ -20,7 +20,7 @@ M5 gives Admins a simple form editor (reorder, show and hide, width, grouping, l
 
 ### 3. Stored-text rule
 
-Every write of a form stores `serialize(parse(text))`: the canonical text of `FormSerializer`. Comments, spacing, attribute quoting, attribute order, character references, and a leading byte order mark are not kept; the source view says so before and after a save. Property: the stored text parses, and serializing it again gives the same bytes. Two forms with the same meaning therefore always have the same stored text, which makes "editor output equals hand-editable HTML" exact: the editor, the source view, and an uploaded file all produce the same bytes for the same form.
+Every write of a form stores `serialize(parse(text))`: the canonical text of `FormSerializer`. Comments, spacing, attribute quoting, attribute order, character references, and a leading byte order mark are not kept; the source view says so before and after a save. Property: the stored text parses, and serializing it again gives the same bytes. Because the canonical text can be longer than the text typed (quotes in text become references), a save whose canonical text would exceed the format's 262,144 bytes is refused, so a stored form always parses again. For the same reason of exact round trips, the parser also refuses Unicode noncharacters, which the page escaper would replace when the text passes through the source view or the editor's hidden working copy. Two forms with the same meaning therefore always have the same stored text, which makes "editor output equals hand-editable HTML" exact: the editor, the source view, and an uploaded file all produce the same bytes for the same form.
 
 ### 4. Links (settles ADR 0009 E2 for links)
 

@@ -4,7 +4,7 @@ Standing rules for the agent that coordinates the v1 build. `CLAUDE.md` override
 
 ## 1. Role
 
-The orchestrator delivers milestones M2 to M5 and then M7 of `docs/plan.md` (M0 and M1 are closed; see the ledger) by delegating design, coding, and review to subagents, integrating their work, and keeping the ledger current. It does not write application code or read large files itself. M6 is deferred until the maintainer returns discovery output. M8 and M9 are post-v1 and need an explicit maintainer instruction.
+The orchestrator delivers milestones M5 and M7 of `docs/plan.md` (M0 to M4 are closed; see the ledger; the session plan is `docs/build/M5-M7-session-plan.md`) by delegating design, coding, and review to subagents, integrating their work, and keeping the ledger current. It does not write application code or read large files itself. M6 is deferred to the end by maintainer instruction; its plan is `docs/build/M6-handoff-plan.md`. M8 and M9 are post-v1 and need an explicit maintainer instruction.
 
 ## 2. Tiers
 

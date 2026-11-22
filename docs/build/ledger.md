@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | Security review of WP4 and wave 4 merged (suite and lint green at merge). Running: WP9; WP4 follow-up (P187 items 1 and 2). Next: merge both, then M4-X exit audit (remove nothing else; check nosniff and sandbox CSP on image-signature-plus-HTML files, spec 8.1 wording, P183). Rebuild the trimmed vendor if the container was reclaimed (orchestration 9) |
+| Next action | Security review of WP4 and wave 4 merged (suite and lint green at merge). Running: WP9; WP4 follow-up (P187 items 1 and 2). Next: merge both, then M4-X exit audit (remove nothing else; check nosniff and sandbox CSP on image-signature-plus-HTML files, spec 8.1 wording, P183). Rebuild the trimmed vendor if the container was reclaimed (orchestration 9). One unidentified single-test failure occurred once on the merged suite at the security-review merge (9428 tests, 1 failure) and did not recur on an immediate rerun (9428 OK, 1 skipped); the failing test was not captured. M4-X must hunt it (repeat full runs, keep the failure output); tests must be deterministic |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

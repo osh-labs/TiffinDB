@@ -1,6 +1,6 @@
 # ADR 0022: Snapshot restore, project deletion, the audit-log screen, and Admin recovery
 
-Status: Accepted (provisional, awaiting maintainer confirmation). Settles the P49 items assigned to M7 (P170): snapshot restore, project deletion, and the audit-log screen; and Admin recovery without shell access (P27, P49; `docs/build/M5-M7-session-plan.md` section 3 row 6, applied as its default). Settles section 8.2 rows 6 to 8 and 10 of that plan. Adds a project lock (new), the snapshot reason `pre-restore`, the staging kinds `restores` and `deleted`, and the audit actions `snapshot.restored`, `project.deleted`, `auth.recovery_started`, and `auth.recovered` (amends ADR 0012 decisions 3 and 4, and P127). No project format step and no system schema step. Provisional decisions P220 to P228 (`docs/specs/M7-release.md` section 20). The implementation design is `docs/specs/M7-release.md` and `docs/specs/M7-screens.md`; screens are in `docs/design/m7/`.
+Status: Accepted (provisional, awaiting maintainer confirmation). Settles the P49 items assigned to M7 (P170): snapshot restore, project deletion, and the audit-log screen; and Admin recovery without shell access (P27, P49; `docs/build/M5-M7-session-plan.md` section 3 row 6, applied as its default). Settles section 8.2 rows 6 to 8 and 10 of that plan. Adds a project lock (new), the snapshot reason `pre-restore`, the staging kinds `restores` and `deleted`, and the audit actions `snapshot.restored`, `project.deleted`, `auth.recovery_started`, and `auth.recovered` (amends ADR 0012 decisions 3 and 4, and P127). No project format step and no system schema step. Provisional decisions P220 to P228, and the spec review rulings P237 to P241 (`docs/specs/M7-release.md` section 20). The implementation design is `docs/specs/M7-release.md` and `docs/specs/M7-screens.md`; screens are in `docs/design/m7/`.
 
 ## Context
 
@@ -36,7 +36,9 @@ Deletion is for Admins (`project.manage`) through a confirmation page that state
 1. The registry row is set to the new state `deleting`, so from then on the project is "not found" for everyone and is listed nowhere.
 2. Under the exclusive lock, the project folder (checked to be a directory and not a symbolic link) is renamed to `<data>/staging/deleted/<key>/`. If that rename fails, the state goes back to `active` and the page says the project could not be deleted; nothing is removed.
 3. The registry row is deleted; its grants go with it (`ON DELETE CASCADE`, as built); audit rows keep their entries with the project left empty (`ON DELETE SET NULL`, as built).
-4. The folder in the staging area is removed with the existing staging-only recursive removal (P127), which never follows a link. A removal that fails part-way is finished by the staging sweep. A `deleting` row left by a process that died is finished by the sweep that already clears stale `creating` rows.
+4. The folder in the staging area is removed with the existing staging-only recursive removal (P127), which never follows a link. A removal that fails part-way is finished by the staging sweep. A `deleting` row left by a process that died is finished by the sweep that already clears stale `creating` rows, which runs when a project is created and also with the staging sweep (P238).
+
+A project whose folder is missing from the data folder can still be deleted: there is nothing to lock, move, or remove, so only the registry row, its grants, and the audit entry are handled (P239). Anything else at the folder path, a symbolic link included, is refused as before.
 
 This keeps the one rule that allows recursive removal (inside the staging area only) instead of adding a second one for project folders, which the session plan proposed (amending P64 and P127). The move is the only operation on the live folder, and it is atomic. There is no trash for projects in v1. `project.deleted` keeps the deleted project's name in its detail, so the audit-log screen can still say which project it was.
 
@@ -51,6 +53,7 @@ Admins only (`audit.view`). Newest first, 50 entries per page, filtered by perso
 - A code is valid for 30 minutes and is used at most once. Starting again while a valid code exists does not replace it. After 5 wrong attempts the code file is deleted. Attempts are throttled by address and in total with the sign-in throttle's rules. Codes are compared with `hash_equals`. A code is never shown in a page, a log line, or an audit entry.
 - Every outcome other than success shows the same message, whether the username is unknown, belongs to a Member, belongs to an inactive account, or the code is wrong or expired, and the password is hashed in every case so the timing does not differ. Password rules are checked first and reported, because they depend only on what was typed.
 - The start page says the same thing whether or not a code file was written, and never shows a path. Starting is throttled in total with the sign-in throttle's rules (5 starts, then a growing wait) and audited as `auth.recovery_started` with no acting person.
+- The attempt and start limits count every visitor together, so a visitor without file access can delay recovery by using them up (which also deletes the code file). This is accepted (P237): a limit per address would need TiffinDB to trust proxy headers, and the visitor gains nothing else. The host documentation says so and names the other ways back in.
 - An operator who does not want this path sets `admin_recovery` to false in `config/local.php`; the link and the pages then do not exist (404). The host documentation also recommends a second Admin account.
 - No system schema change: the code lives in the file; attempts use the existing throttle table.
 
@@ -63,7 +66,8 @@ A visitor without file access learns nothing and changes nothing except the exis
 ## Consequences
 
 - Every project request takes one `flock` on one file in the project folder. Restore and deletion wait for running requests to finish, at most 10 seconds, and otherwise answer busy. Hosts whose file system does not support locks cannot restore or delete in the browser; they can still restore and delete by hand.
-- A restore can be undone by restoring its `pre-restore` snapshot, except for attachment files swept by the restore. The confirmation page says how many files the restore will delete.
+- A restore can be undone by restoring its `pre-restore` snapshot, except for attachment files swept by the restore. The confirmation page says how many files the restore will delete. This is accepted as designed and stays on the maintainer's list (P241).
+- The application version becomes `1.0.0-rc.1` only in the hand-over build commit (P240, ADR 0021 decision 5).
 - Deleting a project is irreversible inside TiffinDB. The archive offer and the typed name are the safeguards.
 - Restore and deletion are audited; the audit log is visible to Admins.
 - A lone Admin can recover without a shell, provided someone can read one file in the data folder.

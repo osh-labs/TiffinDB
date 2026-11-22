@@ -30,7 +30,7 @@ A release rules check fails the build, and a repository test fails the suite, wh
 
 ### 5. Versions (P216)
 
-The application version is `config/app.php` `version`, already used in asset addresses (ADR 0008). It follows semantic versioning. The release candidate built at the end of M7 part 1 is `1.0.0-rc.1` (later candidates `-rc.2` and so on); the final build commit sets `1.0.0`. The build tool refuses a version ending in `-dev` unless told it is a test build. `CHANGELOG.md` starts at 1.0.0. Creating a git tag or a hosted release is the maintainer's alone (session plan section 3 row 7).
+The application version is `config/app.php` `version`, already used in asset addresses (ADR 0008). It follows semantic versioning. The release candidate built at the end of M7 part 1 is `1.0.0-rc.1` (later candidates `-rc.2` and so on), set in the hand-over build commit after every part 1 package is merged, not earlier (P240); the final build commit sets `1.0.0`. The build tool refuses a version ending in `-dev` unless told it is a test build. `CHANGELOG.md` starts at 1.0.0. Creating a git tag or a hosted release is the maintainer's alone (session plan section 3 row 7).
 
 ### 6. Upgrade path (P217, P218, P219)
 

@@ -496,4 +496,97 @@ final class FormParserTest extends TestCase
             self::assertSame([$reason, 70001], [$far->reason, $far->formLine]);
         }
     }
+
+    // ------------------------------------------------------------ reader settings (review M5-R-WP1)
+
+    /** The reader the parser opens, on a text the pre-scan would refuse, with libxml errors collected. */
+    private static function openReader(string $text): \XMLReader
+    {
+        $reader = (new \ReflectionMethod(FormParser::class, 'reader'))->invoke(null, $text);
+        self::assertInstanceOf(\XMLReader::class, $reader);
+
+        return $reader;
+    }
+
+    /**
+     * Every node type, value, and attribute the reader yields for $text.
+     *
+     * @return array{types: list<int>, text: string}
+     */
+    private static function readAll(\XMLReader $reader): array
+    {
+        $types = [];
+        $text = '';
+        $previous = libxml_use_internal_errors(true);
+        try {
+            for ($n = 0; $n < 1000 && $reader->read(); $n++) {
+                $types[] = $reader->nodeType;
+                $text .= '|' . $reader->name . '=' . $reader->value;
+                if ($reader->hasAttributes && $reader->moveToFirstAttribute()) {
+                    do {
+                        $text .= '|@' . $reader->name . '=' . $reader->value;
+                    } while ($reader->moveToNextAttribute());
+                    $reader->moveToElement();
+                }
+            }
+            foreach (libxml_get_errors() as $error) {
+                $text .= '|!' . $error->message;
+            }
+        } finally {
+            $reader->close();
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+
+        return ['types' => $types, 'text' => $text];
+    }
+
+    public function testReaderOptionsHoldNoNetAndNothingThatLoadsOrExpands(): void
+    {
+        $options = (new \ReflectionClassConstant(FormParser::class, 'READER_OPTIONS'))->getValue();
+        self::assertIsInt($options);
+        self::assertSame(LIBXML_NONET, $options & LIBXML_NONET);
+        foreach ([LIBXML_NOENT, LIBXML_DTDLOAD, LIBXML_DTDATTR, LIBXML_DTDVALID, LIBXML_XINCLUDE, LIBXML_PARSEHUGE] as $flag) {
+            self::assertSame(0, $options & $flag);
+        }
+        $reader = self::openReader(self::wrap(''));
+        try {
+            foreach ([\XMLReader::LOADDTD, \XMLReader::DEFAULTATTRS, \XMLReader::VALIDATE, \XMLReader::SUBST_ENTITIES] as $property) {
+                self::assertFalse($reader->getParserProperty($property), 'Parser property ' . $property);
+            }
+        } finally {
+            $reader->close();
+        }
+    }
+
+    public function testReaderDoesNotSubstituteInternalEntities(): void
+    {
+        $read = self::readAll(self::openReader('<!DOCTYPE div [<!ENTITY y "SYNTHETIC-MARKER-0002">]>' . self::wrap('<p>&y;</p>')));
+        self::assertContains(\XMLReader::ENTITY_REF, $read['types']);
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0002', $read['text']);
+    }
+
+    public function testReaderLoadsNoExternalDtd(): void
+    {
+        $this->temp = TempDir::create();
+        $dtd = $this->temp->path('form.dtd');
+        file_put_contents($dtd, '<!ENTITY z "SYNTHETIC-MARKER-0003"><!ATTLIST p data-x CDATA "SYNTHETIC-MARKER-0004">');
+        $read = self::readAll(self::openReader('<!DOCTYPE div SYSTEM "file://' . $dtd . '">' . self::wrap('<p>&z;</p>')));
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0003', $read['text']);
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0004', $read['text']);
+        self::assertStringNotContainsString('data-x', $read['text']);
+    }
+
+    public function testLinkNodesRefuseAnApostrophe(): void
+    {
+        foreach (["https://example.com/a'b", "https://example.com/?q='"] as $href) {
+            try {
+                new Link($href, []);
+                self::fail('The link was built: ' . $href);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame('https://example.com/it%27s', (new Link('https://example.com/it%27s', []))->href);
+    }
 }

@@ -75,10 +75,16 @@ final class FormRules
         return !Text::hasControl($text, true, true) && preg_match(self::NOT_XML, $text) !== 1;
     }
 
-    /** An address the url field type accepts by its strict rules, given exactly (no white space around it). */
+    /**
+     * An address the url field type accepts by its strict rules, given
+     * exactly (no white space around it), and holding no apostrophe: the url
+     * type allows `'`, but a form link may not hold one (provisional
+     * decision P242), so every address a form can hold is one the page's
+     * form-link helper prints.
+     */
     public static function isHref(string $href): bool
     {
-        if ($href === '' || !Text::isUtf8($href) || Text::trim($href) !== $href) {
+        if ($href === '' || !Text::isUtf8($href) || Text::trim($href) !== $href || str_contains($href, "'")) {
             return false;
         }
         $checked = (new UrlType())->parse($href, [], false);

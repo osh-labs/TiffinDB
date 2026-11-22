@@ -6,11 +6,11 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M4 CLOSED 2026-11-22; M5 not started (needs a new maintainer instruction) |
-| Phase | Stopped at the end of M4 per the session plan (section 10); no agents running. Integration branch `claude/wizardly-allen-m81ni0` holds all of M0 to M4, pushed. Suite 9498 tests OK (1 skipped), lint 786 files 0 failed |
-| Window start | 2026-11-20 (window 6) |
-| Resume reminder | none armed |
-| Next action | Stopped. On the maintainer's instruction to continue: design M5 (form editor sanitizer; M5 is the next security-heavy design). Deferred maintainer tasks unchanged: legacy-format discovery run (`tools/discovery/`) and reference-host check (`tools/host-check/`, includes direct web access to `attachments/` and upload limits). Open for M5: whether form images keep attachments alive. M6: deferred to near the end by maintainer instruction (2026-11-22), likely for another developer; order is M5, M7 part 1, M6, M7 part 2; its plan is `docs/build/M6-handoff-plan.md`. The only real legacy file is about 12 GB as a zip (maintainer statement), above every current size limit; that plan designs for it and adds a maintainer trial gate. Open for M7: P49 items (P170), repeated failed upgrade snapshots (P183), overlong file name loses extension (P187). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9); everything is pushed. Proposed session plan for M5 and M7 (awaiting the maintainer's go-ahead): `docs/build/M5-M7-session-plan.md` |
+| Milestone | M4 CLOSED 2026-11-22; M5 starting (session plan approved by the maintainer) |
+| Phase | Phase 0 (resume set-up) of `docs/build/M5-M7-session-plan.md` section 5 done. The M0 to M4 work is carried on the assigned integration branch `claude/determined-johnson-d3rjl1`. Suite 9498 tests OK (1 skipped), lint 786 files 0 failed |
+| Window start | 2026-11-22 (assigned integration branch `claude/determined-johnson-d3rjl1`) |
+| Resume reminder | none armed (not armed in Phase 0) |
+| Next action | M5-D1 design (form editor, source editing, sanitizer; spec outputs in session plan 6.1). M6 is deferred to the end by maintainer instruction; its plan is `docs/build/M6-handoff-plan.md`. Session plan `docs/build/M5-M7-session-plan.md` approved. Deferred maintainer tasks unchanged: legacy-format discovery run (`tools/discovery/`) and reference-host check (`tools/host-check/`, includes direct web access to `attachments/` and upload limits). Open for M5: whether form images keep attachments alive. M6 order: deferred to near the end by maintainer instruction (2026-11-22), likely for another developer; order is M5, M7 part 1, M6, M7 part 2; its plan is `docs/build/M6-handoff-plan.md`. The only real legacy file is about 12 GB as a zip (maintainer statement), above every current size limit; that plan designs for it and adds a maintainer trial gate. Open for M7: P49 items (P170), repeated failed upgrade snapshots (P183), overlong file name loses extension (P187). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9); everything is pushed. |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

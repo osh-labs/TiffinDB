@@ -58,7 +58,7 @@ A visitor without file access learns nothing and changes nothing except the exis
 
 ### 6. About page
 
-`/about`, for every signed-in person: the version, the licence, the "Source code" link, the third-party components and their licences (from `config/notices.php`, each licence text on its own page), and the plugins from the plugin registry. Admins also see the PHP and SQLite versions. The footer of the signed-in shell links to it.
+`/about`, for every signed-in person: the version, the licence, the "Source code" link, the third-party components and their licences (from `config/notices.json`, each licence text on its own page), and the plugins from the plugin registry. Admins also see the PHP and SQLite versions. The footer of the signed-in shell links to it.
 
 ## Consequences
 

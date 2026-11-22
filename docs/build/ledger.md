@@ -6,17 +6,17 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M3 CLOSED; M4 in progress (Phase 0 done; M4-D1 design next) |
-| Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
+| Milestone | M4 CLOSED 2026-11-22; M5 not started (needs a new maintainer instruction) |
+| Phase | Stopped at the end of M4 per the session plan (section 10); no agents running. Integration branch `claude/wizardly-allen-m81ni0` holds all of M0 to M4, pushed. Suite 9498 tests OK (1 skipped), lint 786 files 0 failed |
 | Window start | 2026-11-20 (window 6) |
-| Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | All M4 work packages and follow-ups merged (P188 fixed). Dispatching M4-X exit audit (Opus) against plan sections 2 and 7: matrix re-run, hostile-upload corpus, v3 to v4 upgrade, round trip, keyboard-only runs, mutation checks, visual at 1360 and 390 px in four themes and 320 px Largest, nosniff and sandbox CSP on image-signature-plus-HTML, spec 8.1 wording, P183, hunt the flaky test; then as-built notes, ledger close, one notification. Rebuild the trimmed vendor if the container was reclaimed (orchestration 9) |
+| Resume reminder | none armed |
+| Next action | Stopped. On the maintainer's instruction to continue: design M5 (form editor sanitizer; M5 is the next security-heavy design). Deferred maintainer tasks unchanged: legacy-format discovery run (`tools/discovery/`) and reference-host check (`tools/host-check/`, includes direct web access to `attachments/` and upload limits). Open for M5: whether form images keep attachments alive. Open for M7: P49 items (P170), repeated failed upgrade snapshots (P183), overlong file name loses extension (P187). If resuming after a reclaim: rebuild the trimmed vendor (orchestration 9); everything is pushed |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |
 | M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
 | M3 | CLOSED 2026-11-19 (independent exit audit; no blocking findings; MEDIUM repository-rule finding fixed) | See M3 exit results below |
-| M4 | not started | |
+| M4 | CLOSED 2026-11-22 (independent exit audit; no blocking findings; one flaky-test cause and one scanner gap fixed) | See M4 exit results below |
 | M5 | not started | |
 | M6 | deferred (awaiting maintainer discovery output) | |
 | M7 | not started | |
@@ -500,3 +500,27 @@ Independent design-tier exit audit on the integration branch (all M3 packages an
 Open low items carried forward (none blocking): "Check again" loses a table name typed before switching to an existing target and back (WP9/WP8); the report's "Rows" column is right-aligned like the count column (WP3/WP9); a CSV over 200 columns or with a record over 1 MiB shows "uses something TiffinDB cannot read yet" instead of the column-limit message (WP1/WP4); no test pins the XLSX early stop on size lies (WP5); `@` operators remain outside the rule's scope in `tools/host-check/host-check.php` (22, M0/M3-WP0 tool) and `tools/discovery/discover-structure.php` (15, M0 discovery tool deferred to the maintainer); replacement counts for UTF-16 and Windows-1252 do not reach the review warning (contract limitation); XLSX late-skip timing (a worst-case chunk can exceed the 5-second budget, bounded by the verified sheet size and the 100,000-row cap) deferred to the maintainer's host check.
 
 Not verified in M3: `.htaccess` behaviour on a real Apache server (host check); manual screen-reader pass; commit and archive-rebuild times on a shared host.
+
+### M4 exit results
+
+Independent design-tier exit audit on the integration branch (all M4 packages and review follow-ups merged; audit branch `claude/wizardly-allen-m81ni0--M4-X`). Suite: `composer test` OK (9498 tests, 1 skipped: no comma-decimal locale); `composer lint` 786 files, 0 failed. Report: `docs/build/reviews/M4-exit-audit.md`. Evidence in the session scratchpad (not committed).
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Suite and lint | PASS | As above; 12 further full runs (5 in order, 4 random order, 3 with JUnit logs, some two at a time under load) |
+| Relations: linked records editable from a form by keyboard only; control matches `record.html` | PASS | Auditor's key-presses-only run on a real installation (picker with find, unlink, link, add a new warranty and link it), also with JavaScript off; deviations D-31 to D-38, D-47 |
+| Attachments: access control (plan 5.3); control matches the mock-up | PASS | All 10 matrix rows re-run at request level on the built-in server (row 10 there only; Apache is the host check); exact ADR 0018 headers on all 51 files |
+| Hostile uploads | PASS | HTML, SVG with script, PNG signature plus HTML (image/png inline, nosniff, sandbox CSP), path separators, control and bidi characters, invalid UTF-8, NUL, 1,000-character name, zero bytes, at and one byte over the PHP cap and the 64 MiB core cap: every refusal leaves no file, row, or staging folder |
+| Failed upload leaves no file and no row | PASS | Refusals leave nothing; an injected database failure after placement leaves no row and an orphan file that the next upload's sweep removes (ADR 0018 decision 6) |
+| Saved collections: archive round trip; editor matches `collection.html` | PASS | Rows, links, collections equal; 66 files hash-equal; deviations D-39 to D-44 |
+| Trash: restore and empty by keyboard only; files freed | PASS | Member restore and restore all, Admin empty with 1 record and 2 files stated; both files gone from disk |
+| Version 3 to 4 | PASS | File made with the pre-WP10 code: one `format-upgrade` snapshot, statements of format 11.3 exactly, data unchanged, opens with plain PDO and Python sqlite3 |
+| Visual V-20 to V-25 | PASS | 17 screens, 153 states (1360 and 390 px in four themes, 320 px Largest): no sideways scroll, no inline code |
+| Tests not vacuous | PASS | 23 of 23 security mutations killed (CSRF, grant and servable checks, rule parentheses, nosniff, sandbox, inline types, name cleaning, hash check, size checks, trash and file deletion, LIKE escaping, picker exclusion, Admin-only empty) |
+| Repository rules | PASS (one low finding) | SPDX on all 117 new files; no names, emails, employers; dependencies unchanged. F-4 (model tier named in section 1) fixed at close |
+| Flaky test | FOUND, FIXED | `EndToEndTest` compared the whole working tree, so an edit by another process during the run (for example the ledger) failed one test once: now checks a private copy of the application root. T-ATT-8 depended on a 200 ms timing window: now asserts the order of events. Assertion total varies by one with git-ignored files (`RepoFilesTest` walk), harmless |
+| Spec 8.1 wording (P183) | FIXED | As-built note, M4-core section 17 |
+
+Fixes made by M4-X: F-1 `Listings::count` SQL moved to `Records::countMatching` with a new scanner test; F-2 and F-3 test determinism; as-built notes in M4-core section 17 and M4-screens section 13.3.
+
+Not verified in M4: manual screen-reader pass; `.htaccess` behaviour on a real Apache server and the host's upload limits (host check); native file dialog; browsers other than Chromium.

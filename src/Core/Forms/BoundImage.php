@@ -22,6 +22,7 @@ final class BoundImage implements BoundNode
         public readonly string $alt,
         public readonly bool $servable,
         public readonly ?Placement $placement = null,
+        public readonly ?string $span = null,
     ) {
         if ($attachmentId < 1) {
             throw new \InvalidArgumentException('The attachment id must be 1 or more.');
@@ -31,5 +32,10 @@ final class BoundImage implements BoundNode
     public function kind(): string
     {
         return 'image';
+    }
+
+    public function span(): ?string
+    {
+        return $this->span;
     }
 }

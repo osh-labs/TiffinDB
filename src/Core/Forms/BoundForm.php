@@ -8,11 +8,15 @@ declare(strict_types=1);
 
 namespace TiffinDB\Core\Forms;
 
-/** A form joined with field definitions and values (M2 spec section 5.7). */
+/**
+ * A form joined with field definitions and values (M2 spec section 5.7).
+ * columns: a root node has a span of 1 to 12, so the root is laid out in
+ * twelve columns (M5 spec section 8).
+ */
 final class BoundForm
 {
     /** @param list<BoundNode> $nodes */
-    public function __construct(public readonly array $nodes)
+    public function __construct(public readonly array $nodes, public readonly bool $columns = false)
     {
     }
 

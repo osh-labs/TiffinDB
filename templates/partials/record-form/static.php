@@ -8,8 +8,9 @@
  * or a form image the core found servable (docs/design/m4/
  * record-controls.md section 1): `img.file-image` from the serving route.
  * Inline content goes through the form-inline partial (text escaped;
- * `strong`, `em`, `br` as themselves; links as their text only). Other
- * kinds print nothing.
+ * `strong`, `em`, `br` as themselves; links as `a.form-link`, M5 spec
+ * part 2 section 6.3). Other kinds print nothing. In column mode the
+ * record-form/cell partial wraps the block.
  *
  * Data: `node` = {kind: 'heading', level: 2|3, children} | {kind:
  * 'paragraph', children} | {kind: 'divider'} | {kind: 'image', src (the

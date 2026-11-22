@@ -282,6 +282,7 @@ final class RecordController
             'isNew' => $screen->isNew,
             'version' => $version ?? $screen->version ?? '',
             'nodes' => $nodes,
+            'columns' => $form !== null && $form->columns === true,
             'unlinkForms' => self::unlinkForms($nodes),
             'from' => $from,
             'list' => $list,
@@ -364,6 +365,8 @@ final class RecordController
 
     /**
      * The bound form's nodes as plain arrays for the record-form partials.
+     * Every node carries `span` (the bound node's span, or null) and every
+     * section `columns` (M5 spec part 2 section 6.2).
      *
      * @param list<object> $nodes BoundNode values
      * @param array<string, array{name: string, item: string}> $tables table key => names
@@ -375,28 +378,31 @@ final class RecordController
         $list = [];
         foreach ($nodes as $node) {
             $kind = $node->kind();
+            $span = self::span($node->span ?? null);
             if ($kind === 'section') {
                 $list[] = [
                     'kind' => 'section',
                     'legend' => $node->legend,
                     'grid' => $node->grid === true,
+                    'columns' => $node->columns === true,
                     'spanFull' => $node->spanFull === true,
+                    'span' => $span,
                     'children' => $this->nodes($node->children, $screen, $tables),
                 ];
             } elseif ($kind === 'field') {
                 $field = $this->field($node, $screen, $tables);
                 if ($field !== null) {
-                    $list[] = $field;
+                    $list[] = $field + ['span' => $span];
                 }
             } elseif ($kind === 'heading') {
-                $list[] = ['kind' => 'heading', 'level' => $node->level === 3 ? 3 : 2, 'children' => self::inlines($node->children)];
+                $list[] = ['kind' => 'heading', 'level' => $node->level === 3 ? 3 : 2, 'children' => self::inlines($node->children), 'span' => $span];
             } elseif ($kind === 'paragraph') {
-                $list[] = ['kind' => 'paragraph', 'children' => self::inlines($node->children)];
+                $list[] = ['kind' => 'paragraph', 'children' => self::inlines($node->children), 'span' => $span];
             } elseif ($kind === 'divider') {
-                $list[] = ['kind' => 'divider'];
+                $list[] = ['kind' => 'divider', 'span' => $span];
             } elseif ($kind === 'image' && $node->servable === true) {
                 // A form image the core found servable (P173): shown from the serving route.
-                $list[] = ['kind' => 'image', 'src' => self::filePath($project, (int) $node->attachmentId), 'alt' => (string) $node->alt];
+                $list[] = ['kind' => 'image', 'src' => self::filePath($project, (int) $node->attachmentId), 'alt' => (string) $node->alt, 'span' => $span];
             }
         }
 
@@ -563,9 +569,17 @@ final class RecordController
         ];
     }
 
+    /** A bound node's span as the cell partial reads it: '1' to '12', 'full', or null. */
+    private static function span(mixed $span): ?string
+    {
+        return is_string($span) && preg_match('/^(?:[1-9]|1[0-2]|full)\z/', $span) === 1 ? $span : null;
+    }
+
     /**
      * Inline nodes of a stored form as the form-inline partial's arrays.
-     * Unknown kinds are dropped.
+     * A link carries its `href` (M5 spec part 2 section 6.3) and is
+     * dropped when its converted text holds nothing but white space (a
+     * link with no text is not written). Unknown kinds are dropped.
      *
      * @param list<object> $inlines
      * @return list<array<string, mixed>>
@@ -577,14 +591,38 @@ final class RecordController
             $kind = $inline->kind();
             if ($kind === 'text') {
                 $list[] = ['kind' => 'text', 'text' => (string) $inline->text];
-            } elseif ($kind === 'strong' || $kind === 'em' || $kind === 'link') {
+            } elseif ($kind === 'strong' || $kind === 'em') {
                 $list[] = ['kind' => $kind, 'children' => self::inlines($inline->children)];
+            } elseif ($kind === 'link') {
+                $children = self::inlines($inline->children);
+                if (preg_match('/\S/u', self::inlineText($children)) === 1) {
+                    $list[] = ['kind' => 'link', 'href' => (string) $inline->href, 'children' => $children];
+                }
             } elseif ($kind === 'br') {
                 $list[] = ['kind' => 'br'];
             }
         }
 
         return $list;
+    }
+
+    /**
+     * The text of converted inline nodes, joined.
+     *
+     * @param list<array<string, mixed>> $nodes
+     */
+    private static function inlineText(array $nodes): string
+    {
+        $text = '';
+        foreach ($nodes as $node) {
+            if ($node['kind'] === 'text') {
+                $text .= (string) $node['text'];
+            } elseif (isset($node['children']) && is_array($node['children'])) {
+                $text .= self::inlineText($node['children']);
+            }
+        }
+
+        return $text;
     }
 
     /**

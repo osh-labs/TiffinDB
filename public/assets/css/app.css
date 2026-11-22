@@ -2537,3 +2537,231 @@ li.link-row .linked-main a {
 .unlink-form {
   margin: 0;
 }
+
+/*
+ * M5: forms (docs/design/m5/components.md sections 1 to 6 and 8; M5 spec
+ * part 2 section 8). Layout comes from the classes the templates write,
+ * never from the stored data-tiffin-* attributes. Design px at the
+ * Standard text size, written in rem (px / 18).
+ */
+
+/* 1. Layouts */
+.page.page-form {
+  gap: 1.3333rem;
+  max-width: var(--width-wide);
+  padding: 1.1111rem 1.1111rem 2.6667rem;
+}
+
+.page.page-form.page-form-narrow {
+  max-width: var(--width-form);
+}
+
+/* 2. Widths on the record form: one column until the container is 40rem wide */
+.form-area {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.form-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1111rem;
+  align-items: start;
+}
+
+.cell {
+  min-width: 0;
+}
+
+@container (min-width: 40rem) {
+  .form-cols {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .form-cols > .cell {
+    grid-column: span 12;
+  }
+
+  .form-cols > .span-1 {
+    grid-column: span 1;
+  }
+
+  .form-cols > .span-2 {
+    grid-column: span 2;
+  }
+
+  .form-cols > .span-3 {
+    grid-column: span 3;
+  }
+
+  .form-cols > .span-4 {
+    grid-column: span 4;
+  }
+
+  .form-cols > .span-5 {
+    grid-column: span 5;
+  }
+
+  .form-cols > .span-6 {
+    grid-column: span 6;
+  }
+
+  .form-cols > .span-7 {
+    grid-column: span 7;
+  }
+
+  .form-cols > .span-8 {
+    grid-column: span 8;
+  }
+
+  .form-cols > .span-9 {
+    grid-column: span 9;
+  }
+
+  .form-cols > .span-10 {
+    grid-column: span 10;
+  }
+
+  .form-cols > .span-11 {
+    grid-column: span 11;
+  }
+
+  .form-cols > .span-12 {
+    grid-column: span 12;
+  }
+}
+
+/* 3. Links in forms: the link style, visited not distinguished */
+.form-link,
+.form-link:visited {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.form-link:hover {
+  color: var(--ink);
+}
+
+/* 4. Form tools navigation */
+.form-tabs {
+  min-width: 0;
+}
+
+.form-tabs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4444rem 0.8889rem;
+  margin: 0 0 1.3333rem;
+  padding: 0;
+  list-style: none;
+}
+
+.form-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 0.7778rem;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+}
+
+.form-tab[aria-current="page"] {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+/* 5. Editor rows */
+.form-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6667rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6667rem;
+  min-width: 0;
+  padding: 0.8889rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.form-row.form-row-section {
+  border-width: 2px;
+  background: var(--sunk);
+}
+
+.form-row.form-row-missing {
+  border-style: dashed;
+}
+
+.form-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2222rem 0.6667rem;
+}
+
+.form-row-name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.form-row-kind {
+  color: var(--ink2);
+}
+
+.form-row-summary {
+  margin: 0;
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.form-row-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.6667rem), 1fr));
+  gap: 0.6667rem 1.1111rem;
+}
+
+.form-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4444rem 0.6667rem;
+}
+
+.help.form-row-note {
+  margin: 0;
+}
+
+.form-rows.form-row-children {
+  margin-top: 0.2222rem;
+  padding-left: 0.8889rem;
+  border-left: 3px solid var(--line);
+}
+
+/* 6. Report */
+.panel.form-report {
+  gap: 0.5556rem;
+}
+
+.form-report-list {
+  margin: 0;
+  padding-left: 1.3333rem;
+}
+
+/* 7. Source text area: the device monospace font (components.md section 6) */
+.input.source-input {
+  width: 100%;
+  min-height: 30rem;
+  overflow: auto;
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.8889rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}

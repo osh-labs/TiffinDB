@@ -5,7 +5,8 @@
  *
  * Table fields (docs/design/m1/schema-editor.md section 5): the fields in
  * order with their move buttons, the table settings form, and the way to
- * delete the table. The layout prints the breadcrumb, the flash notice,
+ * delete the table. The page head's second action, "Edit the form",
+ * opens the form editor (docs/design/m5/components.md section 7). The layout prints the breadcrumb, the flash notice,
  * and the error summary (table settings) before this.
  *
  * Data: `table` {name}, `lead` (plain text), `base` (the table's path),
@@ -20,6 +21,7 @@ declare(strict_types=1);
 ?>
 <?= $this->partial('page-head', ['title' => $data['table']['name'], 'lead' => $data['lead'], 'actions' => [
     ['label' => 'schema.fields.add', 'path' => $data['base'] . '/fields/new', 'primary' => true],
+    ['label' => 'forms.entry', 'path' => $data['base'] . '/form', 'primary' => false],
 ]]) ?>
 <section class="section" aria-labelledby="fields-title">
 <h2 class="section-title" id="fields-title"><?= $this->t('schema.fields.title') ?></h2>

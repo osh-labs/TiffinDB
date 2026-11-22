@@ -12,7 +12,8 @@
  * label}), `state` (the list's view state, carried on every address),
  * `action` (path the form posts to), `version` (the version token; not
  * printed on a new record), `nodes` (the bound form, for the record-form
- * partials), `unlinkForms` (list of {key, action}: the unlink form of
+ * partials), `columns` (bool: the root is in column mode, M5 spec part 2
+ * section 6.2), `unlinkForms` (list of {key, action}: the unlink form of
  * each many-link relation field with Unlink buttons, docs/design/m4/
  * record-controls.md section 2), `from` (null, or {value, item, title}
  * on a new record opened from a picker: the hidden `from` input and the
@@ -64,15 +65,7 @@ declare(strict_types=1);
 <?php elseif (is_array($data['from'])) : ?>
 <input type="hidden" name="from" value="<?= $this->e($data['from']['value']) ?>" />
 <?php endif; ?>
-<?php foreach ($data['nodes'] as $node) : ?>
-<?php if ($node['kind'] === 'section') : ?>
-<?= $this->partial('record-form/section', ['node' => $node]) ?>
-<?php elseif ($node['kind'] === 'field') : ?>
-<?= $this->partial('record-form/field', ['node' => $node]) ?>
-<?php else : ?>
-<?= $this->partial('record-form/static', ['node' => $node]) ?>
-<?php endif; ?>
-<?php endforeach; ?>
+<?= $this->partial('record-form/blocks', ['nodes' => $data['nodes'], 'columns' => $data['columns']]) ?>
 </form>
 <?php foreach ($data['unlinkForms'] as $unlink) : ?>
 <form class="unlink-form" id="<?= $this->id('unlink', $unlink['key']) ?>" method="post" action="<?= $this->url($unlink['action']) ?>">

@@ -17,7 +17,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
 | M3 | CLOSED 2026-11-19 (independent exit audit; no blocking findings; MEDIUM repository-rule finding fixed) | See M3 exit results below |
 | M4 | CLOSED 2026-11-22 (independent exit audit; no blocking findings; one flaky-test cause and one scanner gap fixed) | See M4 exit results below |
-| M5 | not started | |
+| M5 | IN PROGRESS: design (M5-D1) and spec review (M5-R1) merged; G-spec open 2026-11-22; wave 1 (WP1, WP2, WP3) dispatching. Provisional decisions P189 to P212 are recorded in `docs/specs/M5-forms.md` section 15 and ADR 0020 (P197 reverses the M3 import behaviour that restored hidden required fields; P208 to P212 are the review rulings) | Specs: `docs/specs/M5-forms.md`, `M5-screens.md`; designs `docs/design/m5/` |
 | M6 | deferred to near the end (maintainer instruction); awaiting maintainer discovery output | Plan: `docs/build/M6-handoff-plan.md` |
 | M7 | not started | |
 | M8 | post-v1, gated | |

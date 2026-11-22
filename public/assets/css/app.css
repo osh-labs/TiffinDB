@@ -2752,6 +2752,36 @@ li.link-row .linked-main a {
   border-left: 3px solid var(--line);
 }
 
+/*
+ * Narrow rows (320 px at Largest text): each row is a container, so a
+ * nested row's buttons never run past its border. They may shrink and
+ * wrap; a narrow section indents its rows less and pads them less.
+ */
+.form-row {
+  container-type: inline-size;
+}
+
+.form-row-actions > .button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 15rem) {
+  .form-row-actions > .button {
+    padding: 0 var(--space-2);
+  }
+
+  .form-rows.form-row-children {
+    padding-left: var(--space-2);
+  }
+
+  .form-row-children > .form-row {
+    padding: var(--space-3);
+  }
+}
+
 /* 6. Report */
 .panel.form-report {
   gap: 0.5556rem;

@@ -42,7 +42,7 @@ The page holds one `form#form-editor` (POST to the editor URL) around everything
    - Label: `label.label` `for` `id('label', path)` `forms.row.label` "Label"; `input.input` `type="text"` `name="label[{path}]"` `id` `id('label', path)` `maxlength="60"` value = the typed text (after a problem) or the slot's label or empty; `aria-describedby` `editor-help` and, with a problem, its error id; the error under it (`field-error`). Its accessible name is "Label for {field}" through `aria-label` `forms.row.label_aria` (the visible "Label" is its start).
    - Width: `label.label` `for` `id('width', path)` `forms.row.width` "Width"; `select.input` `name="width[{path}]"` with options `auto` "Automatic", `full` "Full width", `two-thirds` "Two thirds", `half` "Half", `one-third` "One third", and, only when the stored span is another value, `other` "As in the source: {span} of 12 columns" (selected); `aria-label` `forms.row.width_aria` "Width of {field}".
 3. `p.form-row-note` `forms.row.placed` when the block carries `data-tiffin-col` or `data-tiffin-row`.
-4. `.form-row-actions`: "Move up" (`do=up-{path}`, `aria-label` "Move {field} up"), "Move down" (`do=down-{path}`), "Hide" (`do=hide-{path}`, `aria-label` "Hide {field}"). A move that cannot happen (first row up, last row down) is not shown.
+4. `.form-row-actions`: "Move up" (`do=up-{path}`, `aria-label` "Move up: {field}"; the visible text starts the name, WCAG 2.5.3), "Move down" (`do=down-{path}`), "Hide" (`do=hide-{path}`, `aria-label` "Hide {field}"). A move that cannot happen (first row up, last row down) is not shown.
 
 A relation or attachment field is a field row like any other.
 
@@ -55,7 +55,7 @@ A relation or attachment field is a field row like any other.
 `li.form-row.form-row-section` `id` = `id('row', path)`:
 
 1. `.form-row-head`: `span.form-row-kind` "Section"; `span.form-row-name` the legend or `forms.row.section_unnamed` "Section {number}, no name".
-2. Section name: `label.label` `for` `id('legend', path)` "Section name"; `input.input` `name="legend[{path}]"` `maxlength="100"`, `aria-label` "Name of section {number}"; error under it.
+2. Section name: `label.label` `for` `id('legend', path)` "Section name"; `input.input` `name="legend[{path}]"` `maxlength="100"`, `aria-label` "Section name, section {number}" (the label starts the name); error under it.
 3. `.form-row-actions`: Move up, Move down (whole section), `forms.row.ungroup` "Remove section" (`do=ungroup-{path}`, `aria-label` "Remove section {name} and keep what is in it").
 4. `ol.form-rows.form-row-children` with the child rows, or `p.form-row-note` `forms.row.empty_section` "This section is empty."
 

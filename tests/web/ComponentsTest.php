@@ -1683,7 +1683,7 @@ final class ComponentsTest extends TestCase
             /** @var DOMElement $button */
             self::assertSame(['aria-label', 'class', 'name', 'type', 'value'], array_values(array_diff(array_keys(self::attributes($button)), ['autofocus'])));
             self::assertSame(['button button-plain', 'submit', 'do'], [$button->getAttribute('class'), $button->getAttribute('type'), $button->getAttribute('name')]);
-            self::assertStringStartsWith(explode(' ', self::norm($button->textContent))[0] . ' ', $button->getAttribute('aria-label'), 'The accessible name starts with the visible verb.');
+            self::assertStringStartsWith(self::norm($button->textContent), $button->getAttribute('aria-label'), 'The accessible name starts with the visible text (WCAG 2.5.3).');
             $list[] = $button->getAttribute('value') . '|' . self::norm($button->textContent) . '|' . $button->getAttribute('aria-label');
         }
 
@@ -1741,7 +1741,7 @@ final class ComponentsTest extends TestCase
         self::assertSame(['half'], array_map(static fn (DOMElement $e): string => $e->getAttribute('value'), iterator_to_array($xpath->query($li . '//select/option[@selected="selected"]'))));
         self::assertSame(0, $xpath->query($li . '//p[contains(@class, "form-row-note")]')->length);
         self::assertSame(
-            ['up-2|Move up|Move Price up', 'down-2|Move down|Move Price down', 'hide-2|Hide|Hide Price'],
+            ['up-2|Move up|Move up: Price', 'down-2|Move down|Move down: Price', 'hide-2|Hide|Hide Price'],
             self::buttons($xpath, $li),
         );
         self::assertSame(0, $xpath->query('//*[@autofocus]')->length, 'No autofocus without a focus.');
@@ -1764,8 +1764,8 @@ final class ComponentsTest extends TestCase
         self::assertSame('editor-help err-label-1-1', $input->getAttribute('aria-describedby'));
         self::assertSame('true', $input->getAttribute('aria-invalid'));
         self::assertSame('Labels can be at most 60 characters.', self::one($xpath, $first . '//p[@class="error-text"][@id="err-label-1-1"]')->textContent);
-        self::assertSame(['down-1-1|Move down|Move Name down', 'hide-1-1|Hide|Hide Name'], self::buttons($xpath, $first), 'No Move up on the first row.');
-        self::assertSame(['up-1-2|Move up|Move Name up', 'hide-1-2|Hide|Hide Name'], self::buttons($xpath, '//li[@id="row-1-2"]'), 'No Move down on the last row.');
+        self::assertSame(['down-1-1|Move down|Move down: Name', 'hide-1-1|Hide|Hide Name'], self::buttons($xpath, $first), 'No Move up on the first row.');
+        self::assertSame(['up-1-2|Move up|Move up: Name', 'hide-1-2|Hide|Hide Name'], self::buttons($xpath, '//li[@id="row-1-2"]'), 'No Move down on the last row.');
         $focused = $xpath->query('//*[@autofocus]');
         self::assertSame(1, $focused->length);
         self::assertSame('up-1-2', $focused->item(0)?->attributes?->getNamedItem('value')?->nodeValue);
@@ -1804,7 +1804,7 @@ final class ComponentsTest extends TestCase
         $legend = self::one($xpath, $section . '/div[@class="form-row-inputs"]//input');
         self::assertSame([
             'aria-describedby' => 'editor-help',
-            'aria-label' => 'Name of section 1',
+            'aria-label' => 'Section name, section 1',
             'class' => 'input',
             'id' => 'legend-1',
             'maxlength' => '100',
@@ -1814,16 +1814,16 @@ final class ComponentsTest extends TestCase
         ], self::attributes($legend));
         self::assertSame('Section name', self::one($xpath, $section . '//label[@for="legend-1"]')->textContent);
         self::assertSame(
-            ['down-1|Move down|Move Where it is down', 'ungroup-1|Remove section|Remove section Where it is and keep what is in it'],
+            ['down-1|Move down|Move down: Where it is', 'ungroup-1|Remove section|Remove section Where it is and keep what is in it'],
             self::buttons($xpath, $section),
         );
         $children = $section . '/ol[@class="form-rows form-row-children"]';
         self::assertSame(['row-1-1', 'row-1-2'], array_map(static fn (DOMElement $e): string => $e->getAttribute('id'), iterator_to_array($xpath->query($children . '/li'))));
-        self::assertSame(['down-1-1|Move down|Move Room down', 'hide-1-1|Hide|Hide Room'], self::buttons($xpath, $children . '/li[@id="row-1-1"]'));
+        self::assertSame(['down-1-1|Move down|Move down: Room', 'hide-1-1|Hide|Hide Room'], self::buttons($xpath, $children . '/li[@id="row-1-1"]'));
         $missing = $children . '/li[@class="form-row form-row-missing"][@id="row-1-2"]';
         self::assertSame(['zzzzzzzzzzzz'], self::texts($xpath, $missing . '/div[@class="form-row-head"]/span[@class="form-row-name"]'));
         self::assertSame(['This field is no longer in the table. It shows nothing.'], self::texts($xpath, $missing . '/p[@class="help form-row-note"]'));
-        self::assertSame(['up-1-2|Move up|Move zzzzzzzzzzzz up', 'remove-1-2|Remove|Remove zzzzzzzzzzzz'], self::buttons($xpath, $missing));
+        self::assertSame(['up-1-2|Move up|Move up: zzzzzzzzzzzz', 'remove-1-2|Remove|Remove zzzzzzzzzzzz'], self::buttons($xpath, $missing));
         self::assertSame(0, $xpath->query($missing . '//input | ' . $missing . '//select')->length);
 
         $empty = '//li[@id="row-2"]';
@@ -1831,13 +1831,13 @@ final class ComponentsTest extends TestCase
         self::assertSame(['This section is empty.'], self::texts($xpath, $empty . '/p[@class="help form-row-note"]'));
         self::assertSame(0, $xpath->query($empty . '/ol')->length);
         self::assertSame(
-            ['up-2|Move up|Move Section 2, no name up', 'ungroup-2|Remove section|Remove section Section 2, no name and keep what is in it'],
+            ['up-2|Move up|Move up: Section 2, no name', 'ungroup-2|Remove section|Remove section Section 2, no name and keep what is in it'],
             self::buttons($xpath, $empty),
         );
         $focused = $xpath->query('//*[@autofocus]');
         self::assertSame(1, $focused->length);
         self::assertSame('legend-2', $focused->item(0)?->attributes?->getNamedItem('id')?->nodeValue);
-        self::assertSame('Name of section 2', $focused->item(0)?->attributes?->getNamedItem('aria-label')?->nodeValue);
+        self::assertSame('Section name, section 2', $focused->item(0)?->attributes?->getNamedItem('aria-label')?->nodeValue);
     }
 
     public function testSectionNameProblem(): void
@@ -1868,11 +1868,11 @@ final class ComponentsTest extends TestCase
         self::assertSame(['Placed by the source. Shown in reading order.'], self::texts($xpath, '//li[@id="row-1"]/p[@class="help form-row-note"]'));
         self::assertSame(['This picture is not shown: its file is not a picture attached to a record.'], self::texts($xpath, '//li[@id="row-4"]/p[@class="help form-row-note"]'));
         self::assertSame(0, $xpath->query('//li[@id="row-5"]/p[@class="help form-row-note"]')->length);
-        self::assertSame(['down-1|Move down|Move Heading ' . self::HOSTILE . ' down', 'remove-1|Remove|Remove Heading ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-1"]'));
-        self::assertSame(['up-2|Move up|Move Text Keep the box up', 'down-2|Move down|Move Text Keep the box down', 'remove-2|Remove|Remove Text Keep the box'], self::buttons($xpath, '//li[@id="row-2"]'));
-        self::assertSame(['up-3|Move up|Move Divider up', 'down-3|Move down|Move Divider down', 'remove-3|Remove|Remove Divider'], self::buttons($xpath, '//li[@id="row-3"]'), 'A static row without a name is named by its kind.');
-        self::assertSame(['up-4|Move up|Move Picture A <b>photo</b> up', 'down-4|Move down|Move Picture A <b>photo</b> down', 'remove-4|Remove|Remove Picture A <b>photo</b>'], self::buttons($xpath, '//li[@id="row-4"]'));
-        self::assertSame(['up-5|Move up|Move Picture up', 'remove-5|Remove|Remove Picture'], self::buttons($xpath, '//li[@id="row-5"]'));
+        self::assertSame(['down-1|Move down|Move down: Heading ' . self::HOSTILE, 'remove-1|Remove|Remove Heading ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-1"]'));
+        self::assertSame(['up-2|Move up|Move up: Text Keep the box', 'down-2|Move down|Move down: Text Keep the box', 'remove-2|Remove|Remove Text Keep the box'], self::buttons($xpath, '//li[@id="row-2"]'));
+        self::assertSame(['up-3|Move up|Move up: Divider', 'down-3|Move down|Move down: Divider', 'remove-3|Remove|Remove Divider'], self::buttons($xpath, '//li[@id="row-3"]'), 'A static row without a name is named by its kind.');
+        self::assertSame(['up-4|Move up|Move up: Picture A <b>photo</b>', 'down-4|Move down|Move down: Picture A <b>photo</b>', 'remove-4|Remove|Remove Picture A <b>photo</b>'], self::buttons($xpath, '//li[@id="row-4"]'));
+        self::assertSame(['up-5|Move up|Move up: Picture', 'remove-5|Remove|Remove Picture'], self::buttons($xpath, '//li[@id="row-5"]'));
     }
 
     public function testHostileRowNamesAreEscapedOnce(): void
@@ -1885,7 +1885,7 @@ final class ComponentsTest extends TestCase
         self::assertSame([self::HOSTILE, self::HOSTILE], self::texts($xpath, '//li[@id="row-7"]/div[@class="form-row-head"]/span[position() < 3]'));
         self::assertSame('Label for ' . self::HOSTILE, self::one($xpath, '//input[@id="label-7"]')->getAttribute('aria-label'));
         self::assertSame('Width of ' . self::HOSTILE, self::one($xpath, '//select[@id="width-7"]')->getAttribute('aria-label'));
-        self::assertSame(['up-7|Move up|Move ' . self::HOSTILE . ' up', 'down-7|Move down|Move ' . self::HOSTILE . ' down', 'hide-7|Hide|Hide ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-7"]'));
+        self::assertSame(['up-7|Move up|Move up: ' . self::HOSTILE, 'down-7|Move down|Move down: ' . self::HOSTILE, 'hide-7|Hide|Hide ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-7"]'));
         self::assertSame(self::HOSTILE, self::one($xpath, '//input[@id="legend-8"]')->getAttribute('value'));
         self::assertSame([self::HOSTILE], self::texts($xpath, '//li[@id="row-8"]/div[@class="form-row-head"]/span[@class="form-row-name"]'));
     }

@@ -99,7 +99,7 @@ Strings of the partial (in `strings/en/forms.php`, WP3):
 | `forms.row.label` | Label |
 | `forms.row.label_aria` | Label for {field} |
 | `forms.row.legend` | Section name |
-| `forms.row.legend_aria` | Name of section {number} |
+| `forms.row.legend_aria` | Section name, section {number} |
 | `forms.row.width` | Width |
 | `forms.row.width_aria` | Width of {field} |
 | `forms.width.auto` | Automatic |
@@ -109,9 +109,9 @@ Strings of the partial (in `strings/en/forms.php`, WP3):
 | `forms.width.one-third` | One third |
 | `forms.width.other` | As in the source: {span} of 12 columns |
 | `forms.row.up` | Move up |
-| `forms.row.up_aria` | Move {name} up |
+| `forms.row.up_aria` | Move up: {name} |
 | `forms.row.down` | Move down |
-| `forms.row.down_aria` | Move {name} down |
+| `forms.row.down_aria` | Move down: {name} |
 | `forms.row.hide` | Hide |
 | `forms.row.hide_aria` | Hide {field} |
 | `forms.row.remove` | Remove |

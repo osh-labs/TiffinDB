@@ -498,7 +498,46 @@ final class JsonExportFormatTest extends TestCase
             $path = $this->temp->path(str_replace('/', '-', $ref) . '-without');
             $exporter->write(ExportSourceBuilder::build($this->db, $this->schema(), $this->types, $tableKey, $this->clock, self::APP_VERSION), $exporter->settings($scope), $path);
             self::assertNotSame('', $with[$ref]);
-            self::assertSame(hash('sha256', $with[$ref]), hash('sha256', (string) file_get_contents($path)), $ref);
+            $without = (string) file_get_contents($path);
+            if ($ref === 'export/csv') {
+                self::assertSame(hash('sha256', $with[$ref]), hash('sha256', $without), $ref);
+            } else {
+                // The XLSX writer stamps docProps/core.xml and the zip entries with the real clock, so two
+                // files written a second apart differ there: compare every part's content instead.
+                $parts = self::xlsxParts($with[$ref]);
+                self::assertArrayHasKey('xl/workbook.xml', $parts);
+                self::assertSame($parts, self::xlsxParts($without), $ref);
+            }
         }
+    }
+
+    /**
+     * The parts of an XLSX file: entry name => content, in name order, with
+     * the creation and change times in docProps/core.xml blanked.
+     *
+     * @return array<string, string>
+     */
+    private static function xlsxParts(string $bytes): array
+    {
+        $path = (string) tempnam(sys_get_temp_dir(), 'tiffindb-xlsx-');
+        file_put_contents($path, $bytes);
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($path, \ZipArchive::RDONLY));
+        $parts = [];
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = (string) $zip->getNameIndex($i);
+                $parts[$name] = (string) $zip->getFromIndex($i);
+            }
+        } finally {
+            $zip->close();
+            unlink($path);
+        }
+        if (isset($parts['docProps/core.xml'])) {
+            $parts['docProps/core.xml'] = (string) preg_replace('~(<dcterms:(?:created|modified)\b[^>]*>)[^<]*~', '$1', $parts['docProps/core.xml']);
+        }
+        ksort($parts);
+
+        return $parts;
     }
 }

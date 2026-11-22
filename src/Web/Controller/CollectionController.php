@@ -238,11 +238,20 @@ final class CollectionController
             $sorts[] = ['token' => $option->token, 'label' => $listController->sortLabel($option), 'selected' => $option->token === $editor->sort];
         }
 
-        $title = $editor->key === null ? $view->text('collections.new.title') : $editor->name;
-        $crumb = $editor->key === null ? $view->text('collections.new.crumb') : $view->text('collections.crumb', ['name' => $editor->name]);
+        // The title, heading, and breadcrumb name the collection as stored,
+        // not the draft: a redisplayed draft may hold an empty or refused
+        // name (P188).
+        if ($editor->key === null) {
+            $title = $view->text('collections.new.title');
+            $crumb = $view->text('collections.new.crumb');
+        } else {
+            $stored = $this->context->services()->operations()->collections()->deleteScreen($actor, $project->key, $editor->key)->name;
+            $title = $stored;
+            $crumb = $view->text('collections.crumb', ['name' => $stored]);
+        }
 
         return $this->context->page('collections/editor', [
-            'title' => $title === '' ? $view->text('collections.new.title') : $title,
+            'title' => $title,
             'layout' => 'collection',
             'breadcrumb' => [
                 ['label' => $project->name, 'path' => '/projects/' . $project->key],
@@ -250,7 +259,7 @@ final class CollectionController
                 ['label' => $crumb, 'path' => null],
             ],
             'problems' => $summary,
-            'heading' => $title === '' ? $view->text('collections.new.title') : $title,
+            'heading' => $title,
             'action' => $path === null ? $tablePath . '/collections' : $path . '/edit',
             'name' => $editor->name,
             'nameError' => $nameError,

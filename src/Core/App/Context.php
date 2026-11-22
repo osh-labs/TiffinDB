@@ -241,7 +241,8 @@ final class Context
      *
      * Each structural change regenerates the default forms of the tables
      * it touches inside its own transaction (M2 spec section 5.6): an
-     * exception from the regeneration rolls the whole change back.
+     * exception from the regeneration rolls the whole change back. An
+     * edited form gains only the fields the change added (M5 spec section 7.2).
      */
     public function editor(ProjectRecord $project, Database $db, Actor $actor): SchemaEditor
     {
@@ -256,8 +257,8 @@ final class Context
             function (SnapshotInfo $info) use ($project, $actor): void {
                 $this->recordSnapshot($project, $actor, $info);
             },
-            function (Database $db, array $tableKeys): void {
-                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys));
+            function (Database $db, array $tableKeys, array $addedFieldKeys = []): void {
+                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys), array_values($addedFieldKeys));
             },
         );
     }

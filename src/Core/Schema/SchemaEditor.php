@@ -70,13 +70,15 @@ final class SchemaEditor
     /** True for the copy within() returns. */
     private bool $joined = false;
 
-    /** @var \Closure(Database, list<string>): void */
+    /** @var \Closure(Database, list<string>, list<string>): void */
     private readonly \Closure $afterChange;
 
     /**
      * @param \Closure(SnapshotInfo): void $onSnapshot
-     * @param (\Closure(Database, list<string>): void)|null $afterChange called inside each structural change with the
-     *     keys of the tables whose forms may change; Core\App passes one that regenerates their forms
+     * @param (\Closure(Database, list<string>, list<string>): void)|null $afterChange called inside each structural
+     *     change with the keys of the tables whose forms may change and the keys of the fields the change added
+     *     (addField: the new field; addRelation: the new field and its reverse field; otherwise none); Core\App
+     *     passes one that regenerates their forms. A closure that takes only the first two arguments still works
      */
     public function __construct(
         private readonly Database $db,
@@ -93,7 +95,7 @@ final class SchemaEditor
             throw new \InvalidArgumentException('The person key must be a valid key.');
         }
         $this->onSnapshot = $onSnapshot;
-        $this->afterChange = $afterChange ?? static function (Database $db, array $tableKeys): void {
+        $this->afterChange = $afterChange ?? static function (Database $db, array $tableKeys, array $addedFieldKeys): void {
         };
     }
 
@@ -231,7 +233,7 @@ final class SchemaEditor
             }
             self::fail($problems);
             $field = $this->insertField($table, Text::trim($name), $this->types->get($type), $normalised, $required, Text::trim($help));
-            $this->afterChange([$table->key]);
+            $this->afterChange([$table->key], [$field->key]);
 
             return $field;
         });
@@ -301,13 +303,13 @@ final class SchemaEditor
             Ddl::createJoinTable($this->db, new RelationDef($relationKey, $table->key, $leftKey, $thisMax, $target->key, $rightKey, $otherMax));
 
             $left = $this->insertRelationField($leftKey, $table->key, Text::trim($name), $relationKey, 'left', $required, Text::trim($help));
-            $this->insertRelationField($rightKey, $target->key, Text::trim($reverseName), $relationKey, 'right', false, '');
+            $right = $this->insertRelationField($rightKey, $target->key, Text::trim($reverseName), $relationKey, 'right', false, '');
             $this->db->run(
                 'INSERT INTO "_tiffin_relations" ("key", "join_table", "left_table", "left_field", "left_max",'
                 . ' "right_table", "right_field", "right_max", "created_at") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [$relationKey, $joinName, $table->key, $leftKey, $thisMax->value, $target->key, $rightKey, $otherMax->value, $this->now()],
             );
-            $this->afterChange(array_values(array_unique([$table->key, $target->key])));
+            $this->afterChange(array_values(array_unique([$table->key, $target->key])), [$left->key, $right->key]);
 
             return $left;
         });
@@ -1078,11 +1080,12 @@ final class SchemaEditor
      * Calls the after-change hook inside the current transaction.
      *
      * @param list<string> $tableKeys
+     * @param list<string> $addedFieldKeys
      */
-    private function afterChange(array $tableKeys): void
+    private function afterChange(array $tableKeys, array $addedFieldKeys = []): void
     {
         $hook = $this->afterChange;
-        $hook($this->db, $tableKeys);
+        $hook($this->db, $tableKeys, $addedFieldKeys);
     }
 
     /** @param list<Problem> $problems */

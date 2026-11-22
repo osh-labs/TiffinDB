@@ -31,6 +31,25 @@ final class FieldSlot implements Block
         return 'field';
     }
 
+    /** This slot with another label (null: none); the same object when it is unchanged. */
+    public function withLabel(?string $label): self
+    {
+        return $label === $this->label ? $this : new self($this->fieldKey, $label, $this->placement);
+    }
+
+    /**
+     * This slot with another span (null: none), column and row kept; the
+     * same object when it is unchanged.
+     */
+    public function withSpan(?string $span): self
+    {
+        if ($span === $this->placement?->span) {
+            return $this;
+        }
+
+        return new self($this->fieldKey, $this->label, Placement::withSpanOf($this->placement, $span));
+    }
+
     public function placement(): ?Placement
     {
         return $this->placement;

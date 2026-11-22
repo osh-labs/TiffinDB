@@ -160,4 +160,49 @@ final class FormNodesTest extends TestCase
         self::assertSame($placement, (new FieldSlot(self::KEY, null, $placement))->placement());
         self::assertNull((new Divider())->placement());
     }
+
+    /** The helper methods the form editor uses (M5-WP2): same object when unchanged, every other value kept, rules still checked. */
+    public function testHelperMethods(): void
+    {
+        $placed = new Placement(3, 2, '6');
+        $slot = new FieldSlot(self::KEY, 'Label', $placed);
+        self::assertSame($slot, $slot->withLabel('Label'));
+        self::assertSame($slot, $slot->withSpan('6'));
+        $relabelled = $slot->withLabel(null);
+        self::assertEquals(new FieldSlot(self::KEY, null, $placed), $relabelled);
+        self::assertSame($placed, $relabelled->placement);
+        self::assertEquals(new FieldSlot(self::KEY, 'Label', new Placement(3, 2, 'full')), $slot->withSpan('full'));
+        self::assertEquals(new FieldSlot(self::KEY, 'Label', new Placement(3, 2)), $slot->withSpan(null));
+        self::assertEquals(new FieldSlot(self::KEY, null, new Placement(null, null, '4')), (new FieldSlot(self::KEY))->withSpan('4'));
+        self::assertNull((new FieldSlot(self::KEY, null, new Placement(null, null, '4')))->withSpan(null)->placement);
+        self::assertTrue($placed->isPlaced());
+        self::assertTrue((new Placement(null, 50))->isPlaced());
+        self::assertFalse((new Placement(null, null, 'full'))->isPlaced());
+        self::assertNull(Placement::withSpanOf(null, null));
+        self::assertEquals(new Placement(null, 4, '8'), Placement::withSpanOf(new Placement(null, 4, 'full'), '8'));
+
+        $child = new Divider();
+        $section = new Section('details', 'Main', [$child], $placed);
+        self::assertSame($section, $section->withLegend('Main'));
+        $renamed = $section->withLegend(null);
+        self::assertEquals(new Section('details', null, [$child], $placed), $renamed);
+        self::assertSame($child, $renamed->children[0]);
+        $other = new FieldSlot(self::OTHER);
+        $regrouped = $section->withChildren([$other, $child]);
+        self::assertEquals(new Section('details', 'Main', [$other, $child], $placed), $regrouped);
+        self::assertSame($placed, $regrouped->placement);
+
+        foreach ([
+            static fn () => $slot->withLabel(str_repeat('x', 61)),
+            static fn () => $slot->withSpan('13'),
+            static fn () => $section->withLegend(' Main'),
+            static fn () => $section->withChildren([$section]),
+        ] as $n => $broken) {
+            try {
+                $broken();
+                self::fail('Helper ' . $n . ' accepted a value the rules refuse.');
+            } catch (\InvalidArgumentException) {
+            }
+        }
+    }
 }

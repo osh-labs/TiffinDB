@@ -223,6 +223,26 @@ final class SearchScreenTest extends TestCase
         self::assertSame('"><b>', $this->attr($this->xpath($html), '//input[@id="top-search"]', 'value'));
     }
 
+    /** T-WEB-58 (M4-WP7): the sidebar lists the collections with counts; none is current, and no "New collection" (D-46). */
+    public function testSidebarCollections(): void
+    {
+        $this->core->addRecord($this->project, $this->items, [$this->itemName => 'Stand mixer']);
+        $this->core->addRecord($this->project, $this->items, [$this->itemName => 'Floor lamp']);
+        $key = $this->ops->collections()->save($this->admin(), $this->project, $this->items, null, ['name' => 'Mixers <b>', 'match' => 'all', 'rules' => [1 => ['field' => $this->itemName, 'test' => 'contains', 'value' => 'mixer']]]);
+        $this->ops->collections()->save($this->admin(), $this->project, $this->rooms, null, ['name' => 'All rooms', 'match' => 'all', 'rules' => []]);
+        $this->share();
+
+        $html = $this->page(self::MEMBER, $this->p('/search?q=lamp'));
+        $x = $this->xpath($html);
+        $group = '//nav[@class="sidebar"]/div[@class="sidebar-group"][h2[normalize-space(.)="Collections"]]';
+        self::assertSame(['Mixers <b> 1', 'All rooms 0'], $this->texts($x, $group . '/a'));
+        self::assertSame($this->p('/collections/' . $key), $this->attr($x, $group . '/a[1]', 'href'));
+        self::assertSame(['1'], $this->texts($x, $group . '/a[1]/span[@class="sidebar-count"]'));
+        self::assertSame(0, $x->query('//nav[@class="sidebar"]//*[@aria-current] | //a[contains(@class, "sidebar-add")]')->length);
+        self::assertStringNotContainsString('Mixers <b>', $html);
+        self::assertSame($this->p('/trash'), $this->attr($x, '//div[@class="sidebar-foot"]/a[span[normalize-space(.)="In the trash"]]', 'href'));
+    }
+
     public function testAccess(): void
     {
         self::assertSame(404, $this->request(self::MEMBER, $this->p('/search?q=x'))->status, 'Not shared: not found.');

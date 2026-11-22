@@ -17,6 +17,12 @@
  * null), `empty` (null, or the data of the empty-state partial), `table`
  * (null, or the data of the record-table partial), `pager` (null, or the
  * data of the pager partial).
+ *
+ * Collection mode (docs/design/m4/collections.md section 2; M4-WP7):
+ * `tableName` is the collection's name, `editPath` the editor (or null
+ * when the person may not change collections; always null on a table
+ * list), `broken` the number of rules the view ignores, and `filterPath`
+ * null (no Filter link: the collection is the filter).
  */
 
 declare(strict_types=1);
@@ -27,15 +33,28 @@ declare(strict_types=1);
 <h1><?= $this->e($data['tableName']) ?></h1>
 <p class="lead"><?= $this->e($data['lead']) ?></p>
 </div>
-<?php if (is_string($data['addPath'])) : ?>
+<?php if (is_string($data['addPath']) || is_string($data['editPath'] ?? null)) : ?>
 <div class="page-actions">
+<?php if (is_string($data['editPath'] ?? null)) : ?>
+<a class="button" href="<?= $this->url($data['editPath']) ?>"><?= $this->t('lists.collection.edit') ?></a>
+<?php endif; ?>
+<?php if (is_string($data['addPath'])) : ?>
 <a class="button button-primary" href="<?= $this->url($data['addPath'], $data['state']) ?>">
 <svg class="button-icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M9 2v14M2 9h14" /></svg>
 <span><?= $this->t('lists.add', ['item' => $data['itemName']]) ?></span>
 </a>
+<?php endif; ?>
 </div>
 <?php endif; ?>
 </div>
+<?php if (($data['broken'] ?? 0) > 0) : ?>
+<div class="notice notice-warn" role="status">
+<p><?= $this->t('lists.collection.broken', ['count' => $data['broken']]) ?></p>
+<?php if (is_string($data['editPath'] ?? null)) : ?>
+<a href="<?= $this->url($data['editPath']) ?>"><?= $this->t('lists.collection.edit') ?></a>
+<?php endif; ?>
+</div>
+<?php endif; ?>
 <?php if ($data['controls'] === true) : ?>
 <form class="list-controls" method="get" action="<?= $this->url($data['listPath']) ?>">
 <?php foreach ($data['hidden'] as $hidden) : ?>
@@ -63,7 +82,9 @@ declare(strict_types=1);
 </select>
 </div>
 <button class="button" type="submit"><?= $this->t('lists.apply') ?></button>
+<?php if (is_string($data['filterPath'])) : ?>
 <a class="button" href="<?= $this->url($data['filterPath'], $data['state']) ?>"><?= $this->t('lists.filter.open') ?></a>
+<?php endif; ?>
 </form>
 <?php if (is_string($data['condition'])) : ?>
 <div class="notice filter-bar">

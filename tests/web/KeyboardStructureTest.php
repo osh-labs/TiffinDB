@@ -217,14 +217,14 @@ final class KeyboardStructureTest extends TestCase
     public function testSearchResults(): void
     {
         $this->check($this->m2->projectPath() . '/search?q=machine', [
-            ...self::TOP_SEARCH, ...$this->sidebar(),
+            ...self::TOP_SEARCH, ...$this->sidebar(0, false),
             'Espresso machine', 'Sewing machine', 'Washing machine',
             // Rooms linked to those items match through their linked titles.
             'Kitchen', 'Study',
             'Espresso machine, manufacturer warranty', 'Sewing machine, manufacturer warranty', 'Washing machine, manufacturer warranty',
             ...self::FOOTER,
         ]);
-        $this->check($this->m2->projectPath() . '/search?q=zzzz', [...self::TOP_SEARCH, ...$this->sidebar(), ...self::FOOTER]);
+        $this->check($this->m2->projectPath() . '/search?q=zzzz', [...self::TOP_SEARCH, ...$this->sidebar(0, false), ...self::FOOTER]);
         self::assertSame('Nothing found', HtmlAssertions::text($this->member->page(), '//main//p[@class="empty-state-title"]'));
     }
 
@@ -814,14 +814,20 @@ final class KeyboardStructureTest extends TestCase
     }
 
     /**
-     * The sidebar's names: Switch project, each table with its count, Tables and fields.
+     * The sidebar's names: Switch project, each table with its count, "New
+     * collection" on a table list (M4 spec part 2 section 5, D-46; not on
+     * the search page), Tables and fields.
      *
      * @return list<string>
      */
-    private function sidebar(int $itemsDelta = 0): array
+    private function sidebar(int $itemsDelta = 0, bool $tableList = true): array
     {
         // M4 spec part 2 section 5: the trash line is a link after "Tables and fields".
-        return ['Switch project', 'Items ' . (48 + $itemsDelta), 'Rooms 9', 'Warranties 12', 'Loans 0', 'Samples 1', 'Tables and fields', 'In the trash ' . (3 - $itemsDelta)];
+        return [
+            'Switch project', 'Items ' . (48 + $itemsDelta), 'Rooms 9', 'Warranties 12', 'Loans 0', 'Samples 1',
+            ...($tableList ? ['New collection'] : []),
+            'Tables and fields', 'In the trash ' . (3 - $itemsDelta),
+        ];
     }
 
     /** @return list<string> The 48 live item names in the list's default order (Name, A to Z, ASCII case-insensitive). */

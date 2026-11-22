@@ -146,7 +146,7 @@ final class LinkController
 
         return $this->context->page('links/picker', [
             'title' => $view->text('links.title', ['field' => $screen->field->name, 'title' => $title]),
-            'layout' => 'record-narrow',
+            'layout' => 'picker',
             'breadcrumb' => [
                 ['label' => $screen->project->name, 'path' => '/projects/' . $project],
                 ['label' => $screen->table->name, 'path' => self::listPath($project, $screen->table->key)],

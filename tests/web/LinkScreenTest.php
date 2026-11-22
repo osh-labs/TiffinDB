@@ -109,7 +109,7 @@ final class LinkScreenTest extends TestCase
         $x = $this->xpath($html);
 
         self::assertSame('Room for Stand mixer - TiffinDB', HtmlAssertions::text($html, '//title'));
-        self::assertSame(1, $x->query('//main[@id="main"][@class="page page-record page-record-narrow"]')->length);
+        self::assertSame(1, $x->query('//main[@id="main"][@class="page page-picker"]')->length);
         self::assertSame(['Home Inventory', 'Items', 'Stand mixer', 'Choose Rooms'], $this->texts($x, '//nav[@class="breadcrumb"]/*[not(@aria-hidden)]'));
         self::assertSame(['/projects/' . $this->project, $this->l($this->items), $this->r($this->items, $this->mixer)], $this->texts($x, '//nav[@class="breadcrumb"]/a/@href'));
         self::assertSame('Room for Stand mixer', $this->text($x, '//div[@class="page-head"]//h1'));

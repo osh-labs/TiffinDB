@@ -138,6 +138,7 @@ final class TrashController
 
         return $this->context->page('trash/index', [
             'title' => $view->text('trash.title'),
+            'layout' => 'trash',
             'breadcrumb' => [
                 ['label' => $project->name, 'path' => '/projects/' . $project->key],
                 ['label' => $view->text('trash.crumb'), 'path' => null],
@@ -222,6 +223,7 @@ final class TrashController
 
         return $this->context->page('trash/empty', [
             'title' => $view->text('trash.empty.title'),
+            'layout' => 'trash',
             'breadcrumb' => [
                 ['label' => $project->name, 'path' => '/projects/' . $project->key],
                 ['label' => $view->text('trash.crumb'), 'path' => $path],

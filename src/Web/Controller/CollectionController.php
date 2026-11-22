@@ -118,7 +118,7 @@ final class CollectionController
 
         return $this->context->page('collections/delete', [
             'title' => $view->text('collections.delete.title', ['name' => $summary->name]),
-            'layout' => 'record-narrow',
+            'layout' => 'collection',
             'breadcrumb' => [
                 ['label' => $project->name, 'path' => '/projects/' . $project->key],
                 ['label' => $table->name, 'path' => '/projects/' . $project->key . '/tables/' . $table->key],
@@ -243,7 +243,7 @@ final class CollectionController
 
         return $this->context->page('collections/editor', [
             'title' => $title === '' ? $view->text('collections.new.title') : $title,
-            'layout' => 'record-narrow',
+            'layout' => 'collection',
             'breadcrumb' => [
                 ['label' => $project->name, 'path' => '/projects/' . $project->key],
                 ['label' => $table->name, 'path' => $tablePath],

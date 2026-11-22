@@ -58,8 +58,8 @@ Values are **design px** at the Standard text size, written in `rem` in `app.css
 | `.rule-list` | `display: flex; flex-direction: column; gap: 12` | rules column |
 | `.rule-row` | `fieldset`: `margin: 0; padding: 14; display: flex; flex-wrap: wrap; align-items: center; gap: 12; border: 1px solid var(--line); border-radius: 8; background: var(--sunk)` | each rule |
 | `.rule-row legend` | `padding: 0 6; font-size: 16; color: var(--ink2)` | "Rule 1" |
-| `.rule-control` | `flex: 1 1 200` (the field select, test select, value control) | |
-| `.rule-control-wide` | `flex: 1 1 180` (the value control) | |
+| `.rule-control` | `flex: 1 1 162` (the field select, test select, value control) | as built (P188): 200 wrapped Remove at 1360 px |
+| `.rule-control-wide` | `flex: 1 1 144` (the value control) | as built (P188) |
 | `.rule-problem` | `flex: 1 0 100%` (an error text or a broken-rule explanation inside the row) | |
 | `.rule-broken` | with `.rule-row`: `border: 2px solid var(--warn); padding: 13` | (added) |
 | `.match-row` | `display: flex; flex-wrap: wrap; gap: 4 28` (the two radios) | |

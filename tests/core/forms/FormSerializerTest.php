@@ -15,6 +15,7 @@ use TiffinDB\Core\Forms\Divider;
 use TiffinDB\Core\Forms\Emphasis;
 use TiffinDB\Core\Forms\FieldSlot;
 use TiffinDB\Core\Forms\FormDocument;
+use TiffinDB\Core\Forms\FormFormat;
 use TiffinDB\Core\Forms\FormParser;
 use TiffinDB\Core\Forms\FormSerializer;
 use TiffinDB\Core\Forms\Heading;
@@ -29,13 +30,20 @@ use TiffinDB\Core\Forms\Strong;
 use TiffinDB\Core\Forms\TextRun;
 use TiffinDB\Core\Schema\FieldTypes;
 use TiffinDB\Core\Storage\Keys;
+use TiffinDB\Tests\Core\Forms\Corpus\Corpus;
+use TiffinDB\Tests\Support\FormFixture;
 use TiffinDB\Tests\Support\SeededRandom;
+
+require_once __DIR__ . '/corpus/Corpus.php';
 
 /**
  * T-FORM-3: parse(serialize(d)) equals d for 200 documents built from a
  * seeded random source (seed below), and serialize(parse(t)) is a fixed
  * point after one round. The comparison with the document's example is in
- * FormGeneratorTest. All text is synthetic.
+ * FormGeneratorTest. T-FORM-12 (M5 spec section 5): the fixed-point
+ * property for every accepted corpus case and 1,000 FormFixture documents,
+ * and parse(serialize(d)) == d for the same documents. All text is
+ * synthetic.
  */
 #[CoversClass(FormSerializer::class)]
 final class FormSerializerTest extends TestCase
@@ -208,5 +216,90 @@ final class FormSerializerTest extends TestCase
         self::assertStringContainsString('<legend>Details</legend>', $once);
         self::assertStringContainsString('<div data-tiffin-field="m4pz7k2qsw3n" data-tiffin-label="Named"></div>', $once);
         self::assertStringContainsString('<img src="attachment:3" alt="x"/>', $once);
+    }
+
+    // ------------------------------------------------------------ T-FORM-12
+
+    /**
+     * Property 5.1: for an accepted text t with s = serialize(parse(t)) and
+     * strlen(s) <= MAX_BYTES, parse(s) succeeds and serialize(parse(s)) === s.
+     * Returns false when the size condition excludes the text.
+     */
+    private static function assertFixedPoint(string $text, string $message): bool
+    {
+        $parser = new FormParser(FieldTypes::standard());
+        $serializer = new FormSerializer();
+        $first = $parser->parse($text);
+        $once = $serializer->serialize($first);
+        if (strlen($once) > FormFormat::MAX_BYTES) {
+            return false;
+        }
+        $again = $parser->parse($once);
+        self::assertSame($once, $serializer->serialize($again), $message);
+        self::assertEquals($first, $again, $message);
+
+        return true;
+    }
+
+    public function testEveryAcceptedCorpusCaseReachesAFixedPoint(): void
+    {
+        $checked = [];
+        $skipped = [];
+        foreach (Corpus::all() as $id => $case) {
+            if ($case['verdict'] !== 'accept') {
+                continue;
+            }
+            if (self::assertFixedPoint($case['text'], $id)) {
+                $checked[] = $id;
+            } else {
+                $skipped[] = $id;
+            }
+        }
+        // Only the cases at the size limit are over it once canonical: Z1 and Z3 by the indentation the
+        // serializer adds, Z9 because each ' becomes &apos;.
+        self::assertSame(['Z1', 'Z3', 'Z9'], $skipped);
+        self::assertGreaterThan(40, count($checked));
+    }
+
+    public function testFixtureDocumentsRoundTripAndReachAFixedPoint(): void
+    {
+        $fixture = new FormFixture();
+        $parser = new FormParser(FieldTypes::standard());
+        $serializer = new FormSerializer();
+        $kinds = [];
+        $this->addToAssertionCount(1000);
+        for ($n = 0; $n < 1000; $n++) {
+            $document = $fixture->document();
+            $text = $serializer->serialize($document);
+            self::assertLessThanOrEqual(FormFormat::MAX_BYTES, strlen($text), 'Document ' . $n);
+            // Property 5.2 (compared with == first; assertEquals only to show a difference).
+            $parsed = $parser->parse($text);
+            if ($parsed != $document) {
+                self::assertEquals($document, $parsed, 'Document ' . $n);
+            }
+            // Property 5.1: the canonical text of the document, and of a loosely written variant of it
+            // (byte order mark, self-closed slots, CR LF, comments), is the text itself.
+            self::assertSame($text, $serializer->serialize($parsed), 'Document ' . $n);
+            $loose = "\xEF\xBB\xBF" . str_replace(['></div>', '<br/>', "\n  "], ['/>', '<br></br>', "\r\n<!-- c -->  "], $text);
+            self::assertSame($text, $serializer->serialize($parser->parse($loose)), 'Loose document ' . $n);
+            foreach (['<fieldset', '<legend>', '<h2', '<h3', '<p', '<hr', '<img', '<strong>', '<em>', '<br/>', '<a href', 'data-tiffin-label', 'data-tiffin-col', 'data-tiffin-row', 'data-tiffin-span="full"', 'data-tiffin-span="8"', '&apos;', '&quot;', '&lt;', '&amp;', "\t"] as $mark) {
+                if (str_contains($text, $mark)) {
+                    $kinds[$mark] = true;
+                }
+            }
+        }
+        // The documents exercise every element, attribute, and escaped character.
+        self::assertCount(21, $kinds);
+    }
+
+    public function testFixtureIsDeterministic(): void
+    {
+        $serializer = new FormSerializer();
+        $a = new FormFixture();
+        $b = new FormFixture(FormFixture::SEED);
+        for ($n = 0; $n < 20; $n++) {
+            self::assertSame($serializer->serialize($a->document()), $serializer->serialize($b->document()));
+        }
+        self::assertNotSame($serializer->serialize((new FormFixture(1))->document()), $serializer->serialize((new FormFixture(2))->document()));
     }
 }

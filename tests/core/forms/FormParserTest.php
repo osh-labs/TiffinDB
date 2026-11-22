@@ -15,6 +15,7 @@ use TiffinDB\Core\Forms\Divider;
 use TiffinDB\Core\Forms\Emphasis;
 use TiffinDB\Core\Forms\FieldSlot;
 use TiffinDB\Core\Forms\FormDocument;
+use TiffinDB\Core\Forms\FormFormat;
 use TiffinDB\Core\Forms\FormParser;
 use TiffinDB\Core\Forms\FormRejected;
 use TiffinDB\Core\Forms\Heading;
@@ -24,6 +25,7 @@ use TiffinDB\Core\Forms\Link;
 use TiffinDB\Core\Forms\Paragraph;
 use TiffinDB\Core\Forms\Placement;
 use TiffinDB\Core\Forms\Section;
+use TiffinDB\Core\Forms\StartTags;
 use TiffinDB\Core\Forms\Strong;
 use TiffinDB\Core\Forms\TextRun;
 use TiffinDB\Core\Schema\FieldTypes;
@@ -32,10 +34,13 @@ use TiffinDB\Tests\Support\TempDir;
 
 /**
  * T-FORM-2 (accepted documents) and T-FORM-4 (rejection corpus) for the
- * default-deny parser of M2 spec section 5.2. All keys are synthetic.
+ * default-deny parser of M2 spec section 5.2, and T-SAN-6 (M5 spec section
+ * 4.2): problem lines with LF, CR, and CR LF texts, the byte order mark,
+ * and the start-tag table. All keys are synthetic.
  */
 #[CoversClass(FormParser::class)]
 #[CoversClass(FormRejected::class)]
+#[CoversClass(StartTags::class)]
 final class FormParserTest extends TestCase
 {
     private const K1 = 'm4pz7k2qsw3n';
@@ -350,5 +355,140 @@ final class FormParserTest extends TestCase
                 self::assertSame(FormRejected::DECLARATION, $rejected->reason, $name);
             }
         }
+    }
+
+    // ------------------------------------------------------------ T-SAN-6
+
+    /**
+     * One text per reason group, written with $break between lines; the
+     * problem sits on line 4.
+     *
+     * @return array<string, array{string, string}> group => [text, reason]
+     */
+    private static function linedTexts(string $break): array
+    {
+        $head = self::OPEN . $break . '<p>one</p>' . $break . '<!-- a < b -->' . $break;
+        $tail = $break . self::CLOSE . $break;
+
+        return [
+            'encoding' => [$head . "<p>\xC3\x28</p>" . $tail, FormRejected::ENCODING],
+            'nul' => [$head . "<p>a\0</p>" . $tail, FormRejected::NUL],
+            'declaration' => [$head . '<p><![CDATA[x]]></p>' . $tail, FormRejected::DECLARATION],
+            'instruction' => [$head . '<?x y?>' . $tail, FormRejected::PROCESSING_INSTRUCTION],
+            'malformed by libxml' => [$head . '<p>a</b>' . $tail, FormRejected::MALFORMED],
+            'duplicate attribute' => [$head . '<p data-tiffin-span="6" data-tiffin-span="4">x</p>' . $tail, FormRejected::MALFORMED],
+            'element' => [$head . '<script>x</script>' . $tail, FormRejected::ELEMENT],
+            'misplaced' => [$head . '<legend>x</legend>' . $tail, FormRejected::MISPLACED],
+            'attribute' => [$head . '<p class="x">x</p>' . $tail, FormRejected::ATTRIBUTE],
+            'attribute value' => [$head . '<p data-tiffin-span="0">x</p>' . $tail, FormRejected::ATTRIBUTE_VALUE],
+            'href' => [$head . '<p><a href="javascript:x">x</a></p>' . $tail, FormRejected::HREF],
+            'src' => [$head . '<img src="attachment:0" alt=""/>' . $tail, FormRejected::SRC],
+            'content' => [$head . '<hr><br/></hr>' . $tail, FormRejected::CONTENT],
+            'duplicate field' => [$head . self::slot() . self::slot() . $tail, FormRejected::DUPLICATE_FIELD],
+            'too deep' => [$head . '<fieldset><p><strong><em><strong><em><strong><em>x</em></strong></em></strong></em></strong></p></fieldset>' . $tail, FormRejected::TOO_DEEP],
+            'text near its element' => [$head . '<p>' . $break . "a\u{202E}b" . $break . '</p>' . $tail, FormRejected::TEXT_VALUE],
+            'text in a section' => [$head . '<fieldset>' . $break . 'loose' . $break . '</fieldset>' . $tail, FormRejected::TEXT],
+            'legend' => [$head . '<fieldset><legend>' . $break . $break . '</legend></fieldset>' . $tail, FormRejected::TEXT_VALUE],
+        ];
+    }
+
+    private static function slot(): string
+    {
+        return '<div data-tiffin-field="' . self::K1 . '"></div>';
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function linedCases(): iterable
+    {
+        foreach (['LF' => "\n", 'CR' => "\r", 'CR LF' => "\r\n"] as $name => $break) {
+            foreach (self::linedTexts($break) as $group => [$text, $reason]) {
+                yield $group . ', ' . $name => [$text, $reason, $break];
+            }
+        }
+    }
+
+    #[DataProvider('linedCases')]
+    public function testProblemsAreReportedOnTheirLine(string $text, string $reason, string $break): void
+    {
+        foreach (['' => 0, "\xEF\xBB\xBF" => 0] as $prefix => $unused) {
+            try {
+                self::parser()->parse($prefix . $text);
+                self::fail('The form was accepted.');
+            } catch (FormRejected $rejected) {
+                self::assertSame($reason, $rejected->reason);
+                // The byte order mark is removed and does not shift lines.
+                self::assertSame(4, $rejected->formLine, $prefix === '' ? 'plain' : 'with a byte order mark');
+                self::assertSame(4, $rejected->params()['line']);
+            }
+        }
+    }
+
+    public function testLinesThatAreUnknown(): void
+    {
+        foreach (['' => FormRejected::ROOT, "\xEF\xBB\xBF" => FormRejected::ROOT] as $text => $reason) {
+            $rejected = self::rejectionOf($text);
+            self::assertSame([$reason, null], [$rejected->reason, $rejected->formLine]);
+        }
+        $large = self::wrap("\n\n<p>" . str_repeat('a', FormFormat::MAX_BYTES) . '</p>');
+        self::assertSame([FormRejected::TOO_LARGE, null], [self::rejectionOf($large)->reason, self::rejectionOf($large)->formLine]);
+        // Text after the root is reported at the root's start tag by the walk; libxml refuses it first.
+        $after = self::rejectionOf("\n\n" . self::wrap('') . "\nx");
+        self::assertSame([FormRejected::MALFORMED, 4], [$after->reason, $after->formLine]);
+    }
+
+    public function testElementAndAttributeNamesAreGiven(): void
+    {
+        $element = self::rejectionOf(self::wrap('<p><span>x</span></p>'));
+        self::assertSame(['span', null, 'problem.form.element'], [$element->element, $element->attribute, $element->messageKey()]);
+        $attribute = self::rejectionOf(self::wrap('<p class="x">x</p>'));
+        self::assertSame(['p', 'class', 'problem.form.attribute'], [$attribute->element, $attribute->attribute, $attribute->messageKey()]);
+        self::assertSame(['line' => 1, 'element' => 'p', 'attribute' => 'class'], $attribute->params());
+        $missing = self::rejectionOf(self::wrap('<img alt=""/>'));
+        self::assertSame(['img', 'src'], [$missing->element, $missing->attribute]);
+        $value = self::rejectionOf(self::wrap('<hr data-tiffin-row="0"/>'));
+        self::assertSame(['hr', 'data-tiffin-row', 'problem.form.attribute_value'], [$value->element, $value->attribute, $value->messageKey()]);
+        $long = self::rejectionOf(self::wrap('<p ' . str_repeat('z', 45) . '="1">x</p>'));
+        self::assertSame(['p', null, 'problem.form.attribute_unnamed'], [$long->element, $long->attribute, $long->messageKey()]);
+        $href = self::rejectionOf(self::wrap('<p><a href="vbscript:x">x</a></p>'));
+        self::assertSame([FormRejected::HREF, 'a', 'href', 'problem.form.href'], [$href->reason, $href->element, $href->attribute, $href->messageKey()]);
+    }
+
+    private static function rejectionOf(string $text): FormRejected
+    {
+        try {
+            self::parser()->parse($text);
+        } catch (FormRejected $rejected) {
+            return $rejected;
+        }
+        self::fail('The form was accepted.');
+    }
+
+    public function testStartTagOffsetsSkipCommentsAndEndTags(): void
+    {
+        $text = '<div a="1"><!-- <p> < --><p>x</p><br/><!----><hr/></div>';
+        self::assertSame([0, 25, 33, 45], StartTags::offsets($text));
+        self::assertSame([0], StartTags::offsets('<div><!-- unterminated <p>'));
+        self::assertSame([], StartTags::offsets('no tags'));
+        self::assertSame([0, 9], StartTags::offsets('<a></a>  <b/>'));
+        self::assertSame([3], StartTags::offsets('</a<b>'));
+    }
+
+    public function testLineAtCountsEachBreakOnce(): void
+    {
+        self::assertSame(1, StartTags::lineAt("abc", 2));
+        self::assertSame(2, StartTags::lineAt("a\nb", 2));
+        self::assertSame(2, StartTags::lineAt("a\rb", 2));
+        self::assertSame(2, StartTags::lineAt("a\r\nb", 3));
+        self::assertSame(5, StartTags::lineAt("a\r\n\r\n\n\rb", 7));
+        self::assertSame(1, StartTags::lineAt("a\nb", 0));
+        // A CR LF split by the offset counts the CR alone.
+        self::assertSame(2, StartTags::lineAt("a\r\nb", 2));
+    }
+
+    public function testLinesAreCountedFarIntoALongForm(): void
+    {
+        $text = self::OPEN . "\n" . str_repeat("<hr/>\n", 4997) . "<hr title=\"x\"/>\n" . self::CLOSE;
+        $rejected = self::rejectionOf($text);
+        self::assertSame([FormRejected::ATTRIBUTE, 4999], [$rejected->reason, $rejected->formLine]);
     }
 }

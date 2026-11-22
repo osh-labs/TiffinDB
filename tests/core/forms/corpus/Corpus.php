@@ -73,6 +73,10 @@ final class Corpus
      */
     public static function all(): array
     {
+        static $all = null;
+        if ($all !== null) {
+            return $all;
+        }
         $cases = [];
         foreach (self::GROUPS as $group) {
             /** @var list<array<string, mixed>> $list */
@@ -86,6 +90,7 @@ final class Corpus
                 $cases[$id] = $case;
             }
         }
+        $all = $cases;
 
         return $cases;
     }

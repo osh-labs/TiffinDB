@@ -29,6 +29,14 @@ use TiffinDB\Core\Storage\Keys;
  * or validating a DTD, without default attributes, and without entity
  * substitution, so it neither fetches nor expands anything; any libxml
  * error rejects, as does any entity-reference node.
+ *
+ * M5 additions (M5 spec sections 3 and 4): one leading byte order mark is
+ * removed first (a second one is refused); after the byte checks, CR LF
+ * and lone CR become LF, so libxml's lines are right; a rejection carries
+ * the line of the problem (via StartTags, built only on rejection) and the
+ * element and attribute names; a bad link address is HREF and a bad image
+ * source SRC. Text outside the root and the walk's own MALFORMED checks
+ * are second lines: libxml refuses those texts first.
  */
 final class FormParser
 {

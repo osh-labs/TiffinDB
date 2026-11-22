@@ -74,6 +74,13 @@ final class SearchController
             ];
         }
 
+        // The sidebar lists the collections; "New collection" needs a
+        // table, so it is not offered here (M4 D-46).
+        $collections = [];
+        foreach ($results->collections as $summary) {
+            $collections[] = ['key' => $summary->key, 'name' => $summary->name, 'count' => $summary->count];
+        }
+
         $lead = null;
         if ($results->problem === null && $search === null) {
             $lead = $view->text('search.lead_empty', ['project' => $project->name]);
@@ -84,7 +91,7 @@ final class SearchController
         return $this->context->page('search', [
             'title' => $view->text('search.page_title', ['project' => $project->name]),
             'layout' => 'list',
-            'sidebar' => Sidebar::build($project->key, $project->name, $results->tables, $results->trashCount, null, $this->canImportExport($project->key)),
+            'sidebar' => Sidebar::build($project->key, $project->name, $results->tables, $results->trashCount, null, $this->canImportExport($project->key), $collections),
             'search' => ['project' => $project->key, 'projectName' => $project->name, 'q' => $q === '' ? null : $q],
             'heading' => $view->text('search.title'),
             'lead' => $lead,

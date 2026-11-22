@@ -5,7 +5,8 @@
  *
  * List view, filter, and search results (docs/design/m2/list-and-search.md
  * sections 2 to 4; docs/specs/M2-screens.md section 5.3 for the sort
- * options). Owned by M2-WP6.
+ * options). Owned by M2-WP6; the collection view texts (`lists.collection.*`)
+ * by M4-WP7.
  */
 
 declare(strict_types=1);
@@ -49,6 +50,12 @@ return [
     'lists.none.filter' => 'No records match the filter.',
     'lists.none.both' => 'No records match “{q}” with this filter.',
     'lists.none.clear' => 'Show every record',
+
+    // Collection view (docs/design/m4/collections.md section 2; M4-WP7).
+    'lists.collection.lead' => '{count|# record|# records} in {table} {count|matches|match}. Sorted by {sort}.',
+    'lists.collection.edit' => 'Edit collection',
+    'lists.collection.broken' => '{count|# rule of this collection no longer works and is ignored.|# rules of this collection no longer work and are ignored.} Edit the collection to fix or remove {count|it|them}.',
+    'lists.collection.empty' => 'No {items} match this collection yet. It updates by itself as records change.',
 
     // Filter (section 3).
     'lists.filter.title' => 'Filter {table}',

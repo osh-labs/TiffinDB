@@ -2556,6 +2556,14 @@ li.link-row .linked-main a {
   max-width: var(--width-form);
 }
 
+/* The editor's "Add a section" row, under the rows (docs/design/m5/editor.md section 2, item 5.3) */
+.form-actions-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* 2. Widths on the record form: one column until the container is 40rem wide */
 .form-area {
   container-type: inline-size;

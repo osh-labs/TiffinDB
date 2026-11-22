@@ -28,9 +28,11 @@ use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Core\Install\ProbeResponse;
 use TiffinDB\Core\Install\ProbeTarget;
 use TiffinDB\Core\Storage\Sqlite;
+use TiffinDB\Tests\Support\FileFixture;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
+use TiffinDB\Tests\Support\M4Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -704,6 +706,425 @@ final class EndToEndTest extends TestCase
         self::assertSame(404, $member->get($copyTable)->status);
         self::assertSame(404, $member->get('/projects/' . $copyKey . '/tables')->status);
         $admin->cleanUp();
+    }
+
+    // T-E2E-11 (M4): relations and files through the routes.
+
+    public function testMemberLinksUnlinksUploadsOpensAndRemovesThroughTheRoutes(): void
+    {
+        $admin = $this->install();
+        [$projectPath, $fieldsPath, $items, $rooms, $warranties] = $this->homeInventoryM4($admin);
+        $member = $this->member($admin, $projectPath);
+        $kitchen = $this->addRecord($member, $rooms, 'Kitchen');
+        $garage = $this->addRecord($member, $rooms, 'Garage');
+        $this->addRecord($member, $warranties, 'Stand mixer, manufacturer warranty');
+
+        // A new record shows the notes instead of the controls (M4 D-38).
+        $member->get($items . '/records/new');
+        self::assertSame(['You can choose one once this record is saved.', 'You can add files once this record is saved.', 'You can add links once this record is saved.'], array_values(array_filter(
+            $member->texts('//form[@id="record-form"]//p[@class="help"]'),
+            static fn (string $text): bool => str_starts_with($text, 'You can'),
+        )));
+        $mixer = $this->addRecord($member, $items, 'Stand mixer');
+        $page = $member->get($mixer);
+        self::assertScreen($page->body);
+        self::assertSame(['No room chosen', 'Choose a record'], $member->texts('//div[@class="link-control"]/*'));
+
+        // Choose a room through the picker, with a find.
+        $picker = $this->href($member, '//div[@class="link-control"]/a[normalize-space(.)="Choose a record"]');
+        self::assertMatchesRegularExpression('#^' . preg_quote($mixer, '#') . '/links/[a-z2-7]{12}\z#', $picker);
+        $member->get($picker);
+        self::assertScreen($member->page());
+        self::assertSame('Room for Stand mixer', HtmlAssertions::text($member->page(), '//h1'));
+        self::assertSame(['Garage', 'Kitchen'], $member->texts('//section[@aria-labelledby="pk-list"]//span[@class="picker-title"]'));
+        $found = $member->get($picker . '?q=gar');
+        self::assertSame(200, $found->status);
+        self::assertSame(['Garage'], $member->texts('//section[@aria-labelledby="pk-list"]//span[@class="picker-title"]'));
+        $chosen = $this->press($member, 'Choose Garage');
+        self::assertSame(303, $chosen->status, $chosen->body);
+        self::assertSame($picker . '?q=gar', $chosen->header('Location'), 'Back to the picker with the find kept.');
+        $member->follow($chosen);
+        self::assertSame('Garage is now chosen.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame(['Garage'], $member->texts('//section[@aria-labelledby="pk-now"]//span[@class="picker-title"]'));
+        $member->get($this->href($member, '//div[@class="form-actions"]/a[normalize-space(.)="Back to Stand mixer"]'));
+        self::assertSame(['Garage', 'Choose a different room'], $member->texts('//div[@class="link-control"]/*'));
+        self::assertSame($garage, $this->href($member, '//div[@class="link-control"]/a[@class="link-chosen"]'));
+        self::assertNotSame($kitchen, $garage);
+
+        // Link a warranty, then add a new one from the picker, then unlink the first.
+        $warrantyPicker = $this->href($member, '//div[@class="control-actions"]/a[normalize-space(.)="Link a record"]');
+        $member->get($warrantyPicker);
+        self::assertSame(303, $this->press($member, 'Link Stand mixer, manufacturer warranty')->status);
+        $member->get($warrantyPicker);
+        self::assertSame(['Stand mixer, manufacturer warranty'], $member->texts('//section[@aria-labelledby="pk-now"]//span[@class="picker-title"]'));
+        $member->get($this->href($member, '//div[@class="form-actions"]/a[normalize-space(.)="Add a new warranty and link it"]'));
+        self::assertScreen($member->page());
+        self::assertSame('New warranty', HtmlAssertions::text($member->page(), '//h1'));
+        $action = (string) $member->xpath()->query('//form[@id="record-form"]/@action')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('/^[a-z2-7]{12}-\d+\z/', (string) $member->xpath()->query('//form[@id="record-form"]/input[@name="from"]/@value')->item(0)?->nodeValue, 'The origin record and field.');
+        $names = $this->controlNames($member, ['Name']);
+        $made = $member->submit($action, [$names['Name'] => 'Extended cover']);
+        self::assertSame(303, $made->status, $made->body);
+        self::assertSame($warrantyPicker, $made->header('Location'), 'Back to the picker.');
+        $member->follow($made);
+        self::assertSame('Extended cover has been added and linked.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame(['Stand mixer, manufacturer warranty', 'Extended cover'], $member->texts('//section[@aria-labelledby="pk-now"]//span[@class="picker-title"]'));
+        $member->get($mixer);
+        self::assertSame(['Stand mixer, manufacturer warranty', 'Extended cover'], $member->texts('//ul[@class="link-list"]//div[@class="linked-main"]/a'));
+        $unlinked = $this->press($member, 'Unlink Stand mixer, manufacturer warranty');
+        self::assertSame(303, $unlinked->status, $unlinked->body);
+        self::assertSame($mixer, $unlinked->header('Location'));
+        $member->follow($unlinked);
+        self::assertSame('Stand mixer, manufacturer warranty is no longer linked.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame(['Extended cover'], $member->texts('//ul[@class="link-list"]//div[@class="linked-main"]/a'));
+
+        // Upload a photo; a PDF is refused by the images-only field.
+        $member->get($this->href($member, '//div[@class="control-actions"]/a[normalize-space(.)="Add an image"]'));
+        self::assertScreen($member->page());
+        $upload = (string) $member->xpath()->query('//form[@enctype="multipart/form-data"]/@action')->item(0)?->nodeValue;
+        $pdf = $this->temp->path('receipt.pdf');
+        file_put_contents($pdf, FileFixture::pdf());
+        $refused = $member->upload($upload, 'file', $pdf, 'receipt.pdf');
+        self::assertSame(422, $refused->status);
+        self::assertSame('This field takes images only: PNG, JPEG, GIF, or WebP.', HtmlAssertions::text($refused->body, '//main//p[@class="error-text"]'));
+        $bytes = FileFixture::png(8, 6, 'e2e-stand-mixer');
+        $png = $this->temp->path('stand-mixer.png');
+        file_put_contents($png, $bytes);
+        $added = $member->upload($upload, 'file', $png, 'stand-mixer.png');
+        self::assertSame(303, $added->status, $added->body);
+        self::assertSame($mixer, $added->header('Location'));
+        $member->follow($added);
+        self::assertSame('stand-mixer.png has been added.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        $src = (string) $member->xpath()->query('//li[contains(@class, "file-row")]/img/@src')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#^' . preg_quote($projectPath, '#') . '/files/\d+\z#', $src);
+        $served = $member->get($src);
+        self::assertSame(200, $served->status);
+        self::assertSame('image/png', $served->header('Content-Type'));
+        self::assertSame($bytes, $served->body());
+        $sha = hash('sha256', $bytes);
+        $stored = $this->temp->path('projects/' . substr($projectPath, strlen('/projects/')) . '/attachments/' . substr($sha, 0, 2) . '/' . $sha);
+        self::assertFileExists($stored);
+
+        // Open the file page, then remove the file through its confirmation.
+        $member->get($this->href($member, '//a[@aria-label="Open stand-mixer.png"]'));
+        self::assertScreen($member->page());
+        self::assertSame('stand-mixer.png', HtmlAssertions::text($member->page(), '//h1'));
+        self::assertSame($src, (string) $member->xpath()->query('//img[@class="file-image-large"]/@src')->item(0)?->nodeValue);
+        $member->get($this->href($member, '//main//a[normalize-space(.)="Remove"]'));
+        self::assertScreen($member->page());
+        $removeAction = (string) $member->xpath()->query('//main//form[@method="post"]/@action')->item(0)?->nodeValue;
+        $removed = $member->submit($removeAction);
+        self::assertSame(303, $removed->status, $removed->body);
+        $member->follow($removed);
+        self::assertSame('stand-mixer.png has been removed.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame(0, $member->xpath()->query('//li[contains(@class, "file-row")]')->length);
+        self::assertFileDoesNotExist($stored, 'The file nothing links to is deleted.');
+        self::assertSame(404, $member->get($src)->status);
+        $member->cleanUp();
+    }
+
+    // T-E2E-12 (M4): collections through the routes, kept by the archive.
+
+    public function testCollectionsAreMadeViewedEditedDeletedAndKeptByTheArchive(): void
+    {
+        $admin = $this->install();
+        [$projectPath, $fieldsPath, $items, $rooms] = $this->homeInventoryM4($admin);
+        $this->addField($admin, $fieldsPath, 'currency', ['name' => 'Value', 'opt_code' => 'USD']);
+        $member = $this->member($admin, $projectPath);
+        $kitchen = $this->addRecord($member, $rooms, 'Kitchen');
+        $this->addRecord($member, $rooms, 'Garage');
+        $values = ['Stand mixer' => '329.00', 'Dutch oven' => '95.00', 'Cordless drill' => '149.00'];
+        foreach ($values as $name => $value) {
+            $record = $this->addRecord($member, $items, $name, ['Value (US dollars)' => $value]);
+            if ($name !== 'Cordless drill') {
+                $member->get($record . '/links/' . $this->fieldKey($admin, $fieldsPath, 'Room'));
+                self::assertSame(303, $this->press($member, 'Choose Kitchen')->status);
+            }
+        }
+
+        // New collection from the sidebar: name, a Room rule (field first, then the record), preview, save.
+        $member->get($items);
+        $new = $this->href($member, '//nav[contains(@class, "sidebar")]//a[normalize-space(.)="New collection"]');
+        self::assertSame($items . '/collections/new', $new);
+        $member->get($new);
+        self::assertScreen($member->page());
+        self::assertSame('New collection', HtmlAssertions::text($member->page(), '//h1'));
+        $form = (string) $member->xpath()->query('//form[@id="collection-form"]/@action')->item(0)?->nodeValue;
+        $room = $this->fieldKey($admin, $fieldsPath, 'Room');
+        $value = $this->fieldKey($admin, $fieldsPath, 'Value');
+        $shown = $member->submit($form, ['name' => 'Kitchen things', 'rules[1][field]' => $room, 'action' => 'preview']);
+        self::assertSame(200, $shown->status, $shown->body);
+        self::assertScreen($shown->body);
+        $added = $member->submit($form, ['rules[1][test]' => 'links-to', 'rules[1][record]' => substr($kitchen, strrpos($kitchen, '/') + 1), 'action' => 'add']);
+        self::assertSame(200, $added->status);
+        self::assertSame(2, $member->xpath()->query('//fieldset[contains(@class, "rule-row")]')->length, 'Add a rule gives a second row.');
+        $member->submit($form, ['rules[2][field]' => $value, 'action' => 'preview']);
+        $preview = $member->submit($form, ['rules[2][test]' => 'more', 'rules[2][value]' => '100', 'action' => 'preview']);
+        self::assertSame(200, $preview->status);
+        self::assertSame(['Stand mixer'], $member->texts('//main//table/tbody/tr/th'), 'Preview: in the kitchen and worth more than 100.');
+        $removedRule = $member->submit($form, ['action' => 'remove-2']);
+        self::assertSame(200, $removedRule->status);
+        self::assertSame(1, $member->xpath()->query('//fieldset[contains(@class, "rule-row")]')->length);
+        $saved = $member->submit($form, ['action' => 'save']);
+        self::assertSame(303, $saved->status, $saved->body);
+        $view = (string) $saved->header('Location');
+        self::assertMatchesRegularExpression('#^' . preg_quote($projectPath, '#') . '/collections/[a-z2-7]{12}\z#', $view);
+        $member->follow($saved);
+        self::assertScreen($member->page());
+        self::assertSame('The collection has been saved.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame('Kitchen things', HtmlAssertions::text($member->page(), '//h1'));
+        self::assertSame(['Dutch oven', 'Stand mixer'], $member->texts('//main//table/tbody/tr/th'));
+        self::assertContains('Kitchen things 2', $member->texts('//nav[contains(@class, "sidebar")]//a'));
+
+        // Edit: rename it.
+        $member->get($view . '/edit');
+        self::assertScreen($member->page());
+        $renamed = $member->submit($view . '/edit', ['name' => 'In the kitchen', 'action' => 'save']);
+        self::assertSame(303, $renamed->status, $renamed->body);
+        self::assertSame($view, $renamed->header('Location'));
+        $member->follow($renamed);
+        self::assertSame('In the kitchen', HtmlAssertions::text($member->page(), '//h1'));
+
+        // The archive keeps it: same rules, same records in the copy.
+        $admin->get($projectPath . '/export');
+        $archive = $admin->submit($projectPath . '/export/archive');
+        self::assertSame(200, $archive->status, $archive->body);
+        $zip = $this->temp->path('home.tiffindb.zip');
+        file_put_contents($zip, $archive->body());
+        $admin->get('/projects/import');
+        $imported = $admin->upload('/projects/import', 'file', $zip, 'home.tiffindb.zip', ['name' => 'Home Inventory copy']);
+        self::assertSame(303, $imported->status, $imported->body);
+        $copyKey = substr((string) $imported->header('Location'), strlen('/projects/'), 12);
+        $copyView = '/projects/' . $copyKey . substr($view, strlen($projectPath));
+        self::assertSame(200, $admin->get($copyView)->status);
+        self::assertScreen($admin->page());
+        self::assertSame('In the kitchen', HtmlAssertions::text($admin->page(), '//h1'));
+        self::assertSame(['Dutch oven', 'Stand mixer'], $admin->texts('//main//table/tbody/tr/th'));
+        $admin->get($copyView . '/edit');
+        self::assertSame([$room], array_values(array_filter($admin->texts('//select[@name="rules[1][field]"]/option[@selected]/@value'))));
+
+        // Delete it through the confirmation.
+        $member->get($view . '/delete');
+        self::assertScreen($member->page());
+        self::assertSame('Delete In the kitchen?', HtmlAssertions::text($member->page(), '//h1'));
+        $deleted = $member->submit($view . '/delete');
+        self::assertSame(303, $deleted->status, $deleted->body);
+        self::assertSame($items, $deleted->header('Location'));
+        $member->follow($deleted);
+        self::assertSame('In the kitchen has been deleted.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame(404, $member->get($view)->status);
+        self::assertSame(200, $admin->get($copyView)->status, 'The copy keeps its own.');
+        $admin->cleanUp();
+        $member->cleanUp();
+    }
+
+    // T-E2E-13 (M4): the trash screen with files.
+
+    public function testTrashRestoreAndEmptyWithFilesThroughTheRoutes(): void
+    {
+        $admin = $this->install();
+        [$projectPath, $fieldsPath, $items] = $this->homeInventoryM4($admin);
+        $this->addField($admin, $fieldsPath, 'attachment', ['name' => 'Receipt']);
+        $member = $this->member($admin, $projectPath);
+        $mixer = $this->addRecord($member, $items, 'Stand mixer');
+        $oven = $this->addRecord($member, $items, 'Dutch oven');
+        $receipt = $this->fieldKey($admin, $fieldsPath, 'Receipt');
+        $own = FileFixture::pdf() . "% stand mixer only\n";
+        $shared = FileFixture::pdf() . "% shared\n";
+        foreach ([[$mixer, $own, 'receipt.pdf'], [$mixer, $shared, 'guarantee.pdf'], [$oven, $shared, 'guarantee-copy.pdf']] as [$record, $bytes, $name]) {
+            $member->get($record . '/files/' . $receipt . '/new');
+            $path = $this->temp->path('upload-' . $name);
+            file_put_contents($path, $bytes);
+            self::assertSame(303, $member->upload($record . '/files/' . $receipt, 'file', $path, $name)->status);
+        }
+        $folder = $this->temp->path('projects/' . substr($projectPath, strlen('/projects/')) . '/attachments');
+        $stored = static fn (string $bytes): string => $folder . '/' . substr(hash('sha256', $bytes), 0, 2) . '/' . hash('sha256', $bytes);
+        self::assertFileExists($stored($own));
+        self::assertFileExists($stored($shared));
+
+        // Trash, then restore from the trash screen (reached from the sidebar).
+        $member->get($mixer);
+        self::assertSame(303, $member->submit($mixer . '/trash')->status);
+        $member->get($items);
+        $trash = $this->href($member, '//nav[contains(@class, "sidebar")]//a[contains(normalize-space(.), "In the trash")]');
+        self::assertSame($projectPath . '/trash', $trash);
+        $member->get($trash);
+        self::assertScreen($member->page());
+        self::assertSame(['Stand mixer Moved to the trash today by Example Member.'], $member->texts('//main//span[@class="trash-title"]'));
+        self::assertSame(0, $member->xpath()->query('//main//a[normalize-space(.)="Empty the trash"]')->length, 'Members never see Empty the trash.');
+        $restored = $this->press($member, 'Restore Stand mixer');
+        self::assertSame(303, $restored->status, $restored->body);
+        $member->follow($restored);
+        self::assertSame('Stand mixer has been restored.', HtmlAssertions::text($member->page(), '//main//*[@role="status"]'));
+        self::assertSame('The trash is empty.', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+        self::assertSame(403, $member->get($trash . '/empty')->status);
+
+        // Trash again, empty as the Admin through the confirmation.
+        $member->get($mixer);
+        self::assertSame(303, $member->submit($mixer . '/trash')->status);
+        $admin->get($trash);
+        $admin->get($this->href($admin, '//main//a[normalize-space(.)="Empty the trash"]'));
+        self::assertScreen($admin->page());
+        self::assertSame('Empty the trash?', HtmlAssertions::text($admin->page(), '//h1'));
+        self::assertContains('1 file that only these records hold will be deleted.', $admin->texts('//main//p'));
+        $emptied = $admin->submit($trash . '/empty');
+        self::assertSame(303, $emptied->status, $emptied->body);
+        $admin->follow($emptied);
+        self::assertSame('The trash has been emptied: 1 record and 1 file deleted.', HtmlAssertions::text($admin->page(), '//main//*[@role="status"]'));
+        self::assertFileDoesNotExist($stored($own), 'The file only the emptied record held is gone.');
+        self::assertFileExists($stored($shared), 'The file a live record also links stays.');
+        self::assertSame(404, $admin->get($mixer)->status);
+        $admin->get($oven);
+        $open = $this->href($admin, '//a[@aria-label="Open guarantee-copy.pdf"]');
+        $admin->get($open);
+        $download = $admin->get($this->href($admin, '//main//a[normalize-space(.)="Download"]') . '?download=1');
+        self::assertSame(200, $download->status);
+        self::assertSame($shared, $download->body());
+        $member->cleanUp();
+    }
+
+    // T-E2E-14 (M4): a version 3 project folder through the routes.
+
+    public function testVersionThreeProjectFolderIsUpgradedAndItsCollectionsWork(): void
+    {
+        $admin = $this->install();
+        $admin->get('/projects/new');
+        $made = $admin->submit('/projects', ['name' => 'Home Inventory', 'first_table' => '']);
+        self::assertSame(303, $made->status, $made->body);
+        $projectPath = substr((string) $made->header('Location'), 0, -strlen('/tables'));
+        $projectKey = substr($projectPath, strlen('/projects/'));
+        $folder = $this->temp->path('projects/' . $projectKey);
+        $file = $folder . '/project.tiffin';
+        foreach (['', '-wal', '-shm'] as $suffix) {
+            if (is_file($file . $suffix)) {
+                self::assertTrue(unlink($file . $suffix));
+            }
+        }
+        $rows = M4Fixture::buildVersionThree($file, $projectKey, Fixtures::appRoot());
+        self::assertSame(3, self::userVersion($file));
+        self::assertSame([], self::snapshots($folder));
+
+        $items = $projectPath . '/tables/' . M4Fixture::V3_ITEMS;
+        $list = $admin->get($items);
+        self::assertSame(200, $list->status, $list->body);
+        self::assertScreen($list->body);
+        self::assertSame(['Mower', 'Toaster'], $admin->texts('//main//table/tbody/tr/th'));
+        self::assertSame(4, self::userVersion($file), 'Upgraded to version 4.');
+        $snapshots = self::snapshots($folder);
+        self::assertCount(1, $snapshots, 'After one format-upgrade snapshot.');
+        self::assertMatchesRegularExpression('/^\d{8}T\d{6}Z-format-upgrade-[a-z2-7]{4}\.tiffin\z/', $snapshots[0]);
+        self::assertSame(3, self::userVersion($folder . '/snapshots/' . $snapshots[0]));
+
+        // Its files are served; the trashed record's is not.
+        $served = $admin->get($projectPath . '/files/' . $rows['toaster.png']['id']);
+        self::assertSame(200, $served->status);
+        self::assertSame($rows['toaster.png']['bytes'], $served->body());
+        self::assertSame(404, $admin->get($projectPath . '/files/' . $rows['kettle.gif']['id'])->status);
+
+        // The collections: none yet; make one through the editor and view it.
+        self::assertSame(0, $admin->xpath()->query('//nav[contains(@class, "sidebar")]//h2[normalize-space(.)="Collections"]')->length);
+        $admin->get($items);
+        $admin->get($this->href($admin, '//nav[contains(@class, "sidebar")]//a[normalize-space(.)="New collection"]'));
+        self::assertScreen($admin->page());
+        $form = (string) $admin->xpath()->query('//form[@id="collection-form"]/@action')->item(0)?->nodeValue;
+        $admin->submit($form, ['name' => 'With a photo', 'rules[1][field]' => M4Fixture::V3_FIELDS['Name'], 'action' => 'preview']);
+        $saved = $admin->submit($form, ['rules[1][test]' => 'contains', 'rules[1][value]' => 'o', 'action' => 'save']);
+        self::assertSame(303, $saved->status, $saved->body);
+        $view = $admin->follow($saved);
+        self::assertSame(200, $view->status);
+        self::assertScreen($view->body);
+        self::assertSame(['Mower', 'Toaster'], $admin->texts('//main//table/tbody/tr/th'));
+        self::assertContains('With a photo 2', $admin->texts('//nav[contains(@class, "sidebar")]//a'));
+        self::assertCount(1, self::snapshots($folder), 'No second snapshot.');
+    }
+
+    /**
+     * Home Inventory (homeInventory) plus the table Warranties, the many
+     * relation Warranties on Items, and an images-only attachment field
+     * Photo.
+     *
+     * @return array{0: string, 1: string, 2: string, 3: string, 4: string} project, Items fields, Items, Rooms, Warranties paths
+     */
+    private function homeInventoryM4(EndToEndClient $admin): array
+    {
+        [$projectPath, $fieldsPath] = $this->homeInventory($admin);
+        $admin->get($projectPath . '/tables/new');
+        self::assertSame(303, $admin->submit($projectPath . '/tables', ['name' => 'Warranties', 'item_name' => 'warranty'])->status);
+        $admin->get($fieldsPath . '/new?type=relation');
+        $target = (string) $admin->xpath()->query('//select[@name="opt_target"]/option[normalize-space(.)="Warranties"]/@value')->item(0)?->nodeValue;
+        $relation = $admin->submit($fieldsPath, ['name' => 'Warranties', 'opt_target' => $target, 'opt_this_max' => 'many', 'opt_other_max' => 'one']);
+        self::assertSame(303, $relation->status, $relation->body);
+        $this->addField($admin, $fieldsPath, 'attachment', ['name' => 'Photo', 'opt_images_only' => '1']);
+        $admin->get($projectPath . '/tables');
+        $table = fn (string $name): string => substr((string) $admin->xpath()->query('//main//tbody/tr[th[normalize-space(.)="' . $name . '"]]/th/a/@href')->item(0)?->nodeValue, 0, -strlen('/fields'));
+
+        return [$projectPath, $fieldsPath, $table('Items'), $table('Rooms'), $table('Warranties')];
+    }
+
+    /**
+     * Adds a record through the new-record form; returns its path.
+     *
+     * @param array<string, string> $more label => value
+     */
+    private function addRecord(EndToEndClient $client, string $table, string $name, array $more = []): string
+    {
+        self::assertSame(200, $client->get($table . '/records/new')->status);
+        $names = $this->controlNames($client, ['Name', ...array_keys($more)]);
+        $values = [$names['Name'] => $name];
+        foreach ($more as $label => $value) {
+            $values[$names[$label]] = $value;
+        }
+        $added = $client->submit($table . '/records', $values);
+        self::assertSame(303, $added->status, $added->body);
+
+        return (string) parse_url((string) $added->header('Location'), PHP_URL_PATH);
+    }
+
+    /** The key of the field named $name, from the fields page. */
+    private function fieldKey(EndToEndClient $admin, string $fieldsPath, string $name): string
+    {
+        self::assertSame(200, $admin->get($fieldsPath)->status);
+        $href = (string) $admin->xpath()->query('//main//tbody/tr/th/a[normalize-space(.)="' . $name . '"]/@href')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#/fields/[a-z2-7]{12}\z#', $href, "Field {$name}");
+
+        return substr($href, -12);
+    }
+
+    /** The href of the one element $query finds on the last page. */
+    private function href(EndToEndClient $client, string $query): string
+    {
+        $nodes = $client->xpath()->query($query . '/@href');
+        self::assertSame(1, $nodes->length, $query);
+
+        return (string) $nodes->item(0)?->nodeValue;
+    }
+
+    /**
+     * Presses the submit button whose accessible name (aria-label, else
+     * its text) is $name on the last page: posts its form (the enclosing
+     * one, or the one its `form` attribute names) with the form's own
+     * fields and the button's name and value, as a browser would.
+     */
+    private function press(EndToEndClient $client, string $name): Response
+    {
+        $x = $client->xpath();
+        $buttons = $x->query('//button[@aria-label="' . $name . '" or (not(@aria-label) and normalize-space(.)="' . $name . '")]');
+        self::assertSame(1, $buttons->length, "One button named {$name}.");
+        $button = $buttons->item(0);
+        self::assertInstanceOf(DOMElement::class, $button);
+        $formId = $button->getAttribute('form');
+        $form = $formId !== '' ? $x->query('//form[@id="' . $formId . '"]')->item(0) : $x->query('ancestor::form[1]', $button)->item(0);
+        self::assertInstanceOf(DOMElement::class, $form);
+        $post = [];
+        foreach ($x->query('.//input[@type="hidden"][@name]', $form) as $input) {
+            /** @var DOMElement $input */
+            $post[$input->getAttribute('name')] = $input->getAttribute('value');
+        }
+        if ($button->getAttribute('name') !== '') {
+            $post[$button->getAttribute('name')] = $button->getAttribute('value');
+        }
+
+        return $client->post($form->getAttribute('action'), $post);
     }
 
     /** Uploads $csv on step 1 of $projectPath's import; returns the job path (the review page is the last page). */

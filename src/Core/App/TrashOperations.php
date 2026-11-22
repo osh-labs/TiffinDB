@@ -144,8 +144,16 @@ final class TrashOperations
      * files now waiting (P82 pattern; the screen asks again). Otherwise an
      * `empty-trash` snapshot is taken when anything waits, the records go,
      * then the freed files (Attachments::deleteFiles) and every other file
-     * no row names (Attachments::sweep, P175). Audits `trash.emptied` with
-     * the records and files deleted.
+     * no row names (Attachments::sweep, P175).
+     *
+     * The count that decides is read again inside the deleting write,
+     * after the snapshot (P187): when more records wait there than
+     * $expectedRecords, or than the snapshot was taken over (a record
+     * trashed in between would be deleted without being in it), nothing is
+     * deleted and ConfirmationRequired carries the new count.
+     *
+     * Audits `trash.emptied` with the records and files deleted, only when
+     * something was deleted (P187).
      *
      * @throws ConfirmationRequired
      */
@@ -162,21 +170,28 @@ final class TrashOperations
         if ($expectedRecords !== null && $waiting > $expectedRecords) {
             throw new ConfirmationRequired($waiting, $trash->impact($tables, $fields)->files);
         }
-        $deleted = 0;
-        $files = 0;
-        if ($waiting > 0) {
-            $info = $this->c->snapshots->take($db, $this->c->opener->folder($project->key), SnapshotReason::EmptyTrash);
-            $this->c->recordSnapshot($project, $actor, $info);
-            $emptied = $trash->empty($tables, $fields, $actor->userKey);
-            $deleted = $emptied->records;
-            $files = $this->deleteFiles($project, $db, $emptied->freedHashes);
+        if ($waiting === 0) {
+            return new TrashEmptied(0, 0);
         }
-        $this->c->audit->record(AuditAction::TRASH_EMPTIED, $actor->userId, $project->id, $tableKey === null ? null : 'table', $tableKey, [
-            'records' => $deleted,
-            'files' => $files,
-        ]);
+        $info = $this->c->snapshots->take($db, $this->c->opener->folder($project->key), SnapshotReason::EmptyTrash);
+        $this->c->recordSnapshot($project, $actor, $info);
+        $this->c->seam('trash.after_snapshot');
+        $limit = $expectedRecords === null ? $waiting : min($waiting, $expectedRecords);
+        $emptied = $trash->empty($tables, $fields, $actor->userKey, static function (int $now) use ($limit, $trash, $tables, $fields): void {
+            if ($now > $limit) {
+                // Inside the write: the impact read here is what the person would be asked to confirm.
+                throw new ConfirmationRequired($now, $trash->impact($tables, $fields)->files);
+            }
+        });
+        $files = $this->deleteFiles($project, $db, $emptied->freedHashes);
+        if ($emptied->records > 0 || $files > 0) {
+            $this->c->audit->record(AuditAction::TRASH_EMPTIED, $actor->userId, $project->id, $tableKey === null ? null : 'table', $tableKey, [
+                'records' => $emptied->records,
+                'files' => $files,
+            ]);
+        }
 
-        return new TrashEmptied($deleted, $files);
+        return new TrashEmptied($emptied->records, $files);
     }
 
     /**

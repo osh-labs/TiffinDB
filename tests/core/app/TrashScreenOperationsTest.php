@@ -102,6 +102,52 @@ final class TrashScreenOperationsTest extends M4AppTestCase
         self::assertSame(1, $trash->empty($this->admin, $this->p, null, 1)->records, 'An equal count proceeds.');
     }
 
+    /** P187: the count that decides is read inside the deleting write, after the snapshot. */
+    public function testARecordTrashedAfterTheSnapshotMakesItAskAgain(): void
+    {
+        $lamp = $this->ids['Example lamp'];
+        $kettle = $this->ids['Example kettle'];
+        $items = $this->items;
+        $other = $this->fx->projectDb($this->p);
+        $table = '"t_' . $items . '"';
+        $seamed = $this->fx->operations(seam: static function (string $point) use ($other, $table, $kettle): void {
+            if ($point === 'trash.after_snapshot') {
+                $other->run('UPDATE ' . $table . ' SET "_trashed_at" = ? WHERE "id" = ? AND "_trashed_at" IS NULL', ['2026-03-02T10:00:00Z', $kettle]);
+            }
+        });
+        $trash = $seamed->trash();
+        $trash->moveToTrash($this->admin, $this->p, $items, [$lamp]);
+
+        foreach ([1, null] as $expected) {
+            try {
+                $trash->empty($this->admin, $this->p, null, $expected);
+                self::fail('A record trashed after the snapshot must make it ask again.');
+            } catch (ConfirmationRequired $ask) {
+                self::assertSame(2, $ask->records, var_export($expected, true));
+            }
+            self::assertSame(2, $trash->count($this->admin, $this->p, null), 'Nothing was deleted.');
+            self::assertNotContains(AuditAction::TRASH_EMPTIED, $this->auditActions());
+            $trash->restore($this->admin, $this->p, $items, [$kettle]);
+        }
+        // Asked again with the new count, both go (the seam has nothing left to add).
+        $trash->moveToTrash($this->admin, $this->p, $items, [$kettle]);
+        self::assertSame(2, $trash->empty($this->admin, $this->p, null, 2)->records);
+    }
+
+    /** P187: nothing deleted, no `trash.emptied` row. */
+    public function testEmptyingAnEmptyTrashWritesNoAuditRow(): void
+    {
+        $trash = $this->ops->trash();
+        $before = $this->auditActions();
+        self::assertSame([0, 0], [$trash->empty($this->admin, $this->p, null)->records, $trash->empty($this->admin, $this->p, $this->items, 0)->files]);
+        self::assertSame($before, $this->auditActions());
+        $trash->moveToTrash($this->admin, $this->p, $this->items, [$this->ids['Example lamp']]);
+        $trash->empty($this->admin, $this->p, null, 1);
+        self::assertSame(1, count(array_keys($this->auditActions(), AuditAction::TRASH_EMPTIED)));
+        $trash->empty($this->admin, $this->p, null, 0);
+        self::assertSame(1, count(array_keys($this->auditActions(), AuditAction::TRASH_EMPTIED)));
+    }
+
     // ------------------------------------------------------------ T-APP-143
 
     public function testEmptyDeletesFreedFilesSweepsAndKeepsSharedOnes(): void

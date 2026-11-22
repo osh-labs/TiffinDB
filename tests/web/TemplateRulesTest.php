@@ -177,14 +177,13 @@ final class TemplateRulesTest extends TestCase
 
     /**
      * The script elements allowed in the layout's head, each at most once
-     * (M2 spec part 2 section 3.3; M3 spec part 2 section 7; M4 spec part 2
-     * section 8).
+     * (M2 spec part 2 section 3.3; M3 spec part 2 section 7; the M4
+     * collection-editor script was removed, P185).
      */
     public const SCRIPT_ELEMENTS = [
         self::SCRIPT_ELEMENT,
         '<script src="<?= $this->asset(\'js/settings-preview.js\') ?>" defer="defer"></script>',
         '<script src="<?= $this->asset(\'js/import-continue.js\') ?>" defer="defer"></script>',
-        '<script src="<?= $this->asset(\'js/collection-editor.js\') ?>" defer="defer"></script>',
     ];
 
     /** The one enctype a template may write, on a form start tag (M3 spec part 2 section 5.2). */
@@ -1545,16 +1544,17 @@ final class TemplateRulesTest extends TestCase
         yield 'enctype split by an empty PHP block' => ['<form method="post" action="/x" enc<?php ?>type="text/plain"></form>', $page];
 
         // M4 rules (M4 spec part 2 sections 6.2 and 8).
-        $editor = self::SCRIPT_ELEMENTS[3];
+        $editor = '<script src="<?= $this->asset(\'js/collection-editor.js\') ?>" defer="defer"></script>';
         $img = static fn (string $attributes): string => '<img class="file-image" ' . $attributes . ' />';
         $src = 'src="<?= $this->url($data[\'s\']) ?>"';
         $alt = 'alt="<?= $this->e($data[\'a\']) ?>"';
         yield 'editor script outside the layout' => [$editor, $page];
         yield 'editor script in a partial' => [$editor, 'templates/partials/link-rows.php'];
         yield 'editor script twice in the layout' => [$head($editor . "\n" . $editor), $layout];
+        yield 'removed editor script in the layout head' => [$head($editor), $layout];
         yield 'editor script in the layout body' => ["<head>\n</head>\n<body>\n" . $editor . "\n</body>", $layout];
         yield 'editor script without defer' => [$head('<script src="<?= $this->asset(\'js/collection-editor.js\') ?>"></script>'), $layout];
-        yield 'all four scripts and an inline one' => [$head(implode("\n", self::SCRIPT_ELEMENTS) . "\n<script>alert(1)</script>"), $layout];
+        yield 'all three scripts and the removed editor script' => [$head(implode("\n", self::SCRIPT_ELEMENTS) . "\n" . $editor), $layout];
         yield 'img with a literal src' => [$img('src="/projects/x/files/1" ' . $alt), $page];
         yield 'img with e() in src' => [$img('src="<?= $this->e($data[\'s\']) ?>" ' . $alt), $page];
         yield 'img with asset() in src' => [$img('src="<?= $this->asset(\'img/x.png\') ?>" ' . $alt), $page];
@@ -1570,7 +1570,7 @@ final class TemplateRulesTest extends TestCase
         yield 'srcset on a source' => ['<picture><source srcset="<?= $this->url($data[\'s\']) ?>" /></picture>', $page];
     }
 
-    /** M4 spec part 2 sections 6.2 and 8: the image form and the fourth script. */
+    /** M4 spec part 2 section 6.2: the image form (the fourth script was removed, P185). */
     public function testScannerAcceptsTheM4Forms(): void
     {
         $page = self::HEADER . <<<'HTML'
@@ -1578,7 +1578,7 @@ final class TemplateRulesTest extends TestCase
             <button class="button button-plain" type="submit" form="<?= $this->id('unlink', $data['key']) ?>" name="target" value="<?= $this->e($data['target']) ?>" aria-label="<?= $this->t('k', ['title' => $data['title']]) ?>"><?= $this->t('k') ?></button>
             HTML;
         self::assertSame([], self::violations($page, self::PAGE));
-        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENTS[3] . "\n</head>", self::LAYOUT));
+        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENTS[2] . "\n</head>", self::LAYOUT));
     }
 
     public function testScannerAcceptsTheM3Forms(): void

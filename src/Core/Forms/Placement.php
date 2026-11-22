@@ -34,6 +34,27 @@ final class Placement
         }
     }
 
+    /**
+     * $placement with its span replaced by $span, column and row kept; null
+     * when nothing is left.
+     */
+    public static function withSpanOf(?self $placement, ?string $span): ?self
+    {
+        $col = $placement?->col;
+        $row = $placement?->row;
+        if ($col === null && $row === null && $span === null) {
+            return null;
+        }
+
+        return new self($col, $row, $span);
+    }
+
+    /** True when the block has a column or a row (an explicit position). */
+    public function isPlaced(): bool
+    {
+        return $this->col !== null || $this->row !== null;
+    }
+
     public function isFull(): bool
     {
         return $this->span === 'full';

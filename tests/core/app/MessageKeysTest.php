@@ -39,7 +39,11 @@ final class MessageKeysTest extends TestCase
      * orchestrator adds each to M3 spec section 14 and its text to
      * strings/en/problems.php (owned by M3-WP3), then removes it here.
      */
-    private const PENDING_SPEC_KEYS = [];
+    private const PENDING_SPEC_KEYS = [
+        // M5 spec section 4.3, produced by FormEditor::apply (M5-WP2); M5-WP4 lists M5 spec section 10 here and removes these.
+        'problem.form.label',
+        'problem.form.legend',
+    ];
 
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {

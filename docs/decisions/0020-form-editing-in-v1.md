@@ -20,7 +20,7 @@ M5 gives Admins a simple form editor (reorder, show and hide, width, grouping, l
 
 ### 3. Stored-text rule
 
-Every write of a form stores `serialize(parse(text))`: the canonical text of `FormSerializer`. (Archive import, as built since M3, keeps an accepted form's text as the archive holds it unless the field adjustment changes it; an archive written by TiffinDB from M5 holds canonical text, and the next save writes canonical text; `docs/formats/tiffin.md` section 12.5.) Comments, spacing, attribute quoting, attribute order, character references, and a leading byte order mark are not kept; the source view says so before and after a save. Property: the stored text parses, and serializing it again gives the same bytes. Because the canonical text can be longer than the text typed (quotes in text become references), a save whose canonical text would exceed the format's 262,144 bytes is refused, so a stored form always parses again. For the same reason of exact round trips, the parser also refuses Unicode noncharacters, which the page escaper would replace when the text passes through the source view or the editor's hidden working copy. Two forms with the same meaning therefore always have the same stored text, which makes "editor output equals hand-editable HTML" exact: the editor, the source view, and an uploaded file all produce the same bytes for the same form.
+Every write of a form stores `serialize(parse(text))`: the canonical text of `FormSerializer`. (Archive import, as built since M3, keeps an accepted form's text as the archive holds it unless the field adjustment changes it; an archive written by TiffinDB from M5 holds canonical text, and the next save writes canonical text; `docs/formats/tiffin.md` section 12.5. Kept as built at spec review, P209.) Comments, spacing, attribute quoting, attribute order, character references, and a leading byte order mark are not kept; the source view says so before and after a save. Property: the stored text parses, and serializing it again gives the same bytes. Because the canonical text can be longer than the text typed (quotes in text become references), a save whose canonical text would exceed the format's 262,144 bytes is refused, so a stored form always parses again. For the same reason of exact round trips, the parser also refuses Unicode noncharacters (P210; narrows form format 1, which only hand-edited files can break), which the page escaper would replace when the text passes through the source view or the editor's hidden working copy. Two forms with the same meaning therefore always have the same stored text, which makes "editor output equals hand-editable HTML" exact: the editor, the source view, and an uploaded file all produce the same bytes for the same form.
 
 ### 4. Links (settles ADR 0009 E2 for links)
 
@@ -40,13 +40,13 @@ The simple editor does not create images. Source editing and upload may name an 
 
 ### 8. Download and upload
 
-A form is downloaded as an attachment, `application/octet-stream`, under the sandbox CSP of file responses and `nosniff`, named after the table; it is never shown in a page. Upload takes one file of at most 262,144 bytes (the format's limit), parses it against the table, and stores it under decision 3; nothing is stored when it is refused. Slots that name no field of the table are accepted and reported (`docs/formats/tiffin.md` section 12.4).
+A form is downloaded as an attachment, `application/octet-stream`, under the sandbox CSP of file responses and `nosniff`, named after the table; it is never shown in a page. Upload takes one file of at most 262,144 bytes (the format's limit), parses it against the table, and stores it under decision 3; nothing is stored when it is refused. Upload has no save-token check (decision 12): it is a deliberate replacement of the whole form, and it overwrites a save made meanwhile (P211). Slots that name no field of the table are accepted and reported (`docs/formats/tiffin.md` section 12.4).
 
 ### 9. Hidden fields and schema changes (amends ADR 0014 decision 3)
 
 - Hiding a field removes its slot; the editor lists fields with no slot under "Not on this form" with an Add button, and warns when a hidden field is required (requiredness applies only to fields the form shows, P118 and P157).
 - When the schema changes, an edited form (`generated` 0) loses slots for fields that no longer exist and **gains a slot only for each field the change itself adds** (a new field, or the new field on each side of a new relation), at the end of its first section. It no longer gains a slot for every field it does not name. `SchemaEditor`'s hook passes the added field keys.
-- Archive import (M3) no longer gives an edited default form slots for fields it does not name: a missing slot means "hidden", and an archive round trip keeps it hidden. The report count `forms_extended` keeps its name and now counts edited default forms whose slots for missing fields were removed.
+- Archive import (M3) no longer gives an edited default form slots for fields it does not name: a missing slot means "hidden", and an archive round trip keeps it hidden. This reverses the M3 behaviour that brought a hidden required field back on import; such a field stays hidden and records can be saved without it (P118, P157). Accepted at spec review (P208). The report count `forms_extended` keeps its name and now counts edited default forms whose slots for missing fields were removed.
 
 ### 10. Widths on the record screen
 
@@ -54,7 +54,7 @@ The simple editor sets `data-tiffin-span` from a short list: automatic (no span)
 
 ### 11. The `generated` flag and going back to the standard form
 
-A save sets `generated` to 0, unless the saved text equals the generated text for the table's current fields, in which case it stays (or becomes) 1. "Back to the standard form" goes through a confirmation page that offers a download of the current form first, then stores the generated text with `generated` 1. There is no form history in v1 (plan decision 12 gives undo for records only) and no snapshot is taken for form writes.
+A save sets `generated` to 0, unless the saved text equals the generated text for the table's current fields, in which case it stays (or becomes) 1 (confirmed at spec review as the cheapest to reverse, P212: the flag is computed at each save). The simple editor offers no explicit `data-tiffin-col` or `data-tiffin-row` before M8 (P212). "Back to the standard form" goes through a confirmation page that offers a download of the current form first, then stores the generated text with `generated` 1. There is no form history in v1 (plan decision 12 gives undo for records only) and no snapshot is taken for form writes.
 
 ### 12. Core operations, authorization, audit
 

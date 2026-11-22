@@ -43,6 +43,21 @@ final class Response
     /** The only media types file() may send inline (M4 spec part 2 section 2). */
     public const INLINE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
+    /** The type file() sends for anything that is not one of INLINE_TYPES (ADR 0018 decision 5). */
+    public const OCTET_STREAM = 'application/octet-stream';
+
+    /** The longest download name, in code points, after cleaning (as Attachments::cleanName, P181). */
+    public const MAX_NAME_LENGTH = 255;
+
+    /**
+     * Characters removed from a download name before it is encoded (P181):
+     * format characters (bidirectional controls, zero-width characters,
+     * the byte order mark, soft hyphens, tag characters) and the line and
+     * paragraph separators, except U+200C and U+200D (P61). Other control
+     * characters stay and are replaced or percent-encoded.
+     */
+    private const NAME_HIDDEN = '/(?![\x{200C}\x{200D}])[\p{Cf}\p{Zl}\p{Zp}]/u';
+
     /** Media types sent with `; charset=utf-8`. */
     private const UTF8_TYPES = ['text/csv', 'application/json'];
 
@@ -154,9 +169,11 @@ final class Response
      * A 200 response whose body is a stored file (an attachment), for the
      * serving route (M4 spec part 2 section 2).
      *
-     * Headers: `Content-Type` ($mediaType exactly, no charset),
-     * `Content-Length`, `Content-Disposition` (contentDisposition() with
-     * $inline), and `Cache-Control: no-store`. The response is sandboxed:
+     * Headers: `Content-Type` ($mediaType exactly, no charset, for the
+     * four INLINE_TYPES; `application/octet-stream` for every other type,
+     * a second guard behind the core, P181), `Content-Length`,
+     * `Content-Disposition` (contentDisposition() with $inline), and
+     * `Cache-Control: no-store`. The response is sandboxed:
      * SecurityHeaders sends SecurityHeaders::FILE_CSP for it. The file is
      * never removed after sending, and withAfterSend() refuses it.
      *
@@ -175,9 +192,10 @@ final class Response
             throw new InvalidArgumentException('Only the four image types may be sent inline.');
         }
         $size = self::fileSize($path);
+        $type = in_array($mediaType, self::INLINE_TYPES, true) ? $mediaType : self::OCTET_STREAM;
 
         $response = new self(200, [
-            'Content-Type' => $mediaType,
+            'Content-Type' => $type,
             'Content-Length' => (string) $size,
             'Content-Disposition' => self::contentDisposition($fileName, $inline),
             'Cache-Control' => 'no-store',
@@ -222,12 +240,22 @@ final class Response
      * header line, close the quoted string, or add a parameter. With
      * $inline the first word is `inline` instead of `attachment`.
      *
+     * Before encoding, the name loses its format characters and line and
+     * paragraph separators (NAME_HIDDEN: a right-to-left override cannot
+     * disguise the name's extension) and is cut to MAX_NAME_LENGTH code
+     * points, so the header stays bounded; a name left empty becomes
+     * `file` (P181).
+     *
      * @throws InvalidArgumentException for an empty name or one that is not valid UTF-8
      */
     public static function contentDisposition(string $fileName, bool $inline = false): string
     {
         if ($fileName === '' || preg_match('//u', $fileName) !== 1) {
             throw new InvalidArgumentException('A download name is non-empty UTF-8 text.');
+        }
+        $fileName = mb_substr((string) preg_replace(self::NAME_HIDDEN, '', $fileName), 0, self::MAX_NAME_LENGTH, 'UTF-8');
+        if ($fileName === '') {
+            $fileName = 'file';
         }
         $ascii = (string) preg_replace('/[^\x20-\x7E]|["\\\\\/;]/', '_', $fileName);
 

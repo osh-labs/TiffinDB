@@ -635,7 +635,7 @@ final class ResponseTest extends TestCase
     {
         $path = $this->file('<html><script>alert(1)</script></html>');
         $response = Response::file($path, $type, 'a.bin', false);
-        self::assertSame($type, $response->header('Content-Type'), 'The media type exactly, without a charset.');
+        self::assertSame('application/octet-stream', $response->header('Content-Type'), 'Every type but the four images is sent as octet-stream (P181).');
         self::assertStringStartsWith('attachment; ', (string) $response->header('Content-Disposition'));
 
         $this->expectException(InvalidArgumentException::class);
@@ -660,7 +660,22 @@ final class ResponseTest extends TestCase
     {
         $name = "receipt\u{202E}fdp.exe";
         $header = (string) Response::file($this->file('x'), 'application/octet-stream', $name, false)->header('Content-Disposition');
-        self::assertSame('attachment; filename="receipt___fdp.exe"; filename*=UTF-8\'\'receipt%E2%80%AEfdp.exe', $header);
+        self::assertSame('attachment; filename="receiptfdp.exe"; filename*=UTF-8\'\'receiptfdp.exe', $header, 'Format characters are removed (P181).');
+
+        $hidden = "a\u{202E}\u{2066}\u{200B}\u{FEFF}\u{00AD}\u{2028}\u{2029}\u{E0041}b.png";
+        self::assertSame('inline; filename="ab.png"; filename*=UTF-8\'\'ab.png', Response::contentDisposition($hidden, true));
+        self::assertSame("attachment; filename=\"a___b\"; filename*=UTF-8''a%E2%80%8Db", Response::contentDisposition("a\u{200D}b"), 'The joiners stay (P61).');
+        self::assertSame('attachment; filename="file"; filename*=UTF-8\'\'file', Response::contentDisposition("\u{202E}\u{200B}"), 'A name left empty becomes "file".');
+    }
+
+    public function testDownloadNamesAreCutTo255CodePoints(): void
+    {
+        $long = str_repeat("\u{1F4E6}", 5000) . '.png';
+        $header = Response::contentDisposition($long, true);
+        self::assertSame('inline; filename="' . str_repeat('_', 4 * 255) . '"; filename*=UTF-8\'\'' . str_repeat('%F0%9F%93%A6', 255), $header);
+        self::assertLessThan(5000, strlen($header));
+        $ascii = str_repeat('x', 1000);
+        self::assertSame('attachment; filename="' . str_repeat('x', 255) . '"; filename*=UTF-8\'\'' . str_repeat('x', 255), Response::contentDisposition($ascii));
     }
 
     #[DataProvider('badNames')]

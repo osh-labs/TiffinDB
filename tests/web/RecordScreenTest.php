@@ -19,6 +19,7 @@ use TiffinDB\Core\Auth\SignedIn;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\Identifier;
 use TiffinDB\Tests\Support\CoreFixture;
+use TiffinDB\Tests\Support\FileFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -34,6 +35,14 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
  * restore), through the kernel with the real templates and strings and
  * real core operations over a CoreFixture instance. The core clock is set
  * to the web clock, so saves happen "today". Synthetic data only.
+ *
+ * T-WEB-50 (M4-WP6): the relation and file controls of
+ * docs/design/m4/record-controls.md (one-link control, linked rows with
+ * Unlink forms, file rows with their paths, images for the four types
+ * only, the notes on new records, the leave notes), required relation and
+ * attachment fields (422 with summary links), the new record opened from
+ * a picker (`from`), a collection in the list state, servable form
+ * images, hostile titles and file names, and access.
  */
 #[CoversClass(RecordController::class)]
 final class RecordScreenTest extends TestCase
@@ -670,6 +679,282 @@ final class RecordScreenTest extends TestCase
         self::assertSame($nasty, $this->text($x, '//nav[@class="breadcrumb"]/span[@aria-current="page"]'));
     }
 
+    // M4 controls (record-controls.md, T-WEB-50).
+
+    public function testRelationAndFileControls(): void
+    {
+        $k = $this->m4();
+        $html = $this->page(self::MEMBER, $this->r($k['mixer']));
+        $x = $this->xpath($html);
+        $record = $this->r($k['mixer']);
+
+        // One link: the chosen room, "Choose a different room" described by the label, the help, the leave note.
+        $room = '//div[p[@id="f-' . $k['Room'] . '"]]';
+        self::assertSame('Kitchen', $this->text($x, $room . '/div[@class="link-control"]/a[@class="link-chosen"]'));
+        self::assertSame($this->p('/tables/' . $k['rooms'] . '/records/' . $k['kitchen']), $this->attr($x, $room . '//a[@class="link-chosen"]', 'href'));
+        $choose = $room . '/div[@class="link-control"]/a[@class="button button-plain"]';
+        self::assertSame('Choose a different room', $this->text($x, $choose));
+        self::assertSame($record . '/links/' . $k['Room'], $this->attr($x, $choose, 'href'));
+        self::assertSame('f-' . $k['Room'], $this->attr($x, $choose, 'aria-describedby'));
+        self::assertSame(['Linked to the Rooms table.', 'Save your changes first: the buttons here leave this page.'], $this->texts($x, $room . '/p[contains(@class, "help")]'));
+
+        // Many links: rows with the detail and Unlink buttons owned by the unlink form after the record form.
+        $warranties = '//div[p[@id="f-' . $k['Warranties'] . '"]]';
+        self::assertSame(['Stand mixer, manufacturer warranty'], $this->texts($x, $warranties . '/ul[@class="link-list"]/li[@class="link-row linked-row"]/div[@class="linked-main"]/a'));
+        self::assertSame(['Ends 14 Mar 2027'], $this->texts($x, $warranties . '//span[@class="link-detail"]'));
+        $unlink = $warranties . '//li/button';
+        self::assertSame(
+            ['Unlink', 'Unlink Stand mixer, manufacturer warranty', 'unlink-' . $k['Warranties'], 'target', (string) $k['warranty'], 'submit', 'button button-plain'],
+            [$this->text($x, $unlink), $this->attr($x, $unlink, 'aria-label'), $this->attr($x, $unlink, 'form'), $this->attr($x, $unlink, 'name'), $this->attr($x, $unlink, 'value'), $this->attr($x, $unlink, 'type'), $this->attr($x, $unlink, 'class')],
+        );
+        $form = '//form[@class="unlink-form"][@id="unlink-' . $k['Warranties'] . '"]';
+        self::assertSame(1, $x->query('//form[@id="record-form"]/following-sibling::' . substr($form, 2) . '[following-sibling::div[@class="record-actions"]]')->length, 'After the record form, before the actions.');
+        self::assertSame(['post', $record . '/links/' . $k['Warranties'] . '/remove'], [$this->attr($x, $form, 'method'), $this->attr($x, $form, 'action')]);
+        self::assertSame(['_csrf', 'back'], $this->texts($x, $form . '/input/@name'));
+        self::assertSame('record', $this->attr($x, $form . '/input[@name="back"]', 'value'));
+        self::assertSame(1, $x->query('//form[@class="unlink-form"]')->length, 'One unlink form: only many-link fields with links.');
+        self::assertSame('Link another warranty', $this->text($x, $warranties . '/div[@class="control-actions"]/a[@class="button button-strong"]'));
+        self::assertSame($record . '/links/' . $k['Warranties'], $this->attr($x, $warranties . '/div[@class="control-actions"]/a', 'href'));
+        self::assertSame(['Unlinking does not delete the warranty record.', 'Save your changes first: the buttons here leave this page.'], $this->texts($x, $warranties . '/p[contains(@class, "help")]'));
+
+        // Files: a PDF without an image; a PNG with its image from the serving route; paths per file.
+        $receipt = '//div[p[@id="f-' . $k['Receipt'] . '"]]';
+        $files = $record . '/files/' . $k['Receipt'];
+        self::assertSame(['file-row', 'file-row file-row-image', 'file-row'], $this->texts($x, $receipt . '/ul[@class="file-list"]/li/@class'));
+        self::assertSame(
+            [
+                'receipt-stand-mixer.pdf (PDF, ' . strlen(FileFixture::pdf()) . ' bytes)',
+                'stand-mixer.png (image, ' . strlen(FileFixture::png(4, 4)) . ' bytes)',
+                'stand-mixer.svg (file, 71 bytes)',
+            ],
+            $this->texts($x, $receipt . '//li/span[@class="file-name"]'),
+        );
+        self::assertSame(1, $x->query('//img')->length, 'Only the PNG is shown.');
+        self::assertSame(['/projects/' . $this->project . '/files/' . $k['png'], 'stand-mixer.png', 'file-image'], [$this->attr($x, '//img', 'src'), $this->attr($x, '//img', 'alt'), $this->attr($x, '//img', 'class')]);
+        self::assertSame(
+            [
+                ['Open', 'Open receipt-stand-mixer.pdf', $files . '/' . $k['pdf']],
+                ['Replace', 'Replace receipt-stand-mixer.pdf', $files . '/new?replace=' . $k['pdf']],
+                ['Remove', 'Remove receipt-stand-mixer.pdf', $files . '/' . $k['pdf'] . '/remove'],
+                ['Open', 'Open stand-mixer.png', $files . '/' . $k['png']],
+                ['Replace', 'Replace stand-mixer.png', $files . '/new?replace=' . $k['png']],
+                ['Remove', 'Remove stand-mixer.png', $files . '/' . $k['png'] . '/remove'],
+                ['Open', 'Open stand-mixer.svg', $files . '/' . $k['svg']],
+                ['Replace', 'Replace stand-mixer.svg', $files . '/new?replace=' . $k['svg']],
+                ['Remove', 'Remove stand-mixer.svg', $files . '/' . $k['svg'] . '/remove'],
+            ],
+            array_map(fn (\DOMElement $a): array => [trim($a->textContent), $a->getAttribute('aria-label'), $a->getAttribute('href')], $this->elements($x, $receipt . '//li/a')),
+        );
+        self::assertSame('Add a file', $this->text($x, $receipt . '/div[@class="control-actions"]/a'));
+        self::assertSame($files . '/new', $this->attr($x, $receipt . '/div[@class="control-actions"]/a', 'href'));
+        self::assertSame('Add an image', $this->text($x, '//div[p[@id="f-' . $k['Photo'] . '"]]/div[@class="control-actions"]/a'));
+        self::assertSame('No files', $this->text($x, '//div[p[@id="f-' . $k['Photo'] . '"]]/p[@class="static-value"]'));
+    }
+
+    public function testEmptyControlsAndUntitledLinks(): void
+    {
+        $k = $this->m4();
+        $lamp = $this->add([$this->name => 'Desk lamp']);
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($lamp)));
+        $room = '//div[p[@id="f-' . $k['Room'] . '"]]';
+        self::assertSame('No room chosen', $this->text($x, $room . '/div[@class="link-control"]/span[@class="link-none"]'));
+        self::assertSame('Choose a record', $this->text($x, $room . '/div[@class="link-control"]/a'));
+        self::assertSame('No linked records', $this->text($x, '//div[p[@id="f-' . $k['Warranties'] . '"]]/p[@class="static-value"]'));
+        self::assertSame('Link a record', $this->text($x, '//div[p[@id="f-' . $k['Warranties'] . '"]]/div[@class="control-actions"]/a'));
+        self::assertSame(0, $x->query('//form[@class="unlink-form"] | //button[starts-with(@form, "unlink-")]')->length, 'No links, no unlink form.');
+
+        $untitled = $this->ops->records()->create($this->admin(), $this->project, $k['warranties'], []);
+        $this->ops->records()->setLinks($this->admin(), $this->project, $this->items, (string) $lamp, $k['Warranties'], [$untitled]);
+        $y = $this->xpath($this->page(self::MEMBER, $this->r($lamp)));
+        self::assertSame(['Warranty ' . $untitled], $this->texts($y, '//li[@class="link-row linked-row"]//a'));
+        self::assertSame('Unlink Warranty ' . $untitled, $this->attr($y, '//li[@class="link-row linked-row"]/button', 'aria-label'));
+        self::assertSame(0, $y->query('//span[@class="link-detail"]')->length, 'No detail without a value.');
+    }
+
+    public function testUnlinkingFromTheRecordForm(): void
+    {
+        $k = $this->m4();
+        $response = $this->request(self::MEMBER, 'POST', $this->r($k['mixer']) . '/links/' . $k['Warranties'] . '/remove', ['back' => 'record', 'target' => (string) $k['warranty']]);
+        self::assertSame(303, $response->status);
+        self::assertSame($this->r($k['mixer']), $response->header('Location'));
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($k['mixer'])));
+        self::assertSame('Stand mixer, manufacturer warranty is no longer linked.', $this->text($x, '//div[@class="notice"]'));
+        self::assertSame('No linked records', $this->text($x, '//div[p[@id="f-' . $k['Warranties'] . '"]]/p[@class="static-value"]'));
+    }
+
+    public function testNotesOnANewRecord(): void
+    {
+        $k = $this->m4();
+        $x = $this->xpath($this->page(self::MEMBER, $this->l() . '/records/new'));
+        self::assertSame(['Linked to the Rooms table.', 'You can choose one once this record is saved.'], $this->texts($x, '//div[p[@id="f-' . $k['Room'] . '"]]/p[@class="help"]'));
+        self::assertSame(['You can add links once this record is saved.'], $this->texts($x, '//div[p[@id="f-' . $k['Warranties'] . '"]]/p[@class="help"]'));
+        self::assertSame(['You can add files once this record is saved.'], $this->texts($x, '//div[p[@id="f-' . $k['Receipt'] . '"]]/p[@class="help"]'));
+        self::assertSame(0, $x->query('//p[contains(@class, "leave-note")] | //div[@class="link-control"] | //ul | //form[@class="unlink-form"]')->length);
+    }
+
+    public function testRequiredRelationAndAttachmentFields(): void
+    {
+        $k = $this->m4();
+        // Made required by plain SQL (the field editor's own path is tested with the schema screens).
+        $this->core->projectDb($this->project)->run('UPDATE "_tiffin_fields" SET "required" = 1 WHERE "key" IN (?, ?)', [$k['Room'], $k['Photo']]);
+        $lamp = $this->add([$this->name => 'Desk lamp']);
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($lamp)));
+        self::assertSame('Room (required)', $this->text($x, '//p[@id="f-' . $k['Room'] . '"]'));
+        self::assertSame('Photo (required)', $this->text($x, '//p[@id="f-' . $k['Photo'] . '"]'));
+        self::assertSame('Receipt', $this->text($x, '//p[@id="f-' . $k['Receipt'] . '"]'));
+
+        $response = $this->request(self::MEMBER, 'POST', $this->r($lamp), ['version' => $this->version($lamp), 'f_' . $this->name => 'Desk lamp, brass']);
+        self::assertSame(422, $response->status);
+        $this->assertScreen($response->body);
+        $y = $this->xpath($response->body);
+        self::assertSame(['Link at least one record here.', 'Add at least one file here.'], $this->texts($y, '//div[@class="error-summary"]//li'));
+        self::assertSame(['#f-' . $k['Room'], '#f-' . $k['Photo']], $this->texts($y, '//div[@class="error-summary"]//a/@href'));
+        self::assertSame('Link at least one record here.', $this->text($y, '//div[p[@id="f-' . $k['Room'] . '"]]/p[@class="error-text"][@id="err-' . $k['Room'] . '"]'));
+        self::assertSame('Add at least one file here.', $this->text($y, '//div[p[@id="f-' . $k['Photo'] . '"]]/p[@class="error-text"][@id="err-' . $k['Photo'] . '"]'));
+        self::assertSame('Desk lamp, brass', $this->attr($y, '//input[@id="f-' . $this->name . '"]', 'value'), 'What was typed is kept.');
+        self::assertSame('Desk lamp', $this->stored($this->name, $lamp));
+
+        // A new record never enforces them.
+        $created = $this->request(self::MEMBER, 'POST', $this->l() . '/records', ['f_' . $this->name => 'Fan']);
+        self::assertSame(303, $created->status);
+    }
+
+    public function testANewRecordFromAPicker(): void
+    {
+        $k = $this->m4();
+        $from = $k['Warranties'] . '-' . $k['mixer'];
+        $new = $this->p('/tables/' . $k['warranties'] . '/records/new');
+        $html = $this->page(self::MEMBER, $new . '?from=' . $from);
+        $x = $this->xpath($html);
+        $picker = $this->r($k['mixer']) . '/links/' . $k['Warranties'];
+
+        self::assertSame(['Home Inventory', 'Items', 'Stand mixer', 'New warranty'], $this->crumbs($x));
+        self::assertSame(['/projects/' . $this->project, $this->l(), $this->r($k['mixer'])], $this->texts($x, '//nav[@class="breadcrumb"]/a/@href'));
+        self::assertSame('Fill in what you know. When you save, this warranty is linked to Stand mixer and you go back to choosing.', $this->text($x, '//div[@class="page-head"]//p[@class="lead"]'));
+        self::assertSame($from, $this->attr($x, '//form[@id="record-form"]/input[@name="from"]', 'value'));
+        self::assertSame($this->p('/tables/' . $k['warranties'] . '/records'), $this->attr($x, '//form[@id="record-form"]', 'action'));
+        self::assertSame($picker, $this->attr($x, '//div[@class="record-actions-main"]/a', 'href'), 'Cancel goes back to the picker.');
+
+        $name = $this->fieldKey($k['warranties'], 'Name');
+        $response = $this->request(self::MEMBER, 'POST', $this->p('/tables/' . $k['warranties'] . '/records'), ['from' => $from, 'f_' . $name => 'Extended cover']);
+        self::assertSame(303, $response->status);
+        self::assertSame($picker, $response->header('Location'));
+        self::assertSame(['key' => 'notice.link_added_new', 'params' => ['title' => 'Extended cover']], $this->services->flash[self::MEMBER]);
+        $picked = $this->xpath($this->page(self::MEMBER, $picker));
+        self::assertSame('Extended cover has been added and linked.', $this->text($picked, '//div[@class="notice"]'));
+        self::assertSame(['Stand mixer, manufacturer warranty', 'Extended cover'], $this->texts($picked, '//section[@aria-labelledby="pk-now"]//span[@class="picker-title"]/a'));
+
+        // `from` in the query string works for the POST too.
+        $again = $this->request(self::MEMBER, 'POST', $this->p('/tables/' . $k['warranties'] . '/records') . '?from=' . $from, ['f_' . $name => 'Accident cover']);
+        self::assertSame($picker, $again->header('Location'));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function badOrigins(): iterable
+    {
+        yield 'no record' => ['abcdefghijkl-1'];
+        yield 'not canonical' => ['%s-01'];
+        yield 'letters' => ['nonsense'];
+        yield 'unknown record' => ['%s-999'];
+    }
+
+    #[DataProvider('badOrigins')]
+    public function testABadOriginIsNotFound(string $pattern): void
+    {
+        $k = $this->m4();
+        $from = sprintf($pattern, $k['Warranties']);
+        $warranties = $this->p('/tables/' . $k['warranties'] . '/records');
+        self::assertSame(404, $this->request(self::MEMBER, 'GET', $warranties . '/new?from=' . rawurlencode($from))->status);
+        $count = $this->ops->records()->listing($this->admin(), $this->project, $k['warranties'], ListRequest::none())->total;
+        self::assertSame(404, $this->request(self::MEMBER, 'POST', $warranties, ['from' => $from, 'f_' . $this->fieldKey($k['warranties'], 'Name') => 'X'])->status);
+        self::assertSame($count, $this->ops->records()->listing($this->admin(), $this->project, $k['warranties'], ListRequest::none())->total, 'Nothing created.');
+
+        // A field whose other table is not this one.
+        self::assertSame(404, $this->request(self::MEMBER, 'GET', $warranties . '/new?from=' . $k['Room'] . '-' . $k['mixer'])->status);
+    }
+
+    public function testARefusedLinkFromAPickerCreatesNothing(): void
+    {
+        $k = $this->m4();
+        $this->ops->records()->trash($this->admin(), $this->project, $k['rooms'], (string) $k['kitchen']);
+        $rooms = $this->p('/tables/' . $k['rooms'] . '/records');
+        $before = $this->ops->records()->listing($this->admin(), $this->project, $k['rooms'], ListRequest::none())->total;
+        $response = $this->request(self::MEMBER, 'POST', $rooms, ['from' => $k['Room'] . '-' . $k['mixer'], 'f_' . $this->fieldKey($k['rooms'], 'Name') => 'Attic']);
+        self::assertSame(422, $response->status);
+        $this->assertScreen($response->body);
+        $x = $this->xpath($response->body);
+        self::assertSame(
+            ['This item is linked to a record in the trash. Restore that record and unlink it, or empty the trash, before choosing another.'],
+            $this->texts($x, '//div[@class="error-summary"]//li'),
+        );
+        self::assertSame($k['Room'] . '-' . $k['mixer'], $this->attr($x, '//input[@name="from"]', 'value'));
+        self::assertSame('Attic', $this->attr($x, '//input[@id="f-' . $this->fieldKey($k['rooms'], 'Name') . '"]', 'value'));
+        self::assertSame($before, $this->ops->records()->listing($this->admin(), $this->project, $k['rooms'], ListRequest::none())->total);
+    }
+
+    public function testACollectionInTheListStateIsWhereTheListLinksGo(): void
+    {
+        $id = $this->add([$this->name => 'Stand mixer']);
+        $collection = $this->ops->collections()->save($this->admin(), $this->project, $this->items, null, [
+            'name' => 'Mixers', 'rules' => [['field' => $this->name, 'test' => 'contains', 'value' => 'mixer']],
+        ]);
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($id) . '?collection=' . $collection . '&q=stand'));
+        self::assertSame($this->p('/collections/' . $collection) . '?q=stand', $this->attr($x, '//div[@class="record-actions-main"]/a', 'href'));
+        self::assertSame($this->r($id) . '?q=stand&collection=' . $collection, $this->attr($x, '//form[@id="record-form"]', 'action'));
+
+        $trash = $this->request(self::MEMBER, 'POST', $this->r($id) . '/trash?collection=' . $collection);
+        self::assertSame($this->p('/collections/' . $collection), $trash->header('Location'));
+        $this->request(self::MEMBER, 'POST', $this->r($id) . '/restore');
+
+        // An unknown or ill-formed collection is dropped: the table's list.
+        foreach (['abcdefghijkl', '../x', ''] as $bad) {
+            $y = $this->xpath($this->page(self::MEMBER, $this->r($id) . '?collection=' . rawurlencode($bad)));
+            self::assertSame($this->l(), $this->attr($y, '//div[@class="record-actions-main"]/a', 'href'), $bad);
+        }
+        $odd = $this->request(self::MEMBER, 'POST', $this->r($id) . '/trash?collection=' . rawurlencode('../../x'));
+        self::assertSame($this->l(), $odd->header('Location'));
+    }
+
+    public function testServableFormImagesAreShown(): void
+    {
+        $k = $this->m4();
+        $this->storeForm(
+            '<div data-tiffin-form="1">'
+            . '<img src="attachment:' . $k['png'] . '" alt="The mixer &lt;b&gt;"/>'
+            . '<img src="attachment:' . $k['pdf'] . '" alt="A PDF"/>'
+            . '<img src="attachment:999" alt="Gone"/>'
+            . '<div data-tiffin-field="' . $this->name . '"></div>'
+            . '</div>',
+        );
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($k['mixer'])));
+        self::assertSame(1, $x->query('//img')->length, 'Only the servable image.');
+        self::assertSame(['/projects/' . $this->project . '/files/' . $k['png'], 'The mixer <b>', 'file-image'], [$this->attr($x, '//form[@id="record-form"]/img', 'src'), $this->attr($x, '//img', 'alt'), $this->attr($x, '//img', 'class')]);
+    }
+
+    public function testHostileTitlesAndFileNamesAreEscapedOnce(): void
+    {
+        $k = $this->m4();
+        $hostile = '<script>alert(1)</script> "x" & \'y\'';
+        $this->ops->records()->update($this->admin(), $this->project, $k['rooms'], (string) $k['kitchen'], [$this->fieldKey($k['rooms'], 'Name') => $hostile], $this->ops->records()->screen($this->admin(), $this->project, $k['rooms'], (string) $k['kitchen'], ListRequest::none())->version ?? '');
+        $this->core->projectDb($this->project)->run('UPDATE "_tiffin_attachments" SET "original_name" = ? WHERE "id" = ?', [$hostile . '.png', $k['png']]);
+        $html = $this->page(self::MEMBER, $this->r($k['mixer']));
+        $x = $this->xpath($html);
+        self::assertStringNotContainsString('<script>alert(1)</script>', $html);
+        self::assertSame($hostile, $this->text($x, '//a[@class="link-chosen"]'));
+        self::assertSame($hostile . '.png', $this->attr($x, '//img', 'alt'));
+        self::assertContains('Open ' . $hostile . '.png', $this->texts($x, '//a[@class="file-open"]/@aria-label'));
+    }
+
+    public function testMembersWithoutAGrantGetNotFoundAndAdminsSeeTheControls(): void
+    {
+        $k = $this->m4();
+        $x = $this->xpath($this->page(self::ADMIN, $this->r($k['mixer'])));
+        self::assertSame(1, $x->query('//form[@class="unlink-form"]')->length);
+        $this->ops->projects()->setSharing($this->admin(), $this->project, []);
+        self::assertSame(404, $this->request(self::MEMBER, 'GET', $this->r($k['mixer']))->status);
+        self::assertSame(404, $this->request(self::MEMBER, 'POST', $this->r($k['mixer']) . '/links/' . $k['Warranties'] . '/remove', ['back' => 'record', 'target' => (string) $k['warranty']])->status);
+    }
+
     // Helpers.
 
     /**
@@ -707,6 +992,53 @@ final class RecordScreenTest extends TestCase
         $keys['Warranties'] = $schema->addRelationField($this->admin(), $this->project, $this->items, 'Warranties', $keys['warranties'], Cardinality::Many, Cardinality::One, 'Item', false, '')->key;
 
         return $keys;
+    }
+
+    /**
+     * The M4 fixture on Items: Rooms (Room, one link) and Warranties
+     * (Warranties, many links, with an Ends date as the detail), the
+     * attachment fields Receipt and Photo (images only), and "Stand mixer"
+     * linked to Kitchen and one warranty, holding a PDF, a PNG, and an SVG
+     * (stored as a plain file) in Receipt.
+     *
+     * @return array<string, mixed>
+     */
+    private function m4(): array
+    {
+        $admin = $this->admin();
+        $schema = $this->ops->schema();
+        $k = [];
+        $k['rooms'] = $schema->createTable($admin, $this->project, 'Rooms', 'room', true)->key;
+        $k['warranties'] = $schema->createTable($admin, $this->project, 'Warranties', 'warranty', true)->key;
+        $ends = $schema->addField($admin, $this->project, $k['warranties'], 'Ends', 'date', [], false, '')->key;
+        $k['Room'] = $schema->addRelationField($admin, $this->project, $this->items, 'Room', $k['rooms'], Cardinality::One, Cardinality::Many, 'Items', false, '')->key;
+        $k['Warranties'] = $schema->addRelationField($admin, $this->project, $this->items, 'Warranties', $k['warranties'], Cardinality::Many, Cardinality::One, 'Item', false, '')->key;
+        $k['Receipt'] = $this->addField('Receipt', 'attachment');
+        $k['Photo'] = $this->addField('Photo', 'attachment', ['images_only' => true]);
+        $k['kitchen'] = $this->add(['Name' => 'Kitchen'], $k['rooms']);
+        $k['warranty'] = $this->add(['Name' => 'Stand mixer, manufacturer warranty', $ends => '2027-03-14'], $k['warranties']);
+        $k['mixer'] = $this->add([$this->name => 'Stand mixer']);
+        $records = $this->ops->records();
+        $records->setLinks($admin, $this->project, $this->items, (string) $k['mixer'], $k['Room'], [$k['kitchen']]);
+        $records->setLinks($admin, $this->project, $this->items, (string) $k['mixer'], $k['Warranties'], [$k['warranty']]);
+        $attach = fn (string $bytes, string $name): int => $this->ops->attachments()->add($admin, $this->project, $this->items, (string) $k['mixer'], $k['Receipt'], $this->core->upload($bytes), $name, null)->id;
+        $k['pdf'] = $attach(FileFixture::pdf(), 'receipt-stand-mixer.pdf');
+        $k['png'] = $attach(FileFixture::png(4, 4), 'stand-mixer.png');
+        $k['svg'] = $attach('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', 'stand-mixer.svg');
+
+        return $k;
+    }
+
+    /** @return list<\DOMElement> */
+    private function elements(DOMXPath $x, string $query): array
+    {
+        $list = [];
+        foreach ($x->query($query) as $node) {
+            self::assertInstanceOf(\DOMElement::class, $node);
+            $list[] = $node;
+        }
+
+        return $list;
     }
 
     /** @param array<string, mixed> $options */

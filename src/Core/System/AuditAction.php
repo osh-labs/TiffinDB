@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace TiffinDB\Core\System;
 
-/** The audit actions of M1 (M1 spec section 5.6), M3 (M3 spec section 13.6, P128), and M4 (M4 spec section 10.8, P169). */
+/** The audit actions of M1 (M1 spec section 5.6), M3 (M3 spec section 13.6, P128), M4 (M4 spec section 10.8, P169), and M5 (M5 spec section 9.6). */
 final class AuditAction
 {
     public const SETUP_COMPLETE = 'setup.complete';
@@ -44,6 +44,8 @@ final class AuditAction
     public const ATTACHMENT_REMOVED = 'attachment.removed';
     public const COLLECTION_SAVED = 'collection.saved';
     public const COLLECTION_DELETED = 'collection.deleted';
+    public const FORM_SAVED = 'form.saved';
+    public const FORM_RESET = 'form.reset';
 
     /** Values of the `reason` detail of auth.sign_in_failed. */
     public const REASON_UNKNOWN_USER = 'unknown-user';
@@ -60,6 +62,7 @@ final class AuditAction
         self::SNAPSHOT_TAKEN, self::TRASH_EMPTIED, self::IMPORT_COMPLETED, self::EXPORT_CREATED,
         self::ARCHIVE_EXPORTED, self::ARCHIVE_IMPORTED, self::PLUGIN_ENABLED, self::PLUGIN_DISABLED,
         self::ATTACHMENT_ADDED, self::ATTACHMENT_REMOVED, self::COLLECTION_SAVED, self::COLLECTION_DELETED,
+        self::FORM_SAVED, self::FORM_RESET,
     ];
 
     private function __construct()

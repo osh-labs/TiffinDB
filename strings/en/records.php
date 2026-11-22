@@ -7,6 +7,10 @@
  * form, new record, record in the trash, edit conflict, and their notices.
  * {Item} is the table's item name with a capital first letter, {item} the
  * item name as stored.
+ *
+ * M4 (docs/design/m4/record-controls.md sections 4 and 6, picker.md
+ * section 3): the new-record lead from a picker and the notices of links
+ * and files. {title} is a record's title, {name} and {old} file names.
  */
 
 declare(strict_types=1);
@@ -31,6 +35,7 @@ return [
     'records.new.crumb' => 'New {item}',
     'records.new.title' => 'New {item}',
     'records.new.lead' => 'Fill in what you know. You can change it later.',
+    'records.new.lead_from' => 'Fill in what you know. When you save, this {item} is linked to {title} and you go back to choosing.',
     'records.create' => 'Save',
 
     'records.trashed.title' => 'This {item} is in the trash',
@@ -53,4 +58,14 @@ return [
     'notice.record_saved' => 'Your changes have been saved.',
     'notice.record_trashed' => '{title} has been moved to the trash.',
     'notice.record_restored' => '{title} has been restored.',
+
+    'records.link_detail' => '{field} {value}',
+
+    'notice.link_added' => '{title} is now linked.',
+    'notice.link_chosen' => '{title} is now chosen.',
+    'notice.link_removed' => '{title} is no longer linked.',
+    'notice.link_added_new' => '{title} has been added and linked.',
+    'notice.file_added' => '{name} has been added.',
+    'notice.file_replaced' => '{name} has replaced {old}.',
+    'notice.file_removed' => '{name} has been removed.',
 ];

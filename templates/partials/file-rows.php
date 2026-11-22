@@ -6,7 +6,7 @@
  * The files of an attachment field (docs/design/m4/components.md section
  * 3.3; M4 spec part 2 sections 6.1 and 6.2), printed inside the field's
  * `div.field` after its label, help, and errors: `ul.file-list` with one
- * `li.file-row` per file (an image link for the four image types, the
+ * `li.file-row` per file (the image for the four image types, the
  * name and facts, Open, and, when the person can edit, Replace and
  * Remove, each named for its file) or "No files"; then "Add a file" (or
  * "Add an image") and the leave note. On a new record: only the
@@ -15,6 +15,8 @@
  * An image is shown only when the controller gives `image`: its `src` is
  * the serving route `/projects/{p}/files/{a}`, through url(), and its
  * `alt` the file's name. No size is printed; the stylesheet bounds it.
+ * The image is not a link of its own: "Open" is the row's one link to the
+ * file page, so the row has one tab stop per target (P181).
  *
  * Data: `key` (the field key, the id part of its label), `files` (list of
  * {name, type (the type word, plain: the text of file.type.pdf,
@@ -37,7 +39,7 @@ declare(strict_types=1);
 <?php foreach ($data['files'] as $file) : ?>
 <?php if (is_array($file['image'])) : ?>
 <li class="file-row file-row-image">
-<a class="file-image-link" href="<?= $this->url($file['openPath']) ?>"><img class="file-image" src="<?= $this->url($file['image']['src']) ?>" alt="<?= $this->e($file['image']['alt']) ?>" /></a>
+<img class="file-image" src="<?= $this->url($file['image']['src']) ?>" alt="<?= $this->e($file['image']['alt']) ?>" />
 <?php else : ?>
 <li class="file-row">
 <?php endif; ?>

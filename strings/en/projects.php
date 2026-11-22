@@ -43,4 +43,7 @@ return [
     'projects.new.submit' => 'Create project',
     'notice.project_created' => '{name} has been created.',
     'notice.project_created_table' => '{name} has been created, with the table {table}.',
+
+    // Project settings: the stored files (ADR 0018 decision 3; M4 spec part 2 section 4).
+    'projects.settings.files' => 'This project stores {count|# file|# files}, {size} in all.',
 ];

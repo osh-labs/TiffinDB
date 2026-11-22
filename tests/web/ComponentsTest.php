@@ -1431,13 +1431,14 @@ final class ComponentsTest extends TestCase
         );
         self::assertSame(['(PDF, 84 KB)', '(image, 1.2 MB)'], self::texts($xpath, '//span[@class="file-name"]/span[@class="file-facts"]'));
 
-        // One image, in a link to the file page, its src the serving route, its alt the name.
+        // One image, its src the serving route, its alt the name; it is not a
+        // link of its own, so Open is the row's one link to the file page (P181).
         self::assertSame(1, $xpath->query('//img')->length);
-        $link = self::one($xpath, '//li[@class="file-row file-row-image"]/a[@class="file-image-link"]');
-        self::assertSame($files . '/5', $link->getAttribute('href'));
-        $img = self::one($xpath, '//a[@class="file-image-link"]/img');
+        $img = self::one($xpath, '//li[@class="file-row file-row-image"]/img');
         self::assertSame(['alt' => 'stand-mixer.png', 'class' => 'file-image', 'src' => '/projects/abcdefghijkl/files/5'], self::attributes($img));
-        self::assertSame($link, $xpath->query('//li[@class="file-row file-row-image"]/*')->item(0), 'The image comes first in its row.');
+        self::assertSame($img, $xpath->query('//li[@class="file-row file-row-image"]/*')->item(0), 'The image comes first in its row.');
+        self::assertSame(0, $xpath->query('//a//img')->length);
+        self::assertSame([$files . '/5'], self::texts($xpath, '//li[@class="file-row file-row-image"]/a[@href="' . $files . '/5"]/@href'), 'One link to the file page per row.');
 
         self::assertSame(
             [

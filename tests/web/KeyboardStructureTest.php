@@ -233,8 +233,11 @@ final class KeyboardStructureTest extends TestCase
         $mixer = $this->m2->itemPath('Stand mixer');
         $this->check($mixer, [
             ...self::TOP, 'Home Inventory', 'Items', 'Previous item: Sewing machine', 'Next item: Tent, 4-person',
-            'Name', 'Kitchen', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Serial number', 'Under warranty', 'Manual', 'Notes',
-            'Stand mixer, manufacturer warranty',
+            'Name', 'Kitchen', 'Choose a different room', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Serial number', 'Under warranty', 'Manual', 'Notes',
+            // M4 record controls (docs/design/m4/record-controls.md section 3).
+            'Open receipt-stand-mixer.pdf', 'Replace receipt-stand-mixer.pdf', 'Remove receipt-stand-mixer.pdf', 'Add a file',
+            'Open stand-mixer.jpg', 'Replace stand-mixer.jpg', 'Remove stand-mixer.jpg', 'Add an image',
+            'Stand mixer, manufacturer warranty', 'Unlink Stand mixer, manufacturer warranty', 'Link another warranty',
             'Save', 'Back to list', 'Move to trash',
             ...self::FOOTER,
         ]);
@@ -257,7 +260,8 @@ final class KeyboardStructureTest extends TestCase
             'Name', 'Long text', 'Number (required)', 'Price (euros)', 'Day', 'Start time', 'Delivered', 'Run time', 'Done', 'Size',
             '1, lowest', '2', '3, highest', 'Not rated', 'Site', 'Contact', 'Phone',
         ];
-        $expected = [...self::TOP, 'Home Inventory', 'Samples', ...$controls, 'Save', 'Back to list', 'Move to trash', ...self::FOOTER];
+        // M4 record controls: the empty one-link relation and the attachment field (record-controls.md section 3).
+        $expected = [...self::TOP, 'Home Inventory', 'Samples', ...$controls, 'Choose a record', 'Add a file', 'Save', 'Back to list', 'Move to trash', ...self::FOOTER];
         $this->check($path, $expected);
         $html = $this->member->page();
         self::assertSame(1, $this->member->xpath()->query('//main//p[@id][normalize-space(.)="How long it ran. Hours and minutes, for example 1:30."]')->length, 'The duration help line.');
@@ -705,9 +709,20 @@ final class KeyboardStructureTest extends TestCase
             /** @var DOMElement $form */
             $action = $form->getAttribute('action');
             $class = $form->getAttribute('class');
-            $submits = $x->query('.//button[not(@type) or @type="submit"]', $form);
+            // A button inside a form that names another form with `form` belongs to that one (M4 Unlink buttons).
+            $submits = $x->query('.//button[(not(@type) or @type="submit") and not(@form)]', $form);
             $id = $form->getAttribute('id');
             $outside = $id === '' ? null : $x->query('//button[@form="' . $id . '"]');
+            if ($outside !== null && $outside->length > 0 && str_starts_with($id, 'unlink-') && str_contains($class, 'unlink-form')) {
+                // M4: a many-link field's unlink form is submitted only by its Unlink buttons (record-controls.md section 2).
+                self::assertSame(0, $submits->length, "{$where}: the unlink form {$id} holds no button.");
+                foreach ($outside as $button) {
+                    /** @var DOMElement $button */
+                    self::assertSame('target', $button->getAttribute('name'), "{$where}: an Unlink button posts its target.");
+                    self::assertStringStartsWith('Unlink ', $button->getAttribute('aria-label'), "{$where}: an Unlink button names its record.");
+                }
+                continue;
+            }
             if ($outside !== null && $outside->length > 0) {
                 // M3: the import review form's Import button sits after the form, as the record form's Save does (import.md 4.5).
                 self::assertContains($id, ['record-form', 'import-review'], "{$where}: only the record form and the import review are submitted from outside.");

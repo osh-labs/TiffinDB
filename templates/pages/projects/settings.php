@@ -7,7 +7,8 @@
  * layout prints the breadcrumb and the error summary before this.
  *
  * Data: `values` {name}, `errors` (element id => plain text), `action`
- * and `cancel` (application paths).
+ * and `cancel` (application paths), `files` {count (int), size (formatted
+ * text)}: the stored files of the project (ADR 0018 decision 3).
  */
 
 declare(strict_types=1);
@@ -28,3 +29,4 @@ declare(strict_types=1);
 </div>
 <?= $this->partial('form-actions', ['submit' => 'schema.settings.submit', 'danger' => false, 'cancel' => $data['cancel']]) ?>
 </form>
+<p class="help"><?= $this->t('projects.settings.files', ['count' => $data['files']['count'], 'size' => $data['files']['size']]) ?></p>

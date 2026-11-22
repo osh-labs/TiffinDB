@@ -4,14 +4,17 @@
  * Copyright (C) TiffinDB contributors
  *
  * Text blocks of a bound record form (docs/design/m2/record.md section
- * 2.1): a heading (`h2.section-title` or `h3`), a paragraph, or a divider.
+ * 2.1): a heading (`h2.section-title` or `h3`), a paragraph, a divider,
+ * or a form image the core found servable (docs/design/m4/
+ * record-controls.md section 1): `img.file-image` from the serving route.
  * Inline content goes through the form-inline partial (text escaped;
  * `strong`, `em`, `br` as themselves; links as their text only). Other
  * kinds print nothing.
  *
  * Data: `node` = {kind: 'heading', level: 2|3, children} | {kind:
- * 'paragraph', children} | {kind: 'divider'}; children are form-inline
- * nodes.
+ * 'paragraph', children} | {kind: 'divider'} | {kind: 'image', src (the
+ * serving route `/projects/{p}/files/{a}`), alt (plain text)}; children
+ * are form-inline nodes.
  */
 
 declare(strict_types=1);
@@ -25,4 +28,6 @@ declare(strict_types=1);
 <p><?= $this->partial('form-inline', ['nodes' => $data['node']['children']]) ?></p>
 <?php elseif ($data['node']['kind'] === 'divider') : ?>
 <hr />
+<?php elseif ($data['node']['kind'] === 'image') : ?>
+<img class="file-image" src="<?= $this->url($data['node']['src']) ?>" alt="<?= $this->e($data['node']['alt']) ?>" />
 <?php endif; ?>

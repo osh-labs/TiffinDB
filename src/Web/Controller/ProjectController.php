@@ -178,6 +178,7 @@ final class ProjectController
     {
         [$list, $errors] = self::problems($this->context, $problems, self::SETTINGS_FIELDS);
         $view = $this->context->view();
+        $totals = $this->context->services()->operations()->projects()->attachmentTotals($this->context->actor(), $key);
 
         return $this->context->page('projects/settings', [
             'title' => $view->text('schema.settings.title'),
@@ -187,6 +188,7 @@ final class ProjectController
             'values' => $values,
             'action' => '/projects/' . $key . '/settings',
             'cancel' => '/projects/' . $key . '/tables',
+            'files' => ['count' => $totals->files, 'size' => $view->format()->fileSize(max(0, $totals->bytes))],
         ], $status, 'projects');
     }
 

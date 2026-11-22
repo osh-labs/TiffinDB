@@ -212,4 +212,9 @@ final class FakeSource implements ExportSource
     {
         return [];
     }
+
+    public function collections(): array
+    {
+        return [];
+    }
 }

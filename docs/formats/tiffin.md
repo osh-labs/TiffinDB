@@ -1,6 +1,6 @@
-# TiffinDB project file format, version 3
+# TiffinDB project file format, version 4
 
-Status: format version 3, written by TiffinDB from milestone M3 (version 1 was written in M1 and version 2 in M2; section 11 says how an older file is upgraded). Everything marked "version 3" is absent from version 2 files; the rest describes both. Section 13 describes the project archive (a zip file for backup and transfer). Provisional until the maintainer confirms ADR 0010, ADR 0014, ADR 0015, and ADR 0017. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
+Status: format version 4, written by TiffinDB from milestone M4 (version 1 was written in M1, version 2 in M2, and version 3 in M3; section 11 says how an older file is upgraded). Everything marked "version 4" is absent from version 3 files, everything marked "version 3" from version 2 files; the rest describes all of them. Section 13 describes the project archive (a zip file for backup and transfer). Provisional until the maintainer confirms ADR 0010, ADR 0014, ADR 0015, ADR 0017, ADR 0018, and ADR 0019. This document is meant to let anyone read, check, or rescue a TiffinDB project with ordinary SQLite tools and no TiffinDB code.
 
 Every example in this document is synthetic.
 
@@ -30,9 +30,9 @@ projects/
 | Check | Value |
 |---|---|
 | `PRAGMA application_id` | `1413891138` (hexadecimal `0x54464442`, the ASCII bytes `TFDB`) |
-| `PRAGMA user_version` | The format version: `3` for this document (`2` in files written by M2) |
+| `PRAGMA user_version` | The format version: `4` for this document (`3` in files written by M3, `2` by M2) |
 | `SELECT value FROM _tiffin_meta WHERE key = 'format'` | `tiffindb-project` |
-| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `3` (`2` in files written by M2) |
+| `SELECT value FROM _tiffin_meta WHERE key = 'format_version'` | `4` (`3` in files written by M3, `2` by M2) |
 
 TiffinDB refuses to open a file whose `application_id` or `format` differs, or whose version is higher than it understands. It upgrades a file with a lower version in place, after saving a snapshot (section 11).
 
@@ -167,6 +167,26 @@ CREATE TABLE _tiffin_import_log (
 CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at);
 ```
 
+Version 4 adds one table and its two indexes:
+
+```sql
+CREATE TABLE _tiffin_collections (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    match_mode TEXT NOT NULL DEFAULT 'all',
+    rules      TEXT NOT NULL DEFAULT '[]',
+    sort       TEXT,
+    position   INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+) WITHOUT ROWID;
+CREATE UNIQUE INDEX _tiffin_collections_name ON _tiffin_collections (name COLLATE NOCASE);
+CREATE INDEX _tiffin_collections_table ON _tiffin_collections (table_key, position);
+```
+
 The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that does not will not enforce the `REFERENCES` clauses; that only matters when writing.
 
 ### 4.1 `_tiffin_meta`
@@ -174,7 +194,7 @@ The connection that TiffinDB uses turns on `PRAGMA foreign_keys`. A tool that do
 | Key | Value |
 |---|---|
 | `format` | `tiffindb-project` |
-| `format_version` | `3` (`2` in files written by M2) |
+| `format_version` | `4` (`3` in files written by M3, `2` by M2) |
 | `project_key` | The project's key; equals the folder name |
 | `project_name` | The project name shown in TiffinDB, for example `Home Inventory` |
 | `created_at` | When the project was created (time format in section 5) |
@@ -250,14 +270,51 @@ One row per completed import into the project. An import that fails or is abando
  "skipped":{"empty":2,"over_limit":0},
  "links":[{"field":"r5vk3pn7qx2m","table":"p6wz2kq7nm3v","added":2}],
  "required_empty":[{"field":"m4pz7k2qsw3n","count":1}],
- "archive":{"values_emptied":0,"links_dropped":0,"forms_dropped":0,"forms_extended":1,"files_missing":0}}
+ "archive":{"values_emptied":0,"links_dropped":0,"forms_dropped":0,"forms_extended":1,"files_missing":0,"collections_dropped":0,"collection_rules_dropped":0}}
 ```
 
-`rows` holds at most the first 20 row numbers (1 is the first data row). Members are omitted when empty; `archive` appears only when `source` is `archive`. Readers must ignore members they do not know.
+`rows` holds at most the first 20 row numbers (1 is the first data row). Members are omitted when empty; `archive` appears only when `source` is `archive`. `collections_dropped` and `collection_rules_dropped` are written from version 4 (section 13.3). Readers must ignore members they do not know.
 
-### 4.8 Reserved for later versions
+### 4.8 `_tiffin_collections` (version 4)
 
-`_tiffin_collections` is named in the plan and will be added in a later format version. Version 3 files do not contain it.
+One row per saved collection: a saved search over one table that updates by itself as records change. A collection holds rules, never records.
+
+| Column | Meaning |
+|---|---|
+| `key` | The collection's key. Collections share the key scope of tables, fields, relations, and forms in the project |
+| `table_key` | The table whose records the collection lists. Deleting the table deletes its collections |
+| `name` | The name shown in the sidebar, 1 to 60 characters; unique in the project, ignoring the case of ASCII letters (index `_tiffin_collections_name`) |
+| `match_mode` | `all` (a record must match every rule) or `any` (at least one rule) |
+| `rules` | A JSON array of 0 to 10 rules (section 4.8.1). With no rules the collection lists every live record of its table |
+| `sort` | The order the collection opens in: a field key followed by `.asc` or `.desc`, or `added.asc`, `added.desc`, `changed.desc`; null for the table's default order (its title field A to Z, else the order records were added) |
+| `position` | Order of the collections in the sidebar, from 1 |
+| `created_at`, `created_by`, `updated_at`, `updated_by` | UTC times (section 5) and person keys, or null when unknown |
+
+Only live records are ever listed (`_trashed_at` is null).
+
+#### 4.8.1 Rules
+
+Each rule is an object with exactly three members: `field` (a field key of the collection's table), `op` (one of the operators below), and `values` (an array of strings, possibly empty). Example (synthetic):
+
+```json
+[{"field":"q2mz7k4wnx3b","op":"is","values":["1"]},
+ {"field":"t5kq2zm7wn4x","op":"after","values":["2023-01-01"]},
+ {"field":"w2qn6kz7tb4x","op":"is","values":["a3kq7vn2xbmz"]}]
+```
+
+| Field `type` | `op` | `values` | A record matches when |
+|---|---|---|---|
+| `text`, `long_text`, `url`, `email`, `phone` | `contains` | one text of 1 to 200 characters | the value contains the text, ignoring the case of ASCII letters (`LIKE`, with `%`, `_`, `\` matched literally) |
+| same | `is` | one text | the value equals the text, ignoring the case of ASCII letters |
+| `number`, `currency`, `rating`, `duration` | `is`, `less`, `more` | one value in the type's text form (section 6): `12.5`, `329.00`, `4`, `1:30:00` (hours, minutes, seconds) | the stored value is equal to, less than, or more than it (currency compared in minor units) |
+| `date`, `date_time` | `on`, `before`, `after` | one date `YYYY-MM-DD` | the date is that day, an earlier day, or a later day (for `date_time`, the whole day from `T00:00:00` to `T23:59:59`) |
+| `choice` | `is` | one choice **key** from the field's `choices` (not its label, so renaming a choice keeps the rule) | the value is that choice's current label |
+| `checkbox` | `is` | `"1"` or `"0"` | the box is ticked or not ticked |
+| `relation` | `links-to` | one record `id` of the linked table | the record links to that record |
+| any type above | `empty` | none | the value is empty (`relation`: no live linked record) |
+| `text`, `long_text`, `url`, `email`, `phone` | `not-empty` | none | the value is not empty |
+
+An empty value never matches `contains`, `is`, `less`, `more`, `on`, `before`, `after`, or `links-to`. A rule that does not fit the table as it is now (its field was deleted or changed type, its choice was removed, its value no longer fits the field's options, or its linked record is not live) is kept as stored but ignored when the collection is listed; TiffinDB shows it as no longer working. Readers must ignore members of a rule they do not know.
 
 ## 5. User tables
 
@@ -369,13 +426,20 @@ A file added to a record is stored once, under `attachments/<first two character
 | `id` | Attachment number |
 | `sha256` | SHA-256 of the file content, lower-case hexadecimal; also the file name |
 | `size` | Size in bytes |
-| `media_type` | The media type TiffinDB determined when the file was added, for example `image/png` |
-| `original_name` | The file name it had when added, for example `receipt.pdf` |
+| `media_type` | The media type TiffinDB determined when the file was added, for example `image/png` (below) |
+| `original_name` | The file name it had when added, for example `receipt.pdf`; text only, never a path |
 | `created_at`, `created_by` | When and by whom it was added |
 
-`_tiffin_attachment_links` says which record field shows which file, in what order. `record_id` is the `id` in the user table that owns `field_key`. Two links may point to the same attachment. To get a file back by hand: find its `sha256`, open `attachments/<first two characters>/<sha256>`, and save it under `original_name`.
+`_tiffin_attachment_links` says which record field shows which file, in what order (`position`, lowest first, then `attachment_id`). `record_id` is the `id` in the user table that owns `field_key`. Two links may point to the same attachment. To get a file back by hand: find its `sha256`, open `attachments/<first two characters>/<sha256>`, and save it under `original_name`.
 
-Version 1 defines the storage; adding and serving files arrives in milestone M4.
+Version 1 defines this storage. From milestone M4 (no change to the file format; ADR 0018) TiffinDB adds and removes files as follows:
+
+- **Types.** `media_type` comes from TiffinDB's own check of the file's first bytes, never from the browser or the file name: `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `application/pdf`, or `application/octet-stream` for everything else. Files written by other tools may hold another value; TiffinDB treats any value other than the four image types as a file to download.
+- **Adding.** Each file added gets its own `_tiffin_attachments` row and one link. Files with the same content share one stored file (the name is the content's SHA-256), so several rows may have the same `sha256`. The file is put in place before its row is written, in the same transaction, so a row never names a file that was not stored.
+- **Removing.** Removing a file from a record deletes its link; the row is deleted when no link to it remains, and the stored file once no row has its `sha256`. Emptying the trash, deleting an attachment field, and deleting a table do the same for the links they remove. A stored file that no row names (left behind if TiffinDB stopped between those steps) is not part of the project and is deleted by TiffinDB later; when copying a project by hand it may be left out.
+- An empty file is never stored, and the original name has no control characters, no `/` or `\`, and at most 255 characters.
+
+TiffinDB serves a file only to people who may see the project's records, and only while it is linked from a record that is not in the trash.
 
 ## 9. Concurrency and copying
 
@@ -417,6 +481,7 @@ The 20 newest snapshots other than `manual` ones are kept; older ones are delete
 | 1 | M1 | First version: metadata, tables, fields, relations, attachments, trash columns |
 | 2 | M2 | Adds `_tiffin_forms` (sections 4.6 and 12) |
 | 3 | M3 | Adds `_tiffin_import_log` (section 4.7) and the snapshot reason `import` (section 10) |
+| 4 | M4 | Adds `_tiffin_collections` (section 4.8) |
 
 ### 11.1 Upgrade from version 1 to version 2
 
@@ -473,6 +538,32 @@ UPDATE _tiffin_meta SET value = '3' WHERE key = 'format_version';
 ```
 
 No other table or row changes. The snapshot reason `import` needs no change to the file. A version 1 file is upgraded by section 11.1 and then this section, each step in its own transaction.
+
+### 11.3 Upgrade from version 3 to version 4
+
+After the `format-upgrade` snapshot, in one transaction, exactly:
+
+```sql
+CREATE TABLE _tiffin_collections (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    match_mode TEXT NOT NULL DEFAULT 'all',
+    rules      TEXT NOT NULL DEFAULT '[]',
+    sort       TEXT,
+    position   INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+) WITHOUT ROWID;
+CREATE UNIQUE INDEX _tiffin_collections_name ON _tiffin_collections (name COLLATE NOCASE);
+CREATE INDEX _tiffin_collections_table ON _tiffin_collections (table_key, position);
+PRAGMA user_version = 4;
+UPDATE _tiffin_meta SET value = '4' WHERE key = 'format_version';
+```
+
+No other table or row changes; the upgraded file has no collections. A file of version 1 or 2 is upgraded by the earlier sections and then this one, each step in its own transaction. The upgrade can be done by hand with the statements above, on a copy, while TiffinDB is not running.
 
 ## 12. Forms (version 2)
 
@@ -546,6 +637,7 @@ The legends are written in English as data, like the `Name` field of a new table
 - A field element whose key is not a field of the table (for example after the field was deleted) shows nothing.
 - A field of the table that no field element names is not shown on the record screen and is left unchanged when a record is saved.
 - A form that breaks any rule of section 12.1, or whose `format` is not `1`, is not used: TiffinDB shows the generated layout instead (section 12.3) and leaves the stored text as it is.
+- An `img` element is shown (from milestone M4) only while its attachment is a PNG, JPEG, GIF, or WebP image linked from a record that is not in the trash (section 8); otherwise nothing is shown in its place.
 - Stored form text is never sent to a browser as it is. TiffinDB reads it into the elements of section 12.1 and builds the page from those, escaping all text.
 
 ## 13. Project archive
@@ -586,7 +678,7 @@ Example (synthetic):
 
 ### 13.3 What TiffinDB does when importing an archive
 
-TiffinDB treats the archive as untrusted. It checks the zip and the manifest, opens `project.tiffin` read-only, and refuses it when `PRAGMA integrity_check` is not `ok`, when its identity (section 2) is wrong or its version is newer than TiffinDB knows, or when it holds a trigger, a view, a virtual table, an object whose name is not one of the documented patterns (sections 3 and 4), or a user or join table whose columns differ from sections 5 and 7. It then builds a **new** project file and copies the archive's metadata and values into it, checking each one against this document: values that do not fit their field type are left empty, links whose records are missing are dropped, and forms that break section 12 are dropped; every table's forms are then brought in line with its fields (section 12.3), so each table's edited default form gains a field element for any field it does not name. Keys and record ids are kept; the project gets a new key and no sharing. The import report lists everything that was emptied, dropped, or missing.
+TiffinDB treats the archive as untrusted. It checks the zip and the manifest, opens `project.tiffin` read-only, and refuses it when `PRAGMA integrity_check` is not `ok`, when its identity (section 2) is wrong or its version is newer than TiffinDB knows, or when it holds a trigger, a view, a virtual table, an object whose name is not one of the documented patterns (sections 3 and 4), or a user or join table whose columns differ from sections 5 and 7. It then builds a **new** project file and copies the archive's metadata and values into it, checking each one against this document: values that do not fit their field type are left empty, links whose records are missing are dropped, and forms that break section 12 are dropped; every table's forms are then brought in line with its fields (section 12.3), so each table's edited default form gains a field element for any field it does not name. Collections (version 4) are copied when their key, table, and name are valid, the name is not taken by an earlier one, and fewer than 50 are already kept (else the collection is dropped and counted as `collections_dropped`); a `match_mode` other than `all` or `any` becomes `all`, and a `sort` that is not a sort token (section 4.8) becomes null; each rule is kept when it has exactly the shape of section 4.8.1 (a field key, a known operator, and at most two strings of at most 200 characters), else dropped and counted as `collection_rules_dropped`. A kept rule that does not fit the rebuilt tables is kept and shown as no longer working, as in a live project. Keys and record ids are kept; the project gets a new key and no sharing. The import report lists everything that was emptied, dropped, or missing.
 
 ### 13.4 Restoring an archive by hand
 

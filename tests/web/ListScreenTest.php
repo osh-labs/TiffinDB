@@ -348,7 +348,7 @@ final class ListScreenTest extends TestCase
         self::assertSame(0, $x->query('//div[@class="empty-state"]/a')->length);
         self::assertSame(1, $x->query('//div[@class="page-actions"]/a')->length);
         self::assertSame(0, $x->query('//form[@class="list-controls"] | //table | //nav[@class="pager"]')->length);
-        self::assertSame('3', HtmlAssertions::text($html, '//div[@class="sidebar-item"]/span[@class="sidebar-count"]'), 'Trash count.');
+        self::assertSame('3', HtmlAssertions::text($html, '//div[@class="sidebar-foot"]/a[@href="/projects/' . $this->project . '/trash"]/span[@class="sidebar-count"]'), 'Trash count.');
         self::assertSame('Items 0', HtmlAssertions::text($html, '//nav[@class="sidebar"]//a[@aria-current="page"]'));
     }
 
@@ -448,6 +448,43 @@ final class ListScreenTest extends TestCase
         $this->share();
         $html = $this->page(self::MEMBER, $this->t(''));
         self::assertSame('Add item', HtmlAssertions::text($html, '//div[@class="page-actions"]/a'));
+    }
+
+    /**
+     * T-WEB-58 (M4-WP7): the sidebar's Collections group (components.md
+     * section 2): each collection of the project with its count, in
+     * order, none current on a table list, then "New collection" for the
+     * table being listed; the trash line is a link.
+     */
+    public function testSidebarCollections(): void
+    {
+        $x = $this->xpath($this->page(self::ADMIN, $this->t('')));
+        $group = '//nav[@class="sidebar"]/div[@class="sidebar-group"][h2[normalize-space(.)="Collections"]]';
+        self::assertSame(['New collection'], $this->texts($x, $group . '/a'), 'With no collection the group still offers one.');
+        self::assertSame($this->t('/collections/new'), $this->attr($x, $group . '/a[@class="sidebar-link sidebar-add"]', 'href'));
+
+        $collections = $this->ops->collections();
+        $warranty = $collections->save($this->admin(), $this->project, $this->items, null, ['name' => 'Under warranty', 'match' => 'all', 'rules' => [1 => ['field' => $this->f['Under warranty'], 'test' => 'ticked']]]);
+        $kitchen = $collections->save($this->admin(), $this->project, $this->rooms, null, ['name' => 'Rooms & more', 'match' => 'all', 'rules' => []]);
+        $this->share();
+
+        $html = $this->page(self::MEMBER, $this->t(''));
+        $x = $this->xpath($html);
+        self::assertSame(['Under warranty 1', 'Rooms & more 1', 'New collection'], $this->texts($x, $group . '/a'));
+        self::assertSame([$this->p('/collections/' . $warranty), $this->p('/collections/' . $kitchen), $this->t('/collections/new')], $this->texts($x, $group . '/a/@href'));
+        self::assertSame(['Items 3'], $this->texts($x, '//nav[@class="sidebar"]//a[@aria-current="page"]'), 'On a table list only the table is current.');
+        self::assertSame(['Tables', 'Collections'], array_slice($this->texts($x, '//nav[@class="sidebar"]//h2[@class="sidebar-heading"]'), 0, 2));
+        self::assertSame($this->p('/trash'), $this->attr($x, '//div[@class="sidebar-foot"]/a[2]', 'href'));
+        self::assertStringContainsString('Rooms &amp; more', $html);
+
+        // On another table's list, "New collection" is for that table.
+        $x = $this->xpath($this->page(self::MEMBER, $this->p('/tables/' . $this->rooms)));
+        self::assertSame($this->p('/tables/' . $this->rooms . '/collections/new'), $this->attr($x, '//a[@class="sidebar-link sidebar-add"]', 'href'));
+
+        // On a collection view the collection is current, not the table.
+        $x = $this->xpath($this->page(self::MEMBER, $this->p('/collections/' . $warranty)));
+        self::assertSame(['Under warranty 1'], $this->texts($x, '//nav[@class="sidebar"]//a[@aria-current="page"]'));
+        self::assertSame($this->t('/collections/new'), $this->attr($x, '//a[@class="sidebar-link sidebar-add"]', 'href'));
     }
 
     public function testProjectOpenRedirectsToTheFirstTable(): void

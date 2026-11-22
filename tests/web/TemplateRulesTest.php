@@ -117,6 +117,8 @@ final class TemplateRulesTest extends TestCase
         'settings.size.', 'settings.spacing.', 'settings.face.',
         // M3 spec part 2 section 6 (P141).
         'import.warning.', 'import.issue.', 'import.type.', 'plugins.status.', 'problem.archive.', 'steps.import.',
+        // M4 spec part 2 section 7.
+        'collection.broken.', 'collections.test.',
     ];
 
     /**
@@ -136,16 +138,48 @@ final class TemplateRulesTest extends TestCase
     ];
 
     /**
+     * Keys of M4-WP5's string files that only the record, picker, and file
+     * screens of M4-WP6 print (M4 spec part 2 section 7). WP6 empties this
+     * list; nothing else changes these lines.
+     */
+    public const PENDING_RECORDS = [
+    ];
+
+    /**
+     * Keys of M4-WP5's string files that only the collection screens of
+     * M4-WP7 print. WP7 empties this list; nothing else changes these lines.
+     */
+    public const PENDING_COLLECTIONS = [
+    ];
+
+    /**
+     * Keys of M4-WP5's string files that only the trash screens of M4-WP8
+     * print. WP8 empties this list; nothing else changes these lines.
+     */
+    public const PENDING_TRASH = [
+    ];
+
+    /**
      * Keys that count as used until the templates that print them land;
      * testPendingKeysAreStillPending fails once a template uses one, so the
      * entry is then removed.
      */
-    public const PENDING_KEYS = [...self::PENDING_IMPORT, ...self::PENDING_EXPORT];
+    public const PENDING_KEYS = [
+        ...self::PENDING_IMPORT,
+        ...self::PENDING_EXPORT,
+        ...self::PENDING_RECORDS,
+        ...self::PENDING_COLLECTIONS,
+        ...self::PENDING_TRASH,
+    ];
 
     /** The show-password script element (M1 spec part 2 section 4.1). */
     public const SCRIPT_ELEMENT = '<script src="<?= $this->asset(\'js/show-password.js\') ?>" defer="defer"></script>';
 
-    /** The script elements allowed in the layout's head, each at most once (M2 spec part 2 section 3.3; M3 spec part 2 section 7). */
+    /**
+     * The script elements allowed in the layout's head, each at most once
+     * (M2 spec part 2 section 3.3; M3 spec part 2 section 7; the M4
+     * collection-editor script was removed, P185).
+     */
     public const SCRIPT_ELEMENTS = [
         self::SCRIPT_ELEMENT,
         '<script src="<?= $this->asset(\'js/settings-preview.js\') ?>" defer="defer"></script>',
@@ -439,6 +473,26 @@ final class TemplateRulesTest extends TestCase
             }
         }
 
+        // Images (M4 spec part 2 section 6.2): no srcset or sizes anywhere;
+        // every img has a src that is wholly output (url(), checked in
+        // outputContextProblems) and an alt, and no width or height.
+        if (preg_match('#[\s"\'/](?:srcset|sizes)\s*=#i', $html) === 1) {
+            $problems[] = 'Markup contains a srcset or sizes attribute.';
+        }
+        if (preg_match_all('#<img\b[^>]*>#i', $html, $images) > 0) {
+            foreach ($images[0] as $image) {
+                if (preg_match('#[\s"\'/](?:width|height)\s*=#i', $image) === 1) {
+                    $problems[] = 'Markup has an img with a width or height.';
+                }
+                if (preg_match_all('#\ssrc\s*=#i', $image) !== 1 || preg_match('#\ssrc=""#', $image) !== 1) {
+                    $problems[] = 'Markup has an img whose src is not one url() output.';
+                }
+                if (preg_match('#\salt="#', $image) !== 1) {
+                    $problems[] = 'Markup has an img without an alt.';
+                }
+            }
+        }
+
         // enctype: the literal UPLOAD_ENCTYPE once in a form start tag, and
         // nowhere else (no other value, element, or formenctype).
         $withoutUploadForms = (string) preg_replace_callback(
@@ -500,7 +554,9 @@ final class TemplateRulesTest extends TestCase
                     'tag' => $file === self::LAYOUT && $tagName === 'html' && $n === 0
                         && in_array($helper, self::LAYOUT_ACCESSORS, true)
                         ? null : 'output inside a tag, outside an attribute value',
-                    'dq' => self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file, $byOffset),
+                    'dq' => $tagName === 'img' && $attribute === 'src' && $helper !== 'url'
+                        ? "{$helper}() output in the src of an img (only url())"
+                        : self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file, $byOffset),
                     default => 'output in a single-quoted or unquoted attribute value',
                 };
                 if ($where !== null) {
@@ -1107,11 +1163,13 @@ final class TemplateRulesTest extends TestCase
     /** P141: the pending lists are the two package lists, and hold only existing keys. */
     public function testPendingKeysAreThePackageLists(): void
     {
-        self::assertSame([...self::PENDING_IMPORT, ...self::PENDING_EXPORT], self::PENDING_KEYS);
-        self::assertSame([], array_intersect(self::PENDING_IMPORT, self::PENDING_EXPORT));
+        $lists = [self::PENDING_IMPORT, self::PENDING_EXPORT, self::PENDING_RECORDS, self::PENDING_COLLECTIONS, self::PENDING_TRASH];
+        self::assertSame(array_merge(...$lists), self::PENDING_KEYS);
+        self::assertSame(array_values(array_unique(self::PENDING_KEYS)), self::PENDING_KEYS, 'No key is pending for two packages.');
         $source = RepoFiles::read('tests/web/TemplateRulesTest.php');
-        self::assertMatchesRegularExpression('/^    public const PENDING_IMPORT = \[\n(?:        \'[a-z0-9._-]+\',\n)*    \];$/m', $source);
-        self::assertMatchesRegularExpression('/^    public const PENDING_EXPORT = \[\n(?:        \'[a-z0-9._-]+\',\n)*    \];$/m', $source);
+        foreach (['IMPORT', 'EXPORT', 'RECORDS', 'COLLECTIONS', 'TRASH'] as $name) {
+            self::assertMatchesRegularExpression('/^    public const PENDING_' . $name . ' = \[\n(?:        \'[a-z0-9._-]+\',\n)*    \];$/m', $source);
+        }
     }
 
     public function testKeysPassedToPartialsCountAsUsed(): void
@@ -1484,6 +1542,43 @@ final class TemplateRulesTest extends TestCase
         yield 'enctype with output before it' => ['<form method="post" action="/x" enctype="<?= $this->e($data[\'t\']) ?>multipart/form-data"></form>', $page];
         yield 'enctype twice on a form' => ['<form method="post" action="/x" enctype="multipart/form-data" enctype="text/plain"></form>', $page];
         yield 'enctype split by an empty PHP block' => ['<form method="post" action="/x" enc<?php ?>type="text/plain"></form>', $page];
+
+        // M4 rules (M4 spec part 2 sections 6.2 and 8).
+        $editor = '<script src="<?= $this->asset(\'js/collection-editor.js\') ?>" defer="defer"></script>';
+        $img = static fn (string $attributes): string => '<img class="file-image" ' . $attributes . ' />';
+        $src = 'src="<?= $this->url($data[\'s\']) ?>"';
+        $alt = 'alt="<?= $this->e($data[\'a\']) ?>"';
+        yield 'editor script outside the layout' => [$editor, $page];
+        yield 'editor script in a partial' => [$editor, 'templates/partials/link-rows.php'];
+        yield 'editor script twice in the layout' => [$head($editor . "\n" . $editor), $layout];
+        yield 'removed editor script in the layout head' => [$head($editor), $layout];
+        yield 'editor script in the layout body' => ["<head>\n</head>\n<body>\n" . $editor . "\n</body>", $layout];
+        yield 'editor script without defer' => [$head('<script src="<?= $this->asset(\'js/collection-editor.js\') ?>"></script>'), $layout];
+        yield 'all three scripts and the removed editor script' => [$head(implode("\n", self::SCRIPT_ELEMENTS) . "\n" . $editor), $layout];
+        yield 'img with a literal src' => [$img('src="/projects/x/files/1" ' . $alt), $page];
+        yield 'img with e() in src' => [$img('src="<?= $this->e($data[\'s\']) ?>" ' . $alt), $page];
+        yield 'img with asset() in src' => [$img('src="<?= $this->asset(\'img/x.png\') ?>" ' . $alt), $page];
+        yield 'img with text after the src output' => [$img('src="<?= $this->url($data[\'s\']) ?>x" ' . $alt), $page];
+        yield 'img without src' => [$img($alt), $page];
+        yield 'img with two src' => [$img($src . ' ' . $src . ' ' . $alt), $page];
+        yield 'img without alt' => [$img($src), $page];
+        yield 'img with srcset' => [$img($src . ' ' . $alt . ' srcset="<?= $this->url($data[\'s\']) ?> 2x"'), $page];
+        yield 'img with sizes' => [$img($src . ' ' . $alt . ' sizes="100vw"'), $page];
+        yield 'img with width' => [$img($src . ' ' . $alt . ' width="<?= $this->e($data[\'w\']) ?>"'), $page];
+        yield 'img with height' => [$img($src . ' ' . $alt . ' height="20"'), $page];
+        yield 'img in upper case with width' => ['<IMG ' . $src . ' ' . $alt . ' WIDTH="2" />', $page];
+        yield 'srcset on a source' => ['<picture><source srcset="<?= $this->url($data[\'s\']) ?>" /></picture>', $page];
+    }
+
+    /** M4 spec part 2 section 6.2: the image form (the fourth script was removed, P185). */
+    public function testScannerAcceptsTheM4Forms(): void
+    {
+        $page = self::HEADER . <<<'HTML'
+            <a class="file-image-link" href="<?= $this->url($data['open']) ?>"><img class="file-image" src="<?= $this->url($data['src']) ?>" alt="<?= $this->e($data['alt']) ?>" /></a>
+            <button class="button button-plain" type="submit" form="<?= $this->id('unlink', $data['key']) ?>" name="target" value="<?= $this->e($data['target']) ?>" aria-label="<?= $this->t('k', ['title' => $data['title']]) ?>"><?= $this->t('k') ?></button>
+            HTML;
+        self::assertSame([], self::violations($page, self::PAGE));
+        self::assertSame([], self::violations(self::HEADER . "<head>\n" . self::SCRIPT_ELEMENTS[2] . "\n</head>", self::LAYOUT));
     }
 
     public function testScannerAcceptsTheM3Forms(): void
@@ -1556,7 +1651,7 @@ final class TemplateRulesTest extends TestCase
     public function testTheComponentFixturesFollowTheRules(): void
     {
         $strings = self::strings();
-        foreach (['components', 'notices', 'form-actions', 'm2-components', 'm3-components'] as $name) {
+        foreach (['components', 'notices', 'form-actions', 'm2-components', 'm3-components', 'm4-components'] as $name) {
             $file = "tests/web/fixtures/templates/pages/{$name}.php";
             self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
             foreach (self::literalKeys(RepoFiles::read($file)) as $key) {

@@ -105,10 +105,13 @@ final class RecordListingTest extends AppTestCase
         self::assertSame([], ListRequest::none()->toQuery());
         self::assertSame(['q' => 'lamp', 'op' => 'is', 'v' => 'Hall'], $request->withoutPage()->toQuery());
         self::assertSame(['q' => 'lamp', 'op' => 'is', 'v' => 'Hall', 'page' => '9'], $request->withPage(9)->toQuery());
-        $full = ListRequest::fromQuery(['q' => 'a', 'sort' => 's', 'filter' => 'f', 'op' => 'between', 'v' => '1', 'v2' => '2', 'page' => '2']);
+        $full = ListRequest::fromQuery(['q' => 'a', 'sort' => 's', 'filter' => 'f', 'op' => 'between', 'v' => '1', 'v2' => '2', 'collection' => 'k2xq7vn4mz3t', 'page' => '2']);
         self::assertSame(ListRequest::PARAMS, array_keys($full->toQuery()));
-        self::assertSame(['q' => 'a', 'sort' => 's'], $full->withoutFilter()->toQuery());
-        self::assertSame(['sort' => 's'], $full->withoutSearchAndFilter()->toQuery());
+        // M4 (P162): the collection a record screen follows stays through the other changes.
+        self::assertSame(['q' => 'a', 'sort' => 's', 'collection' => 'k2xq7vn4mz3t'], $full->withoutFilter()->toQuery());
+        self::assertSame(['sort' => 's', 'collection' => 'k2xq7vn4mz3t'], $full->withoutSearchAndFilter()->toQuery());
+        self::assertSame('k2xq7vn4mz3t', $full->withPage(4)->collection);
+        self::assertNull(ListRequest::fromQuery(['collection' => ['x']])->collection);
         $this->assertThrows(\InvalidArgumentException::class, fn () => $full->withPage(0));
     }
 

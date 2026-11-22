@@ -582,6 +582,11 @@ final class ShellTest extends TestCase
             self::assertSame('/assets/js/import-continue.js?v=' . self::VERSION, self::element($xpath, '/html/head/script')->getAttribute('src'));
             self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
             HtmlAssertions::assertNoInlineCode($continue, self::sourceUrl());
+
+            // P185: the collection editor's script was removed; the name loads nothing.
+            $editor = self::render('components', self::componentData($shell, ['script' => 'collection-editor']));
+            self::assertStringNotContainsString('<script', $editor);
+            self::assertStringNotContainsString('collection-editor', $editor);
         }
     }
 
@@ -1021,6 +1026,9 @@ final class ShellTest extends TestCase
         yield 'record' => ['record', 'page page-record'];
         yield 'record-narrow' => ['record-narrow', 'page page-record page-record-narrow'];
         yield 'settings' => ['settings', 'page page-settings'];
+        yield 'picker' => ['picker', 'page page-picker'];
+        yield 'collection' => ['collection', 'page page-collection'];
+        yield 'trash' => ['trash', 'page page-trash'];
         yield 'unknown' => ['other', 'page'];
     }
 
@@ -1110,11 +1118,15 @@ final class ShellTest extends TestCase
         );
         self::assertSame('1,234', self::text(self::element($xpath, '//a[@aria-current="page"]/span[@class="sidebar-count"]')));
 
-        $schema = self::element($xpath, '//div[@class="sidebar-foot"]/a');
+        $schema = self::element($xpath, '//div[@class="sidebar-foot"]/a[1]');
         self::assertSame(['sidebar-link', '/projects/abcdefghijkl/tables', self::string('sidebar.schema')], [$schema->getAttribute('class'), $schema->getAttribute('href'), self::text($schema)]);
-        $trash = self::element($xpath, '//div[@class="sidebar-foot"]/div[@class="sidebar-item"]');
+        // M4 spec part 2 section 5: the trash line is a link to the trash screen, never current.
+        $trash = self::element($xpath, '//div[@class="sidebar-foot"]/a[2]');
+        self::assertSame(['sidebar-link', '/projects/abcdefghijkl/trash', ''], [$trash->getAttribute('class'), $trash->getAttribute('href'), $trash->getAttribute('aria-current')]);
         self::assertSame(self::string('sidebar.trash') . ' 3', self::text($trash));
-        self::assertSame(0, $xpath->query('//div[@class="sidebar-foot"]/div//a')->length, 'The trash count is not a link in M2.');
+        self::assertSame(['span', 'span.sidebar-count'], array_map(static fn (DOMElement $e): string => $e->nodeName . ($e->getAttribute('class') === '' ? '' : '.' . $e->getAttribute('class')), iterator_to_array($xpath->query('./*', $trash))));
+        self::assertSame(2, $xpath->query('//div[@class="sidebar-foot"]/*')->length);
+        self::assertSame(0, $xpath->query('//*[@class="sidebar-item"]')->length);
         self::assertStringNotContainsString('<script>alert', $html);
 
         $none = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => self::sidebar(null)]));
@@ -1173,6 +1185,95 @@ final class ShellTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         Sidebar::build('../etc', 'x', [], 0, null);
+    }
+
+    /**
+     * M4 spec part 2 section 5 (docs/design/m4/components.md section 2):
+     * the Collections group after Tables and before Data, with counts, the
+     * current collection marked, and "New collection" for the listed table.
+     */
+    public function testSidebarCollectionsGroup(): void
+    {
+        $tables = [new TableSummary(new TableDef('mnopqrstuvwx', 'Items', 'item', 1, null), 3, 12)];
+        $collections = [
+            ['key' => 'ghijklmnopqr', 'name' => 'Under warranty', 'count' => 1234],
+            ['key' => 'stuvwxyz2345', 'name' => self::HOSTILE, 'count' => 0],
+        ];
+        $sidebar = Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 2, null, true, $collections, 'ghijklmnopqr', 'mnopqrstuvwx');
+        self::assertSame([
+            ['name' => 'Under warranty', 'count' => '1,234', 'path' => '/projects/abcdefghijkl/collections/ghijklmnopqr', 'current' => true],
+            ['name' => self::HOSTILE, 'count' => '0', 'path' => '/projects/abcdefghijkl/collections/stuvwxyz2345', 'current' => false],
+        ], $sidebar['collections']);
+        self::assertSame('/projects/abcdefghijkl/tables/mnopqrstuvwx/collections/new', $sidebar['newCollectionPath']);
+        self::assertSame('/projects/abcdefghijkl/trash', $sidebar['trashPath']);
+
+        $html = self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => $sidebar], 'light', '/base');
+        $xpath = self::xpath($html);
+        $parts = [];
+        foreach ($xpath->query('//nav[@class="sidebar"]/*') as $child) {
+            /** @var DOMElement $child */
+            $parts[] = $child->nodeName . '.' . $child->getAttribute('class') . ':' . trim((string) preg_replace('/\s+/u', ' ', (string) $xpath->evaluate('string((./h2 | ./span | ./a/span)[1])', $child)));
+        }
+        self::assertSame([
+            'div.sidebar-project:' . self::string('sidebar.project'),
+            'div.sidebar-group:' . self::string('sidebar.tables'),
+            'div.sidebar-group:' . self::string('sidebar.collections'),
+            'div.sidebar-group:' . self::string('sidebar.data'),
+            'div.sidebar-foot:' . self::string('sidebar.trash'),
+        ], $parts, 'Collections sit after Tables and before Data.');
+
+        $links = [];
+        foreach ($xpath->query('//div[@class="sidebar-group"][2]/a') as $a) {
+            /** @var DOMElement $a */
+            $links[] = [$a->getAttribute('class'), $a->getAttribute('href'), self::text($a), $a->getAttribute('aria-current')];
+        }
+        self::assertSame([
+            ['sidebar-link', '/base/projects/abcdefghijkl/collections/ghijklmnopqr', 'Under warranty 1,234', 'page'],
+            ['sidebar-link', '/base/projects/abcdefghijkl/collections/stuvwxyz2345', self::HOSTILE . ' 0', ''],
+            ['sidebar-link sidebar-add', '/base/projects/abcdefghijkl/tables/mnopqrstuvwx/collections/new', self::string('sidebar.new_collection'), ''],
+        ], $links);
+        self::assertSame(['1,234', '0'], array_map(self::text(...), iterator_to_array($xpath->query('//div[@class="sidebar-group"][2]/a/span[@class="sidebar-count"]'))));
+        self::assertSame(1, $xpath->query('//nav[@class="sidebar"]//*[@aria-current]')->length, 'Only the viewed collection is current.');
+        self::assertSame('/base/projects/abcdefghijkl/trash', self::element($xpath, '//div[@class="sidebar-foot"]/a[2]')->getAttribute('href'));
+        self::assertStringNotContainsString('<script>alert', $html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+
+        // Collections without a table (the search page): no "New collection".
+        $search = Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, null, false, $collections);
+        self::assertNull($search['newCollectionPath']);
+        $searchPage = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => $search]));
+        self::assertSame(2, $searchPage->query('//div[@class="sidebar-group"][2]/a')->length);
+        self::assertSame(0, $searchPage->query('//a[contains(@class, "sidebar-add")] | //nav[@class="sidebar"]//*[@aria-current]')->length);
+
+        // A table but no collection: the group holds only "New collection".
+        $first = Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, 'mnopqrstuvwx', false, [], null, 'mnopqrstuvwx');
+        $firstPage = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => $first]));
+        self::assertSame([self::string('sidebar.collections')], array_map(self::text(...), iterator_to_array($firstPage->query('//div[@class="sidebar-group"][2]/h2'))));
+        self::assertSame(['sidebar-link sidebar-add'], array_map(static fn (DOMElement $a): string => $a->getAttribute('class'), iterator_to_array($firstPage->query('//div[@class="sidebar-group"][2]/a'))));
+
+        // Neither: no group.
+        $neither = self::xpath(self::render('error', [...self::errorData(self::shell()), 'layout' => 'list', 'sidebar' => Sidebar::build('abcdefghijkl', 'Home Inventory', $tables, 0, null)]));
+        self::assertSame(1, $neither->query('//nav[@class="sidebar"]/div[@class="sidebar-group"]')->length);
+        self::assertSame(0, $neither->query('//h2[text()="' . self::string('sidebar.collections') . '"]')->length);
+    }
+
+    /** @return iterable<string, array{list<mixed>, ?string}> */
+    public static function badCollections(): iterable
+    {
+        yield 'bad collection key' => [[['key' => '../etc', 'name' => 'x', 'count' => 1]], null];
+        yield 'upper-case collection key' => [[['key' => 'ABCDEFGHIJKL', 'name' => 'x', 'count' => 1]], null];
+        yield 'missing name' => [[['key' => 'ghijklmnopqr', 'count' => 1]], null];
+        yield 'count as text' => [[['key' => 'ghijklmnopqr', 'name' => 'x', 'count' => '1']], null];
+        yield 'not a map' => [['ghijklmnopqr'], null];
+        yield 'bad table for new collection' => [[], 'mnopqrstuvwx/../x'];
+    }
+
+    /** @param list<mixed> $collections */
+    #[DataProvider('badCollections')]
+    public function testSidebarBuildRefusesBadCollections(array $collections, ?string $table): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Sidebar::build('abcdefghijkl', 'x', [], 0, null, false, $collections, null, $table);
     }
 
     public function testUndoNoticeForAValidRestorePath(): void
@@ -1280,6 +1381,48 @@ final class ShellTest extends TestCase
             }
         }
         self::assertSame([], $missing, 'Classes of docs/design/m3/components.md missing from app.css.');
+    }
+
+    /** M4 spec part 2 section 8: every class of docs/design/m4/components.md exists in app.css. */
+    public function testEveryM4ComponentClassExistsInTheStylesheet(): void
+    {
+        $doc = RepoFiles::read('docs/design/m4/components.md');
+        $section = substr($doc, 0, (int) strpos($doc, "\n## 2. "));
+        preg_match_all('/`\.([a-z][a-z0-9-]*)/', $section, $m);
+        $classes = array_values(array_unique($m[1]));
+        self::assertGreaterThan(50, count($classes), 'The M4 component list was read.');
+
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        $missing = [];
+        foreach (array_unique($classes) as $class) {
+            if (preg_match('/\.' . preg_quote($class, '/') . '(?![a-z0-9_-])[^{}]*\{/', $css) !== 1) {
+                $missing[] = $class;
+            }
+        }
+        self::assertSame([], $missing, 'Classes of docs/design/m4/components.md missing from app.css.');
+    }
+
+    /** CF-2: in the import report only the count cells (`.num`) are right-aligned. */
+    public function testTheReportTableRightAlignsOnlyCountCells(): void
+    {
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        preg_match_all('/([^{}]+)\{([^{}]*)\}/', $css, $rules, PREG_SET_ORDER);
+        $right = [];
+        foreach ($rules as [, $selectors, $body]) {
+            if (!str_contains($selectors, '.report-table') || !preg_match('/text-align:\s*right/', $body)) {
+                continue;
+            }
+            foreach (explode(',', $selectors) as $selector) {
+                $right[] = trim($selector);
+            }
+        }
+        self::assertSame(['.report-table .num'], $right);
+    }
+
+    /** P185: the collection editor's script is gone (the editor submits only from its buttons). */
+    public function testTheCollectionEditorScriptIsRemoved(): void
+    {
+        self::assertFileDoesNotExist(RepoFiles::path('public/assets/js/collection-editor.js'));
     }
 
     /** M3 spec part 2 section 7: import-continue.js. */
@@ -1462,6 +1605,7 @@ final class ShellTest extends TestCase
         yield 'slash-backslash script' => [$script('src="/\\example.org/assets/js/a.js?v=1" defer="defer"')];
         yield 'data script' => [$script('src="data:text/javascript,alert(1)" defer="defer"')];
         yield 'other script file' => [$script('src="/assets/js/other.js?v=1" defer="defer"')];
+        yield 'removed editor script' => [$script('src="/assets/js/collection-editor.js?v=1" defer="defer"')];
         yield 'script without version' => [$script('src="/assets/js/show-password.js" defer="defer"')];
         yield 'script with content' => [$page('', '<script src="/assets/js/show-password.js?v=1" defer="defer">alert(1)</script>')];
         yield 'two scripts' => [$page('', '<script src="/assets/js/a.js?v=1" defer="defer"></script><script src="/assets/js/b.js?v=1" defer="defer"></script>')];

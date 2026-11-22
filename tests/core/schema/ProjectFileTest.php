@@ -22,7 +22,7 @@ use TiffinDB\Tests\Support\RepoFiles;
 
 require_once __DIR__ . '/ProjectFixture.php';
 
-/** T-SCH-1 and T-FMT-4 (format version 3), T-SCH-2, T-SCH-3: creating, opening, and upgrading project files. */
+/** T-SCH-1, T-FMT-4, and T-FMT-6 (format version 4), T-SCH-2, T-SCH-3: creating, opening, and upgrading project files. */
 #[CoversClass(ProjectFile::class)]
 #[CoversClass(FormatMigrations::class)]
 final class ProjectFileTest extends TestCase
@@ -101,8 +101,8 @@ final class ProjectFileTest extends TestCase
         self::assertSame(ProjectFile::APPLICATION_ID, $this->db->value('PRAGMA application_id'));
         self::assertSame(1413891138, ProjectFile::APPLICATION_ID);
         self::assertSame(0x54464442, ProjectFile::APPLICATION_ID);
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
-        self::assertSame(3, ProjectFile::VERSION);
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame(4, ProjectFile::VERSION);
         self::assertSame(1, $this->db->value('PRAGMA foreign_keys'));
     }
 
@@ -117,7 +117,7 @@ final class ProjectFileTest extends TestCase
             'created_by' => self::USER_KEY,
             'created_with' => '0.2.0-dev',
             'format' => 'tiffindb-project',
-            'format_version' => '3',
+            'format_version' => '4',
             'project_key' => self::PROJECT_KEY,
             'project_name' => 'Example Project',
             'updated_at' => self::START,
@@ -129,10 +129,11 @@ final class ProjectFileTest extends TestCase
     {
         $documented = self::documentedDdl();
         $blocks = self::documentedBlocks();
-        // Versions 1, 2, and 3 hold 10, 3, and 2 statements; later versions only add.
+        // Versions 1, 2, 3, and 4 hold 10, 3, 2, and 3 statements; later versions only add.
         self::assertCount(10, self::statementsOf($blocks[0]));
         self::assertCount(3, self::statementsOf($blocks[1]));
         self::assertCount(2, self::statementsOf($blocks[2]));
+        self::assertCount(3, self::statementsOf($blocks[3]));
         self::assertSame($documented, array_map([self::class, 'collapse'], ProjectFile::DDL));
 
         $stored = [];
@@ -147,7 +148,8 @@ final class ProjectFileTest extends TestCase
         $names = array_keys($this->masterNames());
         sort($names);
         $expected = [
-            '_tiffin_attachment_links', '_tiffin_attachments', '_tiffin_attachments_sha256', '_tiffin_fields',
+            '_tiffin_attachment_links', '_tiffin_attachments', '_tiffin_attachments_sha256',
+            '_tiffin_collections', '_tiffin_collections_name', '_tiffin_collections_table', '_tiffin_fields',
             '_tiffin_fields_name', '_tiffin_fields_order', '_tiffin_forms', '_tiffin_forms_default', '_tiffin_forms_table',
             '_tiffin_import_log', '_tiffin_import_log_at', '_tiffin_meta', '_tiffin_relations', '_tiffin_tables',
             '_tiffin_tables_name', 'sqlite_sequence',
@@ -231,7 +233,7 @@ final class ProjectFileTest extends TestCase
 
     public function testOpenRefusesANewerVersion(): void
     {
-        $this->db->run('PRAGMA user_version = 4');
+        $this->db->run('PRAGMA user_version = 5');
         $this->assertUnavailable('newer', fn () => ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots));
         self::assertSame([], $this->snapshotFiles());
     }
@@ -248,11 +250,12 @@ final class ProjectFileTest extends TestCase
 
     // ------------------------------------------------------------ T-SCH-3
 
-    /** Turns the new file back into a version 1 file (no `_tiffin_forms`, no `_tiffin_import_log`). */
+    /** Turns the new file back into a version 1 file (no `_tiffin_forms`, `_tiffin_import_log`, or `_tiffin_collections`). */
     private function makeVersionOne(): void
     {
         $this->db->run('PRAGMA user_version = 1');
         $this->db->write(static function (Database $db): void {
+            $db->run('DROP TABLE "_tiffin_collections"');
             $db->run('DROP TABLE "_tiffin_import_log"');
             $db->run('DROP TABLE "_tiffin_forms"');
             $db->run('UPDATE "_tiffin_meta" SET "value" = \'1\' WHERE "key" = \'format_version\'');
@@ -274,11 +277,12 @@ final class ProjectFileTest extends TestCase
             $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
             $db->run('INSERT INTO "_tiffin_example" ("x") VALUES (\'synthetic\')');
         }, 3 => static function (Database $db): void {
+        }, 4 => static function (Database $db): void {
         }]);
         $this->db = ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
 
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
-        self::assertSame('3', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame('4', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertSame('synthetic', $this->db->value('SELECT "x" FROM "_tiffin_example"'));
 
         $snapshots = $this->snapshots->list($this->folder);
@@ -298,6 +302,7 @@ final class ProjectFileTest extends TestCase
             $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)');
             $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
         }, 3 => static function (Database $db): void {
+        }, 4 => static function (Database $db): void {
         }]);
         try {
             ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
@@ -319,6 +324,7 @@ final class ProjectFileTest extends TestCase
             1 => static fn (Database $db) => $db->run('CREATE TABLE "_tiffin_example" ("x" TEXT)'),
             2 => static fn (Database $db) => $db->run('INSERT INTO "_tiffin_missing" VALUES (1)'),
             3 => static fn (Database $db) => $db->run('SELECT 1'),
+            4 => static fn (Database $db) => $db->run('SELECT 1'),
         ]);
         try {
             ProjectFile::open($this->path(), self::PROJECT_KEY, $this->snapshots, $steps);
@@ -345,9 +351,10 @@ final class ProjectFileTest extends TestCase
 
     public function testEveryVersionHasItsPragmaAndStepsStartAtVersionTwo(): void
     {
-        self::assertSame([2, 3], array_keys(FormatMigrations::STEPS));
+        self::assertSame([2, 3, 4], array_keys(FormatMigrations::STEPS));
         self::assertCount(3, FormatMigrations::STEPS[2]);
         self::assertCount(2, FormatMigrations::STEPS[3]);
+        self::assertCount(3, FormatMigrations::STEPS[4]);
         self::assertSame(range(1, ProjectFile::VERSION), array_keys(FormatMigrations::VERSION_PRAGMAS));
         for ($version = 1; $version <= ProjectFile::VERSION; $version++) {
             self::assertSame('PRAGMA user_version = ' . $version, FormatMigrations::VERSION_PRAGMAS[$version]);

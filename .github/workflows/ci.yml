@@ -17,7 +17,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -56,5 +56,9 @@ jobs:
       - name: Lint
         run: composer lint
 
+      # The suite now runs longer than Composer's default 300 s process
+      # timeout on the hosted runner; the job timeout above still bounds it.
       - name: Tests
+        env:
+          COMPOSER_PROCESS_TIMEOUT: "0"
         run: composer test

@@ -49,6 +49,8 @@ final class ExportOperations
     /** The order formats are offered in; others follow by name. */
     private const ORDER = ['export/csv', 'export/xlsx', 'export/json'];
     private const FALLBACK_BASE = 'export';
+    /** The project's attachment folder (AttachmentStore::DIR; this package does not use the store). */
+    private const ATTACHMENTS = 'attachments';
 
     public function __construct(private readonly Context $c)
     {
@@ -85,7 +87,7 @@ final class ExportOperations
             $formats[] = new ExportFormat($plugin->ref(), $manifest->name, $manifest->extensions[0] ?? '', $manifest->scopes, $settings[self::SCOPE_TABLE], $settings[self::SCOPE_PROJECT]);
         }
 
-        return new ExportScreen($project, $tables, $formats, true);
+        return new ExportScreen($project, $tables, $formats, true, $this->projectBytes($project->key));
     }
 
     /**
@@ -134,7 +136,7 @@ final class ExportOperations
         }
         $extension = $manifest->extensions[0];
 
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $db);
         [$jobKey, $folder] = $this->c->staging()->create(self::EXPORTS);
         $target = $folder . '/export.' . $extension;
         try {
@@ -181,7 +183,7 @@ final class ExportOperations
     {
         $project = $this->authorise($actor, $projectKey);
         $db = $this->c->opener->open($project);
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $db);
         [$jobKey, $folder] = $this->c->staging()->create(self::EXPORTS);
         $target = $folder . '/archive.zip';
         try {
@@ -222,6 +224,43 @@ final class ExportOperations
             return;
         }
         IoSupport::removeJob($this->c, self::EXPORTS, $jobKey);
+    }
+
+    /**
+     * About the size of the project archive (M4 CF-5): the project file
+     * plus the regular files in the folders of `attachments/` whose names
+     * are two lower-case hex digits. Symbolic links are neither followed
+     * nor counted; a part that cannot be read counts as 0.
+     */
+    private function projectBytes(string $projectKey): int
+    {
+        $bytes = 0;
+        try {
+            $bytes += Fs::size($this->c->opener->path($projectKey));
+        } catch (\RuntimeException) {
+            // Counted as 0: the page still shows the archive panel.
+        }
+        $root = $this->c->opener->folder($projectKey) . '/' . self::ATTACHMENTS;
+        if (!Fs::isDir($root)) {
+            return $bytes;
+        }
+        try {
+            foreach (Fs::entries($root) as $prefix) {
+                $folder = $root . '/' . $prefix;
+                if (preg_match('/\A[0-9a-f]{2}\z/', $prefix) !== 1 || !Fs::isDir($folder)) {
+                    continue;
+                }
+                foreach (Fs::entries($folder) as $name) {
+                    if (Fs::isFile($folder . '/' . $name)) {
+                        $bytes += Fs::size($folder . '/' . $name);
+                    }
+                }
+            }
+        } catch (\RuntimeException) {
+            // Whatever was counted before the unreadable part stands.
+        }
+
+        return $bytes;
     }
 
     private function authorise(Actor $actor, string $projectKey): ProjectRecord

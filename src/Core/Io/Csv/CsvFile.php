@@ -18,7 +18,9 @@ use TiffinDB\Core\Io\Contract\PluginFailure;
  * Columns: the heading row's cells (empty headings become "Column n"), or
  * "Column 1" to "Column n" for the widest of the first WIDTH_RECORDS
  * records when there is no heading row. More than MAX_COLUMNS columns, or
- * a file with no record at all, is a PluginFailure.
+ * a file with no record at all, is a PluginFailure; the column case is
+ * reason `too-large` with detail TOO_MANY_COLUMNS, which the import
+ * operations tell apart from an over-long record (M4 CF-3).
  *
  * The figures are those of IoLimits (MAX_COLUMNS, CHUNK_ROWS, MAX_SOURCE_ROWS),
  * repeated because this namespace uses only the contract; a test keeps
@@ -51,6 +53,9 @@ final class CsvFile
     /** Bytes of the file's start that the cache key hashes. */
     public const KEY_HEAD_BYTES = 4096;
 
+    /** The PluginFailure detail of a file with more than MAX_COLUMNS columns (reason `too-large`). */
+    public const TOO_MANY_COLUMNS = 'The file has more than the column limit.';
+
     /** Generated headings are "Column 1", "Column 2", ... */
     public const COLUMN = 'Column ';
 
@@ -81,7 +86,7 @@ final class CsvFile
         }
         if ($this->dialect->heading) {
             if ($reader->fieldCount() > self::MAX_COLUMNS) {
-                throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, 'The heading row has more than the column limit.');
+                throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, self::TOO_MANY_COLUMNS);
             }
             $columns = [];
             foreach ($first as $index => $heading) {
@@ -95,7 +100,7 @@ final class CsvFile
                 $width = max($width, $reader->fieldCount());
             }
             if ($width > self::MAX_COLUMNS) {
-                throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, 'A record has more than the column limit.');
+                throw new PluginFailure(PluginFailure::REASON_TOO_LARGE, self::TOO_MANY_COLUMNS);
             }
             $columns = [];
             for ($i = 1; $i <= $width; $i++) {

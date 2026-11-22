@@ -12,10 +12,12 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Auth\PasswordHasher;
 use TiffinDB\Tests\Support\CoreFixture;
+use TiffinDB\Tests\Support\FileFixture;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
+use TiffinDB\Tests\Support\M4Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -29,8 +31,10 @@ require_once __DIR__ . '/EndToEndTest.php';
 
 /**
  * T-SCR-1 (M1 spec part 2 section 9), T-SCR-2 (M2 spec part 2
- * section 12, testEveryM2ScreenInEveryState), and T-SCR-3 (M3 spec part 2
- * section 10.1: m3Screens and testPluginScreensWithAddedPlugins): every GET route of the real route
+ * section 12, testEveryM2ScreenInEveryState), T-SCR-3 (M3 spec part 2
+ * section 10.1: m3Screens and testPluginScreensWithAddedPlugins), and
+ * T-SCR-4 (M4 spec part 2 section 11.1: m4Screens and
+ * testEveryM4ScreenInEveryState): every GET route of the real route
  * table, in each state its design document under docs/design/m1/ lists
  * that a GET can reach, served through the kernel with the real
  * CoreServices over a temporary installation built through the screens.
@@ -50,6 +54,14 @@ require_once __DIR__ . '/EndToEndTest.php';
 #[CoversNothing]
 final class ScreenStructureTest extends TestCase
 {
+    /** The M4 controllers (M4-WP6 to WP8); T-SCR-4 visits every GET route they handle. */
+    private const M4_CONTROLLERS = [
+        \TiffinDB\Web\Controller\LinkController::class,
+        \TiffinDB\Web\Controller\FileController::class,
+        \TiffinDB\Web\Controller\CollectionController::class,
+        \TiffinDB\Web\Controller\TrashController::class,
+    ];
+
     private const PASSWORD = 'example admin passphrase 1';
     private const MEMBER_TEMPORARY = 'temporary words 0101';
     private const MEMBER_PASSWORD = 'example member passphrase 2';
@@ -308,18 +320,25 @@ final class ScreenStructureTest extends TestCase
         // M3 screens (T-SCR-3), on Home Inventory.
         $this->m3Screens($admin, $home, $items);
 
+        // M4 screens (T-SCR-4), on Home Inventory.
+        $this->m4Screens($admin, $home, $items, $record);
+
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
         $this->screen($admin, '/sign-in?signed-out=1', 'Sign in', 'Sign in', 'You have signed out.');
         $this->visit('/', 303, $admin);
         $this->visit('/projects', 303, $admin);
 
-        // Every GET route was visited, the M3 ones included (T-SCR-3). Routes
-        // of controllers that do not exist yet are counted once their
-        // controller lands.
+        // Every GET route was visited, the M3 and M4 ones included (T-SCR-3,
+        // T-SCR-4). Routes of controllers that do not exist yet are counted
+        // once their controller lands.
         $patterns = [];
         foreach (Fixtures::applicationRoutes() as $route) {
-            if (is_array($route) && $route[0] === 'GET' && class_exists($route[2][0])) {
+            if (
+                is_array($route)
+                && $route[0] === 'GET'
+                && class_exists($route[2][0])
+            ) {
                 $patterns[] = (string) $route[1];
             }
         }
@@ -457,6 +476,227 @@ final class ScreenStructureTest extends TestCase
         foreach ($m2Patterns as $pattern) {
             self::assertContains($pattern, $visited, "{$pattern} is visited.");
         }
+    }
+
+    /**
+     * T-SCR-4 (M4 spec part 2 section 11.1): every GET route M4 added, in
+     * each state its design document under docs/design/m4/ lists that a
+     * GET can reach, over the M4 synthetic data set (M4Fixture, with real
+     * files) plus 50 more rooms (so the Room picker has a second page) of
+     * which 51 rooms are in the trash with "Laundry" (so the trash has a
+     * second page for Rooms and a one-link picker shows the trashed-link
+     * note), with the real CoreServices, as the Member and as the Admin.
+     * The serving route is visited too (its bodies are files, not pages;
+     * AttachmentAccessTest checks them). States reached only by a POST
+     * (422 pages, the changed-trash confirmation) are covered by
+     * KeyboardStructureTest and each screen package's tests.
+     */
+    public function testEveryM4ScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $ops = $core->operations();
+            $fx = M4Fixture::build($core, $ops);
+            $m2 = $fx->m2;
+            $actor = $core->actor('admin');
+            for ($n = 1; $n <= 50; $n++) {
+                $id = $core->addRecord($m2->project, $m2->rooms, [$m2->roomFields['Name'] => sprintf('Store %02d', $n)]);
+                $ops->records()->trash($actor, $m2->project, $m2->rooms, (string) $id);
+            }
+            $ops->records()->trash($actor, $m2->project, $m2->rooms, (string) $m2->roomIds['Laundry']);
+            for ($n = 51; $n <= 100; $n++) {
+                $core->addRecord($m2->project, $m2->rooms, [$m2->roomFields['Name'] => sprintf('Store %02d', $n)]);
+            }
+            $garden = $ops->projects()->create($actor, 'Garden Log', 'Plants')->key;
+            $ops->projects()->setSharing($actor, $garden, [$core->person('member')->key]);
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m4-seed'), $core->hasher));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+            $f = $m2->itemFields;
+            $project = $m2->projectPath();
+            $items = $m2->tablePath($m2->items);
+            $mixer = $m2->itemPath('Stand mixer');
+            $id = static fn (string $name): int => $fx->attachmentIds[$name];
+
+            // Record form controls (record-controls.md): links and files, none, other types, a new record.
+            foreach ([$member, $admin] as $client) {
+                $this->screen($client, $mixer, 'Stand mixer', 'Stand mixer');
+                self::assertSame(['Kitchen', 'Choose a different room'], $client->texts('//div[@class="link-control"]/*'));
+                self::assertSame(['Stand mixer, manufacturer warranty'], $client->texts('//ul[@class="link-list"]//div[@class="linked-main"]/a'));
+                self::assertSame(1, $client->xpath()->query('//li[contains(@class, "file-row")]/img[@src="' . $fx->servePath('stand-mixer.png') . '"]')->length);
+            }
+            $this->screen($member, $m2->itemPath('Bookshelf, oak'), 'Bookshelf, oak', 'Bookshelf, oak');
+            self::assertSame(['No files', 'No files', 'Link a record'], array_values(array_intersect($member->texts('//main//p[@class="static-value"] | //div[@class="control-actions"]/a'), ['No files', 'Link a record'])));
+            $this->screen($member, $m2->itemPath('Sewing machine'), 'Sewing machine', 'Sewing machine');
+            self::assertSame(2, $member->xpath()->query('//span[@class="file-name"][starts-with(normalize-space(.), "manual.html ") or starts-with(normalize-space(.), "diagram.svg ")]')->length);
+            self::assertSame(0, $member->xpath()->query('//img[contains(@alt, "manual") or contains(@alt, "diagram")]')->length, 'Active content is never an image.');
+            $this->screen($member, $items . '/records/new', 'New item', 'New item');
+            self::assertSame(0, $member->xpath()->query('//div[@class="link-control"] | //div[@class="control-actions"]')->length, 'No controls on a new record.');
+
+            // Picker (picker.md): one link, many links with taken candidates, find, no match, a refused find, page 2, a trashed link.
+            $room = $mixer . '/links/' . $f['Room'];
+            $this->screen($member, $room, 'Room for Stand mixer', 'Room for Stand mixer');
+            self::assertSame(1, $member->xpath()->query('//main[@class="page page-picker"]')->length);
+            self::assertSame(['Kitchen'], $member->texts('//section[@aria-labelledby="pk-now"]//span[@class="picker-title"]'));
+            self::assertGreaterThan(0, $member->xpath()->query('//main//a[contains(@href, "page=2")]')->length, 'Room has a second page.');
+            $this->screen($member, $room . '?page=2', 'Room for Stand mixer', 'Room for Stand mixer');
+            $this->screen($member, $room . '?q=gar', 'Room for Stand mixer', 'Room for Stand mixer');
+            self::assertSame(['Garage'], $member->texts('//section[@aria-labelledby="pk-list"]//span[@class="picker-title"]'));
+            $this->screen($member, $room . '?q=zzzz', 'Room for Stand mixer', 'Room for Stand mixer');
+            self::assertSame('Nothing in Rooms matches "zzzz".', HtmlAssertions::text($member->page(), '//section[@aria-labelledby="pk-list"]/p[@class="static-value"]'));
+            $this->screen($member, $room . '?q=' . str_repeat('x', 201), 'Room for Stand mixer', 'Room for Stand mixer');
+            self::assertSame(1, $member->xpath()->query('//input[@name="q"][@aria-invalid="true"]')->length);
+            $warranties = $mixer . '/links/' . $f['Warranties'];
+            $this->screen($member, $warranties, 'Warranties for Stand mixer', 'Warranties for Stand mixer');
+            self::assertGreaterThan(0, $member->xpath()->query('//span[@class="picker-taken"]')->length, 'Warranties linked to other items are shown as taken.');
+            $laundryItem = (string) array_search('Laundry', $m2->itemRooms, true);
+            self::assertNotSame('', $laundryItem);
+            $this->screen($member, $m2->itemPath($laundryItem) . '/links/' . $f['Room'], 'Room for ' . $laundryItem, 'Room for ' . $laundryItem);
+            self::assertSame(1, $member->xpath()->query('//section[@aria-labelledby="pk-now"]/p[contains(@class, "notice-warn")]')->length, 'The trashed-link note.');
+            $this->visit($mixer . '/links/' . $f['Category'], 404, $member);
+
+            // Upload (files.md section 2): any file, images only, replace.
+            $this->screen($member, $mixer . '/files/' . $f['Receipt'] . '/new', 'Add a file to Stand mixer', 'Add a file to Stand mixer');
+            $this->screen($member, $mixer . '/files/' . $f['Photo'] . '/new', 'Add a file to Stand mixer', 'Add a file to Stand mixer');
+            $this->screen($member, $mixer . '/files/' . $f['Photo'] . '/new?replace=' . $id('stand-mixer.png'), 'Replace stand-mixer.png', 'Replace stand-mixer.png');
+            $this->visit($mixer . '/files/' . $f['Photo'] . '/new?replace=' . $id('robot-vacuum.gif'), 404, $member);
+
+            // File page (section 3): an image, a PDF, another type; the remove confirmation (section 4).
+            $this->screen($member, $mixer . '/files/' . $f['Photo'] . '/' . $id('stand-mixer.png'), 'stand-mixer.png', 'stand-mixer.png');
+            self::assertSame(1, $member->xpath()->query('//img[@class="file-image-large"]')->length);
+            $this->screen($member, $mixer . '/files/' . $f['Receipt'] . '/' . $id('receipt-stand-mixer.pdf'), 'receipt-stand-mixer.pdf', 'receipt-stand-mixer.pdf');
+            self::assertSame(0, $member->xpath()->query('//img')->length, 'A PDF is never shown in the page.');
+            $sewing = $m2->itemPath('Sewing machine');
+            $this->screen($member, $sewing . '/files/' . $f['Receipt'] . '/' . $id('manual.html'), 'manual.html', 'manual.html');
+            $this->screen($member, $mixer . '/files/' . $f['Receipt'] . '/' . $id('receipt-stand-mixer.pdf') . '/remove', 'Remove receipt-stand-mixer.pdf?', 'Remove receipt-stand-mixer.pdf?');
+            $this->visit($mixer . '/files/' . $f['Receipt'] . '/' . $id('manual.html'), 404, $member);
+
+            // The serving route.
+            foreach (['stand-mixer.png', 'receipt-stand-mixer.pdf', 'manual.html'] as $name) {
+                $this->visitFile($fx->servePath($name), 200, $member);
+            }
+            $this->visitFile($project . '/files/99999', 404, $member);
+
+            // Collection editor, view, and delete (collections.md), as the Member (who manages collections) and the Admin.
+            foreach ([$member, $admin] as $client) {
+                $this->screen($client, $items . '/collections/new', 'New collection', 'New collection');
+                self::assertSame(1, $client->xpath()->query('//main[@class="page page-collection"]')->length);
+            }
+            $this->screen($member, $fx->collectionPath('Under warranty') . '/edit', 'Under warranty', 'Under warranty');
+            self::assertSame(2, $member->xpath()->query('//fieldset[contains(@class, "rule-row")]')->length);
+            $this->screen($member, $fx->collectionPath('Retired items') . '/edit', 'Retired items', 'Retired items');
+            self::assertSame(1, $member->xpath()->query('//fieldset[contains(@class, "rule-broken")]')->length);
+            $this->screen($member, $fx->collectionPath('Under warranty'), 'Under warranty, Home Inventory', 'Under warranty');
+            self::assertSame(1, count(preg_grep('/^Under warranty \d+\z/', $member->texts('//nav[contains(@class, "sidebar")]//a[@aria-current="page"]')) ?: []), 'The sidebar marks the collection with its count.');
+            $this->screen($member, $fx->collectionPath('Under warranty') . '?q=machine', 'Under warranty, Home Inventory', 'Under warranty');
+            $this->screen($member, $fx->collectionPath('Under warranty') . '?q=zzzz', 'Under warranty, Home Inventory', 'Under warranty');
+            $this->screen($member, $fx->collectionPath('Under warranty') . '?sort=' . $f['Value'] . '.asc', 'Under warranty, Home Inventory', 'Under warranty');
+            $this->screen($member, $fx->collectionPath('Kitchen or study'), 'Kitchen or study, Home Inventory', 'Kitchen or study');
+            $this->screen($member, $fx->collectionPath('Retired items'), 'Retired items, Home Inventory', 'Retired items');
+            self::assertSame(1, $member->xpath()->query('//main//div[contains(@class, "notice-warn")]')->length, 'The broken-rule notice.');
+            $this->screen($member, $fx->collectionPath('Under warranty') . '/delete', 'Delete Under warranty?', 'Delete Under warranty?');
+            $this->visit($project . '/collections/aaaaaaaaaaaa', 404, $member);
+            $this->visit('/projects/' . $garden . '/collections/' . $fx->collections['Under warranty'], 404, $member);
+
+            // Trash (trash.md): every table, one table and its second page, an empty trash; the confirmation (Admin only).
+            foreach ([$member, $admin] as $client) {
+                $this->screen($client, $project . '/trash', 'Trash', 'Trash');
+                self::assertSame(1, $client->xpath()->query('//main[@class="page page-trash"]')->length);
+            }
+            self::assertSame(0, $member->xpath()->query('//main//a[normalize-space(.)="Empty the trash"]')->length);
+            self::assertSame(1, $admin->xpath()->query('//main//a[normalize-space(.)="Empty the trash"]')->length);
+            $this->screen($member, $project . '/trash?table=' . $m2->items, 'Trash', 'Trash');
+            $this->screen($member, $project . '/trash?table=' . $m2->rooms, 'Trash', 'Trash');
+            $this->screen($member, $project . '/trash?table=' . $m2->rooms . '&page=2', 'Trash', 'Trash');
+            self::assertSame(1, count($member->texts('//main//span[@class="trash-title"]')), '51 rooms: one on the second page.');
+            $this->visit($project . '/trash?table=aaaaaaaaaaaa', 404, $member);
+            $this->screen($member, '/projects/' . $garden . '/trash', 'Trash', 'Trash');
+            self::assertSame('The trash is empty.', HtmlAssertions::text($member->page(), '//main//p[@class="empty-state-title"]'));
+            $this->screen($admin, $project . '/trash/empty', 'Empty the trash?', 'Empty the trash?');
+            self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+            $this->visit($project . '/trash/empty', 403, $member);
+
+            // Project settings: the totals line.
+            $this->screen($admin, $project . '/settings', 'Project settings', 'Project settings');
+            self::assertStringContainsString('This project stores 50 files', HtmlAssertions::text($admin->page(), '//main'), '51 rows, 50 distinct files.');
+        } finally {
+            $core->remove();
+        }
+
+        $m4Patterns = [];
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && in_array($route[2][0], self::M4_CONTROLLERS, true)) {
+                $m4Patterns[] = (string) $route[1];
+            }
+        }
+        self::assertCount(11, $m4Patterns, 'Eleven M4 GET routes.');
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m4Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
+    /**
+     * The M4 screens inside testEveryScreenInEveryState, so that its
+     * every-route check covers them (M4 spec part 2 section 12): on Home
+     * Inventory as built through the screens, as the Admin, one visit of
+     * each M4 GET route.
+     */
+    private function m4Screens(EndToEndClient $admin, string $home, string $items, string $record): void
+    {
+        $this->addField($admin, $items, 'attachment', ['name' => 'Photo', 'opt_images_only' => '1']);
+        $room = substr($this->fieldPath($admin, $items, 'Room'), -12);
+        $photo = substr($this->fieldPath($admin, $items, 'Photo'), -12);
+
+        $this->screen($admin, $record . '/links/' . $room, 'Room for Stand mixer', 'Room for Stand mixer');
+        $this->screen($admin, $record . '/files/' . $photo . '/new', 'Add a file to Stand mixer', 'Add a file to Stand mixer');
+        $path = $this->temp->path('upload-photo.png');
+        file_put_contents($path, FileFixture::png(4, 4, 'screen-structure'));
+        $added = $admin->upload($record . '/files/' . $photo, 'file', $path, 'photo.png');
+        self::assertSame(303, $added->status, $added->body);
+        $this->screen($admin, $record, 'Stand mixer', 'Stand mixer', 'photo.png has been added.');
+        $src = (string) $admin->xpath()->query('//li[contains(@class, "file-row")]/img/@src')->item(0)?->nodeValue;
+        $this->visitFile($src, 200, $admin);
+        $file = $record . '/files/' . $photo . '/' . substr($src, strrpos($src, '/') + 1);
+        $this->screen($admin, $file, 'photo.png', 'photo.png');
+        $this->screen($admin, $file . '/remove', 'Remove photo.png?', 'Remove photo.png?');
+
+        $this->screen($admin, $items . '/collections/new', 'New collection', 'New collection');
+        $form = (string) $admin->xpath()->query('//form[@id="collection-form"]/@action')->item(0)?->nodeValue;
+        $name = substr($this->fieldPath($admin, $items, 'Name'), -12);
+        $admin->get($items . '/collections/new');
+        self::assertSame(200, $admin->submit($form, ['name' => 'Mixers', 'rules[1][field]' => $name, 'action' => 'preview'])->status);
+        $saved = $admin->submit($form, ['rules[1][test]' => 'contains', 'rules[1][value]' => 'mixer', 'action' => 'save']);
+        self::assertSame(303, $saved->status, $saved->body);
+        $view = (string) $saved->header('Location');
+        $this->screen($admin, $view, 'Mixers, Home Inventory', 'Mixers', 'The collection has been saved.');
+        $this->screen($admin, $view . '/edit', 'Mixers', 'Mixers');
+        $this->screen($admin, $view . '/delete', 'Delete Mixers?', 'Delete Mixers?');
+
+        $admin->get($record);
+        self::assertSame(303, $admin->submit($record . '/trash')->status);
+        $this->screen($admin, $home . '/trash', 'Trash', 'Trash', 'Stand mixer has been moved to the trash. Undo');
+        $this->screen($admin, $home . '/trash/empty', 'Empty the trash?', 'Empty the trash?');
+        $admin->cleanUp();
+    }
+
+    /** Visits a route that answers with a file (or a refusal page), counting the route; no page checks on a file. */
+    private function visitFile(string $uri, int $status, EndToEndClient $client): Response
+    {
+        $response = $client->get($uri);
+        self::assertSame($status, $response->status, "GET {$uri}");
+        self::assertSame($status === 200, $response->isSandboxed(), "GET {$uri}");
+        $path = (string) parse_url('http://tiffindb.example' . $uri, PHP_URL_PATH);
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && preg_match(self::routeRegex((string) $route[1]), $path) === 1) {
+                $this->visited[] = (string) $route[1];
+                break;
+            }
+        }
+
+        return $response;
     }
 
     /**

@@ -28,7 +28,9 @@ use TiffinDB\Tests\Support\TempDir;
 /**
  * T-FMT-1 to T-FMT-3: the upgrade from project format version 1 to 2
  * (`docs/formats/tiffin.md` section 11.1, M2 spec section 6), and T-FMT-5:
- * the upgrade from version 2 to 3 (section 11.2, M3 spec section 12.1). The version
+ * the upgrade from version 2 to 3 (section 11.2, M3 spec section 12.1), and
+ * T-FMT-7: the upgrade from version 3 to 4 (section 11.3, M4 spec section
+ * 12.4), alone and after the earlier steps. The version
  * 1 file is built from the first SQL block of section 4 and the user-table
  * statements of sections 5 and 7, with the document's synthetic keys.
  */
@@ -241,10 +243,11 @@ final class FormatUpgradeTest extends TestCase
         self::assertSame($before, self::userRows($copy));
         $copy->close();
 
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
-        self::assertSame('3', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame('4', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertSame(0, $this->db->value('SELECT COUNT(*) FROM "_tiffin_forms"'));
         self::assertSame(0, $this->db->value('SELECT COUNT(*) FROM "_tiffin_import_log"'));
+        self::assertSame(0, $this->db->value('SELECT COUNT(*) FROM "_tiffin_collections"'));
         self::assertSame($before, self::userRows($this->db));
         self::assertSame('ok', $this->db->value('PRAGMA integrity_check'));
         self::assertSame([], $this->db->all('PRAGMA foreign_key_check'));
@@ -260,7 +263,7 @@ final class FormatUpgradeTest extends TestCase
         $this->db->close();
         $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
         self::assertCount(1, $this->snapshots->list($this->folder));
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
     }
 
     // ------------------------------------------------------------ T-FMT-3
@@ -274,6 +277,7 @@ final class FormatUpgradeTest extends TestCase
             }
             $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
         }, 3 => static function (Database $db): void {
+        }, 4 => static function (Database $db): void {
         }]);
         try {
             ProjectFile::open($this->path(), self::PROJECT, $this->snapshots, $failing);
@@ -290,7 +294,7 @@ final class FormatUpgradeTest extends TestCase
         // The file still opens (and upgrades) normally afterwards.
         $this->db->close();
         $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
     }
 
     // ------------------------------------------------------------ T-FMT-5
@@ -353,8 +357,8 @@ final class FormatUpgradeTest extends TestCase
         self::assertNull($copy->value('SELECT 1 FROM "sqlite_master" WHERE "name" = \'_tiffin_import_log\''));
         $copy->close();
 
-        self::assertSame(3, $this->db->value('PRAGMA user_version'));
-        self::assertSame('3', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame('4', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertSame(0, $this->db->value('SELECT COUNT(*) FROM "_tiffin_import_log"'));
         self::assertSame($before, self::userRows($this->db));
         self::assertSame($forms, $this->db->all('SELECT * FROM "_tiffin_forms" ORDER BY "key"'));
@@ -395,6 +399,8 @@ final class FormatUpgradeTest extends TestCase
                 }
                 $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
             },
+            4 => static function (Database $db): void {
+            },
         ]);
         try {
             ProjectFile::open($this->path(), self::PROJECT, $this->snapshots, $failing);
@@ -407,5 +413,166 @@ final class FormatUpgradeTest extends TestCase
         self::assertSame('2', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertNull($this->db->value('SELECT 1 FROM "sqlite_master" WHERE "name" = \'_tiffin_import_log\''));
         self::assertCount(1, $this->snapshots->list($this->folder));
+    }
+
+    // ------------------------------------------------------------ T-FMT-7
+
+    public function testStepFourEqualsTheDocument(): void
+    {
+        $blocks = self::sqlBlocks('### 11.3 Upgrade from version 3 to version 4');
+        self::assertCount(1, $blocks);
+        $documented = self::statements($blocks[0]);
+        self::assertCount(5, $documented);
+        self::assertSame(array_map([self::class, 'collapse'], array_slice($documented, 0, 3)), array_map([self::class, 'collapse'], FormatMigrations::STEPS[4]));
+        self::assertSame($documented[3], FormatMigrations::VERSION_PRAGMAS[4]);
+        self::assertSame(
+            self::normalise('UPDATE _tiffin_meta SET value = \'4\' WHERE key = \'format_version\''),
+            self::normalise($documented[4]),
+        );
+
+        // Section 4's fourth block is the same three statements.
+        $section4 = self::sqlBlocks('## 4. Metadata tables', '## 5. User tables');
+        self::assertGreaterThanOrEqual(4, count($section4));
+        self::assertSame(array_map([self::class, 'collapse'], self::statements($section4[3])), array_map([self::class, 'collapse'], FormatMigrations::STEPS[4]));
+    }
+
+    /** Builds a version 3 file: the version 2 file plus section 4's third block and one import log row. */
+    private function buildVersionThree(): void
+    {
+        $this->buildVersionTwo();
+        $db = Sqlite::open($this->path());
+        $db->run('PRAGMA user_version = 3');
+        $block = self::statements(self::sqlBlocks('## 4. Metadata tables', '## 5. User tables')[2]);
+        $db->write(static function (Database $db) use ($block): void {
+            foreach ($block as $statement) {
+                $db->run($statement);
+            }
+            $db->run('UPDATE "_tiffin_meta" SET "value" = \'3\' WHERE "key" = \'format_version\'');
+            $db->run(
+                'INSERT INTO "_tiffin_import_log" ("key", "imported_at", "source", "file_name", "file_size", "file_sha256", "rows_read", "rows_imported", "rows_skipped", "values_emptied")'
+                . ' VALUES (\'k2mq7vn3xbpa\', ?, \'file\', \'example.csv\', 0, ?, 0, 0, 0, 0)',
+                [self::TIME, str_repeat('0', 64)],
+            );
+        });
+        $db->close();
+    }
+
+    /** @return list<string> every schema object of a file as "type name", sorted */
+    private static function objects(Database $db): array
+    {
+        $names = [];
+        foreach ($db->all('SELECT "type", "name" FROM "sqlite_master" ORDER BY "type", "name"') as $row) {
+            $names[] = $row['type'] . ' ' . $row['name'];
+        }
+
+        return $names;
+    }
+
+    public function testAVersionThreeFileIsUpgradedOnOpen(): void
+    {
+        $this->buildVersionThree();
+        $plain = Sqlite::open($this->path());
+        $before = self::userRows($plain);
+        $forms = $plain->all('SELECT * FROM "_tiffin_forms" ORDER BY "key"');
+        $log = $plain->all('SELECT * FROM "_tiffin_import_log" ORDER BY "key"');
+        $objectsBefore = self::objects($plain);
+        $plain->close();
+
+        $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
+
+        $snapshots = $this->snapshots->list($this->folder);
+        self::assertCount(1, $snapshots);
+        self::assertSame(SnapshotReason::FormatUpgrade, $snapshots[0]->reason);
+        $copy = Sqlite::open($this->folder . '/snapshots/' . $snapshots[0]->file);
+        self::assertSame(3, $copy->value('PRAGMA user_version'));
+        self::assertSame('3', $copy->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertNull($copy->value('SELECT 1 FROM "sqlite_master" WHERE "name" LIKE \'\\_tiffin\\_collections%\' ESCAPE \'\\\''));
+        self::assertSame($before, self::userRows($copy));
+        $copy->close();
+
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame('4', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertSame(0, $this->db->value('SELECT COUNT(*) FROM "_tiffin_collections"'));
+        self::assertSame($before, self::userRows($this->db));
+        self::assertSame($forms, $this->db->all('SELECT * FROM "_tiffin_forms" ORDER BY "key"'));
+        self::assertSame($log, $this->db->all('SELECT * FROM "_tiffin_import_log" ORDER BY "key"'));
+        self::assertSame('ok', $this->db->value('PRAGMA integrity_check'));
+        self::assertSame([], $this->db->all('PRAGMA foreign_key_check'));
+        $stored = [];
+        foreach ($this->db->all('SELECT "sql" FROM "sqlite_master" WHERE "name" LIKE \'\\_tiffin\\_collections%\' ESCAPE \'\\\' ORDER BY "rowid"') as $row) {
+            $stored[] = self::collapse($row['sql']);
+        }
+        self::assertSame(array_map([self::class, 'collapse'], FormatMigrations::STEPS[4]), $stored);
+        // Exactly three objects are added: no other table, index, or automatic index.
+        $added = array_values(array_diff(self::objects($this->db), $objectsBefore));
+        self::assertSame(['index _tiffin_collections_name', 'index _tiffin_collections_table', 'table _tiffin_collections'], $added);
+        self::assertSame([], array_values(array_diff($objectsBefore, self::objects($this->db))));
+
+        // The defaults of the documented table.
+        $this->db->write(static fn (Database $db) => $db->run(
+            'INSERT INTO "_tiffin_collections" ("key", "table_key", "name", "position", "created_at", "updated_at") VALUES (\'w4kz7mq2nx3b\', ?, \'Example\', 1, ?, ?)',
+            [self::ITEMS, self::TIME, self::TIME],
+        ));
+        self::assertSame(['all', '[]', null], array_values((array) $this->db->one('SELECT "match_mode", "rules", "sort" FROM "_tiffin_collections"')));
+
+        // A second open takes no snapshot and changes nothing.
+        $this->db->close();
+        $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
+        self::assertCount(1, $this->snapshots->list($this->folder));
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+    }
+
+    public function testTheUpgradedFileOpensWithThePlainSqliteDriver(): void
+    {
+        $this->buildVersionThree();
+        ProjectFile::open($this->path(), self::PROJECT, $this->snapshots)->close();
+
+        // No TiffinDB connection settings: a plain PDO connection, as any SQLite tool would open it.
+        $pdo = new \PDO('sqlite:' . $this->path(), null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+        self::assertSame('ok', $pdo->query('PRAGMA integrity_check')->fetchColumn());
+        self::assertSame([], $pdo->query('PRAGMA foreign_key_check')->fetchAll());
+        self::assertSame(4, (int) $pdo->query('PRAGMA user_version')->fetchColumn());
+        $tables = $pdo->query('SELECT "name" FROM "sqlite_master" WHERE "type" = \'table\' AND "name" LIKE \'\\_tiffin\\_%\' ESCAPE \'\\\' ORDER BY "name"')->fetchAll(\PDO::FETCH_COLUMN);
+        // The metadata tables the format document lists in section 4, each from a CREATE TABLE of that section.
+        $documented = [];
+        foreach (self::sqlBlocks('## 4. Metadata tables', '## 5. User tables') as $block) {
+            preg_match_all('/CREATE TABLE (_tiffin_[a-z_]+)/', $block, $m);
+            $documented = [...$documented, ...$m[1]];
+        }
+        sort($documented);
+        self::assertSame($documented, $tables);
+        self::assertSame(['j_c2vb6nxq4tkm', 't_h3kq7vn2xbma', 't_p6wz2kq7nm3v'], $pdo->query('SELECT "name" FROM "sqlite_master" WHERE "type" = \'table\' AND "name" GLOB \'[tj]_*\' ORDER BY "name"')->fetchAll(\PDO::FETCH_COLUMN));
+        self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM "_tiffin_collections"')->fetchColumn());
+        $pdo = null;
+    }
+
+    public function testAFailingStepFourLeavesTheFileAtVersionThree(): void
+    {
+        $this->buildVersionThree();
+        $failing = new FormatMigrations([
+            4 => static function (Database $db): void {
+                foreach (FormatMigrations::STEPS[4] as $statement) {
+                    $db->run($statement);
+                }
+                $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
+            },
+        ]);
+        try {
+            ProjectFile::open($this->path(), self::PROJECT, $this->snapshots, $failing);
+            self::fail('The failing step was not reported.');
+        } catch (PDOException) {
+            $this->addToAssertionCount(1);
+        }
+        $this->db = Sqlite::open($this->path());
+        self::assertSame(3, $this->db->value('PRAGMA user_version'));
+        self::assertSame('3', $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
+        self::assertNull($this->db->value('SELECT 1 FROM "sqlite_master" WHERE "name" LIKE \'\\_tiffin\\_collections%\' ESCAPE \'\\\''));
+        self::assertCount(1, $this->snapshots->list($this->folder));
+
+        // Opened again normally, the step runs once more (after a new snapshot) and completes.
+        $this->db->close();
+        $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertCount(2, $this->snapshots->list($this->folder));
     }
 }

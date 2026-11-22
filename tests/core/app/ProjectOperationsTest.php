@@ -156,6 +156,43 @@ final class ProjectOperationsTest extends AppTestCase
         self::assertSame([['name', 'problem.project_name.taken', []]], self::problems(fn () => $this->ops->projects()->create($this->admin, 'Example Young', null)));
     }
 
+    /**
+     * CF-9: the abandoned-row recheck inside the write. A creation that
+     * finishes after the list of old rows was read (simulated by a trigger
+     * that activates the second row when the first is removed) keeps its
+     * row and its folder; without the recheck both would be removed.
+     */
+    public function testAnAbandonedRowThatBecameActiveIsNotRemoved(): void
+    {
+        $projects = $this->fx->data->path() . '/projects';
+        mkdir($projects, 0750);
+        $first = $this->creatingRow('dddddddddddd', 'Example First', '2026-03-02T08:00:00Z');
+        $late = $this->creatingRow('eeeeeeeeeeee', 'Example Late', '2026-03-02T08:00:00Z');
+        foreach ([$first, $late] as $key) {
+            mkdir("$projects/$key/attachments", 0750, true);
+            mkdir("$projects/$key/snapshots", 0750);
+            file_put_contents("$projects/$key/project.tiffin", 'synthetic');
+        }
+        $db = $this->fx->system->db();
+        $db->write(static fn () => $db->run(
+            "CREATE TRIGGER finish_late AFTER DELETE ON projects WHEN OLD.key = '{$first}' BEGIN "
+            . "UPDATE projects SET state = '" . ProjectRecord::STATE_ACTIVE . "' WHERE key = '{$late}'; END",
+        ));
+
+        $created = $this->ops->projects()->create($this->admin, 'Example New', null);
+
+        $rows = [];
+        foreach ($this->fx->systemRows()['projects'] as $row) {
+            $rows[$row['key']] = $row['state'];
+        }
+        ksort($rows);
+        $expected = [$late => ProjectRecord::STATE_ACTIVE, $created->key => ProjectRecord::STATE_ACTIVE];
+        ksort($expected);
+        self::assertSame($expected, $rows, 'The first old row is removed; the one that finished meanwhile stays.');
+        self::assertFileDoesNotExist("$projects/$first");
+        self::assertFileExists("$projects/$late/project.tiffin");
+    }
+
     public function testAMemberCannotCreateAProject(): void
     {
         $this->assertThrows(AccessDenied::class, fn () => $this->ops->projects()->create($this->member, 'Example Garden', null));

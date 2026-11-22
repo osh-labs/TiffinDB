@@ -233,13 +233,13 @@ trait ArchiveFixture
     private function zipFor(string $dbPath, array $manifest = [], array $entries = []): string
     {
         $bytes = (string) file_get_contents($dbPath);
-        $version = 3;
+        $version = ProjectFile::VERSION;
         if (str_starts_with($bytes, "SQLite format 3\0") && ord($bytes[18] ?? "\0") === 1) {
             try {
                 $pdo = new \PDO('sqlite:' . $dbPath, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
                 $version = (int) $pdo->query('PRAGMA user_version')->fetchColumn();
             } catch (\PDOException) {
-                $version = 3;
+                $version = ProjectFile::VERSION;
             }
             $pdo = null;
         }

@@ -2111,8 +2111,7 @@ div.table-scroll {
   vertical-align: middle;
 }
 
-.report-table td,
-.report-table thead th + th,
+/* Only count cells are right-aligned (CF-2); the rows column reads as text. */
 .report-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -2184,4 +2183,357 @@ div.table-scroll {
   .form-card {
     padding: var(--space-5) var(--space-3);
   }
+}
+
+/*
+ * M4 components (docs/design/m4/components.md section 1): relation
+ * controls, linked-record rows, file rows and images, the picker, the
+ * collection editor, the trash, and the sidebar's "New collection".
+ */
+
+/* 1.1 Relation control and linked-record rows */
+.link-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0.3333rem 0.3333rem 0.3333rem 0.7778rem;
+  border: var(--border-control) solid var(--ctl);
+  border-radius: var(--radius-control);
+}
+
+.link-chosen {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.link-none {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--ink2);
+}
+
+li.link-row.linked-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.linked-main {
+  flex: 1 1 13.3333rem;
+  min-width: 0;
+}
+
+.linked-main a {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+li.link-row .linked-main a {
+  max-width: 100%;
+}
+
+.link-detail {
+  display: block;
+  color: var(--ink2);
+}
+
+.control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.button.button-strong {
+  padding: 0 1rem;
+}
+
+.button.button-plain {
+  padding: 0 var(--space-4);
+  font-weight: 400;
+}
+
+.help.leave-note {
+  margin: 0;
+}
+
+/* 1.2 File rows and images */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file-name {
+  flex: 1 1 11.1111rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-facts {
+  color: var(--ink2);
+}
+
+.file-open {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+.file-image-link {
+  display: inline-block;
+  flex: 0 0 auto;
+  max-width: 100%;
+  line-height: 0;
+  border-radius: var(--radius-control);
+}
+
+.file-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 17.7778rem);
+  max-height: 12.2222rem;
+  object-fit: contain;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--sunk);
+}
+
+.file-row.file-row-image {
+  align-items: flex-start;
+}
+
+.file-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.file-image-large {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--sunk);
+}
+
+/* 1.3 Picker */
+.page.page-picker {
+  max-width: var(--width-form);
+}
+
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.picker-title {
+  flex: 1 1 13.3333rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.picker-taken {
+  color: var(--ink2);
+}
+
+.picker-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 1.4 Collection editor and view */
+.page.page-collection {
+  max-width: var(--width-form);
+}
+
+.collection-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--sunk);
+}
+
+.rule-row legend {
+  padding: 0 0.3333rem;
+  font-size: var(--text-small);
+  color: var(--ink2);
+}
+
+.rule-control {
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.rule-control.rule-control-wide {
+  flex: 1 1 8rem;
+}
+
+.rule-problem {
+  flex: 1 0 100%;
+}
+
+.rule-row.rule-broken {
+  padding: 0.7222rem;
+  border: var(--border-control) solid var(--warn);
+}
+
+.match-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) 1.5556rem;
+}
+
+.collection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: var(--border-card) solid var(--line);
+}
+
+.collection-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.preview-count-note {
+  font-size: var(--text-small);
+  font-weight: 400;
+  color: var(--ink2);
+}
+
+.default-action {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 1.5 Trash */
+.page.page-trash {
+  max-width: var(--width-wide);
+}
+
+.panel.trash-section {
+  gap: var(--space-3);
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trash-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0.7778rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.trash-title {
+  flex: 1 1 13.3333rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.trash-meta {
+  display: block;
+  font-weight: 400;
+  color: var(--ink2);
+}
+
+.trash-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.danger-zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: var(--border-card) solid var(--line);
+}
+
+/* 1.6 Sidebar */
+.sidebar-link.sidebar-add {
+  font-weight: 700;
+}
+
+/* The record page's unlink forms hold only hidden fields (record-controls.md section 2). */
+.unlink-form {
+  margin: 0;
 }

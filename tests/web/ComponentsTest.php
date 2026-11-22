@@ -50,6 +50,15 @@ use TiffinDB\Web\ViewScope;
  * fixture page m3-components.php: structure, ids, aria-current on the
  * current step, progress without a total, the auto-continue marker, and
  * hostile plain-text values escaped once.
+ *
+ * T-WEB-56 (M4 spec part 2 section 6.1): the shared M4 partials
+ * (link-control, link-rows, file-rows, leave-note) through the fixture
+ * page m4-components.php: structure and classes of
+ * docs/design/m4/components.md section 3, accessible names that start
+ * with the visible text and name the record or file, `form` attributes
+ * that name the unlink form, images only when given and only with a url()
+ * src, the new-record notes, and hostile titles, names, and paths
+ * escaped once.
  */
 #[CoversClass(ValueText::class)]
 #[CoversClass(ViewScope::class)]
@@ -70,7 +79,7 @@ final class ComponentsTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-components-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        foreach (['m2-components', 'm3-components'] as $fixture) {
+        foreach (['m2-components', 'm3-components', 'm4-components'] as $fixture) {
             if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
                 throw new RuntimeException('Cannot copy the fixture.');
             }
@@ -1146,6 +1155,396 @@ final class ComponentsTest extends TestCase
             } catch (InvalidArgumentException) {
                 self::addToAssertionCount(1);
             }
+        }
+    }
+
+    // T-WEB-56: the shared M4 partials (M4 spec part 2 section 6.1).
+
+    private const FIELD = 'abcdefghijkl';
+
+    private const RECORD = '/projects/abcdefghijkl/tables/mnopqrstuvwx/records/12';
+
+    /** @param array<string, mixed> $data */
+    private static function renderM4(array $data): string
+    {
+        $config = require RepoFiles::path('config/app.php');
+        self::assertIsArray($config);
+        $view = (new View(
+            self::$templates,
+            self::strings(),
+            new UrlGenerator('', self::VERSION),
+            Appearance::default(),
+            $config,
+        ))->withCsrfToken(self::TOKEN)->withFormat(self::format());
+        $html = $view->page('m4-components', ['title' => 'Components', ...$data])->body;
+
+        HtmlAssertions::assertWellFormed($html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+        HtmlAssertions::assertForm($html);
+        self::assertStringNotContainsString('<script>alert', $html, 'Markup in values is escaped.');
+        self::assertStringNotContainsString('&amp;lt;', $html, 'Nothing is escaped twice.');
+        self::assertStringNotContainsString('&amp;amp;', $html, 'Nothing is escaped twice.');
+
+        return $html;
+    }
+
+    /** @return array<string, mixed> */
+    private static function oneLink(array $overrides = []): array
+    {
+        return $overrides + [
+            'key' => self::FIELD,
+            'link' => ['path' => '/projects/abcdefghijkl/tables/ghijklmnopqr/records/3', 'title' => 'Kitchen'],
+            'choosePath' => self::RECORD . '/links/' . self::FIELD,
+            'item' => 'room',
+            'table' => 'Rooms',
+            'required' => false,
+            'isNew' => false,
+        ];
+    }
+
+    /** @return list<string> The normalised text of each match. */
+    private static function texts(DOMXPath $xpath, string $query): array
+    {
+        $texts = [];
+        foreach ($xpath->query($query) as $node) {
+            $texts[] = self::norm((string) $node->textContent);
+        }
+
+        return $texts;
+    }
+
+    public function testLinkControlWithALink(): void
+    {
+        $xpath = self::xpath(self::renderM4(['one' => self::oneLink()]));
+
+        $control = self::one($xpath, '//div[@class="field"]/div[@class="link-control"]');
+        $chosen = self::one($xpath, '//div[@class="link-control"]/a[@class="link-chosen"]');
+        self::assertSame('Kitchen', $chosen->textContent);
+        self::assertSame('/projects/abcdefghijkl/tables/ghijklmnopqr/records/3', $chosen->getAttribute('href'));
+        $choose = self::one($xpath, '//div[@class="link-control"]/a[@class="button button-plain"]');
+        self::assertSame('Choose a different room', self::norm($choose->textContent));
+        self::assertSame(self::RECORD . '/links/' . self::FIELD, $choose->getAttribute('href'));
+        self::assertSame('f-' . self::FIELD, $choose->getAttribute('aria-describedby'));
+        self::one($xpath, '//p[@id="f-' . self::FIELD . '"]');
+        self::assertSame(0, $xpath->query('//span[@class="link-none"]')->length);
+        self::assertSame(['a', 'a'], array_map(static fn (\DOMNode $n): string => $n->nodeName, iterator_to_array($xpath->query('*', $control))));
+        self::assertSame(
+            ['Linked to the Rooms table.', 'Save your changes first: the buttons here leave this page.'],
+            self::texts($xpath, '//div[@class="field"]/p[contains(@class, "help")]'),
+        );
+        self::one($xpath, '//div[@class="field"]/p[@class="help leave-note"]');
+    }
+
+    public function testLinkControlWithoutALinkAndWithoutEditing(): void
+    {
+        $xpath = self::xpath(self::renderM4(['one' => self::oneLink(['link' => null])]));
+        self::assertSame('No room chosen', self::one($xpath, '//div[@class="link-control"]/span[@class="link-none"]')->textContent);
+        self::assertSame('Choose a record', self::norm(self::one($xpath, '//div[@class="link-control"]/a[@class="button button-plain"]')->textContent));
+        self::assertSame(0, $xpath->query('//a[@class="link-chosen"]')->length);
+
+        $readOnly = self::xpath(self::renderM4(['one' => self::oneLink(['choosePath' => null])]));
+        self::assertSame(['Kitchen'], self::texts($readOnly, '//div[@class="link-control"]/*'));
+        self::assertSame(0, $readOnly->query('//*[contains(@class, "leave-note")]')->length, 'No leave note without controls.');
+        self::assertSame(['Linked to the Rooms table.'], self::texts($readOnly, '//div[@class="field"]/p[contains(@class, "help")]'));
+    }
+
+    public function testLinkControlOnANewRecord(): void
+    {
+        $xpath = self::xpath(self::renderM4(['one' => self::oneLink(['link' => null, 'choosePath' => null, 'isNew' => true])]));
+        self::assertSame(0, $xpath->query('//div[@class="link-control"]')->length);
+        self::assertSame(0, $xpath->query('//*[contains(@class, "leave-note")]')->length);
+        self::assertSame(
+            ['Linked to the Rooms table.', 'You can choose one once this record is saved.'],
+            self::texts($xpath, '//div[@class="field"]/p[contains(@class, "help")]'),
+        );
+    }
+
+    public function testLinkControlEscapesHostileText(): void
+    {
+        $html = self::renderM4(['one' => self::oneLink([
+            'link' => ['path' => '/projects/abcdefghijkl/tables/ghijklmnopqr/records/3', 'title' => self::HOSTILE],
+            'item' => self::HOSTILE,
+            'table' => self::HOSTILE,
+        ])]);
+        $xpath = self::xpath($html);
+        self::assertSame(self::HOSTILE, self::one($xpath, '//a[@class="link-chosen"]')->textContent);
+        self::assertSame('Choose a different ' . self::HOSTILE, self::one($xpath, '//a[@class="button button-plain"]')->textContent);
+        self::assertSame('Linked to the ' . self::HOSTILE . ' table.', self::one($xpath, '//div[@class="field"]/p[@class="help"]')->textContent);
+
+        $none = self::xpath(self::renderM4(['one' => self::oneLink(['link' => null, 'item' => self::HOSTILE])]));
+        self::assertSame('No ' . self::HOSTILE . ' chosen', self::one($none, '//span[@class="link-none"]')->textContent);
+    }
+
+    public function testLinkControlTakesOnlyApplicationPaths(): void
+    {
+        foreach (['//example.org/x', 'javascript:alert(1)', 'https://example.org/', '/x?y=1'] as $path) {
+            try {
+                self::renderM4(['one' => self::oneLink(['choosePath' => $path])]);
+                self::fail("Accepted {$path}");
+            } catch (\Throwable $e) {
+                self::assertInstanceOf(InvalidArgumentException::class, self::rootCause($e), $path);
+            }
+        }
+    }
+
+    private static function rootCause(\Throwable $e): \Throwable
+    {
+        while ($e->getPrevious() !== null) {
+            $e = $e->getPrevious();
+        }
+
+        return $e;
+    }
+
+    /** @return array<string, mixed> */
+    private static function manyLinks(array $overrides = []): array
+    {
+        return $overrides + [
+            'key' => self::FIELD,
+            'rows' => [
+                ['path' => '/projects/abcdefghijkl/tables/stuvwxyz2345/records/7', 'title' => 'Stand mixer, manufacturer warranty', 'detail' => 'Ends 14 Mar 2027', 'target' => 7],
+                ['path' => '/projects/abcdefghijkl/tables/stuvwxyz2345/records/9', 'title' => 'Extended cover', 'detail' => null, 'target' => 9],
+            ],
+            'unlink' => true,
+            'linkPath' => self::RECORD . '/links/' . self::FIELD,
+            'item' => 'warranty',
+            'isNew' => false,
+        ];
+    }
+
+    public function testLinkRowsWithUnlinkButtons(): void
+    {
+        $xpath = self::xpath(self::renderM4(['many' => self::manyLinks()]));
+
+        $rows = $xpath->query('//div[@class="field"]/ul[@class="link-list"]/li[@class="link-row linked-row"]');
+        self::assertSame(2, $rows->length);
+        self::assertSame(['Stand mixer, manufacturer warranty', 'Extended cover'], self::texts($xpath, '//li/div[@class="linked-main"]/a'));
+        self::assertSame(['/projects/abcdefghijkl/tables/stuvwxyz2345/records/7', '/projects/abcdefghijkl/tables/stuvwxyz2345/records/9'], self::texts($xpath, '//li/div[@class="linked-main"]/a/@href'));
+        self::assertSame(['Ends 14 Mar 2027'], self::texts($xpath, '//li/div[@class="linked-main"]/span[@class="link-detail"]'));
+
+        $buttons = $xpath->query('//li[@class="link-row linked-row"]/button');
+        self::assertSame(2, $buttons->length);
+        foreach ([[0, '7', 'Unlink Stand mixer, manufacturer warranty'], [1, '9', 'Unlink Extended cover']] as [$n, $target, $label]) {
+            $button = $buttons->item($n);
+            self::assertInstanceOf(DOMElement::class, $button);
+            self::assertSame([
+                'aria-label' => $label,
+                'class' => 'button button-plain',
+                'form' => 'unlink-' . self::FIELD,
+                'name' => 'target',
+                'type' => 'submit',
+                'value' => $target,
+            ], self::attributes($button));
+            self::assertSame('Unlink', $button->textContent);
+            self::assertStringStartsWith($button->textContent, $button->getAttribute('aria-label'), 'The accessible name starts with the visible text.');
+        }
+        // The unlink form the buttons name exists, outside the record form.
+        self::one($xpath, '//form[@id="unlink-' . self::FIELD . '"][not(ancestor::form)]');
+        self::assertSame(0, $xpath->query('//form//form')->length);
+
+        $add = self::one($xpath, '//div[@class="field"]/div[@class="control-actions"]/a[@class="button button-strong"]');
+        self::assertSame('Link another warranty', $add->textContent);
+        self::assertSame(self::RECORD . '/links/' . self::FIELD, $add->getAttribute('href'));
+        self::assertSame('f-' . self::FIELD, $add->getAttribute('aria-describedby'));
+        self::assertSame(
+            ['Unlinking does not delete the warranty record.', 'Save your changes first: the buttons here leave this page.'],
+            self::texts($xpath, '//div[@class="field"]/p[contains(@class, "help")]'),
+        );
+    }
+
+    public function testLinkRowsEmptyReadOnlyAndNew(): void
+    {
+        $empty = self::xpath(self::renderM4(['many' => self::manyLinks(['rows' => []])]));
+        self::assertSame(0, $empty->query('//ul')->length);
+        self::assertSame('No linked records', self::one($empty, '//div[@class="field"]/p[@class="static-value"]')->textContent);
+        self::assertSame('Link a record', self::one($empty, '//a[@class="button button-strong"]')->textContent);
+        self::assertSame(0, $empty->query('//form[contains(@id, "unlink")]')->length);
+
+        $readOnly = self::xpath(self::renderM4(['many' => self::manyLinks(['unlink' => false, 'linkPath' => null])]));
+        self::assertSame(2, $readOnly->query('//li[@class="link-row linked-row"]')->length);
+        self::assertSame(0, $readOnly->query('//li//button | //a[contains(@class, "button-strong")] | //p[contains(@class, "help")]')->length);
+
+        $new = self::xpath(self::renderM4(['many' => self::manyLinks(['rows' => [], 'unlink' => false, 'linkPath' => null, 'isNew' => true])]));
+        self::assertSame(['You can add links once this record is saved.'], self::texts($new, '//div[@class="field"]/p[contains(@class, "help")]'));
+        self::assertSame(0, $new->query('//ul | //p[@class="static-value"] | //div[@class="field"]//a')->length);
+    }
+
+    public function testLinkRowsEscapeHostileText(): void
+    {
+        $xpath = self::xpath(self::renderM4(['many' => self::manyLinks([
+            'rows' => [['path' => '/projects/abcdefghijkl/tables/stuvwxyz2345/records/7', 'title' => self::HOSTILE, 'detail' => self::HOSTILE, 'target' => 7]],
+            'item' => self::HOSTILE,
+        ])]));
+        self::assertSame(self::HOSTILE, self::one($xpath, '//div[@class="linked-main"]/a')->textContent);
+        self::assertSame(self::HOSTILE, self::one($xpath, '//span[@class="link-detail"]')->textContent);
+        self::assertSame('Unlink ' . self::HOSTILE, self::one($xpath, '//li/button')->getAttribute('aria-label'));
+        self::assertSame('Link another ' . self::HOSTILE, self::one($xpath, '//a[@class="button button-strong"]')->textContent);
+        self::assertSame('Unlinking does not delete the ' . self::HOSTILE . ' record.', self::one($xpath, '//div[@class="field"]/p[@class="help"]')->textContent);
+    }
+
+    /** @return array<string, mixed> */
+    private static function fileRows(array $overrides = []): array
+    {
+        $files = self::RECORD . '/files/' . self::FIELD;
+
+        return $overrides + [
+            'key' => self::FIELD,
+            'files' => [
+                [
+                    'name' => 'receipt-stand-mixer.pdf',
+                    'type' => 'PDF',
+                    'size' => '84 KB',
+                    'openPath' => $files . '/4',
+                    'replacePath' => $files . '/new',
+                    'replaceQuery' => ['replace' => '4'],
+                    'removePath' => $files . '/4/remove',
+                    'image' => null,
+                ],
+                [
+                    'name' => 'stand-mixer.png',
+                    'type' => 'image',
+                    'size' => '1.2 MB',
+                    'openPath' => $files . '/5',
+                    'replacePath' => $files . '/new',
+                    'replaceQuery' => ['replace' => '5'],
+                    'removePath' => $files . '/5/remove',
+                    'image' => ['src' => '/projects/abcdefghijkl/files/5', 'alt' => 'stand-mixer.png'],
+                ],
+            ],
+            'addPath' => $files . '/new',
+            'imagesOnly' => false,
+            'isNew' => false,
+        ];
+    }
+
+    public function testFileRowsWithAPdfAndAnImage(): void
+    {
+        $files = self::RECORD . '/files/' . self::FIELD;
+        $xpath = self::xpath(self::renderM4(['files' => self::fileRows()]));
+
+        $rows = $xpath->query('//div[@class="field"]/ul[@class="file-list"]/li');
+        self::assertSame(2, $rows->length);
+        self::assertSame(['file-row', 'file-row file-row-image'], self::texts($xpath, '//ul[@class="file-list"]/li/@class'));
+        self::assertSame(
+            ['receipt-stand-mixer.pdf (PDF, 84 KB)', 'stand-mixer.png (image, 1.2 MB)'],
+            self::texts($xpath, '//li/span[@class="file-name"]'),
+        );
+        self::assertSame(['(PDF, 84 KB)', '(image, 1.2 MB)'], self::texts($xpath, '//span[@class="file-name"]/span[@class="file-facts"]'));
+
+        // One image, its src the serving route, its alt the name; it is not a
+        // link of its own, so Open is the row's one link to the file page (P181).
+        self::assertSame(1, $xpath->query('//img')->length);
+        $img = self::one($xpath, '//li[@class="file-row file-row-image"]/img');
+        self::assertSame(['alt' => 'stand-mixer.png', 'class' => 'file-image', 'src' => '/projects/abcdefghijkl/files/5'], self::attributes($img));
+        self::assertSame($img, $xpath->query('//li[@class="file-row file-row-image"]/*')->item(0), 'The image comes first in its row.');
+        self::assertSame(0, $xpath->query('//a//img')->length);
+        self::assertSame([$files . '/5'], self::texts($xpath, '//li[@class="file-row file-row-image"]/a[@href="' . $files . '/5"]/@href'), 'One link to the file page per row.');
+
+        self::assertSame(
+            [
+                ['Open', 'Open receipt-stand-mixer.pdf', $files . '/4', 'file-open'],
+                ['Replace', 'Replace receipt-stand-mixer.pdf', $files . '/new?replace=4', 'button button-plain'],
+                ['Remove', 'Remove receipt-stand-mixer.pdf', $files . '/4/remove', 'button button-plain'],
+                ['Open', 'Open stand-mixer.png', $files . '/5', 'file-open'],
+                ['Replace', 'Replace stand-mixer.png', $files . '/new?replace=5', 'button button-plain'],
+                ['Remove', 'Remove stand-mixer.png', $files . '/5/remove', 'button button-plain'],
+            ],
+            array_map(
+                static fn (DOMElement $a): array => [self::norm($a->textContent), $a->getAttribute('aria-label'), $a->getAttribute('href'), $a->getAttribute('class')],
+                array_values(array_filter(iterator_to_array($xpath->query('//li/a[@aria-label]')), static fn ($n): bool => $n instanceof DOMElement)),
+            ),
+        );
+        foreach ($xpath->query('//li/a[@aria-label]') as $a) {
+            self::assertInstanceOf(DOMElement::class, $a);
+            self::assertStringStartsWith(self::norm($a->textContent), $a->getAttribute('aria-label'));
+        }
+
+        $add = self::one($xpath, '//div[@class="field"]/div[@class="control-actions"]/a[@class="button button-strong"]');
+        self::assertSame('Add a file', $add->textContent);
+        self::assertSame($files . '/new', $add->getAttribute('href'));
+        self::assertSame('f-' . self::FIELD, $add->getAttribute('aria-describedby'));
+        self::assertSame(['Save your changes first: the buttons here leave this page.'], self::texts($xpath, '//div[@class="field"]/p[contains(@class, "help")]'));
+    }
+
+    public function testFileRowsImagesOnlyReadOnlyEmptyAndNew(): void
+    {
+        $images = self::xpath(self::renderM4(['files' => self::fileRows(['imagesOnly' => true])]));
+        self::assertSame('Add an image', self::one($images, '//a[@class="button button-strong"]')->textContent);
+
+        $readOnly = self::fileRows(['addPath' => null]);
+        foreach ($readOnly['files'] as $n => $file) {
+            $readOnly['files'][$n] = ['replacePath' => null, 'removePath' => null] + $file;
+        }
+        $xpath = self::xpath(self::renderM4(['files' => $readOnly]));
+        self::assertSame(['Open', 'Open'], self::texts($xpath, '//li/a[@aria-label]'));
+        self::assertSame(0, $xpath->query('//a[contains(@class, "button")] | //p[contains(@class, "help")]')->length);
+        self::assertSame(1, $xpath->query('//img')->length, 'The image is shown to readers too.');
+
+        $empty = self::xpath(self::renderM4(['files' => self::fileRows(['files' => []])]));
+        self::assertSame('No files', self::one($empty, '//div[@class="field"]/p[@class="static-value"]')->textContent);
+        self::assertSame(0, $empty->query('//ul | //img')->length);
+        self::assertSame('Add a file', self::one($empty, '//a[@class="button button-strong"]')->textContent);
+
+        $new = self::xpath(self::renderM4(['files' => self::fileRows(['files' => [], 'addPath' => null, 'isNew' => true])]));
+        self::assertSame(['You can add files once this record is saved.'], self::texts($new, '//div[@class="field"]/p[contains(@class, "help")]'));
+        self::assertSame(0, $new->query('//ul | //p[@class="static-value"] | //div[@class="field"]//a')->length);
+    }
+
+    public function testFileRowsEscapeHostileNames(): void
+    {
+        $files = self::fileRows();
+        $files['files'][1]['name'] = self::HOSTILE . "\u{202E}gnp.exe";
+        $files['files'][1]['image']['alt'] = self::HOSTILE;
+        $files['files'][1]['size'] = self::HOSTILE;
+        $xpath = self::xpath(self::renderM4(['files' => $files]));
+
+        self::assertSame(self::HOSTILE, self::one($xpath, '//img')->getAttribute('alt'));
+        self::assertSame('Open ' . self::HOSTILE . "\u{202E}gnp.exe", self::texts($xpath, '//li/a[@class="file-open"]/@aria-label')[1]);
+        self::assertSame('Remove ' . self::HOSTILE . "\u{202E}gnp.exe", self::texts($xpath, '//li/a[@class="button button-plain"][last()]/@aria-label')[1]);
+        self::assertSame('(image, ' . self::HOSTILE . ')', self::texts($xpath, '//span[@class="file-facts"]')[1]);
+    }
+
+    public function testFileRowsRefuseAnImageSourceThatIsNotAnApplicationPath(): void
+    {
+        foreach (['//example.org/x.png', 'data:image/png;base64,AAAA', 'javascript:alert(1)'] as $src) {
+            $files = self::fileRows();
+            $files['files'][1]['image']['src'] = $src;
+            try {
+                self::renderM4(['files' => $files]);
+                self::fail("Accepted {$src}");
+            } catch (\Throwable $e) {
+                self::assertInstanceOf(InvalidArgumentException::class, self::rootCause($e), $src);
+            }
+        }
+    }
+
+    public function testLeaveNoteAlone(): void
+    {
+        $xpath = self::xpath(self::renderM4(['leave' => true]));
+        self::assertSame('Save your changes first: the buttons here leave this page.', self::one($xpath, '//p[@class="help leave-note"]')->textContent);
+    }
+
+    /** P186: a field with an error text names it from its control, so the 422 summary's target describes the control. */
+    public function testControlsListTheErrorIdWhenTheFieldIsInvalid(): void
+    {
+        $label = 'f-' . self::FIELD;
+        $both = $label . ' err-' . self::FIELD;
+        $cases = [
+            'one link, linked' => [['one' => self::oneLink()], '//div[@class="link-control"]/a[@class="button button-plain"]'],
+            'one link, empty' => [['one' => self::oneLink(['link' => null])], '//div[@class="link-control"]/a[@class="button button-plain"]'],
+            'many links' => [['many' => self::manyLinks()], '//div[@class="control-actions"]/a'],
+            'no links' => [['many' => self::manyLinks(['rows' => []])], '//div[@class="control-actions"]/a'],
+            'files' => [['files' => self::fileRows()], '//div[@class="control-actions"]/a'],
+            'images only' => [['files' => self::fileRows(['imagesOnly' => true, 'files' => []])], '//div[@class="control-actions"]/a'],
+        ];
+        foreach ($cases as $name => [$data, $query]) {
+            $plain = self::xpath(self::renderM4($data));
+            self::assertSame($label, self::one($plain, $query)->getAttribute('aria-describedby'), $name);
+            $key = (string) array_key_first($data);
+            $invalid = self::xpath(self::renderM4([$key => ['invalid' => true] + $data[$key]]));
+            self::assertSame($both, self::one($invalid, $query)->getAttribute('aria-describedby'), $name);
+            $valid = self::xpath(self::renderM4([$key => ['invalid' => false] + $data[$key]]));
+            self::assertSame($label, self::one($valid, $query)->getAttribute('aria-describedby'), $name);
         }
     }
 }

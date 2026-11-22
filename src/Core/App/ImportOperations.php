@@ -24,6 +24,7 @@ use TiffinDB\Core\Io\Contract\PluginFailure;
 use TiffinDB\Core\Io\Contract\Settings;
 use TiffinDB\Core\Io\Contract\SourceFile;
 use TiffinDB\Core\Io\Contract\SourceTable;
+use TiffinDB\Core\Io\Csv\CsvFile;
 use TiffinDB\Core\Io\ImportJob;
 use TiffinDB\Core\Io\ImportLog;
 use TiffinDB\Core\Io\Inference;
@@ -110,7 +111,7 @@ final class ImportOperations
         $plugin = $this->choosePlugin($pluginRef, $extension);
         $name = $plugin->manifest?->name ?? $plugin->id;
 
-        $this->c->staging()->sweep();
+        $this->c->sweepStaging($project, $this->c->opener->open($project));
         [$key, $folder] = $this->c->staging()->create(self::IMPORTS);
         $job = null;
         try {
@@ -376,7 +377,7 @@ final class ImportOperations
                 $skipped['over_limit'] > 0,
                 $replaced,
                 $mapping->target,
-                $mapping->newTableName,
+                $mapping->target === Mapping::NEW ? $mapping->newTableName : null,
                 $mapping->tableKey,
                 self::tables($db, $schema, $this->c),
                 $columns,
@@ -824,17 +825,22 @@ final class ImportOperations
         $base = $sameTarget ? $current : MappingCheck::defaults($target, $schema, $guesses, $this->defaultName($job, $table), $tableKey);
         if (!$sameTarget && $shapeOnly) {
             // P137: the columns posted belong to the other target; start from this target's defaults.
-            $newName = self::shortText($input['table_name'] ?? null);
+            // X-12: a posted name that is empty or absent keeps the stored one, which an
+            // existing-table mapping carries while the job is in Review.
+            $newName = self::keptName($input['table_name'] ?? null, $current->newTableName);
+            if ($newName === null) {
+                return $base;
+            }
 
-            return $target === Mapping::NEW && $newName !== null ? new Mapping(Mapping::NEW, $newName, null, $base->columns) : $base;
+            return new Mapping($target, $newName, $base->tableKey, $base->columns);
         }
 
         $newName = $base->newTableName;
-        if ($target === Mapping::NEW) {
-            $posted = $input['table_name'] ?? null;
-            if (is_string($posted)) {
-                $newName = $shapeOnly ? (self::shortText($posted) ?? $newName) : $posted;
-            }
+        $posted = $input['table_name'] ?? null;
+        if ($shapeOnly) {
+            $newName = self::keptName($posted, $newName);
+        } elseif ($target === Mapping::NEW && is_string($posted)) {
+            $newName = $posted;
         }
         $include = is_array($input['include'] ?? null) ? $input['include'] : [];
         $names = is_array($input['name'] ?? null) ? $input['name'] : [];
@@ -870,7 +876,18 @@ final class ImportOperations
             $columns[] = new ColumnMapping($n, $in, null, null, $fieldKey);
         }
 
-        return new Mapping($target, $target === Mapping::NEW ? $newName : null, $tableKey, $columns);
+        return new Mapping($target, $target === Mapping::NEW || $shapeOnly ? $newName : null, $tableKey, $columns);
+    }
+
+    /**
+     * The new-table name a recheck keeps (X-12): the posted one when it
+     * passes the shape check and is not blank, else the stored one.
+     */
+    private static function keptName(mixed $posted, ?string $stored): ?string
+    {
+        $name = self::shortText($posted);
+
+        return $name !== null && Text::trim($name) !== '' ? $name : self::shortText($stored);
     }
 
     /** A posted name that passes the shape check: a UTF-8 string of at most 60 characters. */
@@ -1016,6 +1033,11 @@ final class ImportOperations
 
     private static function readProblem(PluginFailure $failure, string $pluginName): Problem
     {
+        if ($failure->reason === PluginFailure::REASON_TOO_LARGE && $failure->getMessage() === CsvFile::TOO_MANY_COLUMNS) {
+            // CF-3: the column limit has its own message; an over-long record stays `unsupported`.
+            return new Problem('file', 'problem.import.too_many_columns', ['max' => IoLimits::MAX_COLUMNS]);
+        }
+
         return match ($failure->reason) {
             PluginFailure::REASON_UNREADABLE => new Problem('file', 'problem.import.unreadable', ['format' => $pluginName]),
             PluginFailure::REASON_UNSUPPORTED, PluginFailure::REASON_TOO_LARGE => new Problem('file', 'problem.import.unsupported'),

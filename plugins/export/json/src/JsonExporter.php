@@ -9,9 +9,11 @@ declare(strict_types=1);
 namespace TiffinDB\Plugin\Export\Json;
 
 use TiffinDB\Core\Io\Contract\ExportAttachment;
+use TiffinDB\Core\Io\Contract\ExportCollection;
 use TiffinDB\Core\Io\Contract\ExportField;
 use TiffinDB\Core\Io\Contract\ExportRecord;
 use TiffinDB\Core\Io\Contract\ExportRelation;
+use TiffinDB\Core\Io\Contract\ExportRule;
 use TiffinDB\Core\Io\Contract\ExportSource;
 use TiffinDB\Core\Io\Contract\ExportTable;
 use TiffinDB\Core\Io\Contract\Exporter;
@@ -24,7 +26,8 @@ use TiffinDB\Core\Io\Contract\Settings;
  * settings. The document is streamed: each top-level member, relation,
  * attachment, and record is written with one fwrite and followed by a line
  * break, so memory does not grow with the number of records. Members are
- * written in the order of the format document; record values follow the
+ * written in the order of the format document, `collections`
+ * last (M4 spec section 8.3); record values follow the
  * table's field order, not the order of the record's value array.
  *
  * Expected failures are PluginFailure: the target cannot be written
@@ -109,7 +112,45 @@ final class JsonExporter implements Exporter
             }
             $this->put(($first ? '' : "\n") . ']}');
         }
-        $this->put(($firstTable ? '' : "\n") . "]}\n");
+        $this->put(($firstTable ? '' : "\n") . "],\n");
+
+        $this->put(JsonText::string('collections') . ':[');
+        $first = true;
+        foreach ($source->collections() as $collection) {
+            $this->put(($first ? "\n" : ",\n") . self::collection($collection));
+            $first = false;
+        }
+        $this->put(($first ? '' : "\n") . "]}\n");
+    }
+
+    /** One collection (format section 7): rules exactly as stored, `match` from the stored match mode. */
+    private static function collection(ExportCollection $collection): string
+    {
+        $rules = [];
+        foreach ($collection->rules as $rule) {
+            $rules[] = self::rule($rule);
+        }
+
+        return '{' . JsonText::string('key') . ':' . JsonText::string($collection->key) . ','
+            . JsonText::string('table') . ':' . JsonText::string($collection->tableKey) . ','
+            . JsonText::string('name') . ':' . JsonText::string($collection->name) . ','
+            . JsonText::string('match') . ':' . JsonText::string($collection->match) . ','
+            . JsonText::string('rules') . ':[' . implode(',', $rules) . '],'
+            . JsonText::string('sort') . ':' . JsonText::nullableString($collection->sort) . ','
+            . JsonText::string('created_at') . ':' . JsonText::string($collection->createdAt) . ','
+            . JsonText::string('updated_at') . ':' . JsonText::string($collection->updatedAt) . '}';
+    }
+
+    private static function rule(ExportRule $rule): string
+    {
+        $values = [];
+        foreach ($rule->values as $value) {
+            $values[] = JsonText::string($value);
+        }
+
+        return '{' . JsonText::string('field') . ':' . JsonText::string($rule->field) . ','
+            . JsonText::string('op') . ':' . JsonText::string($rule->op) . ','
+            . JsonText::string('values') . ':[' . implode(',', $values) . ']}';
     }
 
     private static function relation(ExportRelation $relation): string

@@ -20,7 +20,7 @@ use TiffinDB\Core\Schema\ProjectFile;
 require_once __DIR__ . '/ArchiveFixture.php';
 
 /**
- * T-ARC-5: the SQLite corpus. Each file is the source project's copy
+ * T-ARC-5 and T-ARC-12: the SQLite corpus. Each file is the source project's copy
  * changed with plain SQL (or, for the header and damage cases, by
  * writing bytes), wrapped in a zip with a matching manifest. Every case is
  * refused with its reason, a database error while checking is `damaged`
@@ -96,12 +96,12 @@ final class SqliteCorpusTest extends TestCase
     {
         self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->hostileArchive('PRAGMA application_id = 1')));
         $newer = $this->copyOfSource();
-        self::rawEdit($newer, 'PRAGMA user_version = 4');
-        self::assertSame(ArchiveRefused::NEWER, $this->refusal($this->zipFor($newer, ['project_format_version' => 3])));
+        self::rawEdit($newer, 'PRAGMA user_version = 5');
+        self::assertSame(ArchiveRefused::NEWER, $this->refusal($this->zipFor($newer, ['project_format_version' => 4])));
         self::assertSame(ArchiveRefused::NEWER, $this->refusal($this->zipFor($newer)));
         $older = $this->copyOfSource();
         self::rawEdit($older, 'PRAGMA user_version = 2');
-        self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->zipFor($older, ['project_format_version' => 3])));
+        self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->zipFor($older, ['project_format_version' => 4])));
         self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->hostileArchive("UPDATE _tiffin_meta SET value = 'other' WHERE key = 'format'")));
         self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->hostileArchive("UPDATE _tiffin_meta SET value = '2' WHERE key = 'format_version'")));
         self::assertSame(ArchiveRefused::NOT_PROJECT, $this->refusal($this->hostileArchive('DROP TABLE _tiffin_import_log')));
@@ -121,7 +121,7 @@ final class SqliteCorpusTest extends TestCase
                 "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 't_aaaaaaaaaaaa', 't_aaaaaaaaaaaa', 0, 'CREATE VIRTUAL TABLE t_aaaaaaaaaaaa USING no_such_module(x)')",
             ],
             'extra table' => ['CREATE TABLE evil (x)'],
-            'table with a reserved prefix' => ['CREATE TABLE _tiffin_collections (x)'],
+            'table with a reserved prefix' => ['CREATE TABLE _tiffin_saved (x)'],
             'other sqlite table' => [
                 'PRAGMA writable_schema = ON',
                 "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'sqlite_stat9', 'sqlite_stat9', 0, 'CREATE TABLE sqlite_stat9(x)')",
@@ -194,6 +194,86 @@ final class SqliteCorpusTest extends TestCase
         foreach ($cases as $label => $statements) {
             self::assertSame(ArchiveRefused::BAD_TABLE, $this->refusal($this->hostileArchive(...$statements)), $label);
         }
+    }
+
+    /** One `_tiffin_collections` row as plain SQL (synthetic values). */
+    private static function collectionRow(string $key, string $tableKey, string $name, string $rules = "'[]'"): string
+    {
+        return "INSERT INTO _tiffin_collections (key, table_key, name, rules, position, created_at, updated_at) VALUES ('"
+            . $key . "', '" . $tableKey . "', '" . $name . "', " . $rules . ", 1, '" . self::START . "', '" . self::START . "')";
+    }
+
+    /** T-ARC-12: the collections table of a version 4 file, and its absence before version 4. */
+    public function testCollectionsTableIsCheckedByVersion(): void
+    {
+        $items = $this->items->key;
+        $refused = [
+            'extra index on the collections table' => [ArchiveRefused::UNEXPECTED_OBJECT, ['CREATE INDEX _tiffin_collections_key ON _tiffin_collections (key)']],
+            'collections index changed' => [ArchiveRefused::UNEXPECTED_OBJECT, [
+                'DROP INDEX _tiffin_collections_table',
+                'CREATE INDEX _tiffin_collections_table ON _tiffin_collections (table_key, position) WHERE abs(position) > 0',
+            ]],
+            'check constraint on the collections table' => [ArchiveRefused::UNEXPECTED_OBJECT, [
+                'PRAGMA writable_schema = ON',
+                "UPDATE sqlite_master SET sql = replace(sql, 'position   INTEGER NOT NULL', 'position INTEGER NOT NULL CHECK (abs(position) >= 0)') WHERE name = '_tiffin_collections'",
+            ]],
+            'trigger on the collections table' => [ArchiveRefused::UNEXPECTED_OBJECT, ['CREATE TRIGGER x AFTER INSERT ON _tiffin_collections BEGIN SELECT 1; END']],
+            'collections table missing' => [ArchiveRefused::NOT_PROJECT, ['DROP TABLE _tiffin_collections']],
+            'rules text over 1 MiB in total' => [ArchiveRefused::BAD_METADATA, [
+                self::collectionRow(self::corpusKey('c', 1), $items, 'A', "'[' || replace(hex(zeroblob(600000)), '00', ' ') || ']'"),
+                self::collectionRow(self::corpusKey('c', 2), $items, 'B', "'[' || replace(hex(zeroblob(600000)), '00', ' ') || ']'"),
+            ]],
+            'more than 1,000 collection rows' => [ArchiveRefused::BAD_METADATA, [
+                'WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1001)'
+                . " INSERT INTO _tiffin_collections (key, table_key, name, position, created_at, updated_at) SELECT 'k' || i, '" . $items . "', 'N' || i, i, '" . self::START . "', '" . self::START . "' FROM n",
+            ]],
+            'collection key equal to a table key' => [ArchiveRefused::BAD_METADATA, [self::collectionRow($this->rooms->key, $items, 'A')]],
+            'collection key equal to a field key' => [ArchiveRefused::BAD_METADATA, [self::collectionRow($this->f['Notes']->key, $items, 'A')]],
+            'collection key equal to a relation key' => [ArchiveRefused::BAD_METADATA, [self::collectionRow($this->room->key, $items, 'A')]],
+        ];
+        $form = (string) $this->db->value('SELECT "key" FROM "_tiffin_forms" ORDER BY "key" LIMIT 1');
+        $refused['collection key equal to a form key'] = [ArchiveRefused::BAD_METADATA, [self::collectionRow($form, $items, 'A')]];
+        foreach ($refused as $label => [$reason, $statements]) {
+            self::assertSame($reason, $this->refusal($this->hostileArchive(...$statements)), $label);
+        }
+
+        // An automatic index on the collections table, which SQLite never makes for it (the table is WITHOUT ROWID and has no UNIQUE column).
+        $copy = $this->copyOfSource();
+        $root = (int) (new \PDO('sqlite:' . $copy))->query("SELECT rootpage FROM sqlite_master WHERE name = '_tiffin_collections_name'")->fetchColumn();
+        self::rawEdit(
+            $copy,
+            'PRAGMA writable_schema = ON',
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('index', 'sqlite_autoindex__tiffin_collections_1', '_tiffin_collections', " . $root . ', NULL)',
+        );
+        // SQLite itself treats an automatic index without its UNIQUE constraint as a damaged schema; UntrustedProject would refuse it too.
+        self::assertContains($this->refusal($this->zipFor($copy)), [ArchiveRefused::UNEXPECTED_OBJECT, ArchiveRefused::DAMAGED]);
+
+        // A version 3 file that has the table is refused; versions 1 to 3 without it are accepted.
+        self::assertSame(ArchiveRefused::UNEXPECTED_OBJECT, $this->refusal($this->hostileArchive(
+            'PRAGMA user_version = 3',
+            "UPDATE _tiffin_meta SET value = '3' WHERE key = 'format_version'",
+        )));
+        $drops = [3 => ['DROP TABLE _tiffin_collections'], 2 => ['DROP TABLE _tiffin_import_log'], 1 => ['DROP TABLE _tiffin_forms']];
+        $statements = [];
+        foreach ($drops as $version => $drop) {
+            $statements = [...$statements, ...$drop];
+            [, $checked] = $this->check($this->hostileArchive(...$statements, ...[
+                'PRAGMA user_version = ' . $version,
+                "UPDATE _tiffin_meta SET value = '" . $version . "' WHERE key = 'format_version'",
+            ]));
+            self::assertSame($version, $checked->formatVersion);
+            self::assertSame([], $checked->collections);
+        }
+
+        // A version 4 file with valid collections is accepted and its rows are read.
+        [, $checked] = $this->check($this->hostileArchive(self::collectionRow(self::corpusKey('c', 1), $items, 'Example')));
+        self::assertSame(4, $checked->formatVersion);
+        self::assertSame([self::corpusKey('c', 1)], array_column($checked->collections, 'key'));
+    }
+
+    private static function corpusKey(string $prefix, int $i): string
+    {
+        return $prefix . strtr(sprintf('%011d', $i), '0123456789', 'abcdefghij');
     }
 
     public function testMetadataIsValidated(): void

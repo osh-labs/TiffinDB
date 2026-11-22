@@ -65,9 +65,27 @@ final class RecordListController
             $params['table'] ?? '',
             $asked,
         );
+
+        return $this->render($listing, $asked);
+    }
+
+    /**
+     * The list page of a table listing, or of a collection view when the
+     * listing names a collection (docs/design/m4/collections.md section 2):
+     * the collection is the current sidebar item, its name is the heading,
+     * there is no Filter link, ignored rules are reported, and the view's
+     * own links (find, sort, pager) go to the collection's address without
+     * repeating its key, while record links keep it so the record page
+     * follows the collection.
+     *
+     * @internal Shared with CollectionController::show.
+     */
+    public function render(RecordListing $listing, ListRequest $asked): Response
+    {
         $view = $this->context->view();
         $project = $listing->project;
         $table = $listing->table;
+        $collection = $listing->collection;
         $base = '/projects/' . $project->key . '/tables/' . $table->key;
         $state = $listing->request->toQuery();
         $itemNames = self::itemNames($listing->tables);
@@ -84,7 +102,9 @@ final class RecordListController
         }
         $sortText = $current === null ? '' : ($current->kind === 'field' ? $this->sortLabel($current) : $this->sortShort($current));
 
-        if ($listing->search !== null || $listing->filter !== null) {
+        if ($collection !== null) {
+            $lead = $view->text('lists.collection.lead', ['count' => $listing->total, 'table' => $table->name, 'sort' => $sortText]);
+        } elseif ($listing->search !== null || $listing->filter !== null) {
             $lead = $view->text('lists.lead_matching', ['count' => $listing->total, 'total' => $format->number($listing->tableTotal), 'sort' => $sortText]);
         } else {
             $lead = $view->text('lists.lead', ['count' => $listing->total, 'sort' => $sortText]);
@@ -92,31 +112,51 @@ final class RecordListController
 
         $hidden = [];
         foreach (['filter' => $listing->request->filter, 'op' => $listing->request->op, 'v' => $listing->request->v, 'v2' => $listing->request->v2] as $name => $value) {
-            if ($listing->filter !== null && $value !== null) {
+            if ($collection === null && $listing->filter !== null && $value !== null) {
                 $hidden[] = ['name' => $name, 'value' => $value];
             }
         }
 
+        $canManage = $collection !== null ? $collection->canManage : $this->can($project->key, Permission::ManageCollections);
+        $listPath = $collection === null ? $base : '/projects/' . $project->key . '/collections/' . $collection->key;
+        $editPath = $collection !== null && $collection->canManage ? $listPath . '/edit' : null;
+        $sidebarCollections = [];
+        foreach ($listing->collections as $summary) {
+            $sidebarCollections[] = ['key' => $summary->key, 'name' => $summary->name, 'count' => $summary->count];
+        }
+
         $data = [
-            'title' => $view->text('lists.page_title', ['table' => $table->name, 'project' => $project->name]),
+            'title' => $view->text('lists.page_title', ['table' => $collection?->name ?? $table->name, 'project' => $project->name]),
             'layout' => 'list',
-            'sidebar' => Sidebar::build($project->key, $project->name, $listing->tables, $listing->trashCount, $table->key, $this->canImportExport($project->key)),
+            'sidebar' => Sidebar::build(
+                $project->key,
+                $project->name,
+                $listing->tables,
+                $listing->trashCount,
+                $collection === null ? $table->key : null,
+                $this->can($project->key, Permission::ImportExport),
+                $sidebarCollections,
+                $collection?->key,
+                $canManage ? $table->key : null,
+            ),
             'search' => ['project' => $project->key, 'projectName' => $project->name, 'q' => null],
-            'tableName' => $table->name,
+            'tableName' => $collection?->name ?? $table->name,
             'itemName' => $table->itemName,
             'lead' => $lead,
             'addPath' => $listing->hasFields ? $base . '/records/new' : null,
+            'editPath' => $editPath,
+            'broken' => $collection?->broken ?? 0,
             'state' => $state,
-            'listPath' => $base,
-            'filterPath' => $base . '/filter',
+            'listPath' => $listPath,
+            'filterPath' => $collection === null ? $base . '/filter' : null,
             'controls' => $listing->tableTotal > 0,
             'hidden' => $hidden,
             'find' => $listing->searchProblem !== null ? ($asked->q ?? '') : ($listing->search ?? ''),
             'findError' => $listing->searchProblem === null ? null : $format->problem($listing->searchProblem),
             'sortOptions' => $sortOptions,
-            'condition' => $listing->filter === null ? null : $this->condition($listing->filter, $listing, $itemNames),
+            'condition' => $collection === null && $listing->filter !== null ? $this->condition($listing->filter, $listing, $itemNames) : null,
             'withoutFilter' => $listing->request->withoutFilter()->toQuery(),
-            'filterProblem' => $listing->filterProblem === null ? null : $format->problem($listing->filterProblem),
+            'filterProblem' => $collection === null && $listing->filterProblem !== null ? $format->problem($listing->filterProblem) : null,
             'empty' => null,
             'table' => null,
             'pager' => null,
@@ -125,6 +165,13 @@ final class RecordListController
             $data['empty'] = $listing->canChangeSchema
                 ? ['title' => 'lists.nofields.title', 'body' => 'lists.nofields.admin', 'link' => ['label' => 'lists.nofields.link', 'path' => $base . '/fields/new', 'query' => []]]
                 : ['title' => 'lists.nofields.title', 'body' => 'lists.nofields.member'];
+        } elseif ($collection !== null && ($listing->tableTotal === 0 || ($listing->total === 0 && $listing->search === null))) {
+            $data['empty'] = [
+                'title' => 'lists.none.title',
+                'body' => 'lists.collection.empty',
+                'bodyParams' => ['items' => mb_strtolower($table->name)],
+                'link' => $editPath === null ? null : ['label' => 'lists.collection.edit', 'path' => $editPath, 'query' => []],
+            ];
         } elseif ($listing->tableTotal === 0) {
             $data['empty'] = ['title' => 'lists.empty.title', 'body' => 'lists.empty.body', 'bodyParams' => ['item' => $table->itemName]];
         } elseif ($listing->total === 0) {
@@ -137,7 +184,7 @@ final class RecordListController
                 'title' => 'lists.none.title',
                 'body' => $body[0],
                 'bodyParams' => $body[1],
-                'link' => ['label' => 'lists.none.clear', 'path' => $base, 'query' => $listing->request->withoutSearchAndFilter()->toQuery()],
+                'link' => ['label' => 'lists.none.clear', 'path' => $listPath, 'query' => self::own($listing->request->withoutSearchAndFilter()->toQuery(), $collection !== null)],
             ];
         } else {
             $data['table'] = $this->table($listing, $base, $state, $itemNames);
@@ -147,12 +194,28 @@ final class RecordListController
                 'total' => $listing->total,
                 'page' => $listing->page,
                 'pages' => $listing->pages,
-                'path' => $base,
-                'query' => $listing->request->withoutPage()->toQuery(),
+                'path' => $listPath,
+                'query' => self::own($listing->request->withoutPage()->toQuery(), $collection !== null),
             ];
         }
 
         return $this->context->page('records/list', $data);
+    }
+
+    /**
+     * A query for one of the list page's own links: on a collection view
+     * the collection key is the address already, so it is left out.
+     *
+     * @param array<string, string> $query
+     * @return array<string, string>
+     */
+    private static function own(array $query, bool $isCollection): array
+    {
+        if ($isCollection) {
+            unset($query['collection']);
+        }
+
+        return $query;
     }
 
     /** @param array<string, string> $params */
@@ -275,14 +338,8 @@ final class RecordListController
             array_shift($cellColumns);
         }
         foreach ($listing->columns as $field) {
-            $sort = null;
-            $header = $field->name;
-            if ($listing->sort === $field->key . '.asc' || $listing->sort === $field->key . '.desc') {
-                $descending = $listing->sort === $field->key . '.desc';
-                $sort = $descending ? 'descending' : 'ascending';
-                $header = $view->text('lists.col.sorted', ['field' => $field->name, 'direction' => $view->text(self::sortKey($field, $descending) . '_short')]);
-            }
-            $columns[] = ['field' => $field, 'header' => $header, 'numeric' => in_array($field->type, self::NUMERIC, true), 'sort' => $sort];
+            $head = $this->columnHeader($field, $listing->sort);
+            $columns[] = ['field' => $field, 'header' => $head['header'], 'numeric' => self::isNumeric($field), 'sort' => $head['sort']];
         }
 
         $rows = [];
@@ -312,13 +369,25 @@ final class RecordListController
     /** @return array{field: FieldDef, value: mixed, links: list<array{path: string, table: string, id: int, title: string|null}>|null, moreLinks: int, fileCount: int|null} */
     private static function cell(RecordListing $listing, Cell $cell): array
     {
+        return self::cellData($listing->project->key, $cell);
+    }
+
+    /**
+     * The record-table data of one cell of a project's record (shared with
+     * the collection editor's preview).
+     *
+     * @return array{field: FieldDef, value: mixed, links: list<array{path: string, table: string, id: int, title: string|null}>|null, moreLinks: int, fileCount: int|null}
+     * @internal
+     */
+    public static function cellData(string $projectKey, Cell $cell): array
+    {
         $links = null;
         $fileCount = null;
         if ($cell->field->type === 'relation') {
             $links = [];
             foreach ($cell->links as $link) {
                 $links[] = [
-                    'path' => '/projects/' . $listing->project->key . '/tables/' . $link->tableKey . '/records/' . $link->id,
+                    'path' => '/projects/' . $projectKey . '/tables/' . $link->tableKey . '/records/' . $link->id,
                     'table' => $link->tableKey,
                     'id' => $link->id,
                     'title' => $link->title === '' ? null : $link->title,
@@ -393,8 +462,36 @@ final class RecordListController
         return $first === null ? '' : ($itemNames[$first->tableKey] ?? '');
     }
 
-    /** The menu label of a sort option. */
-    private function sortLabel(SortOption $option): string
+    /**
+     * The header text of a list column and its `aria-sort` value
+     * (`ascending`, `descending`, or null) under the sort token given.
+     *
+     * @return array{header: string, sort: string|null}
+     * @internal Shared with the collection editor's preview.
+     */
+    public function columnHeader(FieldDef $field, ?string $sortToken): array
+    {
+        if ($sortToken !== $field->key . '.asc' && $sortToken !== $field->key . '.desc') {
+            return ['header' => $field->name, 'sort' => null];
+        }
+        $descending = $sortToken === $field->key . '.desc';
+        $header = $this->context->view()->text('lists.col.sorted', ['field' => $field->name, 'direction' => $this->context->view()->text(self::sortKey($field, $descending) . '_short')]);
+
+        return ['header' => $header, 'sort' => $descending ? 'descending' : 'ascending'];
+    }
+
+    /** Whether list cells of the field are right-aligned (`num`). */
+    public static function isNumeric(FieldDef $field): bool
+    {
+        return in_array($field->type, self::NUMERIC, true);
+    }
+
+    /**
+     * The menu label of a sort option.
+     *
+     * @internal Public for the collection editor's sort menu.
+     */
+    public function sortLabel(SortOption $option): string
     {
         $view = $this->context->view();
         if ($option->field === null) {
@@ -465,9 +562,13 @@ final class RecordListController
         return $hidden;
     }
 
-    /** Whether the sidebar shows the Data group (Import, Export): `io.use` on the project (M3 spec part 2 section 4). */
-    private function canImportExport(string $projectKey): bool
+    /**
+     * The core's answer for the person on the project: `io.use` shows the
+     * sidebar's Data group (M3 spec part 2 section 4), `collections.manage`
+     * its "New collection" link (M4 spec part 2 section 5).
+     */
+    private function can(string $projectKey, Permission $permission): bool
     {
-        return $this->context->services()->operations()->auth()->can($this->context->actor(), Permission::ImportExport, $projectKey);
+        return $this->context->services()->operations()->auth()->can($this->context->actor(), $permission, $projectKey);
     }
 }

@@ -10,14 +10,16 @@ namespace TiffinDB\Core\App;
 
 /**
  * The view state of a record list as the query string carries it (M2 spec
- * section 4): search text, sort token, one filter condition, and the page.
+ * section 4): search text, sort token, one filter condition, the page, and
+ * (M4, P162) the collection a record screen was opened from (a key, or
+ * null).
  * The strings are raw: RecordOperations passes them to the record layer,
  * which refuses what is invalid, and returns a request rebuilt from the
  * normalised query for every link. Empty strings are held as null.
  */
 final class ListRequest
 {
-    public const PARAMS = ['q', 'sort', 'filter', 'op', 'v', 'v2', 'page'];
+    public const PARAMS = ['q', 'sort', 'filter', 'op', 'v', 'v2', 'collection', 'page'];
     public const MAX_PAGE = 1000000;
 
     public function __construct(
@@ -28,6 +30,7 @@ final class ListRequest
         public readonly ?string $v,
         public readonly ?string $v2,
         public readonly int $page,
+        public readonly ?string $collection = null,
     ) {
         if ($page < 1 || $page > self::MAX_PAGE) {
             throw new \InvalidArgumentException('The page must be 1 to ' . self::MAX_PAGE . '.');
@@ -60,6 +63,7 @@ final class ListRequest
             self::text($query, 'v'),
             self::text($query, 'v2'),
             $page,
+            self::text($query, 'collection'),
         );
     }
 
@@ -77,7 +81,7 @@ final class ListRequest
     public function toQuery(): array
     {
         $query = [];
-        foreach (['q' => $this->q, 'sort' => $this->sort, 'filter' => $this->filter, 'op' => $this->op, 'v' => $this->v, 'v2' => $this->v2] as $name => $value) {
+        foreach (['q' => $this->q, 'sort' => $this->sort, 'filter' => $this->filter, 'op' => $this->op, 'v' => $this->v, 'v2' => $this->v2, 'collection' => $this->collection] as $name => $value) {
             if ($value !== null && $value !== '') {
                 $query[$name] = $value;
             }
@@ -91,7 +95,7 @@ final class ListRequest
 
     public function withPage(int $page): self
     {
-        return new self($this->q, $this->sort, $this->filter, $this->op, $this->v, $this->v2, $page);
+        return new self($this->q, $this->sort, $this->filter, $this->op, $this->v, $this->v2, $page, $this->collection);
     }
 
     public function withoutPage(): self
@@ -101,12 +105,12 @@ final class ListRequest
 
     public function withoutFilter(): self
     {
-        return new self($this->q, $this->sort, null, null, null, null, 1);
+        return new self($this->q, $this->sort, null, null, null, null, 1, $this->collection);
     }
 
     public function withoutSearchAndFilter(): self
     {
-        return new self(null, $this->sort, null, null, null, null, 1);
+        return new self(null, $this->sort, null, null, null, null, 1, $this->collection);
     }
 
     /** @param array<mixed> $query */

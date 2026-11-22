@@ -34,6 +34,13 @@ final class SecurityHeaders
         ['frame-ancestors', "'none'"],
     ];
 
+    /**
+     * The policy for a stored file sent by Response::file() (M4 spec part
+     * 2 section 2, P150): nothing loads, nothing frames it, and a document
+     * opened directly runs sandboxed (no script, unique origin).
+     */
+    public const FILE_CSP = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
     /** Every other header, in the order sent. */
     private const OTHER_HEADERS = [
         'X-Content-Type-Options' => 'nosniff',
@@ -55,16 +62,26 @@ final class SecurityHeaders
         return implode('; ', $parts);
     }
 
-    /** @return array<string, string> The full header set, CSP first. */
-    public static function headers(): array
+    /**
+     * The full header set, CSP first: the page policy, or FILE_CSP for a
+     * sandboxed response; every other header is the same for both.
+     *
+     * @return array<string, string>
+     */
+    public static function headers(bool $sandboxed = false): array
     {
-        return ['Content-Security-Policy' => self::contentSecurityPolicy()] + self::OTHER_HEADERS;
+        $policy = $sandboxed ? self::FILE_CSP : self::contentSecurityPolicy();
+
+        return ['Content-Security-Policy' => $policy] + self::OTHER_HEADERS;
     }
 
-    /** A copy of the response with every security header set, replacing any existing value. */
+    /**
+     * A copy of the response with every security header set, replacing any
+     * existing value; a sandboxed response (Response::file()) gets FILE_CSP.
+     */
     public function apply(Response $response): Response
     {
-        foreach (self::headers() as $name => $value) {
+        foreach (self::headers($response->isSandboxed()) as $name => $value) {
             $response = $response->withHeader($name, $value);
         }
 

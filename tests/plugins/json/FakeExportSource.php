@@ -10,6 +10,7 @@ namespace TiffinDB\Tests\Plugins\Json;
 
 use Closure;
 use TiffinDB\Core\Io\Contract\ExportAttachment;
+use TiffinDB\Core\Io\Contract\ExportCollection;
 use TiffinDB\Core\Io\Contract\ExportProject;
 use TiffinDB\Core\Io\Contract\ExportRecord;
 use TiffinDB\Core\Io\Contract\ExportRelation;
@@ -24,12 +25,14 @@ final class FakeExportSource implements ExportSource
      * @param Closure(string): iterable<ExportRecord> $records
      * @param list<ExportRelation> $relations
      * @param list<ExportAttachment> $attachments
+     * @param list<ExportCollection> $collections
      */
     public function __construct(
         private readonly array $tables,
         private readonly Closure $records,
         private readonly array $relations = [],
         private readonly array $attachments = [],
+        private readonly array $collections = [],
     ) {
     }
 
@@ -56,5 +59,10 @@ final class FakeExportSource implements ExportSource
     public function attachments(): iterable
     {
         return $this->attachments;
+    }
+
+    public function collections(): array
+    {
+        return $this->collections;
     }
 }

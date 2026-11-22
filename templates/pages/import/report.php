@@ -9,7 +9,8 @@
  * `skipped`, `skippedParts` (texts), `emptied`, `linksAdded` (text or
  * null), `snapshot` (name or null), `columns` (list of {field, count,
  * rows}), `required` (list of {count, field}), `links` (list of {count,
- * table}), `another`. The summary is written here rather than with the
+ * table}), `another`. Only the count column carries `num` (CF-2): the
+ * rows column is a list of row numbers, not a number. The summary is written here rather than with the
  * facts partial because the table's name is a link.
  */
 
@@ -76,11 +77,11 @@ declare(strict_types=1);
 <table class="report-table">
 <caption class="visually-hidden"><?= $this->t('import.report.caption') ?></caption>
 <thead>
-<tr><th scope="col"><?= $this->t('import.report.col_field') ?></th><th scope="col"><?= $this->t('import.report.col_count') ?></th><th scope="col"><?= $this->t('import.report.col_rows') ?></th></tr>
+<tr><th scope="col"><?= $this->t('import.report.col_field') ?></th><th scope="col" class="num"><?= $this->t('import.report.col_count') ?></th><th scope="col"><?= $this->t('import.report.col_rows') ?></th></tr>
 </thead>
 <tbody>
 <?php foreach ($data['columns'] as $column) : ?>
-<tr><th scope="row"><?= $this->e($column['field']) ?></th><td><?= $this->e($column['count']) ?></td><td><?= $this->e($column['rows']) ?></td></tr>
+<tr><th scope="row"><?= $this->e($column['field']) ?></th><td class="num"><?= $this->e($column['count']) ?></td><td><?= $this->e($column['rows']) ?></td></tr>
 <?php endforeach; ?>
 </tbody>
 </table>

@@ -16,6 +16,7 @@ use TiffinDB\Core\Forms\BoundDivider;
 use TiffinDB\Core\Forms\BoundField;
 use TiffinDB\Core\Forms\BoundForm;
 use TiffinDB\Core\Forms\BoundHeading;
+use TiffinDB\Core\Forms\BoundImage;
 use TiffinDB\Core\Forms\BoundParagraph;
 use TiffinDB\Core\Forms\BoundSection;
 use TiffinDB\Core\Forms\Divider;
@@ -106,8 +107,10 @@ final class FormBinderTest extends TestCase
     {
         $form = (new FormGenerator())->generate($this->schema(), $this->items);
         $problem = new Problem($this->price, 'problem.number.invalid');
-        $links = [new LinkItem($this->roomsTable, 3, 'Kitchen'), new LinkItem($this->roomsTable, 4, null)];
-        $files = [new FileItem('receipt.pdf', 'application/pdf', 2048)];
+        // T-FORM-11: link details and file ids travel through the binder unchanged.
+        $detail = $this->schema()->fields($this->roomsTable)[0];
+        $links = [new LinkItem($this->roomsTable, 3, 'Kitchen', $detail, 'Ground floor'), new LinkItem($this->roomsTable, 4, null)];
+        $files = [new FileItem(9, 'receipt.pdf', 'application/pdf', 2048)];
         $bound = $this->bind($form, new BindData(
             values: [$this->name => 'Toaster', $this->price => 12.5, $this->due => null, $this->serial => 7, $this->notes => "Line one\nLine two"],
             submitted: [$this->price => '12,50 typed'],
@@ -144,6 +147,7 @@ final class FormBinderTest extends TestCase
         self::assertSame($links, $fields[$this->tags]->links);
         self::assertSame([], $fields[$this->room]->links);
         self::assertSame($files, $fields[$this->photos]->files);
+        self::assertSame(9, $fields[$this->photos]->files[0]->id);
 
         // A lone slot in a links section hides its label (the legend names it); Details and Files do not.
         self::assertTrue($fields[$this->tags]->labelHidden);
@@ -160,7 +164,7 @@ final class FormBinderTest extends TestCase
         self::assertSame('links', $bound->nodes[2]->role);
     }
 
-    public function testSlotsForUnknownKeysAndImagesAreDropped(): void
+    public function testSlotsForUnknownKeysAreDroppedAndImagesAreBound(): void
     {
         $form = new FormDocument([
             new Heading(2, [new TextRun('Card')]),
@@ -177,9 +181,9 @@ final class FormBinderTest extends TestCase
             new Section('links', 'Lone', [new FieldSlot($this->tags), new FieldSlot($this->room)]),
             new Section('links', 'Lone after drop', [new FieldSlot('p3zk7mq2xn4w'), new FieldSlot($this->photos)]),
         ]);
-        $bound = $this->bind($form, new BindData(isNew: true));
+        $bound = $this->bind($form, new BindData(isNew: true, servableImages: [4]));
 
-        self::assertSame(['heading', 'field', 'section', 'section', 'section'], array_map(static fn ($n): string => $n->kind(), $bound->nodes));
+        self::assertSame(['heading', 'field', 'section', 'image', 'section', 'section'], array_map(static fn ($n): string => $n->kind(), $bound->nodes));
         self::assertInstanceOf(BoundHeading::class, $bound->nodes[0]);
         self::assertSame(2, $bound->nodes[0]->level);
         self::assertEquals([new TextRun('Card')], $bound->nodes[0]->children);
@@ -189,13 +193,16 @@ final class FormBinderTest extends TestCase
         $main = $bound->nodes[2];
         self::assertInstanceOf(BoundSection::class, $main);
         self::assertTrue($main->spanFull);
-        self::assertSame(['field', 'paragraph', 'divider'], array_map(static fn ($n): string => $n->kind(), $main->children));
-        self::assertInstanceOf(BoundParagraph::class, $main->children[1]);
-        self::assertInstanceOf(BoundDivider::class, $main->children[2]);
+        self::assertSame(['image', 'field', 'paragraph', 'divider'], array_map(static fn ($n): string => $n->kind(), $main->children));
+        // T-FORM-11: every image block is a BoundImage; servable only when BindData lists its id (P173).
+        self::assertEquals(new BoundImage(4, 'Photo', true), $main->children[0]);
+        self::assertEquals(new BoundImage(5, '', false), $bound->nodes[3]);
+        self::assertInstanceOf(BoundParagraph::class, $main->children[2]);
+        self::assertInstanceOf(BoundDivider::class, $main->children[3]);
         // Two slots in a links section: labels stay visible.
-        self::assertFalse($bound->nodes[3]->children[0]->labelHidden);
-        // labelHidden is decided by the document's slots, before unknown keys are dropped.
         self::assertFalse($bound->nodes[4]->children[0]->labelHidden);
+        // labelHidden is decided by the document's slots, before unknown keys are dropped.
+        self::assertFalse($bound->nodes[5]->children[0]->labelHidden);
         self::assertSame([$this->due, $this->name], $bound->editableKeys());
         self::assertTrue($bound->hasGrid());
     }

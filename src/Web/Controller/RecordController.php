@@ -10,11 +10,13 @@ namespace TiffinDB\Web\Controller;
 
 use OutOfBoundsException;
 use TiffinDB\Core\App\ConflictView;
+use TiffinDB\Core\App\LinkOrigin;
 use TiffinDB\Core\App\ListRequest;
 use TiffinDB\Core\App\RecordScreen;
 use TiffinDB\Core\Error\Conflict;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Error\ValidationFailed;
+use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Web\Context;
 use TiffinDB\Web\Format;
@@ -40,14 +42,27 @@ use TiffinDB\Web\Response;
  * a stored form becomes the {kind, text|children} arrays of the
  * form-inline partial, which prints links as their text only (ADR 0014
  * decision 1).
+ *
+ * M4 (docs/design/m4/record-controls.md): relation and attachment slots
+ * get their controls (the link-control, link-rows, and file-rows
+ * partials), whose paths are built here only from keys and ids the core
+ * returned; a many-link field with links gets its unlink form after the
+ * record form; a servable form image is shown. A new record opened from a
+ * picker carries `from` (validated by the core, P154) and goes back to
+ * that picker when saved. With a collection in the list state, "Back to
+ * list" and the list redirects go to the collection (M4 spec part 2
+ * section 4 rule 8).
  */
 final class RecordController
 {
     /** @var array<string, array<string, array{name: string, item: string}>> project key => table key => names */
     private array $tableFacts = [];
 
-    /** @var array<string, array<string, string>> project and table => relation field key => linked table name */
-    private array $linkedNames = [];
+    /** @var array<string, array<string, array{table: string, onlyOne: bool}>> project and table => relation field key => facts */
+    private array $relationFacts = [];
+
+    /** A collection key in the list state (Keys::isValid shape), for the collection's address. */
+    private const COLLECTION_KEY = '/^[a-z2-7]{12}\z/';
 
     public function __construct(private readonly Context $context)
     {
@@ -60,7 +75,7 @@ final class RecordController
     {
         [$project, $table] = self::keys($params);
         $screen = $this->context->services()->operations()->records()
-            ->blank($this->context->actor(), $project, $table, ListRequest::fromQuery($request->query));
+            ->blank($this->context->actor(), $project, $table, ListRequest::fromQuery($request->query), self::from($request));
 
         return $this->formPage($screen, [], 200, null);
     }
@@ -87,14 +102,25 @@ final class RecordController
         $actor = $this->context->actor();
         $records = $this->context->services()->operations()->records();
         $state = ListRequest::fromQuery($request->query);
-        $screen = $records->blank($actor, $project, $table, $state);
+        $from = self::from($request);
+        // With `from`, the origin is checked first: one linkOrigin refuses is NotFound.
+        $screen = $records->blank($actor, $project, $table, $state, $from);
         $input = self::input($request, $screen);
         try {
-            $id = $records->create($actor, $project, $table, $input);
+            $id = $records->create($actor, $project, $table, $input, $from);
         } catch (ValidationFailed $failed) {
-            $again = $records->redisplay($actor, $project, $table, null, $input, $failed->problems, $state);
+            $again = $records->redisplay($actor, $project, $table, null, $input, $failed->problems, $state, $from);
 
             return $this->formPage($again, $failed->problems, 422, null);
+        }
+        $origin = $screen->origin;
+        if ($origin !== null) {
+            $added = $records->screen($actor, $project, $table, (string) $id, ListRequest::none());
+            $this->context->flash('notice.link_added_new', [
+                'title' => $added->title ?? $this->untitled($screen->table->itemName, $id),
+            ]);
+
+            return $this->context->redirect(self::pickerPath($project, $origin));
         }
         $this->context->flash('notice.record_added', ['item' => $screen->table->itemName]);
 
@@ -142,8 +168,9 @@ final class RecordController
             'title' => $ref->title ?? $this->untitled($item, $ref->id),
             'undo' => self::recordPath($project, $table, $ref->id) . '/restore',
         ]);
+        [$path, $query] = self::listTarget($project, $table, ListRequest::fromQuery($request->query));
 
-        return $this->context->redirect(self::listPath($project, $table), ListRequest::fromQuery($request->query)->toQuery());
+        return $this->context->redirect($path, $query);
     }
 
     /** @param array<string, string> $params */
@@ -177,12 +204,26 @@ final class RecordController
         $state = $screen->request->toQuery();
         $form = $screen->form;
         $tables = $this->tableFacts($project);
-        $nodes = $form === null ? [] : $this->nodes($form->nodes, $project, $tables);
+        $nodes = $form === null ? [] : $this->nodes($form->nodes, $screen, $tables);
+        [$list, $listQuery] = self::listTarget($project, $table->key, $screen->request);
+        $origin = $screen->isNew ? $screen->origin : null;
+        $from = null;
 
         if ($screen->isNew) {
             $title = $view->text('records.new.title', ['item' => $item]);
             $current = $view->text('records.new.crumb', ['item' => $item]);
             $action = self::listPath($project, $table->key) . '/records';
+            if ($origin !== null) {
+                // Back to the picker it came from (record-controls.md section 6); no list state.
+                $state = [];
+                $list = self::pickerPath($project, $origin);
+                $listQuery = [];
+                $from = [
+                    'value' => $origin->fieldKey . '-' . $origin->recordId,
+                    'item' => $item,
+                    'title' => $this->originTitle($project, $origin),
+                ];
+            }
         } else {
             $title = $this->titleOf($screen);
             $current = $title;
@@ -231,7 +272,7 @@ final class RecordController
         return $this->context->page('records/form', [
             'title' => $title,
             'layout' => $form !== null && $form->hasGrid() ? 'record' : 'record-narrow',
-            'breadcrumb' => $this->crumbs($screen, $current),
+            'breadcrumb' => $origin === null ? $this->crumbs($screen, $current) : $this->originCrumbs($screen, $origin, $current),
             'problems' => self::summary($problems, $nodes, $format),
             'heading' => $title,
             'lead' => $lead,
@@ -241,7 +282,10 @@ final class RecordController
             'isNew' => $screen->isNew,
             'version' => $version ?? $screen->version ?? '',
             'nodes' => $nodes,
-            'list' => self::listPath($project, $table->key),
+            'unlinkForms' => self::unlinkForms($nodes),
+            'from' => $from,
+            'list' => $list,
+            'listQuery' => $listQuery,
             'cancelLabel' => $view->text('form.cancel'),
             'trash' => $screen->isNew ? null : $action . '/trash',
             'meta' => $meta,
@@ -325,8 +369,9 @@ final class RecordController
      * @param array<string, array{name: string, item: string}> $tables table key => names
      * @return list<array<string, mixed>>
      */
-    private function nodes(array $nodes, string $project, array $tables): array
+    private function nodes(array $nodes, RecordScreen $screen, array $tables): array
     {
+        $project = $screen->project->key;
         $list = [];
         foreach ($nodes as $node) {
             $kind = $node->kind();
@@ -336,10 +381,10 @@ final class RecordController
                     'legend' => $node->legend,
                     'grid' => $node->grid === true,
                     'spanFull' => $node->spanFull === true,
-                    'children' => $this->nodes($node->children, $project, $tables),
+                    'children' => $this->nodes($node->children, $screen, $tables),
                 ];
             } elseif ($kind === 'field') {
-                $field = $this->field($node, $project, $tables);
+                $field = $this->field($node, $screen, $tables);
                 if ($field !== null) {
                     $list[] = $field;
                 }
@@ -349,6 +394,9 @@ final class RecordController
                 $list[] = ['kind' => 'paragraph', 'children' => self::inlines($node->children)];
             } elseif ($kind === 'divider') {
                 $list[] = ['kind' => 'divider'];
+            } elseif ($kind === 'image' && $node->servable === true) {
+                // A form image the core found servable (P173): shown from the serving route.
+                $list[] = ['kind' => 'image', 'src' => self::filePath($project, (int) $node->attachmentId), 'alt' => (string) $node->alt];
             }
         }
 
@@ -356,16 +404,23 @@ final class RecordController
     }
 
     /**
-     * One field slot (record.md section 2.1); null for a type the form has
-     * no markup for.
+     * One field slot (record.md section 2.1; record-controls.md section 1);
+     * null for a type the form has no markup for.
+     *
+     * A relation slot carries `relation`: the data of the link-control
+     * partial (one link) or of the link-rows partial (many links). An
+     * attachment slot carries `attachment`: the data of the file-rows
+     * partial. The controls that leave the page are given only when the
+     * person can edit and the record exists.
      *
      * @param array<string, array{name: string, item: string}> $tables
      * @return array<string, mixed>|null
      */
-    private function field(object $node, string $project, array $tables): ?array
+    private function field(object $node, RecordScreen $screen, array $tables): ?array
     {
         $view = $this->context->view();
         $format = $view->format();
+        $project = $screen->project->key;
         /** @var FieldDef $def */
         $def = $node->field;
         $type = $def->type;
@@ -402,30 +457,84 @@ final class RecordController
             $describedBy[] = 'err';
         }
 
-        $links = [];
-        $linkedTable = null;
+        $isNew = $node->isNew === true;
+        $recordId = $screen->id ?? 0;
+        // Controls that leave the page: only for a saved record the person may change.
+        $controls = $screen->canEdit && !$isNew && $recordId > 0;
+
+        $relation = null;
         if ($control === 'relation') {
+            $facts = $this->relationFacts($project, $def);
+            $other = $this->tableByName($tables, $facts['table']);
+            $rows = [];
             foreach ($node->links as $link) {
-                $links[] = [
+                $linkTitle = $link->title ?? $this->untitled($tables[$link->tableKey]['item'] ?? $other['item'], $link->id);
+                $detail = null;
+                if ($link->detailField instanceof FieldDef) {
+                    $text = $this->detailText($link->detailField, $link->detailValue);
+                    $detail = $text === null || $text === '' ? null : $view->text('records.link_detail', ['field' => $link->detailField->name, 'value' => $text]);
+                }
+                $rows[] = [
                     'path' => self::recordPath($project, $link->tableKey, $link->id),
-                    'title' => $link->title ?? $this->untitled($tables[$link->tableKey]['item'] ?? '', $link->id),
+                    'title' => $linkTitle,
+                    'detail' => $detail,
+                    'target' => $link->id,
                 ];
             }
-            $linkedTable = $this->linkedTableName($project, $def);
+            $picker = $controls ? self::recordPath($project, $def->tableKey, $recordId) . '/links/' . $def->key : null;
+            $relation = $facts['onlyOne']
+                ? [
+                    'onlyOne' => true,
+                    'key' => $def->key,
+                    'link' => $rows === [] ? null : ['path' => $rows[0]['path'], 'title' => $rows[0]['title']],
+                    'choosePath' => $picker,
+                    'item' => $other['item'],
+                    'table' => $facts['table'],
+                    'required' => $def->required,
+                    'isNew' => $isNew,
+                    'invalid' => $errors !== [],
+                ]
+                : [
+                    'onlyOne' => false,
+                    'key' => $def->key,
+                    'rows' => $rows,
+                    'unlink' => $controls,
+                    'linkPath' => $picker,
+                    'item' => $other['item'],
+                    'isNew' => $isNew,
+                    'invalid' => $errors !== [],
+                ];
         }
-        $files = [];
+
+        $attachment = null;
         if ($control === 'attachment') {
+            $base = self::recordPath($project, $def->tableKey, $recordId) . '/files/' . $def->key;
+            $files = [];
             foreach ($node->files as $file) {
+                $inline = in_array($file->mediaType, Response::INLINE_TYPES, true);
                 $files[] = [
                     'name' => $file->name,
                     'type' => $view->text(match (true) {
                         $file->mediaType === 'application/pdf' => 'file.type.pdf',
-                        str_starts_with($file->mediaType, 'image/') => 'file.type.image',
+                        $inline => 'file.type.image',
                         default => 'file.type.other',
                     }),
                     'size' => $format->fileSize(max(0, $file->size)),
+                    'openPath' => $base . '/' . $file->id,
+                    'replacePath' => $controls ? $base . '/new' : null,
+                    'replaceQuery' => ['replace' => (string) $file->id],
+                    'removePath' => $controls ? $base . '/' . $file->id . '/remove' : null,
+                    'image' => $inline ? ['src' => self::filePath($project, $file->id), 'alt' => $file->name] : null,
                 ];
             }
+            $attachment = [
+                'key' => $def->key,
+                'files' => $files,
+                'addPath' => $controls ? $base . '/new' : null,
+                'imagesOnly' => ($def->options['images_only'] ?? false) === true,
+                'isNew' => $isNew,
+                'invalid' => $errors !== [],
+            ];
         }
 
         return [
@@ -437,7 +546,8 @@ final class RecordController
             'currencyName' => $type === 'currency' ? $this->currencyName(is_string($def->options['code'] ?? null) ? $def->options['code'] : 'USD') : null,
             'text' => $node->inputText,
             'submitted' => $node->submitted === true,
-            'required' => $def->required && $node->editable === true,
+            // Relation and attachment fields are never edited through the form, but show the marker (record-controls.md section 5).
+            'required' => $def->required && ($node->editable === true || $control === 'relation' || $control === 'attachment'),
             'invalid' => $errors !== [],
             'errors' => $errors,
             'help' => $def->help,
@@ -446,11 +556,10 @@ final class RecordController
             'describedBy' => $describedBy,
             'spanFull' => $node->spanFull === true,
             'labelHidden' => $node->labelHidden === true,
-            'isNew' => $node->isNew === true,
+            'isNew' => $isNew,
             'value' => $control === 'auto_number' ? $node->value : null,
-            'links' => $links,
-            'linkedTable' => $linkedTable,
-            'files' => $files,
+            'relation' => $relation,
+            'attachment' => $attachment,
         ];
     }
 
@@ -641,20 +750,181 @@ final class RecordController
         return $this->tableFacts($project)[$table]['item'] ?? '';
     }
 
-    /** The name of the table a relation field links to ("Linked to the {table} table."). */
-    private function linkedTableName(string $project, FieldDef $field): string
+    /**
+     * The facts of a relation field the slot needs: the name of the table
+     * it links to and whether it allows one link (from the table design,
+     * as M2 read the name).
+     *
+     * @return array{table: string, onlyOne: bool}
+     */
+    private function relationFacts(string $project, FieldDef $field): array
     {
-        if (!isset($this->linkedNames[$project . '/' . $field->tableKey])) {
-            $names = [];
+        if (!isset($this->relationFacts[$project . '/' . $field->tableKey])) {
+            $facts = [];
             $design = $this->context->services()->operations()->schema()->design($this->context->actor(), $project, $field->tableKey);
             foreach ($design->fields as $summary) {
                 if ($summary->linkedTableName !== null) {
-                    $names[$summary->field->key] = $summary->linkedTableName;
+                    $facts[$summary->field->key] = ['table' => $summary->linkedTableName, 'onlyOne' => $summary->links === Cardinality::One];
                 }
             }
-            $this->linkedNames[$project . '/' . $field->tableKey] = $names;
+            $this->relationFacts[$project . '/' . $field->tableKey] = $facts;
         }
 
-        return $this->linkedNames[$project . '/' . $field->tableKey][$field->key] ?? '';
+        return $this->relationFacts[$project . '/' . $field->tableKey][$field->key] ?? ['table' => '', 'onlyOne' => false];
+    }
+
+    /**
+     * The names of the table called $name (table names are unique in a
+     * project), for the other table's item name.
+     *
+     * @param array<string, array{name: string, item: string}> $tables
+     * @return array{name: string, item: string}
+     */
+    private function tableByName(array $tables, string $name): array
+    {
+        foreach ($tables as $facts) {
+            if ($facts['name'] === $name) {
+                return $facts;
+            }
+        }
+
+        return ['name' => $name, 'item' => ''];
+    }
+
+    /**
+     * The display text of a linked record's detail value (P158): the
+     * types the detail field can have (the list-column rule without long
+     * text, relation, and attachment fields), as ValueText shows them in
+     * text mode. Null when there is nothing to show.
+     */
+    private function detailText(FieldDef $field, mixed $value): ?string
+    {
+        $view = $this->context->view();
+        $format = $view->format();
+        $options = $field->options;
+        if ($field->type === 'checkbox') {
+            return $value === true ? $view->text('value.yes') : null;
+        }
+        if ($value === null || $value === '' || is_array($value) || is_object($value) || is_bool($value)) {
+            return null;
+        }
+        $seconds = ($options['seconds'] ?? false) === true;
+        $int = static fn (mixed $v): int => is_int($v) ? $v : (int) (is_numeric($v) ? $v : 0);
+
+        return match ($field->type) {
+            'text', 'url', 'email', 'phone', 'choice' => (string) $value,
+            'number' => is_numeric($value) ? $format->decimal($value + 0, is_int($options['decimals'] ?? null) ? $options['decimals'] : 0) : null,
+            'currency' => $format->money(
+                $int($value),
+                is_string($options['code'] ?? null) ? $options['code'] : 'USD',
+                is_int($options['minor_digits'] ?? null) ? $options['minor_digits'] : 2,
+            ),
+            'date' => $format->date((string) $value),
+            'time' => $format->time((string) $value, $seconds),
+            'date_time' => $format->dateTime((string) $value, $seconds),
+            'duration' => $format->duration($int($value), $seconds),
+            'rating' => $view->text('value.rating', ['value' => $int($value), 'max' => is_int($options['max'] ?? null) ? $options['max'] : 5]),
+            'auto_number' => (string) $int($value),
+            default => null,
+        };
+    }
+
+    /**
+     * The value of `from` (P154) from the query string or the POST body,
+     * or null when absent or empty; the core validates it.
+     */
+    private static function from(Request $request): ?string
+    {
+        $posted = $request->input('from');
+        if ($posted !== '') {
+            return $posted;
+        }
+        $query = $request->query['from'] ?? null;
+
+        return is_string($query) && $query !== '' ? $query : null;
+    }
+
+    /** The picker of the record and field a new record is being added from. */
+    private static function pickerPath(string $project, LinkOrigin $origin): string
+    {
+        return self::recordPath($project, $origin->tableKey, (int) $origin->recordId) . '/links/' . $origin->fieldKey;
+    }
+
+    /** The serving route of an attachment (ADR 0018 decision 5). */
+    private static function filePath(string $project, int $attachment): string
+    {
+        return '/projects/' . $project . '/files/' . $attachment;
+    }
+
+    /**
+     * Where "Back to list" and the list redirects go, with their query:
+     * the collection named in the list state when its key has the key
+     * shape (M4 spec part 2 section 4 rule 8; the core dropped one that
+     * names no collection of this table), else the table's list.
+     *
+     * @return array{0: string, 1: array<string, string>}
+     */
+    private static function listTarget(string $project, string $table, ListRequest $state): array
+    {
+        $query = $state->toQuery();
+        $collection = $state->collection;
+        if ($collection !== null && preg_match(self::COLLECTION_KEY, $collection) === 1) {
+            unset($query['collection']);
+
+            return ['/projects/' . $project . '/collections/' . $collection, $query];
+        }
+        unset($query['collection']);
+
+        return [self::listPath($project, $table), $query];
+    }
+
+    /**
+     * The unlink forms the page prints after the record form
+     * (record-controls.md section 2): one per many-link relation slot that
+     * shows Unlink buttons and has at least one link.
+     *
+     * @param list<array<string, mixed>> $nodes
+     * @return list<array{key: string, action: string}>
+     */
+    private static function unlinkForms(array $nodes): array
+    {
+        $forms = [];
+        foreach ($nodes as $node) {
+            if ($node['kind'] === 'section') {
+                array_push($forms, ...self::unlinkForms($node['children']));
+                continue;
+            }
+            $relation = $node['kind'] === 'field' ? $node['relation'] : null;
+            if (is_array($relation) && $relation['onlyOne'] === false && $relation['unlink'] === true && $relation['rows'] !== [] && is_string($relation['linkPath'])) {
+                $forms[] = ['key' => $node['key'], 'action' => $relation['linkPath'] . '/remove'];
+            }
+        }
+
+        return $forms;
+    }
+
+    /** The origin record's title, or "{Item} {id}" in its table's item name. */
+    private function originTitle(string $project, LinkOrigin $origin): string
+    {
+        return $origin->recordTitle ?? $this->untitled($this->itemName($project, $origin->tableKey), (int) $origin->recordId);
+    }
+
+    /**
+     * Breadcrumb of a new record opened from a picker (record-controls.md
+     * section 6): the origin's project, table, and record, then the page.
+     *
+     * @return list<array{label: string, path: string|null}>
+     */
+    private function originCrumbs(RecordScreen $screen, LinkOrigin $origin, string $current): array
+    {
+        $project = $screen->project;
+        $tables = $this->tableFacts($project->key);
+
+        return [
+            ['label' => $project->name, 'path' => '/projects/' . $project->key],
+            ['label' => $tables[$origin->tableKey]['name'] ?? '', 'path' => self::listPath($project->key, $origin->tableKey)],
+            ['label' => $this->originTitle($project->key, $origin), 'path' => self::recordPath($project->key, $origin->tableKey, (int) $origin->recordId)],
+            ['label' => $current, 'path' => null],
+        ];
     }
 }

@@ -24,4 +24,7 @@ interface ExportSource
 
     /** @return iterable<ExportAttachment> attachments linked from live records in scope */
     public function attachments(): iterable;
+
+    /** @return list<ExportCollection> saved collections whose table is in scope, in sidebar order, rules as stored */
+    public function collections(): array;
 }

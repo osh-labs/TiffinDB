@@ -19,7 +19,8 @@ use TiffinDB\Core\Storage\Snapshots;
  * statements that bring a file from the version before it: version 2
  * (M2) adds `_tiffin_forms` with exactly the statements of section 11.1
  * (T-FMT-1 compares them), version 3 (M3) adds `_tiffin_import_log` with
- * exactly those of section 11.2 (T-FMT-5). Every statement run here comes from a
+ * exactly those of section 11.2 (T-FMT-5), version 4 (M4) adds
+ * `_tiffin_collections` with exactly those of section 11.3 (T-FMT-7). Every statement run here comes from a
  * constant of this class (M1 spec section 3.3): the steps run as
  * functions, and only the test seam supplies functions other than those
  * that run STEPS.
@@ -66,6 +67,23 @@ final class FormatMigrations
 ) WITHOUT ROWID',
             'CREATE INDEX _tiffin_import_log_at ON _tiffin_import_log (imported_at)',
         ],
+        4 => [
+            'CREATE TABLE _tiffin_collections (
+    key        TEXT PRIMARY KEY,
+    table_key  TEXT NOT NULL REFERENCES _tiffin_tables (key) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    match_mode TEXT NOT NULL DEFAULT \'all\',
+    rules      TEXT NOT NULL DEFAULT \'[]\',
+    sort       TEXT,
+    position   INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT
+) WITHOUT ROWID',
+            'CREATE UNIQUE INDEX _tiffin_collections_name ON _tiffin_collections (name COLLATE NOCASE)',
+            'CREATE INDEX _tiffin_collections_table ON _tiffin_collections (table_key, position)',
+        ],
     ];
 
     /**
@@ -77,6 +95,7 @@ final class FormatMigrations
         1 => 'PRAGMA user_version = 1',
         2 => 'PRAGMA user_version = 2',
         3 => 'PRAGMA user_version = 3',
+        4 => 'PRAGMA user_version = 4',
     ];
 
     /** @var array<int, \Closure(Database): void> */

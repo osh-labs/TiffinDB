@@ -72,7 +72,7 @@ final class TrashAndSnapshotOperationsTest extends AppTestCase
         self::assertSame(1, $trash->count($this->admin, $this->project, null));
         self::assertSame([], $this->ops->snapshots()->list($this->admin, $this->project));
 
-        self::assertSame(1, $trash->empty($this->admin, $this->project, $this->table));
+        self::assertSame(1, $trash->empty($this->admin, $this->project, $this->table)->records);
 
         self::assertSame(0, $trash->count($this->admin, $this->project, null));
         self::assertSame(1, $this->ops->schema()->tables($this->admin, $this->project)[0]->recordCount);
@@ -83,13 +83,13 @@ final class TrashAndSnapshotOperationsTest extends AppTestCase
         $snapshot = $this->lastAudit('snapshot.taken');
         self::assertSame(['snapshot', $snapshots[0]->file, ['reason' => 'empty-trash']], [$snapshot->targetKind, $snapshot->targetKey, $snapshot->detail]);
         $emptied = $this->lastAudit('trash.emptied');
-        self::assertSame(['table', $this->table, ['records' => 1]], [$emptied->targetKind, $emptied->targetKey, $emptied->detail]);
+        self::assertSame(['table', $this->table, ['records' => 1, 'files' => 0]], [$emptied->targetKind, $emptied->targetKey, $emptied->detail]);
 
         // Nothing to delete: no snapshot.
-        self::assertSame(0, $trash->empty($this->admin, $this->project, null));
+        self::assertSame(0, $trash->empty($this->admin, $this->project, null)->records);
         self::assertCount(1, $this->ops->snapshots()->list($this->admin, $this->project));
-        $emptied = $this->lastAudit('trash.emptied');
-        self::assertSame([null, null, ['records' => 0]], [$emptied->targetKind, $emptied->targetKey, $emptied->detail]);
+        // P187: and no audit row either.
+        self::assertSame(1, count(array_keys($this->auditActions(), 'trash.emptied')));
     }
 
     public function testManualSnapshotsAreAdminOnly(): void

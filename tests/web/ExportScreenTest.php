@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace TiffinDB\Tests\Web;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use DOMXPath;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -20,11 +22,17 @@ use TiffinDB\Core\Auth\SignedIn;
 use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\M2Fixture;
+use TiffinDB\Tests\Support\RepoFiles;
 use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
+use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Controller\ExportController;
+use TiffinDB\Web\Format;
 use TiffinDB\Web\Kernel;
 use TiffinDB\Web\Response;
+use TiffinDB\Web\Strings;
+use TiffinDB\Web\UrlGenerator;
+use TiffinDB\Web\View;
 
 require_once __DIR__ . '/fixtures/Fixtures.php';
 
@@ -124,6 +132,46 @@ final class ExportScreenTest extends TestCase
 
         self::assertSame('Download', HtmlAssertions::text($html, '//div[@class="io-actions"]/button'));
         self::assertSame('The file is made now and downloaded straight away. It is not kept on the server.', HtmlAssertions::text($html, '//p[@class="io-note"]'));
+    }
+
+    /**
+     * T-CF-7 (CF-5): the archive panel shows "About {size}." when the page
+     * is given the project size, rendered from the template with the real
+     * strings and Format::fileSize; without it there is no size line.
+     */
+    public function testTheArchivePanelShowsTheProjectSizeWhenGiven(): void
+    {
+        $config = require RepoFiles::path('config/app.php');
+        self::assertIsArray($config);
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        $format = new Format($strings, new DateTimeZone('UTC'), static fn (): DateTimeImmutable => new DateTimeImmutable('2026-11-12T10:00:00Z'));
+        $view = (new View(RepoFiles::path('templates'), $strings, new UrlGenerator('', '0.0.0-test'), Appearance::default(), $config))
+            ->withCsrfToken(str_repeat('a', 64))->withFormat($format);
+        $data = [
+            'title' => 'Export', 'layout' => 'io', 'breadcrumb' => [], 'problems' => [], 'errors' => [],
+            'projectKey' => 'abcdefghijkl', 'formats' => [], 'spreadsheetHint' => false, 'hasSettings' => false,
+            'tables' => [], 'scope' => 'project', 'table' => '',
+        ];
+        $size = '//section[@aria-labelledby="x-archive"]/p[@class="help"]';
+
+        $html = $view->page('export/form', $data + ['projectSize' => $format->fileSize(3 * 1048576 + 200000)])->body;
+        HtmlAssertions::assertWellFormed($html);
+        self::assertSame(['About 3.2 MB.'], $this->texts($this->xpath($html), $size));
+        $html = $view->page('export/form', $data + ['projectSize' => '<b>1 KB</b>'])->body;
+        self::assertSame(['About <b>1 KB</b>.'], $this->texts($this->xpath($html), $size), 'The size is escaped.');
+        self::assertSame(0, $this->xpath($view->page('export/form', $data)->body)->query($size)->length);
+    }
+
+    /** CF-5: the page through the kernel shows the core's project size, formatted. */
+    public function testThePageShowsTheProjectSizeFromTheCore(): void
+    {
+        $bytes = $this->ops->exports()->screen($this->core->actor('admin'), $this->m2->project)->projectBytes;
+        self::assertGreaterThan(0, $bytes);
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        $format = new Format($strings, new DateTimeZone('UTC'), static fn (): DateTimeImmutable => new DateTimeImmutable('2026-11-12T10:00:00Z'));
+        $html = $this->page(self::ADMIN, $this->path());
+
+        self::assertSame(['About ' . $format->fileSize($bytes) . '.'], $this->texts($this->xpath($html), '//section[@aria-labelledby="x-archive"]/p[@class="help"]'));
     }
 
     public function testDisabledPluginsAreNotOffered(): void

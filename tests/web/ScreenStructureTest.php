@@ -323,6 +323,9 @@ final class ScreenStructureTest extends TestCase
         // M4 screens (T-SCR-4), on Home Inventory.
         $this->m4Screens($admin, $home, $items, $record);
 
+        // M5 editor screens (T-SCR-5, M5-WP5), on Home Inventory.
+        $this->m5EditorScreens($admin, $items);
+
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
         $this->screen($admin, '/sign-in?signed-out=1', 'Sign in', 'Sign in', 'You have signed out.');
@@ -680,6 +683,15 @@ final class ScreenStructureTest extends TestCase
         $this->screen($admin, $home . '/trash', 'Trash', 'Trash', 'Stand mixer has been moved to the trash. Undo');
         $this->screen($admin, $home . '/trash/empty', 'Empty the trash?', 'Empty the trash?');
         $admin->cleanUp();
+    }
+
+    /** M5-WP5: the form editor and the reset confirmation, with the main class of each layout. */
+    private function m5EditorScreens(EndToEndClient $admin, string $items): void
+    {
+        $this->screen($admin, $items . '/form', 'Form for Items', 'Form for Items');
+        self::assertSame('page page-form', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
+        $this->screen($admin, $items . '/form/reset', 'Go back to the standard form?', 'Go back to the standard form?');
+        self::assertSame('page page-form page-form-narrow', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
     }
 
     /** Visits a route that answers with a file (or a refusal page), counting the route; no page checks on a file. */

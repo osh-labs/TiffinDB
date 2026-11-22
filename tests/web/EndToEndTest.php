@@ -55,16 +55,21 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
  * the response): the application driven
  * through the kernel with the real route table, templates, strings, and the
  * real CoreServices (a FixedClock, a SeededRandom, and a bcrypt cost 4
- * PasswordHasher) over an empty temporary data folder. DOCUMENT_ROOT is the
- * repository's public/ folder, so the data folder is outside it and no
+ * PasswordHasher) over an empty temporary data folder. The application
+ * root is a private copy of the repository's public/, templates/,
+ * strings/, and config/app.php (appRoot(), made once per process), so
+ * other processes that change the working tree while the suite runs (an
+ * editor, git, a second test run) cannot fail the tree check below (M4-X:
+ * the one-off full-suite failure hunt). DOCUMENT_ROOT is the copy's
+ * public/ folder, so the data folder is outside it and no
  * exposure probe runs: the kernel gets the CoreServices through
  * NoProbeServices, which delegates every call but hands out a probe that
  * only counts its requests, and each test asserts that the count stays 0,
  * so no socket is opened. Forms are read from the served pages
  * and submitted with their own fields, as a browser would. After each test,
- * every file of the repository (except vendor/, .git, .claude/, and
- * .phpunit.cache/) has the same size, modification time, and hash as
- * before. Synthetic data only.
+ * every file and folder of that application root has the same size,
+ * modification time, and hash as before, and nothing was added: the
+ * application writes nothing outside its data folder. Synthetic data only.
  */
 #[CoversNothing]
 final class EndToEndTest extends TestCase
@@ -89,13 +94,13 @@ final class EndToEndTest extends TestCase
         $config = Fixtures::config(false) + ['data_dir' => $this->temp->path()];
         $services = new CoreServices(
             $config,
-            Fixtures::appRoot(),
+            self::appRoot(),
             $this->clock,
             new SeededRandom('tiffindb-end-to-end-seed'),
             new PasswordHasher(['bcrypt' => 4]),
         );
         $this->services = new NoProbeServices($services);
-        $this->kernel = new Kernel($config, Fixtures::appRoot(), null, $this->services);
+        $this->kernel = new Kernel($config, self::appRoot(), null, $this->services);
     }
 
     protected function tearDown(): void
@@ -1394,25 +1399,69 @@ final class EndToEndTest extends TestCase
         HtmlAssertions::assertForm($html);
     }
 
-    /** Top-level entries the tree check skips: dependencies, git metadata, agent files, PHPUnit's cache. */
-    private const TREE_EXCLUDED = ['vendor', '.git', '.claude', '.phpunit.cache'];
+    /** What the application root copy holds: the folders and file the kernel and the installer read below the root. */
+    private const APP_COPY = ['public', 'templates', 'strings', 'config/app.php'];
+
+    private static ?TempDir $appCopy = null;
 
     /**
-     * Size, modification time, and SHA-256 of every file and directory in
-     * the repository except TREE_EXCLUDED, to show that a run writes
-     * nothing there.
+     * The application root of these tests: a private copy of APP_COPY from
+     * the repository, made once per process and removed at its end. The
+     * kernel, CoreServices, and the installer resolve every path they
+     * write from this root, so a write outside the data folder lands here
+     * and tree() sees it; changes other processes make to the working tree
+     * meanwhile do not.
+     */
+    public static function appRoot(): string
+    {
+        if (self::$appCopy === null) {
+            $copy = TempDir::create('tiffindb-e2e-app-');
+            foreach (self::APP_COPY as $relative) {
+                self::copyTree(Fixtures::appRoot() . '/' . $relative, $copy->path($relative));
+            }
+            self::$appCopy = $copy;
+            register_shutdown_function(static fn () => $copy->remove());
+        }
+
+        return self::$appCopy->path();
+    }
+
+    private static function copyTree(string $from, string $to): void
+    {
+        if (!is_dir(dirname($to))) {
+            mkdir(dirname($to), 0700, true);
+        }
+        if (is_file($from)) {
+            if (!copy($from, $to)) {
+                throw new \RuntimeException('Cannot copy ' . $from);
+            }
+
+            return;
+        }
+        mkdir($to, 0700);
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($from, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST) as $file) {
+            /** @var SplFileInfo $file */
+            $target = $to . '/' . substr($file->getPathname(), strlen($from) + 1);
+            if ($file->isDir()) {
+                mkdir($target, 0700);
+            } elseif (!copy($file->getPathname(), $target)) {
+                throw new \RuntimeException('Cannot copy ' . $file->getPathname());
+            }
+        }
+    }
+
+    /**
+     * Size, modification time, and SHA-256 of every file and directory of
+     * the application root (appRoot()), to show that a run writes nothing
+     * there.
      *
      * @return array<string, string>
      */
     private static function tree(): array
     {
-        $root = Fixtures::appRoot();
+        $root = self::appRoot();
         $entries = [];
-        $directory = new \RecursiveCallbackFilterIterator(
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-            static fn (SplFileInfo $file, string $path, RecursiveDirectoryIterator $iterator): bool
-                => $iterator->getSubPath() !== '' || !in_array($file->getFilename(), self::TREE_EXCLUDED, true),
-        );
+        $directory = new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS);
         foreach (new RecursiveIteratorIterator($directory, RecursiveIteratorIterator::SELF_FIRST) as $file) {
             /** @var SplFileInfo $file */
             $relative = substr($file->getPathname(), strlen($root) + 1);
@@ -1739,7 +1788,7 @@ final class EndToEndClient
             'REQUEST_METHOD' => $method,
             'REQUEST_URI' => $uri,
             'SCRIPT_NAME' => '/index.php',
-            'DOCUMENT_ROOT' => Fixtures::appRoot() . '/public',
+            'DOCUMENT_ROOT' => EndToEndTest::appRoot() . '/public',
             'REMOTE_ADDR' => '192.0.2.10',
             'HTTP_HOST' => 'tiffindb.example',
             'SERVER_PORT' => '80',

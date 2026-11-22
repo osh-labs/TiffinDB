@@ -49,6 +49,9 @@ final class AttachmentsTest extends TestCase
 {
     use RecordsFixture;
 
+    /** How long the other process of T-ATT-8 holds its write after "go" (seconds). */
+    private const HOLD_SECONDS = 1.0;
+
     private string|false $previousLog = false;
 
     protected function setUp(): void
@@ -623,6 +626,15 @@ final class AttachmentsTest extends TestCase
      * Another process adds a row with the same content and holds the
      * write; deleteFiles waits for it (busy_timeout), then sees the row
      * and keeps the file.
+     *
+     * Deterministic under load (M4-X): the other process holds its write
+     * until this one tells it to go (so the row check before that cannot
+     * race its commit), then keeps it for HOLD_SECONDS and reports the
+     * moment it commits. The test asserts the order of events, not a
+     * duration: deleteFiles started before that commit and returned after
+     * it. The earlier form slept 400 ms after "ready" and required a wait
+     * of more than 200 ms, so a stall of the test process of about 200 ms
+     * failed it, and one of 400 ms failed the row check.
      */
     public function testDeleteFilesWaitsForAnUploadOfTheSameContent(): void
     {
@@ -636,10 +648,11 @@ final class AttachmentsTest extends TestCase
             . ' $s = $pdo->prepare("INSERT INTO \"_tiffin_attachments\" (\"sha256\", \"size\", \"media_type\", \"original_name\", \"created_at\") VALUES (?, 9, \'application/octet-stream\', \'again\', \'2026-11-12T03:15:00Z\')");'
             . ' $s->execute([$argv[2]]); $a = (int) $pdo->lastInsertId();'
             . ' $pdo->prepare("INSERT INTO \"_tiffin_attachment_links\" VALUES (?, ?, ?, 1)")->execute([$argv[3], (int) $argv[4], $a]);'
-            . ' fwrite(STDOUT, "ready\n"); fflush(STDOUT); usleep(400000); $pdo->exec("COMMIT"); fwrite(STDOUT, "done\n");';
+            . ' fwrite(STDOUT, "ready\n"); fflush(STDOUT); fgets(STDIN); usleep(' . (int) (self::HOLD_SECONDS * 1e6) . ');'
+            . ' $pdo->exec("COMMIT"); fwrite(STDOUT, "done " . sprintf("%.6F", microtime(true)) . "\n");';
         $process = proc_open(
             [PHP_BINARY, '-d', 'display_errors=stderr', '-r', $code, '--', $this->path(), $this->hashOf('contended'), $this->f['files']->key, (string) $item],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
         );
         self::assertIsResource($process);
@@ -647,17 +660,24 @@ final class AttachmentsTest extends TestCase
         if ($ready !== "ready\n") {
             self::fail('The other process did not start its write: ' . (string) stream_get_contents($pipes[2]));
         }
+        // The other process waits for "go" before it can commit, so this check cannot race the commit.
         self::assertSame(0, $this->rowCount(), 'Its row is not visible before it commits.');
+        fwrite($pipes[0], "go\n");
+        fflush($pipes[0]);
         $started = microtime(true);
         $deleted = $this->attachments()->deleteFiles($freed);
-        $waited = microtime(true) - $started;
-        self::assertSame("done\n", fgets($pipes[1]));
+        $returned = microtime(true);
+        $done = (string) fgets($pipes[1]);
+        fclose($pipes[0]);
         fclose($pipes[1]);
         fclose($pipes[2]);
         self::assertSame(0, proc_close($process));
+        self::assertSame(1, preg_match('/^done (\d+\.\d{6})\n\z/', $done, $match), 'The other process committed.');
+        $committed = (float) $match[1];
 
         self::assertSame(0, $deleted);
-        self::assertGreaterThan(0.2, $waited, 'deleteFiles waited for the other write.');
+        self::assertLessThan($committed, $started, 'deleteFiles started while the other write was still open.');
+        self::assertGreaterThanOrEqual($committed, $returned, 'deleteFiles returned only after the other write committed.');
         self::assertSame('contended', file_get_contents($this->targetOf('contended')));
         self::assertSame(1, $this->rowCount());
     }

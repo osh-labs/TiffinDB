@@ -22,7 +22,6 @@ use TiffinDB\Core\Query\Records;
 use TiffinDB\Core\Query\ResolvedRules;
 use TiffinDB\Core\Query\RuleSet;
 use TiffinDB\Core\Query\Sort;
-use TiffinDB\Core\Query\Sql;
 use TiffinDB\Core\Query\Trash;
 use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\Schema;
@@ -317,10 +316,8 @@ final class Listings
     /** Live records of the table matching the rules (every live record for null), with one COUNT query. */
     public function count(Schema $schema, TableDef $table, Database $db, ?RuleSet $rules): int
     {
-        $where = (new ListSql($schema, $this->c->types))->where($table, new ListQuery(new Sort('added', false), null, null, 1, $rules));
-        $counting = Sql::join(' ', [Sql::of('SELECT COUNT(*) FROM ' . $table->sql() . ' AS "r" WHERE'), $where]);
-
-        return (int) $db->value($counting->sql(), $counting->params());
+        return (new Records($db, $schema, $this->c->types, $this->c->clock))
+            ->countMatching($table->key, new ListQuery(new Sort('added', false), null, null, 1, $rules));
     }
 
     /**

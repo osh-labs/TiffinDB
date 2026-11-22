@@ -75,10 +75,35 @@ final class FormParser
         $this->types->get('url');
     }
 
-    /** @throws FormRejected with a reason code (for logs; never the content) */
+    /** The byte order mark removed from the start of a text (section 3.1 item 1). */
+    private const BOM = "\xEF\xBB\xBF";
+
+    /** The longest prefix of valid UTF-8 (section 4.2); bytes, not the `u` flag. */
+    private const UTF8_PREFIX = '/\A(?:[\x00-\x7F]|[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}'
+        . '|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2})*+/';
+
+    /** The text being walked (line breaks normalized), for start-tag lines. */
+    private string $text = '';
+
+    /** @var list<int>|null start-tag offsets of $text, built only when a rejection needs a line */
+    private ?array $offsets = null;
+
+    /** The number of the element most recently read (1 for the root), 0 before the root. */
+    private int $current = 0;
+
+    /** @throws FormRejected with a reason code, a line, and names (never the content) */
     public function parse(string $html): FormDocument
     {
+        if (str_starts_with($html, self::BOM)) {
+            $html = substr($html, strlen(self::BOM));
+        }
         self::preScan($html);
+        if (str_starts_with($html, self::BOM)) {
+            // A second mark is the character U+FEFF before the root. libxml would skip it as a mark, so it is refused here.
+            throw new FormRejected(FormRejected::TEXT, 1);
+        }
+        // XML 1.0 end-of-line handling, done before the reader so that libxml's lines (it counts only LF) are right.
+        $html = str_replace(["\r\n", "\r"], "\n", $html);
 
         $previous = libxml_use_internal_errors(true);
         libxml_clear_errors();
@@ -87,31 +112,42 @@ final class FormParser
         } finally {
             libxml_clear_errors();
             libxml_use_internal_errors($previous);
+            $this->text = '';
+            $this->offsets = null;
         }
     }
 
-    /** Step 1: size, encoding, NUL, and markup declarations, before any parser runs. */
+    /** Steps 1 to 3: size, encoding, NUL, declarations, and instructions, before any parser runs. */
     private static function preScan(string $html): void
     {
         if (strlen($html) > FormFormat::MAX_BYTES) {
             throw new FormRejected(FormRejected::TOO_LARGE);
         }
         if (!Text::isUtf8($html)) {
-            throw new FormRejected(FormRejected::ENCODING);
+            $line = null;
+            if (preg_match(self::UTF8_PREFIX, $html, $match) === 1) {
+                $line = StartTags::lineAt($match[0], strlen($match[0]));
+            }
+            throw new FormRejected(FormRejected::ENCODING, $line);
         }
-        if (str_contains($html, "\0")) {
-            throw new FormRejected(FormRejected::NUL);
+        $nul = strpos($html, "\0");
+        if ($nul !== false) {
+            throw new FormRejected(FormRejected::NUL, StartTags::lineAt($html, $nul));
         }
-        if (preg_match('/<!(?!--)/', $html) === 1) {
-            throw new FormRejected(FormRejected::DECLARATION);
+        if (preg_match('/<!(?!--)/', $html, $match, PREG_OFFSET_CAPTURE) === 1) {
+            throw new FormRejected(FormRejected::DECLARATION, StartTags::lineAt($html, $match[0][1]));
         }
-        if (str_contains($html, '<?')) {
-            throw new FormRejected(FormRejected::PROCESSING_INSTRUCTION);
+        $instruction = strpos($html, '<?');
+        if ($instruction !== false) {
+            throw new FormRejected(FormRejected::PROCESSING_INSTRUCTION, StartTags::lineAt($html, $instruction));
         }
     }
 
     private function walk(string $html): FormDocument
     {
+        $this->text = $html;
+        $this->offsets = null;
+        $this->current = 0;
         if ($html === '') {
             throw new FormRejected(FormRejected::ROOT);
         }
@@ -131,19 +167,42 @@ final class FormParser
         }
     }
 
+    /** The line of the start tag of element number $index (1 for the root), or null when unknown. */
+    private function line(int $index): ?int
+    {
+        if ($index < 1) {
+            return null;
+        }
+        $this->offsets ??= StartTags::offsets($this->text);
+        $offset = $this->offsets[$index - 1] ?? null;
+
+        return $offset === null ? null : StartTags::lineAt($this->text, $offset);
+    }
+
+    private function reject(string $reason, int $index, ?string $element = null, ?string $attribute = null): FormRejected
+    {
+        return new FormRejected($reason, $this->line($index), $element, $attribute);
+    }
+
+    /** MALFORMED at the first libxml error's line, when libxml gives one. */
+    private static function malformed(\LibXMLError $error): FormRejected
+    {
+        return new FormRejected(FormRejected::MALFORMED, $error->line >= 1 ? $error->line : null);
+    }
+
     private function walkNodes(\XMLReader $reader): FormDocument
     {
         /** @var list<array<string, mixed>> $stack */
         $stack = [];
         $document = null;
         $rootSeen = false;
-        $elements = 0;
         $slotKeys = [];
 
         while (true) {
             $more = $reader->read();
-            if (libxml_get_errors() !== []) {
-                throw new FormRejected(FormRejected::MALFORMED);
+            $errors = libxml_get_errors();
+            if ($errors !== []) {
+                throw self::malformed($errors[0]);
             }
             if (!$more) {
                 break;
@@ -153,7 +212,7 @@ final class FormParser
                 continue;
             }
             if ($type === \XMLReader::TEXT || $type === \XMLReader::WHITESPACE || $type === \XMLReader::SIGNIFICANT_WHITESPACE) {
-                $stack = self::text($stack, $reader->value);
+                $stack = $this->text($stack, $reader->value, $rootSeen);
 
                 continue;
             }
@@ -163,37 +222,38 @@ final class FormParser
                 continue;
             }
             if ($type !== \XMLReader::ELEMENT) {
-                throw new FormRejected(FormRejected::NODE_TYPE);
+                throw $this->reject(FormRejected::NODE_TYPE, $this->current);
             }
 
-            $elements++;
-            if ($elements > FormFormat::MAX_ELEMENTS) {
-                throw new FormRejected(FormRejected::TOO_MANY_ELEMENTS);
+            $this->current++;
+            $index = $this->current;
+            $name = $reader->name;
+            if ($index > FormFormat::MAX_ELEMENTS) {
+                throw $this->reject(FormRejected::TOO_MANY_ELEMENTS, $index, $name);
             }
             if ($reader->depth + 1 > FormFormat::MAX_DEPTH) {
-                throw new FormRejected(FormRejected::TOO_DEEP);
+                throw $this->reject(FormRejected::TOO_DEEP, $index, $name);
             }
-            $name = $reader->name;
             $isEmpty = $reader->isEmptyElement;
             $namespace = $reader->namespaceURI;
-            $attributes = self::attributes($reader);
+            $attributes = $this->attributes($reader, $index);
             if ($stack === []) {
                 if ($rootSeen) {
-                    throw new FormRejected(FormRejected::ROOT);
+                    throw $this->reject(FormRejected::ROOT, $index, $name);
                 }
                 $rootSeen = true;
-                $stack[] = self::openRoot($name, $namespace, $attributes);
+                $stack[] = $this->openRoot($name, $namespace, $attributes, $index);
             } else {
-                $frame = $this->open($stack[count($stack) - 1], $name, $namespace, $attributes);
+                $frame = $this->open($stack[count($stack) - 1], $name, $namespace, $attributes, $index);
                 $stack[count($stack) - 1]['seen'] = true;
                 if ($frame['name'] === 'div') {
                     $key = $frame['attributes']['data-tiffin-field'];
                     if (isset($slotKeys[$key])) {
-                        throw new FormRejected(FormRejected::DUPLICATE_FIELD);
+                        throw $this->reject(FormRejected::DUPLICATE_FIELD, $index, 'div', 'data-tiffin-field');
                     }
                     $slotKeys[$key] = true;
                 }
-                $stack = self::flush($stack);
+                $stack = $this->flush($stack);
                 $stack[] = $frame;
             }
             if ($isEmpty) {
@@ -213,13 +273,13 @@ final class FormParser
      *
      * @return array<string, string>
      */
-    private static function attributes(\XMLReader $reader): array
+    private function attributes(\XMLReader $reader, int $index): array
     {
         $attributes = [];
         if ($reader->hasAttributes && $reader->moveToFirstAttribute()) {
             do {
                 if (array_key_exists($reader->name, $attributes)) {
-                    throw new FormRejected(FormRejected::MALFORMED);
+                    throw $this->reject(FormRejected::MALFORMED, $index);
                 }
                 $attributes[$reader->name] = $reader->value;
             } while ($reader->moveToNextAttribute());
@@ -235,16 +295,17 @@ final class FormParser
      * @param array<string, string> $attributes
      * @return array<string, mixed>
      */
-    private static function openRoot(string $name, string $namespace, array $attributes): array
+    private function openRoot(string $name, string $namespace, array $attributes, int $index): array
     {
         if ($name !== 'div' || $namespace !== '' || array_keys($attributes) !== ['data-tiffin-form']) {
-            throw new FormRejected(FormRejected::ROOT);
+            $other = array_values(array_diff(array_keys($attributes), ['data-tiffin-form']));
+            throw $this->reject(FormRejected::ROOT, $index, $name, $other[0] ?? null);
         }
         if ($attributes['data-tiffin-form'] !== (string) FormFormat::VERSION) {
-            throw new FormRejected(FormRejected::FORMAT_VERSION);
+            throw $this->reject(FormRejected::FORMAT_VERSION, $index, $name, 'data-tiffin-form');
         }
 
-        return self::frame('root', self::CTX_ROOT, $attributes, false);
+        return self::frame('root', self::CTX_ROOT, $attributes, false, $index);
     }
 
     /**
@@ -254,38 +315,38 @@ final class FormParser
      * @param array<string, string> $attributes
      * @return array<string, mixed>
      */
-    private function open(array $parent, string $name, string $namespace, array $attributes): array
+    private function open(array $parent, string $name, string $namespace, array $attributes, int $index): array
     {
         if (!in_array($name, self::ELEMENTS, true)) {
-            throw new FormRejected(FormRejected::ELEMENT);
+            throw $this->reject(FormRejected::ELEMENT, $index, $name);
         }
         $context = $parent['context'];
         $allowed = match ($context) {
             self::CTX_ROOT => self::BLOCKS,
             self::CTX_SECTION => $parent['seen'] ? array_values(array_diff(self::SECTION_BLOCKS, ['legend'])) : self::SECTION_BLOCKS,
             self::CTX_INLINE => $parent['inLink'] ? array_values(array_diff(self::INLINES, ['a'])) : self::INLINES,
-            default => throw new FormRejected(FormRejected::CONTENT),
+            default => throw $this->reject(FormRejected::CONTENT, $index, $name),
         };
         if (!in_array($name, $allowed, true)) {
-            throw new FormRejected(FormRejected::MISPLACED);
+            throw $this->reject(FormRejected::MISPLACED, $index, $name);
         }
 
         $known = [...self::ATTRIBUTES[$name], ...(in_array($name, self::WITH_PLACEMENT, true) ? self::PLACEMENT : [])];
         foreach (array_keys($attributes) as $attribute) {
             if (!in_array($attribute, $known, true)) {
-                throw new FormRejected(FormRejected::ATTRIBUTE);
+                throw $this->reject(FormRejected::ATTRIBUTE, $index, $name, $attribute);
             }
         }
         foreach (self::REQUIRED[$name] ?? [] as $attribute) {
             if (!array_key_exists($attribute, $attributes)) {
-                throw new FormRejected(FormRejected::ATTRIBUTE);
+                throw $this->reject(FormRejected::ATTRIBUTE, $index, $name, $attribute);
             }
         }
         if ($namespace !== '') {
             // Only reachable through a namespace declaration, which is itself refused above.
-            throw new FormRejected(FormRejected::ELEMENT);
+            throw $this->reject(FormRejected::ELEMENT, $index, $name);
         }
-        $values = $this->values($attributes);
+        $values = $this->values($name, $attributes, $index);
 
         $childContext = match ($name) {
             'fieldset' => self::CTX_SECTION,
@@ -294,17 +355,19 @@ final class FormParser
             default => self::CTX_EMPTY,
         };
 
-        return self::frame($name, $childContext, $values, $parent['inLink'] || $name === 'a');
+        return self::frame($name, $childContext, $values, $parent['inLink'] || $name === 'a', $index);
     }
 
     /**
      * Validates attribute values (step 5) and returns them in the form the
-     * node constructors take: labels and alt text trimmed.
+     * node constructors take: labels and alt text trimmed. A link address
+     * that breaks the rules is HREF, an image source SRC, any other value
+     * ATTRIBUTE_VALUE.
      *
      * @param array<string, string> $attributes
      * @return array<string, string>
      */
-    private function values(array $attributes): array
+    private function values(string $element, array $attributes, int $index): array
     {
         $values = [];
         foreach ($attributes as $attribute => $value) {
@@ -321,7 +384,12 @@ final class FormParser
                 default => false,
             };
             if (!$ok) {
-                throw new FormRejected(FormRejected::ATTRIBUTE_VALUE);
+                $reason = match ($attribute) {
+                    'href' => FormRejected::HREF,
+                    'src' => FormRejected::SRC,
+                    default => FormRejected::ATTRIBUTE_VALUE,
+                };
+                throw $this->reject($reason, $index, $element, $attribute);
             }
             $values[$attribute] = in_array($attribute, ['data-tiffin-label', 'alt'], true) ? Text::trim($value) : $value;
         }
@@ -348,7 +416,7 @@ final class FormParser
      * @param array<string, string> $attributes
      * @return array<string, mixed>
      */
-    private static function frame(string $name, string $context, array $attributes, bool $inLink): array
+    private static function frame(string $name, string $context, array $attributes, bool $inLink, int $index): array
     {
         return [
             'name' => $name,
@@ -359,22 +427,25 @@ final class FormParser
             'legend' => null,
             'seen' => false,
             'inLink' => $inLink,
+            'index' => $index,
         ];
     }
 
     /**
      * Step 6: text. Outside inline content and legends only white space is
-     * allowed (and ignored); empty elements hold nothing at all.
+     * allowed (and ignored); empty elements hold nothing at all. A text
+     * problem is reported at the start tag of the innermost open element
+     * (the root's, for text after the root has closed).
      *
      * @param list<array<string, mixed>> $stack
      * @return list<array<string, mixed>>
      */
-    private static function text(array $stack, string $value): array
+    private function text(array $stack, string $value, bool $rootSeen): array
     {
         $whitespace = strspn($value, " \t\r\n") === strlen($value);
         if ($stack === []) {
             if (!$whitespace) {
-                throw new FormRejected(FormRejected::TEXT);
+                throw $this->reject(FormRejected::TEXT, $rootSeen ? 1 : 0);
             }
 
             return $stack;
@@ -382,7 +453,7 @@ final class FormParser
         $top = count($stack) - 1;
         $context = $stack[$top]['context'];
         if ($context === self::CTX_EMPTY) {
-            throw new FormRejected(FormRejected::CONTENT);
+            throw $this->reject(FormRejected::CONTENT, $stack[$top]['index'], $stack[$top]['name']);
         }
         if ($context === self::CTX_INLINE || $context === self::CTX_LEGEND) {
             $stack[$top]['pending'] = $stack[$top]['pending'] . $value;
@@ -390,7 +461,7 @@ final class FormParser
             return $stack;
         }
         if (!$whitespace) {
-            throw new FormRejected(FormRejected::TEXT);
+            throw $this->reject(FormRejected::TEXT, $stack[$top]['index']);
         }
 
         return $stack;
@@ -403,14 +474,14 @@ final class FormParser
      * @param list<array<string, mixed>> $stack
      * @return list<array<string, mixed>>
      */
-    private static function flush(array $stack): array
+    private function flush(array $stack): array
     {
         $top = count($stack) - 1;
         if ($stack[$top]['context'] !== self::CTX_INLINE || $stack[$top]['pending'] === '') {
             return $stack;
         }
         if (!FormRules::isRunText($stack[$top]['pending'])) {
-            throw new FormRejected(FormRejected::TEXT_VALUE);
+            throw $this->reject(FormRejected::TEXT_VALUE, $stack[$top]['index']);
         }
         $stack[$top]['children'][] = new TextRun($stack[$top]['pending']);
         $stack[$top]['pending'] = '';
@@ -428,25 +499,29 @@ final class FormParser
     private function close(array $stack, ?FormDocument $document): array
     {
         if ($stack === []) {
-            throw new FormRejected(FormRejected::MALFORMED);
+            throw $this->reject(FormRejected::MALFORMED, $this->current);
         }
-        $stack = self::flush($stack);
+        $stack = $this->flush($stack);
         $frame = array_pop($stack);
+        if ($frame['name'] === 'legend') {
+            $legend = Text::trim($frame['pending']);
+            if (!FormRules::isPlainText($legend, 1, FormFormat::MAX_LEGEND)) {
+                throw $this->reject(FormRejected::TEXT_VALUE, $frame['index']);
+            }
+            $stack[count($stack) - 1]['legend'] = $legend;
+
+            return [$stack, $document];
+        }
         try {
             $node = self::build($frame);
         } catch (\InvalidArgumentException) {
             // The checks above mirror the constructors; this is a second line only.
-            throw new FormRejected(FormRejected::ATTRIBUTE_VALUE);
+            throw $this->reject(FormRejected::ATTRIBUTE_VALUE, $frame['index'], $frame['name'] === 'root' ? 'div' : $frame['name']);
         }
         if ($node instanceof FormDocument) {
             return [$stack, $node];
         }
-        $top = count($stack) - 1;
-        if (is_string($node)) {
-            $stack[$top]['legend'] = $node;
-        } else {
-            $stack[$top]['children'][] = $node;
-        }
+        $stack[count($stack) - 1]['children'][] = $node;
 
         return [$stack, $document];
     }
@@ -454,7 +529,7 @@ final class FormParser
     /**
      * @param array<string, mixed> $frame
      */
-    private static function build(array $frame): FormDocument|Block|Inline|string
+    private static function build(array $frame): FormDocument|Block|Inline
     {
         $a = $frame['attributes'];
         $children = $frame['children'];
@@ -462,7 +537,6 @@ final class FormParser
         return match ($frame['name']) {
             'root' => new FormDocument($children),
             'fieldset' => new Section($a['data-tiffin-section'] ?? null, $frame['legend'], $children, self::placement($a)),
-            'legend' => self::legend($frame['pending']),
             'div' => new FieldSlot($a['data-tiffin-field'], $a['data-tiffin-label'] ?? null, self::placement($a)),
             'h2' => new Heading(2, $children, self::placement($a)),
             'h3' => new Heading(3, $children, self::placement($a)),
@@ -473,19 +547,8 @@ final class FormParser
             'em' => new Emphasis($children),
             'br' => new LineBreak(),
             'a' => new Link($a['href'], $children),
-            default => throw new FormRejected(FormRejected::ELEMENT),
+            default => throw new \InvalidArgumentException('Unknown element.'),
         };
-    }
-
-    /** A legend's text, trimmed: 1 to 100 characters of plain text. */
-    private static function legend(string $text): string
-    {
-        $legend = Text::trim($text);
-        if (!FormRules::isPlainText($legend, 1, FormFormat::MAX_LEGEND)) {
-            throw new FormRejected(FormRejected::TEXT_VALUE);
-        }
-
-        return $legend;
     }
 
     /** @param array<string, string> $attributes */

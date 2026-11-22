@@ -248,6 +248,7 @@ final class ExportController
             'tables' => $tables,
             'scope' => $scope === 'project' ? 'project' : 'table',
             'table' => $table,
+            'projectSize' => $format->fileSize($screen->projectBytes),
         ], $status, 'projects');
     }
 

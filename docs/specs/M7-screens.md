@@ -1,6 +1,6 @@
 # M7 design spec: web layer and screens
 
-Status: design spec for milestone M7, part 2 of 2 of the part 1 design (M7-D1), awaiting spec review (M7-R1) and reconciliation with the M5 as-built notes (M7-D2). Part 1, `docs/specs/M7-release.md`, has the core, the release tool, the test plan, the provisional decisions (M7-P1 to M7-P24), and the work-package list; this part has the web layer: headers and static files, routes, controllers, shell changes, templates, strings, the stylesheet, the keyboard procedure, the visual check, and the file ownership of the web packages. Screen-by-screen designs with every string are in `docs/design/m7/`.
+Status: design spec for milestone M7, part 2 of 2 of the part 1 design (M7-D1), awaiting spec review (M7-R1) and reconciliation with the M5 as-built notes (M7-D2). Part 1, `docs/specs/M7-release.md`, has the core, the release tool, the test plan, the provisional decisions (P213 to P236), and the work-package list; this part has the web layer: headers and static files, routes, controllers, shell changes, templates, strings, the stylesheet, the keyboard procedure, the visual check, and the file ownership of the web packages. Screen-by-screen designs with every string are in `docs/design/m7/`.
 
 The M1 to M5 web layers (`docs/specs/M1-screens.md` to `docs/specs/M5-screens.md` and their as-built notes) are extended, not replaced. Statements about web classes are from the code at M4 close with the M5 design merged (`0c3ad18`), marked "(as built)"; M5's own additions (form routes, layouts, `Response::attachmentText`) are taken as designed and are checked by M7-D2.
 
@@ -54,7 +54,7 @@ The application's own responses keep their headers (as built); the files served 
 | GET | `/projects/{project}/snapshots` | `SnapshotController::index` | user | WP4 |
 | POST | `/projects/{project}/snapshots` | `SnapshotController::take` | user | WP4 |
 | GET | `/projects/{project}/snapshots/{snapshot}/restore` | `SnapshotController::restoreForm` | user | WP4 |
-| POST | `/projects/{project}/snapshots/{snapshot}/restore` | `SnapshotController::restore` | Same check; `restore`; 303 to the list with flash `notice.snapshot_restored` "{project} is back to how it was on {date}. A snapshot of how it was just before was saved first." or, when `filesMissing` is over 0, `notice.snapshot_restored_missing` "{project} is back to how it was on {date}. A snapshot of how it was just before was saved first. {count|# file is|# files are} missing from that copy." (the controller chooses the key); `Busy` reaches the busy page (503) |
+| POST | `/projects/{project}/snapshots/{snapshot}/restore` | `SnapshotController::restore` | user | WP4 |
 | GET | `/projects/{project}/delete` | `ProjectController::deleteForm` | user | WP4 |
 | POST | `/projects/{project}/delete` | `ProjectController::delete` | user | WP4 |
 | GET | `/admin/activity` | `AuditController::index` | user | WP5 |
@@ -157,7 +157,7 @@ Rules (M1 section 2.8 onward): no authorization decision in controllers; `Access
 | `SnapshotController::index` | `SnapshotOperations::screen`. Shows the list; "Take a snapshot now" posts to `take` |
 | `SnapshotController::take` | `take`; 303 to the list with flash `notice.snapshot_taken` "A snapshot was saved: {time}." |
 | `SnapshotController::restoreForm` | Checks `{snapshot}` against the name pattern (else 404 without calling the core); `restoreScreen`; renders the counts |
-| `SnapshotController::restore` | Same check; `restore`; 303 to the list with flash `notice.snapshot_restored` "{project} is back to how it was on {date}. A snapshot of how it was just before was saved first." and, when `filesMissing` is over 0, the notice `notice.snapshot_restored_missing` "{count|# file is|# files are} missing from this copy." (two flash parameters; the notice partial prints the second line only when its count is over 0, as built for conditional lines? if not, WP4 uses two keys and chooses one: `notice.snapshot_restored` or `notice.snapshot_restored_with_missing` with `{count}`); `Busy` reaches the busy page (503) |
+| `SnapshotController::restore` | Same check; `restore`; 303 to the list with one flash key, chosen by the controller: `notice.snapshot_restored` "{project} is back to how it was on {date}. A snapshot of how it was just before was saved first." when `filesMissing` is 0, else `notice.snapshot_restored_missing` "{project} is back to how it was on {date}. A snapshot of how it was just before was saved first. {count|# file is|# files are} missing from that copy." (`docs/design/m7/snapshots.md` section 4); `Busy` reaches the busy page (503) |
 | `ProjectController::deleteForm` | `deleteScreen`; renders counts, the archive link (`/projects/{p}/export`), the name field |
 | `ProjectController::delete` | Reads `confirm_name` (string, else `''`) and `expected` (digits, else 0, as the trash pattern P184); `delete`; 303 to `/projects` with flash `notice.project_deleted` "{name} has been deleted." |
 | `AuditController::index` | Passes the query string's `person`, `project`, `action`, `page` (strings only) to `AuditOperations::page`; never 422 (bad values are ignored by the core) |

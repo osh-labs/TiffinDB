@@ -4,7 +4,7 @@ Status: design spec for milestone M7, part 1 of 2 (M7-D1), awaiting spec review 
 
 Sections 18 and 19 (M7 part 2: release test, screen catalogue, visual pass, exit audit, final audit, the importer documentation) are an **outline only**. They are reconciled with the M6 as-built notes before part 2 starts (M7-D3).
 
-Decisions this spec relies on: ADR 0001, ADR 0002, ADR 0008, ADR 0011, ADR 0012, ADR 0015, ADR 0016, ADR 0017, ADR 0018, and the new ADR 0021 (release packaging, versioning, upgrade path) and ADR 0022 (snapshot restore, project deletion, audit-log screen, Admin recovery). Everything in the M1 to M5 specs, with their as-built notes and provisional decisions, still applies unless a section below changes it. New provisional decisions are listed in section 20 as M7-P1 to M7-P24; the orchestrator gives them the next free ledger numbers when it records them (M5's build rulings take the numbers after P207 first).
+Decisions this spec relies on: ADR 0001, ADR 0002, ADR 0008, ADR 0011, ADR 0012, ADR 0015, ADR 0016, ADR 0017, ADR 0018, and the new ADR 0021 (release packaging, versioning, upgrade path) and ADR 0022 (snapshot restore, project deletion, audit-log screen, Admin recovery). Everything in the M1 to M5 specs, with their as-built notes and provisional decisions, still applies unless a section below changes it. New provisional decisions are listed in section 20 as P213 to P236 (M5 took P189 to P212); the orchestrator records them in the ledger under these numbers.
 
 **Designed against the code as built at M4 close** with the M5 design merged but **M5 not built** (integration branch at `0c3ad18`). Signatures quoted from the tree are marked "(as built)". Where M5 changes a file named here (`routes.php`, `layout.php`, `app.css`, `problems.php`, `AuditAction.php`, `MessageKeysTest.php`, `Operations.php`, `Response.php`), M7-D2 checks the M5 as-built notes and adjusts ownership or line-level detail before any M7 package starts (gate G-close, session plan section 4.2). Session plan: `docs/build/M5-M7-session-plan.md` ("plan N" below is a section of that document). The maintainer has not answered plan section 3; rows 1, 6, and 7 are applied as their defaults.
 
@@ -118,7 +118,7 @@ Shipped from `vendor/`: `autoload.php`, `composer/` except `installed.json`, and
 
 ### 3.3 Preparing `vendor/`
 
-Where Composer can download: in an empty folder holding only a copy of `composer.json`, `composer install --no-dev --prefer-dist --no-interaction --no-scripts --classmap-authoritative`. In the build environment, where downloads are refused (orchestration guide section 9): start from the shared offline `vendor/` that holds OpenSpout (ledger note "M3-WP0 merged", scratchpad `vendor-m3`), copy only `openspout/openspout/` into a new folder, run `composer dump-autoload --no-dev --classmap-authoritative` there against a copy of `composer.json`, and write `composer/installed.php` by hand from the dependency row (root `dev` false; one package entry). WP6 writes this procedure into `tools/release/README.md` with the exact commands it ran; `docs/host/` does not need it.
+Where Composer can download: in an empty folder holding only a copy of `composer.json`, `composer install --no-dev --prefer-dist --no-interaction --no-scripts`. In the build environment, where downloads are refused (orchestration guide section 9): start from the shared offline `vendor/` that holds OpenSpout (ledger note "M3-WP0 merged", scratchpad `vendor-m3`), copy only `openspout/openspout/` into a new folder, run `composer dump-autoload --no-dev` there against a copy of `composer.json`, and write `composer/installed.php` by hand from the dependency row (root `dev` false; one package entry). Neither command uses `--classmap-authoritative` or `--optimize-autoloader`: the folder holds no `src/`, so an authoritative class map would list no TiffinDB class and the release could load none; the plain PSR-4 map (`TiffinDB\\` to `src/`) is what ships. WP6 writes this procedure into `tools/release/README.md` with the exact commands it ran; `docs/host/` does not need it.
 
 ### 3.4 Build tool
 
@@ -135,7 +135,7 @@ Exit 0 on success, 1 on a refusal (one plain line per problem on standard error,
 5. Read every file as bytes; refuse symbolic links and anything that is not a regular file.
 6. Sort the archive paths by byte value (`strcmp`).
 7. Write `MANIFEST.txt`: one line per file, `<lower-case SHA-256 hex>  <path below the top folder>\n`, in the same order; it is added after the sorted files as the last entry and is not listed in itself.
-8. Write the zip with `ZipArchive` to `<out>/tiffindb-<version>.zip.part`: first the folder entries (each folder that holds a file, sorted, with a trailing `/`), then the files; each entry gets `setMtimeName` 315532800 (1980-01-01 00:00:00 UTC), `setExternalAttributesName` with `ZipArchive::OPSYS_UNIX` and mode `0100644` (files) or `040755` (folders), and `setCompressionName` `ZipArchive::CM_DEFLATE` level 9. No archive comment, no extra fields beyond what these calls write.
+8. Set `putenv('TZ=UTC')` before the first `ZipArchive` call: libzip converts the entry time to a zip (DOS) date with the C library's local time, so without it the bytes depend on the build machine's time zone, and west of UTC the 1980 time falls before the zip epoch (checked with libzip 1.7.3: different hashes under `TZ=UTC`, `America/New_York`, and `Asia/Tokyo`; equal once the tool sets `TZ=UTC`). Write the zip with `ZipArchive` to `<out>/tiffindb-<version>.zip.part`: first the folder entries (each folder that holds a file, sorted, with a trailing `/`), then the files; each entry gets `setMtimeName` 315532800 (1980-01-01 00:00:00 UTC), `setExternalAttributesName` with `ZipArchive::OPSYS_UNIX` and mode `0100644` (files) or `040755` (folders), shifted left 16 bits as the zip format stores it, and `setCompressionName` `ZipArchive::CM_DEFLATE` level 9. No archive comment, no extra fields beyond what these calls write.
 9. Rename `.part` to `tiffindb-<version>.zip`, refusing to overwrite an existing file; write `tiffindb-<version>.zip.sha256` as `<hex>  tiffindb-<version>.zip\n`.
 10. Print the SHA-256, the file count, the archive size, and the PHP, libzip (`ZipArchive::LIBZIP_VERSION`), and zlib (`ZLIB_VERSION`) versions.
 
@@ -149,16 +149,16 @@ Each rule gives a fixed message naming the rule and the path (relative). Paths a
 |---|---|
 | R1 | A path starts with `tests/`, `tools/dev/`, `tools/discovery/`, `tools/release/`, `docs/build/`, `docs/specs/`, `docs/decisions/`, `docs/design/`, `docs/brand/`, `.github/`, or is `CLAUDE.md`, `phpunit.xml.dist`, `.gitignore`; or a path below `vendor/` holds a segment `tests`, `test`, `Tests`, `examples`, `.github` (3.2) |
 | R2 | A path is `config/local.php`, or starts with `data/` or `local/` |
-| R3 | A path's last segment matches `*.db`, `*.sqlite`, `*.sqlite-*`, `*.sqlite3`, `*.tiffin`, `*.tiffindb.zip`, or `.env*` (the data patterns of `.gitignore` as built, plus `*.sqlite3`) |
+| R3 | A path's last segment matches `*.db`, `*.sqlite*`, `*.tiffin`, `*.tiffindb.zip`, or `.env*` (the data patterns of `.gitignore` as built) |
 | R4 | An `.htaccess` other than `.htaccess` and `public/.htaccess` contains `Rewrite` (case-insensitive) in any non-comment line (ledger section 7) |
-| R5 | A file fails the SPDX rule of `tests/repo/SpdxHeaderTest.php`. As built that test holds the rule in public static methods (`ruleFor`, `exemptionFor`, `problem`) and the `EXEMPTIONS` register, but it extends PHPUnit's `TestCase`, which the build tool cannot load. WP6 moves those methods and the register, unchanged, into `ReleaseRules` (`ReleaseRules::spdxProblem(string $path, string $contents): ?string` and `ReleaseRules::SPDX_EXEMPTIONS`), and `SpdxHeaderTest` calls them (tests already load tool files, as `DiscoverStructureTest` does), so the two can never differ. The test's own assertions, fixtures, and the pinned exemption list stay in the test |
+| R5 | A file outside `vendor/` fails the SPDX rule of `tests/repo/SpdxHeaderTest.php` (third-party files carry their own notices; `MANIFEST.txt` is generated after the rules run). As built that test holds the rule in public static methods (`ruleFor`, `exemptionFor`, `problem`) and the `EXEMPTIONS` register, but it extends PHPUnit's `TestCase`, which the build tool cannot load. WP6 moves those methods and the register, unchanged, into `ReleaseRules` (`ReleaseRules::spdxProblem(string $path, string $contents): ?string` and `ReleaseRules::SPDX_EXEMPTIONS`), and `SpdxHeaderTest` calls them (tests already load tool files, as `DiscoverStructureTest` does), so the two can never differ. The test's own assertions, fixtures, and the pinned exemption list stay in the test |
 | R6 | A package under `vendor/` is not a shipped row of `docs/dependencies.md` with the same version and commit, or a shipped row has no package (3.2) |
 | R7 | A component of `config/notices.json` names a licence file that is not in the list, or a shipped row of `docs/dependencies.md` (packages and font families) has no component in `config/notices.json` |
 | R8 | A path holds a segment `.` or `..`, a NUL, a backslash, or a character outside printable ASCII (no shipped file has one; this keeps the zip free of path tricks) |
 
 ### 3.6 Third-party notices
 
-- `config/notices.json` (new, WP6): a JSON array; each element `{"id": <[a-z0-9-]{1,40}>, "name": <text>, "version": <text or "">, "licence": <SPDX expression>, "files": [<shipped paths>]}`. Rows, from `docs/dependencies.md`: `tiffindb` (TiffinDB, the configured version, `AGPL-3.0-or-later`, `LICENSE`); `openspout` (`5.2.2`, `MIT AND Apache-2.0`, both licence files); `inter`, `atkinson-hyperlegible`, `lexend`, `source-serif-4` (the font version of the table, `OFL-1.1`, each `public/assets/fonts/<family>/LICENSE.txt`). Read by `AboutOperations` (section 10) and by R7.
+- `config/notices.json` (new, WP6): a JSON array; each element `{"id": <[a-z0-9-]{1,40}>, "name": <text>, "version": <text or "">, "licence": <SPDX expression>, "files": [<shipped paths>]}`. Rows, from `docs/dependencies.md`: `tiffindb` (TiffinDB, the configured version, `AGPL-3.0-or-later`, `LICENSE`); `openspout` (`5.2.2`, `MIT AND Apache-2.0`, both licence files); `inter`, `atkinson-hyperlegible`, `lexend`, `source-serif-4` (the font version of the table, `OFL-1.1`, each `public/assets/fonts/<family>/LICENSE.txt`); `composer-autoloader` (the class loader Composer writes into `vendor/composer/`, version "", `MIT`, `vendor/composer/LICENSE`). The autoloader is third-party code that ships, so WP6 also adds it as a shipped row of `docs/dependencies.md` (licence confirmed from `vendor/composer/LICENSE` as shipped), which R7 then requires; R6 and 3.2 still skip `composer/*` as a package. Read by `AboutOperations` (section 10) and by R7.
 - `THIRD-PARTY-NOTICES.md` (new, WP6): plain text for people who read the archive: one section per component of `config/notices.json` except `tiffindb`, with name, version, licence, use (one line, from the dependency table's Purpose column), and the path of each licence file. T-REL-9 checks that every component id appears.
 - Neither file names a plugin. A plugin with a third-party dependency would add a row to `docs/dependencies.md`, `config/notices.json`, and `THIRD-PARTY-NOTICES.md`, as any dependency does (ADR 0008 decision 12).
 
@@ -170,7 +170,7 @@ Each rule gives a fixed message naming the rule and the path (relative). Paths a
 
 ### 3.8 CI step
 
-`.github/workflows/ci.yml` (WP6) gains, after the tests, a step that prepares a production `vendor/` in `build/release-vendor/` (`composer install --no-dev ...` in a copy of `composer.json`, network allowed on the hosted runner), runs `build.php --test-build --vendor=build/release-vendor --out=build/out-1` and again into `build/out-2`, and fails unless the two `.sha256` files are equal. The comment "The only step that uses the network" moves to say there are two. `.gitignore` gains `/build/`.
+`.github/workflows/ci.yml` (WP6) gains, after the tests, a step that prepares a production `vendor/` in `build/release-vendor/` (`composer install --no-dev ...` in a copy of `composer.json`, network allowed on the hosted runner), runs `build.php --test-build --vendor=build/release-vendor --out=build/out-1` and again into `build/out-2`, and fails unless the two `.sha256` files are equal. The comment "The only step that uses the network" moves to say there are two. `.gitignore` already ignores `/build/` and `/dist/` (as built), so it needs no change.
 
 ## 4. Project lock (`Core\Storage\ProjectLock`, M7-WP1) (security-critical)
 
@@ -184,7 +184,7 @@ final class ProjectLock
     public const EXCLUSIVE_WAIT_MS = 10000;
     public const STEP_MS = 50;
 
-    /** Shared lock on <folder>/project.lock. Busy when not got within SHARED_WAIT_MS; null when the file system cannot lock (logged once per process). */
+    /** Shared lock on <folder>/project.lock. Busy when not got within SHARED_WAIT_MS; null when the file system cannot lock (logged once per request, by the opener). */
     public static function shared(string $projectFolder): ?self;
     /** Exclusive lock; Busy when not got within EXCLUSIVE_WAIT_MS; LocksUnavailable when the file system cannot lock. */
     public static function exclusive(string $projectFolder): self;
@@ -195,15 +195,16 @@ final class ProjectLock
 - The lock file is opened with `fopen($path, 'c')` (create if missing, never truncate), after checking with `lstat` that it is a regular file or absent (a symbolic link or anything else: `LocksUnavailable` for exclusive, null with a log line for shared). A new file gets mode `Fs::FILE_MODE`.
 - `flock($handle, LOCK_SH | LOCK_NB, $wouldBlock)` (or `LOCK_EX`) is tried every `STEP_MS` until the wait runs out. A false result with `$wouldBlock` true is contention; false with `$wouldBlock` false is "cannot lock" (`flock` disabled, or a file system without locks).
 - `LocksUnavailable` (new, `Core\Storage`, extends `\RuntimeException`) is never shown as such: the operations that need an exclusive lock turn it into `ValidationFailed([Problem(null, 'problem.lock.unavailable')])`, shown on their confirmation page (sections 5.3 and 6.2). No new `Unavailable` reason is needed for locks.
+- A project folder that does not exist (deleted or moved meanwhile) is not "cannot lock": `shared` returns null without a log line and `ProjectFile::open` then reports the missing file (`Unavailable('missing')`, as built).
 - Time is real time (`usleep`); tests use folders on the test machine's own file system and a second PHP process (`proc_open`) to hold the other lock.
 
 ### 4.2 Where locks are taken (`ProjectOpener`, changed)
 
 - `open(ProjectRecord $project)`: before `ProjectFile::open`, `ProjectLock::shared(folder)`; the lock is kept with the connection and released by `forget` and `closeAll` after the connection is closed. A null lock (cannot lock) is kept as "none". `Busy` from the shared lock reaches the kernel's busy page (as built).
-- `adopt(string $projectKey, Database $db)`: takes the shared lock as `open` does (new projects and archive imports).
+- `adopt(string $projectKey, Database $db)`: takes the shared lock as `open` does (new projects; an archive import moves a rebuilt folder in and is opened later through `open`, as built).
 - New `openExclusive(ProjectRecord $project): array{Database, ProjectLock}`: forgets any open connection for the key (releasing this process's shared lock), takes `ProjectLock::exclusive`, then opens the file with `Sqlite::open` directly (no upgrade, no identity check beyond what the caller does) and returns both; the caller closes the database and releases the lock. Used only by restore (section 5.3).
 - New `lockExclusive(string $projectKey): ProjectLock`: forgets the connection and takes the exclusive lock, opening no database. Used only by deletion (section 6.2).
-- A process holds at most one lock per project: `flock` locks belong to the open file, so a second `fopen` of the same lock file in one process would wait for itself. `ProjectOpener` keeps one lock per key, and `openExclusive` and `lockExclusive` release this process's shared lock before asking for the exclusive one.
+- A process holds at most one lock, and one open descriptor of `project.lock`, per project: `flock` locks belong to the open file, so a second `fopen` of the same lock file in one process would wait for itself; and where Linux emulates `flock` with `fcntl` record locks (NFS), closing any descriptor of the file drops every lock the process holds on it. `ProjectOpener` keeps one lock per key, and `openExclusive` and `lockExclusive` release this process's shared lock before asking for the exclusive one.
 - The places that remove a project folder's known files, `ProjectOperations::undoCreate` and `removeAbandonedFolder` (as built), also remove `project.lock` (after releasing it), because `adopt` now creates it in a new project's folder; otherwise the folder would not be empty and the removal would fail.
 
 ### 4.3 Request lifetime
@@ -227,7 +228,7 @@ The lock lives as long as the connection: in the web layer, until the response i
 ### 5.1 Values
 
 ```php
-final class SnapshotScreen { /* ProjectRecord $project; list<SnapshotInfo> $snapshots; bool $canRestore (locks available: a probe of ProjectLock on the folder, shared, released at once) */ }
+final class SnapshotScreen { /* ProjectRecord $project; list<SnapshotInfo> $snapshots; bool $canRestore (locks available: `screen()` opens the project through the opener, as every read does, and reads `ProjectOpener::locked($projectKey)` (new: true when its shared lock was got, false for "none"); no second descriptor of the lock file is opened, 4.2) */ }
 final class RestoreScreen {
     // ProjectRecord $project; SnapshotInfo $snapshot;
     // int $formatVersion (the snapshot's user_version);
@@ -248,7 +249,7 @@ final class RestoreResult { /* SnapshotInfo $restored; SnapshotInfo $preRestore;
 | `restoreScreen(string $snapshotId)` | `RestoreScreen`; reads the live project and the checked candidate (5.3 steps 1 to 3) without changing anything; the candidate folder is removed before returning |
 | `restore(string $snapshotId)` | `RestoreResult` (5.3) |
 
-Every method begins with `Context::project($actor, Permission::ManageSnapshots, $projectKey)` (Admins only, as built: a granted Member is `AccessDenied`, an ungranted person `NotFound`), then `Context::requireCurrentAdmin($actor)` for `restoreScreen` and `restore`. `$snapshotId` is a snapshot file name without `.tiffin`; anything for which `Snapshots::find($folder, $snapshotId . '.tiffin')` returns null is `NotFound`. `Snapshots::find` (new) returns the `SnapshotInfo` of that exact name when `list` would list it, else null.
+Every method begins with `Context::project($actor, Permission::ManageSnapshots, $projectKey)` (Admins only, as built: a granted Member is `AccessDenied`, an ungranted person `NotFound`), then `Context::requireCurrentActor($actor)` (as built, outside a transaction) for `restoreScreen` and `restore`; `restore` also runs `Context::requireCurrentAdmin($actor)` in a short system `Database::write()` just before step 4 (it needs a transaction, as built). `$snapshotId` is a snapshot file name without `.tiffin`; anything for which `Snapshots::find($folder, $snapshotId . '.tiffin')` returns null is `NotFound`. `Snapshots::find` (new) returns the `SnapshotInfo` of that exact name when `list` would list it, else null.
 
 ### 5.3 `restore`, step by step
 
@@ -290,15 +291,15 @@ final class ProjectDeleted { /* string $name; int $records; int $trashed; int $f
 | `deleteScreen()` | `ProjectDeleteScreen`. Counts as the project settings totals (`attachmentTotals`, as built) and `Snapshots::list` |
 | `delete(string $typedName, int $expected)` | `ProjectDeleted` (steps below) |
 
-Both begin with `Context::project($actor, Permission::ManageProject, $projectKey)` (Admins only) and `Context::requireCurrentAdmin($actor)`. Steps of `delete`:
+Both begin with `Context::project($actor, Permission::ManageProject, $projectKey)` (Admins only) and `Context::requireCurrentActor($actor)` (as built, outside a transaction); `delete` also runs `Context::requireCurrentAdmin($actor)` inside step 3's write. Steps of `delete`:
 
 1. **Name.** `Text::trim($typedName)` compared with the registry name ignoring ASCII case (`strcasecmp` on both, after the trim; names are unique ignoring ASCII case, as built). Mismatch: `ValidationFailed([Problem('confirm-name', 'problem.project.delete_name')])`.
 2. **Counts.** `records + trashed` counted again; when greater than `$expected`: `ConfirmationRequired` (as built, the P82 pattern), nothing changed.
-3. **Mark.** One system `Database::write()`: re-read the row by key; unless its state is `active`, `NotFound`; `ProjectRegistry::setState($id, ProjectRecord::STATE_DELETING)`. From now on `Context::project` gives `NotFound` for it (as built for any state but `active`), and no list shows it.
+3. **Mark.** One system `Database::write()`: `requireCurrentAdmin`; re-read the row by key; unless its state is `active`, `NotFound`; `ProjectRegistry::setState($id, ProjectRecord::STATE_DELETING)`. From now on `Context::project` gives `NotFound` for it (as built for any state but `active`), and no list shows it.
 4. **Lock.** `ProjectOpener::lockExclusive($projectKey)`. On `Busy` or `LocksUnavailable`: set the state back to `active` (system write), then rethrow `Busy`, or throw `ValidationFailed([Problem(null, 'problem.lock.unavailable')])`.
 5. **Move.** The folder `DataDirectory::projectFolder($key)` must be a directory and not a link (`Fs::isDir`, lstat-based, as built); then `StagingArea::reserve('deleted', $key)` (new: returns `<data>/staging/deleted/<key>` without creating it; `\RuntimeException` when it exists) and `Fs::moveIn($folder, $target)` (as built: `rename` of a directory; no copy fallback for directories). On failure: state back to `active`, release the lock, `\RuntimeException` becomes `ValidationFailed([Problem(null, 'problem.project.delete_failed')])`.
 6. **Forget.** One system write: `ProjectRegistry::remove($id)` (as built; grants cascade, audit `project_id` set null).
-7. **Remove** with `Fs::removeTree($target, <data>/staging)` (as built, staging-only, never follows links), still holding the lock, whose file now lies inside the moved folder (removing an open, locked file is harmless on the file systems TiffinDB supports). A failure is logged without a path; the staging sweep finishes the removal later.
+7. **Remove** with `Fs::removeTree($target, <data>/staging)` (as built, staging-only, never follows links), still holding the lock, whose file now lies inside the moved folder (removing an open, locked file is harmless on the file systems TiffinDB supports; on NFS the removed open file stays as a hidden `.nfs` entry until it is closed, so the folder removal fails there and is left to the sweep). A failure is logged without a path; the staging sweep finishes the removal later.
 8. **Release** the lock.
 9. **Audit** `project.deleted` (section 11.2) after step 6, whatever step 7 did.
 
@@ -335,7 +336,7 @@ final class AuditPage { /* list<AuditRow> $rows; int $total; int $page; int $pag
 
 ### 7.3 `AuditOperations::page(Actor $actor, array $query): AuditPage` (new)
 
-- `Authorizer::require($actor, Permission::ViewAudit)` (instance-wide, Admins only, as built); then `Context::requireCurrentAdmin($actor)`.
+- `Authorizer::require($actor, Permission::ViewAudit)` (instance-wide, Admins only, as built); then `Context::requireCurrentActor($actor)` (as built; the page writes nothing, so no transaction is opened).
 - `$query` keys (strings, from the query string): `person` (a user key), `project` (a project key, or the literal `deleted`), `action` (a value of `AuditAction::ALL`), `page` (`^[1-9][0-9]{0,5}\z`). A value that is not a string, does not match, or names nothing that exists is ignored (that filter is off), never an error, so a stale bookmark still shows a page. The page is clamped to `1..pages` (P84 pattern).
 - 50 rows per page (`AuditOperations::PAGE = 50`).
 - Names: `actorName` from `Users::byId` (deactivated people included); `projectName` from the registry by id (any state); for `project.deleted`, `detail['name']` when it is a string. Values are returned as stored; escaping is the template's.
@@ -371,7 +372,7 @@ final class RecoveryCode
 
 | Method | Does |
 |---|---|
-| `start(bool $enabled, string $clientAddress): void` | `NotFound` when `$enabled` is false. When `LoginThrottle::wait(['s:recoverystart'])` is over 0, nothing else happens. Otherwise, in one system write, `LoginThrottle::failure('s:recoverystart', 5)` (every start counts, so the throttle's own rules limit starts); then `RecoveryCode::start`; audit `auth.recovery_started` with `{written: bool}`. Returns nothing either way; `$clientAddress` is not used for this bucket (a global limit, as the setup code's, P76) |
+| `start(bool $enabled, string $clientAddress): void` | `NotFound` when `$enabled` is false. Otherwise one system `Database::write()` (the throttle methods need one, as built): when `LoginThrottle::wait(['s:recoverystart'])` is over 0, nothing else happens; else `LoginThrottle::failure('s:recoverystart', 5)` (every start counts, so the throttle's own rules limit starts), then `RecoveryCode::start`. After the write, when not throttled, audit `auth.recovery_started` with `{written: bool}`. Returns nothing either way; `$clientAddress` is not used for this bucket (a global limit, as the setup code's, P76) |
 | `recover(bool $enabled, string $username, string $code, string $password, string $again, string $clientAddress): RecoveryResult` | Section 9.3 |
 
 `$code`, `$password`, `$again` carry `#[\SensitiveParameter]`. `RecoveryResult { string $outcome ('done', 'failed', 'wait'); int $waitSeconds }`.
@@ -380,13 +381,13 @@ final class RecoveryCode
 
 1. `NotFound` when `$enabled` is false.
 2. Password problems: `$password !== $again` gives `Problem('password-again', 'problem.password.mismatch')` (new key, section 11.3; the change-password page checks this in its controller with `account.password.mismatch`, as built, but recovery has no signed-in controller logic to lean on); then `PasswordPolicy::problems($password, $username)` (as built). Any problem: `ValidationFailed` (these depend only on what was typed and disclose nothing).
-3. Throttle: `LoginThrottle::wait([LoginThrottle::addressBucket($s, $clientAddress), 's:recovery'])` (as built); over 0: `RecoveryResult('wait', $seconds)`; nothing else runs.
+3. Throttle, in a short system `Database::write()` (`wait` needs a transaction, as built): `LoginThrottle::wait([LoginThrottle::addressBucket($s, $clientAddress), 's:recovery'])`; over 0: `RecoveryResult('wait', $seconds)`; nothing else runs.
 4. `$hash = PasswordHasher::hash($password)` always, before any lookup, so every outcome costs the same.
-5. In one system `Database::write()`: `$expected = RecoveryCode::current(...)`; `$person = Users::byUsername($username)` (as built: it normalises the name itself); `$ok = $expected !== null && SetupCode::matches($expected, $code) && $person !== null && $person->active && $person->role === Role::Admin`. When `$ok`: `RecoveryCode::remove` first (inside the write, so a second request with the same code, which waits for this write, finds no code; when the file cannot be removed the write still goes on and step 6 logs it), then `Users::setPassword($person->id, $hash, false)`, `Sessions::endAllFor($person->id)`, `LoginThrottle::clear` of the person's user bucket (`LoginThrottle::userBucket`, as built), `clear('s:recovery')`. When not: `LoginThrottle::failure('s:recovery', 5)` and `failure(addressBucket, LoginThrottle::ADDRESS_LIMIT)`; when the `s:recovery` bucket has now reached 5 failures, `RecoveryCode::remove`.
+5. In one system `Database::write()`: the same `wait` again (another request may have blocked the buckets while this one hashed); over 0: `RecoveryResult('wait', $seconds)`, nothing changed. Then `$expected = RecoveryCode::current(...)`; `$person = Users::byUsername($username)` (as built: it normalises the name itself); `$ok = $expected !== null && SetupCode::matches($expected, $code) && $person !== null && $person->active && $person->role === Role::Admin`. When `$ok`: `RecoveryCode::remove` first (inside the write, so a second request with the same code, which waits for this write, finds no code; when the file cannot be removed the write still goes on and step 6 logs it), then `Users::setPassword($person->id, $hash, false)`, `Sessions::endAllFor($person->id)`, `LoginThrottle::clear` of the person's user bucket (`LoginThrottle::userBucket`, as built), `clear('s:recovery')`. When not: `LoginThrottle::failure('s:recovery', 5)` and `failure(addressBucket, LoginThrottle::ADDRESS_LIMIT)`; when the `s:recovery` bucket has now reached 5 failures, `RecoveryCode::remove`.
 6. After the write, when `$ok`: when the code file could not be removed in step 5, the line `TiffinDB: the recovery code file could not be removed; delete it by hand.` is logged (no path, no code); the code then stays usable until it expires. Then audit `auth.recovered` (actor null, target `user`, key the person's key). Result `done`.
 7. Otherwise result `failed`.
 
-Note on step 6: a code whose file could not be removed stays usable until it expires. This is recorded as an accepted residual risk (M7-P15): anyone who could use it can read the file, and so already has file access to the data folder.
+Note on step 6: a code whose file could not be removed stays usable until it expires. This is recorded as an accepted residual risk (P227): anyone who could use it can read the file, and so already has file access to the data folder.
 
 ### 9.4 What recovery never does
 
@@ -411,8 +412,8 @@ final class LicenceText { /* string $name; list<array{file: string, text: string
 
 | Method | Does |
 |---|---|
-| `about(Actor $actor): AboutFacts` | `Context::requireCurrentPerson($actor)` (as built). Components from `config/notices.json` (10.1). Plugins from `Context::plugins()` (as built): every plugin whose manifest was read (not broken), with its manifest name, version, kind, and licence; for a Member only enabled ones. `server` for Admins only: `PHP_VERSION` and `SELECT sqlite_version()` on the system database |
-| `licence(Actor $actor, string $id): LicenceText` | `requireCurrentPerson`; `NotFound` for an id not in the notices; each listed file read (10.1) |
+| `about(Actor $actor): AboutFacts` | `Context::requireCurrentActor($actor)` (as built, outside a transaction; the page writes nothing). Components from `config/notices.json` (10.1). Plugins from `Context::plugins()` (as built): every plugin whose manifest was read (not broken), with its manifest name, version, kind, and licence; for a Member only enabled ones. `server` for Admins only: `PHP_VERSION` and `SELECT sqlite_version()` on the system database |
+| `licence(Actor $actor, string $id): LicenceText` | `requireCurrentActor`; `NotFound` for an id not in the notices; each listed file read (10.1) |
 
 ### 10.1 Reading the notices and licence files
 
@@ -432,7 +433,7 @@ final class LicenceText { /* string $name; list<array{file: string, text: string
 | `AboutOperations::about`, `licence` | yes (with server facts) | yes (no server facts, enabled plugins only) | (route needs sign-in) |
 | `RecoveryOperations::*` | (signed out only; route `guest`) | | |
 
-A Member is refused before anything is read. The project-scoped methods re-check the current Admin (`requireCurrentAdmin`) before anything is written.
+A Member is refused before anything is read. Every new method then checks that the acting person is still who the session says (`requireCurrentActor`, outside a transaction); the methods that change something re-check the current Admin (`requireCurrentAdmin`) inside a system write before the change.
 
 ### 11.2 Audit actions (amends ADR 0012 decision 4)
 
@@ -466,7 +467,7 @@ A Member is refused before anything is read. The project-scoped methods re-check
 
 1. Make a backup: a project archive of each project (Export, project archive), or a copy of the whole data folder made while nobody uses TiffinDB.
 2. Download the new release archive and check its SHA-256 against the published `.sha256` file.
-3. On the host, delete these folders of the installed copy: `public/assets/`, `src/`, `templates/`, `strings/`, `vendor/`, `tools/`, `docs/`, and each plugin folder listed under `plugins/` in the new `MANIFEST.txt` (`plugins/import/csv/` and so on). Keep `config/local.php`, the data folder, and plugins you added yourself.
+3. On the host, delete these folders of the installed copy: `public/assets/`, `src/`, `templates/`, `strings/`, `vendor/`, `tools/`, `docs/`, and each plugin folder listed under `plugins/` in the installed copy's own `MANIFEST.txt` (the old one, so that a plugin the new release no longer ships does not stay behind and keep loading) and in the new one (`plugins/import/csv/` and so on). Keep `config/local.php`, the data folder, and plugins you added yourself.
 4. Upload the new files over the installed copy (the archive's top folder's contents into the installation folder).
 5. Open TiffinDB. The system database upgrades on the first request after a copy named `system-before-v<n>-<time>.sqlite` beside it; each project upgrades when first opened after a `format-upgrade` snapshot.
 6. If a page says a newer TiffinDB wrote the data, the copy uploaded is older than the data: upload the newer release again.
@@ -575,10 +576,10 @@ Designs: `docs/specs/M7-screens.md` sections 3 and 8 (WP3) and section 15 item C
 
 | Item (source) | Reason |
 |---|---|
-| Throttle takeback after a window reset can lose one failure when verification stalls over 900 s (M1-WP2 round 3) | At most one failure per stalled sign-in; needs a 15-minute stall in password verification; the address bucket still limits. Recorded as M7-P20 |
+| Throttle takeback after a window reset can lose one failure when verification stalls over 900 s (M1-WP2 round 3) | At most one failure per stalled sign-in; needs a 15-minute stall in password verification; the address bucket still limits. Recorded as P232 |
 | Import "Check again" loses a typed table name; over-200-column CSV message; no test for the XLSX early stop (M3 exit) | Closed by M4-WP0 (CF-1, CF-3, CF-4 of `docs/specs/M4-core.md` section 13, merged); nothing left |
-| Import commit does not re-read the actor inside the write (M3-WP8 review) | Same one-request window as every Admin operation (P78); the actor is re-checked before the snapshot (as built). Recorded as M7-P21 |
-| Bidirectional control characters kept in shown file names and headings (M2-WP5, M3-WP9, M3-WP10) | File names: removed at storage since M4 (`cleanName` removes category Cf, as built); archive file names: removed (`ArchiveController::fileName`, as built). Import review headings: shown escaped on the review page only; they become field names only through the name rules, which refuse Cf (P61). Values: escaped, not isolated. Isolation with `bdi` across every template is a wide change for a visual spoofing risk only an Admin's own file can cause. Recorded as M7-P22 |
+| Import commit does not re-read the actor inside the write (M3-WP8 review) | Same one-request window as every Admin operation (P78); the actor is re-checked before the snapshot (as built). Recorded as P233 |
+| Bidirectional control characters kept in shown file names and headings (M2-WP5, M3-WP9, M3-WP10) | File names: removed at storage since M4 (`cleanName` removes category Cf, as built); archive file names: removed (`ArchiveController::fileName`, as built). Import review headings: shown escaped on the review page only; they become field names only through the name rules, which refuse Cf (P61). Values: escaped, not isolated. Isolation with `bdi` across every template is a wide change for a visual spoofing risk only an Admin's own file can cause. Recorded as P234 |
 | First-Admin race gives 500 (M1-WP9 round 2) | Already caught: `SetupController` catches the installer's `LogicException` (as built); closed |
 | Delete-table page matches incoming links by table name; `rename`/`activate` races; add-relation all-problems (M1 reviews) | Table names are unique in a project, so the match is exact; the races need two Admins acting in the same millisecond; the problems case is cosmetic. Accepted |
 | URL rule and `0x` labels (M1-WP3) | Already narrowed (T-CF-2, as built: only `0x` plus hex digits); closed |
@@ -614,7 +615,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-ADM-21 | P183: a failing step run three times leaves one `format-upgrade` snapshot; an older manual and 19 automatic snapshots all survive |
 | T-ADM-30 | A granted Member is refused (`AccessDenied`) on every new `SnapshotOperations`, `ProjectOperations`, and `AuditOperations` method before anything is read (spy on the opener) |
 | T-ADM-31 | An ungranted person and an unknown key: `NotFound`, the same for both |
-| T-ADM-32 | An Admin made a Member after the session was resumed: refused by `requireCurrentAdmin` before any write |
+| T-ADM-32 | An Admin made a Member after the session was resumed: refused by `requireCurrentActor` before anything is read, and by `requireCurrentAdmin` when the role changes between that check and the write (seam) |
 | T-ADM-33 | `CoreLayerRulesTest`: only `ProjectOpener` calls `ProjectFile::open` (section 4.5); a planted call elsewhere fails it |
 | T-ADM-34 | `AuditTrailTest` covers `snapshot.restored` and `project.deleted` |
 
@@ -644,7 +645,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 
 | Test | Checks |
 |---|---|
-| T-REL-1 | Two builds of a fixture tree (temporary git repository made by the test with `git init`, synthetic files, a fake prepared vendor with one package) give byte-identical zips and equal `.sha256` files; folder entries, then files sorted by byte value, then `MANIFEST.txt` last; times and modes fixed |
+| T-REL-1 | Two builds of a fixture tree (temporary git repository made by the test with `git init`, synthetic files, a fake prepared vendor with one package) give byte-identical zips and equal `.sha256` files, also when the second run has `TZ=America/New_York` in its environment (3.4 step 8); folder entries, then files sorted by byte value, then `MANIFEST.txt` last; times and modes fixed |
 | T-REL-2 to T-REL-9 | One failing fixture per rule R1 to R8, each giving exactly that rule's message |
 | T-REL-10 | Vendor refusals of 3.2: a dev package, an unlisted package, a version or commit mismatch, a listed package missing, `autoload_files.php` naming an outside file; `installed.json` and package `tests/` folders not shipped, licence files shipped |
 | T-REL-11 | `ReleaseContentsTest`: the current tree's include list passes R1 to R5, R7, R8 (R6 needs a prepared vendor and runs in T-REL-10 and the CI step) |
@@ -877,43 +878,43 @@ The result goes into the ledger as "manual screen-reader pass: done on <date> wi
 
 ## 20. Provisional decisions (for the ledger)
 
-Each is the option cheapest to reverse (orchestration guide section 5) and is recorded in ADR 0021 or ADR 0022 where it is a decision rather than a constant. The orchestrator assigns ledger numbers.
+Each is the option cheapest to reverse (orchestration guide section 5) and is recorded in ADR 0021 or ADR 0022 where it is a decision rather than a constant. Numbers continue after M5's P189 to P212.
 
 | # | Item | Provisional resolution | Recorded in |
 |---|---|---|---|
-| M7-P1 | Archive contents (plan 8.2 row 1) | As the plan, plus `composer.json`, `config/notices.json`, `CHANGELOG.md`, generated `MANIFEST.txt`; minus `vendor/composer/installed.json` and packages' test folders; files from `git ls-files` only | ADR 0021 d1, d2 |
-| M7-P2 | Build tool (row 2) | `tools/release/build.php`; prepared `vendor/`; sorted entries, time 1980-01-01, modes 0644/0755, deflate 9; `.sha256`; byte-identical on the same machine | ADR 0021 d3 |
-| M7-P3 | Release rules (row 3) | R1 to R8 of section 3.5 | ADR 0021 d4 |
-| M7-P4 | Version (row 4) | `1.0.0-rc.1` set by WP6; `1.0.0` in the final build commit; `-dev` only for test builds; `CHANGELOG.md` from 1.0.0 | ADR 0021 d5 |
-| M7-P5 | Upgrade procedure (row 5) | Delete the release-owned folders, upload, open; data and `config/local.php` kept | ADR 0021 d6 |
-| M7-P6 | Newer system database page | New reason `system-newer` with its own wording | ADR 0021 d6; section 12.2 |
-| M7-P7 | Repeated failed upgrades (P183) | No new snapshot when the newest is a `format-upgrade` snapshot of the same starting version | ADR 0021 d6; section 8 |
-| M7-P8 | Project lock | `project.lock` with `flock`, shared on every open, exclusive for restore and deletion; 2 s and 10 s waits; destructive operations refused without lock support | ADR 0022 d1 |
-| M7-P9 | Snapshot restore (row 6) | File swap under the exclusive lock after a `pre-restore` snapshot; candidate checked in staging; unreferenced files swept, missing files counted and shown before and after | ADR 0022 d2 |
-| M7-P10 | Project deletion (row 7) | State `deleting`, folder moved to `staging/deleted/` and removed there (no new recursive-removal rule; amends the plan's P64/P127 amendment); typed name ignoring ASCII case; archive offered; `project.deleted` keeps the name | ADR 0022 d3 |
-| M7-P11 | Audit screen (row 8) | `/admin/activity`; 50 per page; person, project (including deleted), action filters; bad filter values ignored | ADR 0022 d4 |
-| M7-P12 | Admin recovery (plan 3 row 6) | Built; code file started from the browser; 30 minutes; once; 5 attempts; `admin_recovery` switch, on by default | ADR 0022 d5 |
-| M7-P13 | Recovery start by a visitor | Allowed (writes only an unreadable file), throttled, audited; never replaces a valid code | ADR 0022 d5 |
-| M7-P14 | Recovery outcome | The person signs in afterwards; no automatic sign-in | section 9.3 |
-| M7-P15 | Recovery code file that cannot be removed | Logged; stays usable until it expires (residual risk accepted) | section 9.3 |
-| M7-P16 | About page (row 10) | `/about` for signed-in people; components from `config/notices.json`; licence texts on their own pages; plugins from the registry (Members: enabled only); server facts for Admins | ADR 0022 d6 |
-| M7-P17 | Icons (row 10) | SVG favicon and an app icon through a web manifest; no PNG or ICO in v1; `manifest-src 'self'` | ADR 0021 d8 |
-| M7-P18 | Static assets (row 11) | `public/.htaccess` sets the sandbox CSP, `nosniff`, `DENY`, `no-referrer`, and one week of caching for static types | ADR 0021 d7 |
-| M7-P19 | Probe port (row 12) | `probe_port` in `config/local.php`; also `admin_recovery` | ADR 0021 d9 |
-| M7-P20 | Throttle takeback after a window reset | Accepted (at most one failure per stalled sign-in) | section 15.3 |
-| M7-P21 | Import commit does not re-read the actor inside the write | Accepted (P78 window) | section 15.3 |
-| M7-P22 | Bidirectional characters in shown values and import headings | Accepted (stripped from file names and names; values escaped, not isolated) | section 15.3 |
-| M7-P23 | Documentation (row 9) | Chapters of section 14, plus `for-admins.md`; bold only for UI labels, checked against strings; no screenshots | section 14 |
-| M7-P24 | Work-package changes from the session plan | Section 17 list (process; ledger only) | section 17 |
+| P213 | Archive contents (plan 8.2 row 1) | As the plan, plus `composer.json`, `config/notices.json`, `CHANGELOG.md`, generated `MANIFEST.txt`; minus `vendor/composer/installed.json` and packages' test folders; files from `git ls-files` only | ADR 0021 d1, d2 |
+| P214 | Build tool (row 2) | `tools/release/build.php`; prepared `vendor/`; sorted entries, time 1980-01-01, modes 0644/0755, deflate 9; `.sha256`; byte-identical on the same machine | ADR 0021 d3 |
+| P215 | Release rules (row 3) | R1 to R8 of section 3.5 | ADR 0021 d4 |
+| P216 | Version (row 4) | `1.0.0-rc.1` set by WP6; `1.0.0` in the final build commit; `-dev` only for test builds; `CHANGELOG.md` from 1.0.0 | ADR 0021 d5 |
+| P217 | Upgrade procedure (row 5) | Delete the release-owned folders, upload, open; data and `config/local.php` kept | ADR 0021 d6 |
+| P218 | Newer system database page | New reason `system-newer` with its own wording | ADR 0021 d6; section 12.2 |
+| P219 | Repeated failed upgrades (P183) | No new snapshot when the newest is a `format-upgrade` snapshot of the same starting version | ADR 0021 d6; section 8 |
+| P220 | Project lock | `project.lock` with `flock`, shared on every open, exclusive for restore and deletion; 2 s and 10 s waits; destructive operations refused without lock support | ADR 0022 d1 |
+| P221 | Snapshot restore (row 6) | File swap under the exclusive lock after a `pre-restore` snapshot; candidate checked in staging; unreferenced files swept, missing files counted and shown before and after | ADR 0022 d2 |
+| P222 | Project deletion (row 7) | State `deleting`, folder moved to `staging/deleted/` and removed there (no new recursive-removal rule; amends the plan's P64/P127 amendment); typed name ignoring ASCII case; archive offered; `project.deleted` keeps the name | ADR 0022 d3 |
+| P223 | Audit screen (row 8) | `/admin/activity`; 50 per page; person, project (including deleted), action filters; bad filter values ignored | ADR 0022 d4 |
+| P224 | Admin recovery (plan 3 row 6) | Built; code file started from the browser; 30 minutes; once; 5 attempts; `admin_recovery` switch, on by default | ADR 0022 d5 |
+| P225 | Recovery start by a visitor | Allowed (writes only an unreadable file), throttled, audited; never replaces a valid code | ADR 0022 d5 |
+| P226 | Recovery outcome | The person signs in afterwards; no automatic sign-in | section 9.3 |
+| P227 | Recovery code file that cannot be removed | Logged; stays usable until it expires (residual risk accepted) | section 9.3 |
+| P228 | About page (row 10) | `/about` for signed-in people; components from `config/notices.json`; licence texts on their own pages; plugins from the registry (Members: enabled only); server facts for Admins | ADR 0022 d6 |
+| P229 | Icons (row 10) | SVG favicon and an app icon through a web manifest; no PNG or ICO in v1; `manifest-src 'self'` | ADR 0021 d8 |
+| P230 | Static assets (row 11) | `public/.htaccess` sets the sandbox CSP, `nosniff`, `DENY`, `no-referrer`, and one week of caching for static types | ADR 0021 d7 |
+| P231 | Probe port (row 12) | `probe_port` in `config/local.php`; also `admin_recovery` | ADR 0021 d9 |
+| P232 | Throttle takeback after a window reset | Accepted (at most one failure per stalled sign-in) | section 15.3 |
+| P233 | Import commit does not re-read the actor inside the write | Accepted (P78 window) | section 15.3 |
+| P234 | Bidirectional characters in shown values and import headings | Accepted (stripped from file names and names; values escaped, not isolated) | section 15.3 |
+| P235 | Documentation (row 9) | Chapters of section 14, plus `for-admins.md`; bold only for UI labels, checked against strings; no screenshots | section 14 |
+| P236 | Work-package changes from the session plan | Section 17 list (process; ledger only) | section 17 |
 
 ## 21. Assumptions and unknowns
 
-1. `flock` works on the reference shared host's file system for files in the data folder. The host check already tests `flock` in a folder above the web root (as built); the import job relies on it (P112). Unknown until the maintainer runs it; without it, restore and deletion are refused there (ADR 0022 decision 1).
-2. `ZipArchive::setMtimeName` and `setExternalAttributesName` exist (PHP 8.0 and later with libzip 1.0 and later; PHP 8.3 is the floor). Assumed; T-REL-1 shows it on the build machine. Whether two machines with different libzip or zlib versions give identical bytes is not known; the tool prints the versions so a comparison is like with like.
+1. `flock` works on the reference shared host's file system for files in the data folder. The host check already tests `flock` in a folder above the web root (as built); the import job relies on it (P112). Unknown until the maintainer runs it; without it, restore and deletion are refused there (ADR 0022 decision 1). Shared hosts often keep files on NFS, where Linux emulates `flock` with `fcntl` record locks: locks then work across machines, but closing any descriptor of the lock file drops the process's locks on it, which is why the design keeps one descriptor per project per process (section 4.2).
+2. `ZipArchive::setMtimeName` and `setExternalAttributesName` exist (PHP 8.0 and later with libzip 1.0 and later; PHP 8.3 is the floor). Assumed; T-REL-1 shows it on the build machine. The zip date depends on the time zone unless the tool sets `TZ=UTC` (3.4 step 8, checked with libzip 1.7.3). Whether two machines with different libzip or zlib versions give identical bytes is not known; the tool prints the versions so a comparison is like with like.
 3. The PHP built-in server's MIME type for `.webmanifest` is not known; browsers accept a manifest served as `application/json` or `text/plain` in practice but may log a warning. `public/.htaccess` sets `application/manifest+json` for Apache. Checked in V-39.
 4. Attachment files swept by a restore are lost even if an older snapshot names them; a design where snapshots keep files alive would read every snapshot on each sweep. Recorded for the maintainer (not blocking): the confirmation page states the number of files a restore deletes.
 5. Snapshot pruning keeps 20 automatic snapshots; a `pre-restore` snapshot is automatic, so after 20 later risky operations it is pruned like the others. An Admin who wants to keep it takes a manual snapshot. For the maintainer to confirm.
-6. The design was written before M5 was built. M5 changes `routes.php`, `layout.php`, `app.css`, `problems.php`, `AuditAction.php` (two form actions), `MessageKeysTest.php`, `Operations.php` (`forms()`), `Response.php` (`attachmentText`), `RecordController.php`, and the Fields page; M7-D2 reconciles line-level details with the M5 as-built notes. No M7 decision depends on how M5 was built.
+6. The design was written before M5 was built. M5 changes `routes.php`, `layout.php`, `app.css`, `problems.php`, `AuditAction.php` (two form actions), `MessageKeysTest.php`, `Operations.php` (`forms()`), `Core/App/Context.php` (the `editor()` closure), `Response.php` (`attachmentText`), `RecordController.php`, the Fields page, and the tests `CoreLayerRulesTest.php`, `TemplateRulesTest.php`, `RouterTest.php`, `ResponseTest.php`, `StringsTest.php`, and `KeyboardStructureTest.php` (`docs/specs/M5-forms.md` section 14); every M7 package starts after M5 is CLOSED (section 17), so none of these is shared with a running M5 package; M7-D2 reconciles line-level details with the M5 as-built notes. No M7 decision depends on how M5 was built.
 7. M6 must open projects only through `Core\App` operations (section 4.4) so that its command-line driver takes the project lock. To be stated in the M6 spec; `docs/build/M6-handoff-plan.md` section 2 lists the M7 items M6 relies on.
 8. Missing information for the maintainer (not blocking): plan section 3 rows 1, 6, 7 (defaults applied: release waits for M6; recovery built; publication is the maintainer's); whether PNG icons are wanted; whether restore should keep files that older snapshots name (item 4); whether `pre-restore` snapshots should be kept like manual ones (item 5); whether the user documentation should gain screenshots later (needs a seeded screenshot generator).
 

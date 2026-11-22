@@ -156,8 +156,17 @@ final class AuditTrailTest extends AppTestCase
         $collections->delete($this->admin, $p, $collection);
         $expect(AuditAction::COLLECTION_DELETED, $admin, $project->id, 'collection', $collection, ['table' => $plants->key, 'rules' => 1, 'match' => 'any']);
 
+        // M5 (spec section 9.6, T-APP-175): the table, the source, and the generated flag; never form text.
+        $forms = $this->ops->forms();
+        $screen = $forms->source($this->admin, $p, $plants->key, ['text' => '<div data-tiffin-form="1"><p>Synthetic form note</p></div>', 'base' => $forms->source($this->admin, $p, $plants->key)->base, 'do' => 'save']);
+        $formKey = (string) $this->fx->projectDb($p)->value('SELECT "key" FROM "_tiffin_forms" WHERE "is_default" = 1 AND "table_key" = ?', [$plants->key]);
+        self::assertNotNull($screen->saved);
+        $expect(AuditAction::FORM_SAVED, $admin, $project->id, 'form', $formKey, ['table' => $plants->key, 'source' => 'source', 'generated' => 0]);
+        self::assertTrue($forms->reset($this->admin, $p, $plants->key));
+        $expect(AuditAction::FORM_RESET, $admin, $project->id, 'form', $formKey, ['table' => $plants->key]);
+
         $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
-        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987'] as $text) {
+        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987', 'Synthetic form note'] as $text) {
             self::assertStringNotContainsString($text, $all);
         }
 

@@ -10,7 +10,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | Phase | M4 Phase 0 complete 2026-11-20. Integration branch `claude/wizardly-allen-m81ni0` (named by the maintainer; starts from main with M0 to M3). Baseline: suite 8414 tests OK (1 skipped), lint 684 files 0 failed. No agents running |
 | Window start | 2026-11-20 (window 6) |
 | Resume reminder | none armed (orchestrator has no scheduling tool beyond a one-shot; resume is by maintainer instruction) |
-| Next action | WP4 merged (5baeb18; suite 9198 OK, 1 skipped; lint 757 files 0 failed). The maintainer's pause until 11:31 EST was lifted for WP4 only (resumed early on instruction); nothing else is dispatched. Awaiting the maintainer's go-ahead for wave 4 (WP6, WP7, WP8 in parallel, P181 items), then WP9 (CF-2, CF-5, CF-9, no-statistics case), M4-X; owed: design-tier security review of WP4 (core authorization). Rebuild the trimmed vendor if the container was reclaimed (orchestration 9) |
+| Next action | Wave 4 dispatched on the maintainer's instruction: WP6, WP7, WP8 running (worktrees `.claude/worktrees/wp6`, `wp7`, `wp8`, branches `claude/wizardly-allen-m81ni0--M4-WP6`, `-WP7`, `-WP8`; unpushed until each reports). Integration branch has WP0 to WP5 and WP10 (suite 9198 OK, 1 skipped at 5baeb18). Next: merge each as it reports, then WP9 (CF-2, CF-5, CF-9, no-statistics case), design-tier security review of WP4 and wave 4, M4-X. Rebuild the trimmed vendor if the container was reclaimed (orchestration 9) |
 |---|---|---|
 | M0 | CLOSED 2026-11-11 (independent exit audit) | See M0 exit results below |
 | M1 | CLOSED 2026-11-17 (independent exit audit; listed fixes F-1 and F-3 merged) | See M1 exit results below |

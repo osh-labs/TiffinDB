@@ -82,7 +82,7 @@ final class FormRejected extends \RuntimeException
      */
     public function messageKey(): string
     {
-        $key = 'problem.form.' . str_replace('-', '_', $this->reason);
+        $key = 'problem.form.' . preg_replace('/-/', '_', $this->reason);
         if (in_array($this->reason, self::NAMED, true)
             && ($this->element === null || ($this->reason === self::ATTRIBUTE && $this->attribute === null))
         ) {

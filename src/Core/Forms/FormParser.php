@@ -111,7 +111,7 @@ final class FormParser
             throw new FormRejected(FormRejected::TEXT, 1);
         }
         // XML 1.0 end-of-line handling, done before the reader so that libxml's lines (it counts only LF) are right.
-        $html = str_replace(["\r\n", "\r"], "\n", $html);
+        $html = (string) preg_replace('/\r\n?/', "\n", $html);
 
         $previous = libxml_use_internal_errors(true);
         libxml_clear_errors();
@@ -159,7 +159,7 @@ final class FormParser
         if ($html === '') {
             throw new FormRejected(FormRejected::ROOT);
         }
-        $reader = \XMLReader::XML($html, 'UTF-8', LIBXML_NONET);
+        $reader = \XMLReader::XML($html, 'UTF-8', LIBXML_NONET | LIBXML_BIGLINES);
         if (!$reader instanceof \XMLReader) {
             throw new FormRejected(FormRejected::MALFORMED);
         }

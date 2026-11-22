@@ -490,5 +490,10 @@ final class FormParserTest extends TestCase
         $text = self::OPEN . "\n" . str_repeat("<hr/>\n", 4997) . "<hr title=\"x\"/>\n" . self::CLOSE;
         $rejected = self::rejectionOf($text);
         self::assertSame([FormRejected::ATTRIBUTE, 4999], [$rejected->reason, $rejected->formLine]);
+        // Past libxml's old 65,535-line limit, for libxml's own errors and for the walk's.
+        foreach (['<p>a</b>' => FormRejected::MALFORMED, '<p class="x">a</p>' => FormRejected::ATTRIBUTE] as $bad => $reason) {
+            $far = self::rejectionOf(self::OPEN . str_repeat("\n", 70000) . $bad . self::CLOSE);
+            self::assertSame([$reason, 70001], [$far->reason, $far->formLine]);
+        }
     }
 }

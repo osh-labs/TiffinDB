@@ -299,6 +299,22 @@ final class SqlStringsTest extends TestCase
         return $files;
     }
 
+    /**
+     * Core\App is outside this scan, so it must not compose SQL fragments
+     * at all (P107: one composition path, in the scanned directories). The
+     * M4 collection counts did (Listings::count joined a COUNT statement
+     * with Sql); they now call Records::countMatching (M4-X).
+     */
+    public function testCoreAppComposesNoSqlFragments(): void
+    {
+        $files = glob(RepoFiles::path('src/Core/App') . '/*.php') ?: [];
+        self::assertNotSame([], $files);
+        foreach ($files as $path) {
+            $source = (string) file_get_contents($path);
+            self::assertSame(0, preg_match('/\\\\?\bCore\\\\Query\\\\Sql\b(?!\w)|\bSql::(of|join|wrap)\b/', $source), 'src/Core/App/' . basename($path) . ' composes SQL; move it to Core\Query.');
+        }
+    }
+
     public function testTheAttachmentStoreHoldsNoSql(): void
     {
         $files = self::storageFiles();

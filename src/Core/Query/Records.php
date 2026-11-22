@@ -504,14 +504,25 @@ final class Records
         return new NormalisedQuery(new ListQuery($chosen, $filter, $text, max(1, $page)), $filterProblem, $searchProblem);
     }
 
+    /**
+     * How many live records match the query's rules, filter, and search
+     * (its sort and page are not used). One COUNT query over ListSql::where,
+     * so a collection's count and its list always agree (M4-X).
+     */
+    public function countMatching(string $tableKey, ListQuery $query): int
+    {
+        $table = $this->schema->table($tableKey);
+
+        return $this->countWhere($table, $this->lists->where($table, $query));
+    }
+
     /** One page of live records matching the query, in its order (section 3.7). */
     public function page(string $tableKey, ListQuery $query): RecordPage
     {
         $table = $this->schema->table($tableKey);
         $where = $this->lists->where($table, $query);
         $order = $this->lists->order($table, $query->sort);
-        $counting = Sql::join(' ', [Sql::of('SELECT COUNT(*) FROM ' . $table->sql() . ' AS "r" WHERE'), $where]);
-        $total = (int) $this->db->value($counting->sql(), $counting->params());
+        $total = $this->countWhere($table, $where);
         $pages = max(1, intdiv($total + self::PAGE_SIZE - 1, self::PAGE_SIZE));
         $page = min($query->page, $pages);
         $select = Sql::join(' ', [
@@ -732,13 +743,20 @@ final class Records
         return null;
     }
 
+    /** Live records of the table matching a where fragment of ListSql::where. */
+    private function countWhere(TableDef $table, Sql $where): int
+    {
+        $counting = Sql::join(' ', [Sql::of('SELECT COUNT(*) FROM ' . $table->sql() . ' AS "r" WHERE'), $where]);
+
+        return (int) $this->db->value($counting->sql(), $counting->params());
+    }
+
     private function searchTable(string $tableKey, string $text): ?SearchGroup
     {
         $table = $this->schema->table($tableKey);
         $query = new ListQuery($this->defaultSort($table), null, $text, 1);
         $where = $this->lists->where($table, $query);
-        $counting = Sql::join(' ', [Sql::of('SELECT COUNT(*) FROM ' . $table->sql() . ' AS "r" WHERE'), $where]);
-        $total = (int) $this->db->value($counting->sql(), $counting->params());
+        $total = $this->countWhere($table, $where);
         if ($total === 0) {
             return null;
         }

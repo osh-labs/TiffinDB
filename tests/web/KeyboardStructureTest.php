@@ -21,6 +21,7 @@ use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\M4Fixture;
+use TiffinDB\Tests\Support\M5Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\CoreServices;
@@ -31,6 +32,13 @@ require_once __DIR__ . '/EndToEndTest.php';
 require_once __DIR__ . '/ScreenStructureTest.php';
 
 /**
+ * T-KBD-4 (M5 spec part 2 section 9.1) is in the methods named testM5*:
+ * the M5 screens over the M5 data set (M5Fixture) in a CoreFixture of
+ * their own, as the Admin (the record screen also as the Member), with
+ * the seven rules below and the seven M5 items of assertM5Rules. Rule 1
+ * also allows the editor's hidden Apply (tabindex -1), and rule 7 allows
+ * one `autofocus` where a check names it (the editor after a change).
+ *
  * T-KBD-3 (M4 spec part 2 section 10.1) is in the methods named testM4*:
  * the M4 screens over the M4 data set in a CoreFixture of their own, with
  * the seven rules below and the six M4 items of assertM4Rules.
@@ -144,6 +152,7 @@ final class KeyboardStructureTest extends TestCase
     protected function tearDown(): void
     {
         $this->core4?->remove();
+        $this->core5?->remove();
         $this->core->remove();
     }
 
@@ -769,6 +778,356 @@ final class KeyboardStructureTest extends TestCase
         self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")][normalize-space(.)="Empty the trash"]')->length);
     }
 
+    // T-KBD-4 (M5 spec part 2 section 9.1): the M5 screens over the M5
+    // data set (M5Fixture, its own CoreFixture), as the Admin, with rules
+    // 1 to 7 and the seven M5 items (assertM5Rules).
+
+    public function testM5EditorStandardAndEditedForms(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $rooms = $m2->tablePath($m2->rooms) . '/form';
+        $this->checkM5($admin, $rooms, [
+            ...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Rooms',
+            'Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form',
+            'Name of section 1', 'Move Details down', 'Remove section Details and keep what is in it',
+            'Label for Name', 'Width of Name', 'Move Name up', 'Move Name down', 'Hide Name',
+            'Name of section 2', 'Move Items up', 'Remove section Items and keep what is in it',
+            'Label for Items', 'Width of Items', 'Move Items up', 'Move Items down', 'Hide Items',
+            'Add a section', 'Save the form', 'Cancel', ...self::FOOTER,
+        ]);
+
+        // The fixture form: sections, widths, a heading and a link, a hidden required field.
+        $items = $m2->tablePath($m2->items) . '/form';
+        $this->checkM5($admin, $items, [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        self::assertSame(['Add Serial number to the form'], $admin->texts('//section[@aria-labelledby="not-on-form-title"]//button/@aria-label'));
+
+        // Every row kind: a placed field with a span the editor does not offer, a missing slot, static rows, an empty section.
+        $w = $m2->warrantyFields;
+        $this->saveSource($fx, $m2->warranties, '<div data-tiffin-form="1">'
+            . '<fieldset data-tiffin-section="details"><legend>Details</legend>'
+            . '<div data-tiffin-field="' . $w['Name'] . '" data-tiffin-label="Warranty" data-tiffin-col="2" data-tiffin-span="5"></div>'
+            . '<div data-tiffin-field="' . $w['Ends'] . '" data-tiffin-span="8"></div>'
+            . '<div data-tiffin-field="zzzzzzzzzzzz"></div></fieldset>'
+            . '<h2>Cover</h2><p>See <a href="https://example.com/terms">the terms</a>.</p><hr/><img src="attachment:999" alt="A sketch"/>'
+            . '<fieldset></fieldset></div>');
+        $warranties = $m2->tablePath($m2->warranties) . '/form';
+        $this->checkM5($admin, $warranties, [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Warranties']);
+        $x = $admin->xpath();
+        self::assertSame(['form-row form-row-section', 'form-row', 'form-row', 'form-row', 'form-row', 'form-row form-row-section'], array_map(static fn (DOMElement $li): string => $li->getAttribute('class'), iterator_to_array($x->query('//form[@id="form-editor"]/ol/li'))));
+        self::assertSame(1, $x->query('//li[@class="form-row form-row-missing"]')->length);
+        self::assertSame(['other'], $admin->texts('//select[@id="width-1-1"]/option[@selected]/@value'));
+        self::assertSame(1, $x->query('//li[@id="row-1-1"]/p[contains(@class, "form-row-note")]')->length, 'The placed note.');
+        self::assertSame('This section is empty.', HtmlAssertions::text($admin->page(), '//li[@id="row-6"]/p[contains(@class, "form-row-note")]'));
+    }
+
+    public function testM5EditorAfterChangesProblemsAndAConflict(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $form = $m2->tablePath($m2->items) . '/form';
+        $start = [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items', 'Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form'];
+
+        // After a move: focus on the moved row's button in its new place.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'up-1-2', 200);
+        $this->checkM5Page($admin, 'editor after a move', $start, 'up-1-1');
+        // After hide, add-section, ungroup, and add: one autofocus each, on the control the core names.
+        $this->editorPost($admin, $form, 'hide-1-1', 200);
+        $this->checkM5Page($admin, 'editor after hide', $start, 'up-1-1');
+        $this->editorPost($admin, $form, 'add-section', 200);
+        $this->checkM5Page($admin, 'editor after add-section', $start, 'legend-5');
+        $this->editorPost($admin, $form, 'add-' . $fx->itemFields['Serial number'], 200);
+        $this->checkM5Page($admin, 'editor after add', $start, 'up-1-11');
+        $this->editorPost($admin, $form, 'ungroup-2', 200);
+        $this->checkM5Page($admin, 'editor after ungroup', $start, 'up-2');
+
+        // A 422 with a label problem: the summary links to the box, the box describes the problem.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'apply', 422, ['label[1-1]' => str_repeat('x', 61)]);
+        $this->checkM5Page($admin, 'editor 422 label', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        self::assertSame(['#label-1-1'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+        self::assertStringContainsString('err-label-1-1', (string) $admin->xpath()->query('//input[@id="label-1-1"]/@aria-describedby')->item(0)?->nodeValue);
+
+        // A refused draft, and a conflict.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'save', 422, ['draft' => '<div data-tiffin-form="1"><script>alert(1)</script></div>']);
+        $this->checkM5Page($admin, 'editor refused draft', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'save', 422, ['base' => str_repeat('0', 64)]);
+        $this->checkM5Page($admin, 'editor conflict', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+    }
+
+    public function testM5SourceUploadAndResetPages(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $items = $m2->tablePath($m2->items);
+        $tabs = ['Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form'];
+        $head = [...self::ADMIN_TOP, 'Projects', 'Home Inventory'];
+        $db = $this->core5?->projectDb($m2->project);
+        self::assertNotNull($db);
+        $db->run('DELETE FROM "_tiffin_forms" WHERE "table_key" = ?', [$m2->rooms]);
+        $db->run('UPDATE "_tiffin_forms" SET "html" = ?, "generated" = 0 WHERE "table_key" = ?', ['<div data-tiffin-form="1"><p onclick="x">Example</p></div>', $m2->warranties]);
+
+        // Source view: stored, generated, refused stored, after Check, a 422.
+        $source = [...$head, 'Items', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER];
+        $this->checkM5($admin, $items . '/form/source', $source);
+        $this->checkM5($admin, $m2->tablePath($m2->rooms) . '/form/source', [...$head, 'Rooms', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER]);
+        $this->checkM5($admin, $m2->tablePath($m2->warranties) . '/form/source', [...$head, 'Warranties', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER]);
+        $admin->get($items . '/form/source');
+        self::assertSame(200, $admin->submit($items . '/form/source', ['do' => 'check', 'text' => $fx->html])->status);
+        $this->checkM5Page($admin, 'source after Check', $source);
+        $refused = $admin->submit($items . '/form/source', ['do' => 'save', 'text' => $fx->html . '<p onclick="x">y</p>']);
+        self::assertSame(422, $refused->status);
+        $this->checkM5Page($admin, 'source 422', [...$head, 'Items', 'Form']);
+        $x = $admin->xpath();
+        self::assertSame(['#source'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+        self::assertStringContainsString('source-error', (string) $x->query('//textarea[@id="source"]/@aria-describedby')->item(0)?->nodeValue);
+
+        // Upload: plain and a 422.
+        $upload = [...$head, 'Items', 'Form', ...$tabs];
+        $this->checkM5($admin, $items . '/form/upload', $upload);
+        $missing = $admin->submit($items . '/form/upload');
+        self::assertSame(422, $missing->status);
+        $this->checkM5Page($admin, 'upload 422', [...$head, 'Items', 'Form']);
+        self::assertSame(['#file'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+
+        // Reset: an edited form and the standard form.
+        $this->checkM5($admin, $items . '/form/reset', [...$head, 'Items', 'Form', ...$tabs]);
+        self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertTrue($this->ops5?->forms()->reset($this->core5?->actor('admin') ?? throw new \LogicException('No M5 data set.'), $m2->project, $m2->warranties));
+        $this->checkM5($admin, $m2->tablePath($m2->warranties) . '/form/reset', [...$head, 'Warranties', 'Form', ...$tabs, 'Back to the form', ...self::FOOTER]);
+        self::assertSame('The form for Warranties is already the standard form.', HtmlAssertions::text($admin->page(), '//main//p[contains(@class, "notice-muted")]'));
+        self::assertSame(0, $admin->xpath()->query('//main//form')->length, 'Nothing to confirm.');
+    }
+
+    public function testM5RecordScreenWithWidthsAndALink(): void
+    {
+        [$fx, $member, $admin] = $this->m5();
+        foreach ([$member, $admin] as $client) {
+            $this->checkM5($client, $fx->m2->itemPath('Stand mixer'), [
+                ...($client === $admin ? self::ADMIN_TOP : self::TOP), 'Home Inventory', 'Items', 'Previous item: Sewing machine', 'Next item: Tent, 4-person',
+                'Name', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Under warranty', 'Manual', 'Notes', 'Model', M5Fixture::LINK_TEXT, 'Kitchen', 'Choose a different room',
+            ]);
+            $x = $client->xpath();
+            $labels = [];
+            foreach ($x->query('//form[@id="record-form"]/fieldset[1]//div[contains(concat(" ", @class, " "), " cell ")]') as $cell) {
+                $first = $x->query('descendant::*[self::label or self::legend][1]', $cell)->item(0);
+                if ($first !== null) {
+                    $labels[] = trim((string) preg_replace('/\s*\(.*\)\z/', '', trim((string) $first->textContent)));
+                }
+            }
+            self::assertSame(array_keys(M5Fixture::WIDTHS), $labels, 'Cells in the DOM in source order.');
+            self::assertSame(['Where it is'], $client->texts('//form[@id="record-form"]/fieldset[2]/legend'));
+            self::assertSame(0, $x->query('//label[normalize-space(.)="Serial number"]')->length);
+        }
+    }
+
+    private ?CoreFixture $core5 = null;
+    private ?Operations $ops5 = null;
+
+    /**
+     * The M5 data set in its own CoreFixture (closed in tearDown), with the
+     * Member and the Admin signed in through the form.
+     *
+     * @return array{0: M5Fixture, 1: EndToEndClient, 2: EndToEndClient}
+     */
+    private function m5(): array
+    {
+        $this->core5 = new CoreFixture();
+        $this->core5->clock->set('2026-11-03T10:00:00Z');
+        $this->ops5 = $this->core5->operations();
+        $fx = M5Fixture::build($this->core5, $this->ops5);
+        $config = Fixtures::config(false) + ['data_dir' => $this->core5->temp->path('data'), 'timezone' => 'UTC'];
+        $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $this->core5->clock, new SeededRandom('tiffindb-keyboard-structure-m5-seed'), $this->core5->hasher));
+        $clients = [];
+        foreach (['member', 'admin'] as $username) {
+            $client = new EndToEndClient($kernel);
+            $client->get('/sign-in');
+            self::assertSame(303, $client->submit('/sign-in', ['username' => $username, 'password' => CoreFixture::PASSWORD])->status);
+            $clients[] = $client;
+        }
+
+        return [$fx, $clients[0], $clients[1]];
+    }
+
+    /** Saves $text as the default form of $table through the source view (as the Admin). */
+    private function saveSource(M5Fixture $fx, string $table, string $text): void
+    {
+        $actor = $this->core5?->actor('admin') ?? throw new \LogicException('No M5 data set.');
+        $forms = $this->ops5?->forms() ?? throw new \LogicException('No M5 data set.');
+        $base = $forms->source($actor, $fx->m2->project, $table)->base;
+        $screen = $forms->source($actor, $fx->m2->project, $table, ['text' => $text, 'base' => $base, 'do' => 'save']);
+        self::assertSame([], $screen->problems);
+    }
+
+    /**
+     * Posts the editor page's form with $do, the draft read as a browser
+     * reads it, and $values; expects $status.
+     *
+     * @param array<string, string> $values
+     */
+    private function editorPost(EndToEndClient $client, string $form, string $do, int $status, array $values = []): void
+    {
+        $document = new \DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="UTF-8">' . $client->page(), LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        $draft = (string) (new DOMXPath($document))->query('//form[@id="form-editor"]/input[@name="draft"]/@value')->item(0)?->nodeValue;
+        $response = $client->submit($form, $values + ['do' => $do, 'draft' => $draft]);
+        self::assertSame($status, $response->status, "do={$do}");
+    }
+
+    /** GETs $uri as $client (200), rules 1 to 7 (the whole focus order when $names ends with the footer, else its start) and the M5 items. */
+    private function checkM5(EndToEndClient $client, string $uri, array $names): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        $this->checkM5Page($client, $uri, $names);
+    }
+
+    /**
+     * Rules 1 to 7 and the M5 items on the client's last page; $focus is
+     * the `value` of the button, or the `id` of the box, that must carry
+     * the one `autofocus` ($autofocus 1 with $focus null: any one control).
+     *
+     * @param list<string> $names
+     */
+    private function checkM5Page(EndToEndClient $client, string $where, array $names, ?string $focus = null, int $autofocus = 0): void
+    {
+        $html = $client->page();
+        $count = $focus === null ? $autofocus : 1;
+        $this->assertStructure($html, $names, $where, $count);
+        $this->assertM5Rules($html, $where, $focus, $count);
+    }
+
+    /**
+     * The M5 items of section 9.1: (1) the editor's first submit button is
+     * the hidden Apply with tabindex -1, and no tabindex is other than -1
+     * or 0; (2) at most one autofocus, only on the editor after a change,
+     * on the control named; (3) every editor button's accessible name
+     * starts with its visible text and names its row; (4) every input,
+     * select, and textarea of an M5 form has a label whose text starts its
+     * accessible name, and the text area's problem is in its description;
+     * (5) rows are `li` of a labelled `ol`, a section's children a nested
+     * `ol` inside its `li`; (6) no nested form, and every editor control
+     * belongs to form#form-editor; (7) every `a.form-link` has text, the
+     * fixed rel, and no target.
+     */
+    private function assertM5Rules(string $html, string $where, ?string $focus, int $autofocus): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $editor = $x->query('//form[@id="form-editor"]')->item(0);
+
+        // 1.
+        if ($editor instanceof DOMElement) {
+            $first = $x->query('.//button[@type="submit"]', $editor)->item(0);
+            self::assertInstanceOf(DOMElement::class, $first);
+            self::assertSame(['visually-hidden', 'apply', '-1'], [$first->getAttribute('class'), $first->getAttribute('value'), $first->getAttribute('tabindex')], "{$where}: the hidden Apply first.");
+        }
+        self::assertSame(0, $x->query('//*[@tabindex][not(@tabindex="-1")][not(@tabindex="0")]')->length, "{$where}: tabindex -1 or 0 only.");
+
+        // 2.
+        $focused = $x->query('//*[@autofocus]');
+        self::assertSame($autofocus, $focused->length, "{$where}: autofocus.");
+        if ($focused->length === 1) {
+            $element = $focused->item(0);
+            self::assertInstanceOf(DOMElement::class, $element);
+            self::assertInstanceOf(DOMElement::class, $editor, "{$where}: autofocus only on the editor.");
+            self::assertSame(1, $x->query('ancestor::form[@id="form-editor"]', $element)->length);
+            self::assertContains($element->nodeName, ['button', 'input'], "{$where}: a button or a name box.");
+            if ($focus !== null) {
+                self::assertSame($focus, $element->nodeName === 'button' ? $element->getAttribute('value') : $element->getAttribute('id'), "{$where}: the control the core names.");
+            }
+        }
+
+        // 3.
+        if ($editor instanceof DOMElement) {
+            foreach ($x->query('.//li[contains(concat(" ", @class, " "), " form-row ")]', $editor) as $row) {
+                /** @var DOMElement $row */
+                $rowName = self::text($x->query('div[@class="form-row-head"]/span[@class="form-row-name"]', $row)->item(0) ?? $x->query('div[@class="form-row-head"]/span[@class="form-row-kind"]', $row)->item(0) ?? $row);
+                foreach ($x->query('div[@class="form-row-actions"]/button | div/button', $row) as $button) {
+                    /** @var DOMElement $button */
+                    $visible = self::text($button);
+                    $name = self::accessibleName($x, $button);
+                    self::assertNotSame('', $visible, "{$where}: a row button has visible text.");
+                    // The design's names put the row inside the visible words ("Move up" is named "Move Brand up",
+                    // docs/design/m5/editor.md 3.1): the name starts with the first visible word and holds every
+                    // visible word in order (reported: "Move up" is not a substring of its name, WCAG 2.5.3).
+                    $words = explode(' ', $visible);
+                    self::assertStringStartsWith($words[0] . ' ', $name, "{$where}: {$name} starts with its visible text.");
+                    self::assertMatchesRegularExpression('/\A' . implode('\b.*\b', array_map(static fn (string $w): string => preg_quote($w, '/'), $words)) . '\b/u', $name, "{$where}: {$name} holds its visible text.");
+                    self::assertStringContainsString($rowName, $name, "{$where}: {$name} names its row.");
+                    self::assertGreaterThan(strlen($visible), strlen($name), "{$where}: {$name} says more than its visible text.");
+                }
+            }
+            foreach ($x->query('//section[@aria-labelledby="not-on-form-title"]//li') as $row) {
+                $rowName = self::text($x->query('.//span[@class="form-row-name"]', $row)->item(0) ?? $row);
+                foreach ($x->query('.//button', $row) as $button) {
+                    /** @var DOMElement $button */
+                    self::assertSame('Add ' . $rowName . ' to the form', self::accessibleName($x, $button), $where);
+                    self::assertSame('Add', self::text($button), $where);
+                }
+            }
+        }
+
+        // 4.
+        $forms = '//form[@id="form-editor"] | //form[.//textarea[@id="source"]] | //form[@enctype="multipart/form-data"]';
+        foreach ($x->query($forms) as $form) {
+            foreach ($x->query('.//input[not(@type="hidden")] | .//select | .//textarea', $form) as $control) {
+                /** @var DOMElement $control */
+                $label = $x->query('//label[@for="' . $control->getAttribute('id') . '"]')->item(0);
+                self::assertInstanceOf(DOMElement::class, $label, "{$where}: {$control->getAttribute('name')} has a label.");
+                if (str_starts_with($control->getAttribute('name'), 'legend[')) {
+                    // Reported (WP7): the section name box is labelled "Section name" but named "Name of section {n}"
+                    // (strings/en/forms.php, docs/design/m5/components.md), so its label does not start its name.
+                    self::assertSame('Section name', self::text($label), $where);
+                    self::assertMatchesRegularExpression('/\AName of section \d+\z/', self::labelName($x, $control), $where);
+                    continue;
+                }
+                self::assertStringStartsWith(self::text($label), self::labelName($x, $control), "{$where}: the label starts the accessible name of {$control->getAttribute('name')}.");
+                if ($control->nodeName === 'textarea' && $x->query('//*[@id="source-error"]')->length > 0) {
+                    self::assertContains('source-error', preg_split('/\s+/', $control->getAttribute('aria-describedby')) ?: [], "{$where}: the problem describes the text area.");
+                }
+            }
+        }
+
+        // 5.
+        if ($editor instanceof DOMElement) {
+            $top = $x->query('ol', $editor)->item(0);
+            self::assertInstanceOf(DOMElement::class, $top);
+            self::assertNotSame('', $top->getAttribute('aria-label'), "{$where}: the rows list is labelled.");
+            foreach ($x->query('.//li[contains(concat(" ", @class, " "), " form-row ")]', $top) as $row) {
+                self::assertSame('ol', $row->parentNode?->nodeName, "{$where}: a row is an li of an ol.");
+            }
+            foreach ($x->query('.//ol', $top) as $nested) {
+                /** @var DOMElement $nested */
+                self::assertStringContainsString('form-row-section', $nested->parentNode instanceof DOMElement ? $nested->parentNode->getAttribute('class') : '', "{$where}: a nested list sits in its section's li.");
+            }
+        }
+
+        // 6.
+        self::assertSame(0, $x->query('//form//form')->length, "{$where}: no nested form.");
+        foreach ($x->query('//*[@name="do" or @name="draft" or @name="base" or starts-with(@name, "label[") or starts-with(@name, "legend[") or starts-with(@name, "width[")]') as $control) {
+            /** @var DOMElement $control */
+            if ($x->query('ancestor::form[.//textarea[@id="source"]]', $control)->length > 0) {
+                continue;
+            }
+            self::assertSame(1, $x->query('ancestor::form[@id="form-editor"]', $control)->length, "{$where}: an editor control belongs to the editor form.");
+            self::assertFalse($control->hasAttribute('form'), $where);
+        }
+
+        // 7.
+        foreach ($x->query('//a[contains(concat(" ", @class, " "), " form-link ")]') as $link) {
+            /** @var DOMElement $link */
+            self::assertNotSame('', self::text($link), "{$where}: a form link has text.");
+            self::assertSame('noopener noreferrer', $link->getAttribute('rel'), $where);
+            self::assertFalse($link->hasAttribute('target'), $where);
+        }
+    }
+
     // M4 helpers.
 
     private ?CoreFixture $core4 = null;
@@ -1054,8 +1413,9 @@ final class KeyboardStructureTest extends TestCase
      * separately, the expected start of it.
      *
      * @param list<string> $names
+     * @param int $autofocus how many elements may carry `autofocus` (M5: one, on the editor after a change)
      */
-    private function assertStructure(string $html, array $names, string $where): void
+    private function assertStructure(string $html, array $names, string $where, int $autofocus = 0): void
     {
         $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
 
@@ -1067,8 +1427,10 @@ final class KeyboardStructureTest extends TestCase
             // M4: the collection editor's hidden default Preview button (section 10.1 item 4).
             $allowed = $element->getAttribute('class') === 'error-summary'
                 || ($element->nodeName === 'main' && $element->getAttribute('id') === 'main')
-                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'default-action');
-            self::assertTrue($allowed, "{$where}: only the error summary, main#main, and the editor's default button have a tabindex.");
+                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'default-action')
+                // M5: the form editor's hidden Apply (section 9.1 item 1).
+                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'visually-hidden' && $element->getAttribute('value') === 'apply');
+            self::assertTrue($allowed, "{$where}: only the error summary, main#main, and the editors' default buttons have a tabindex.");
         }
 
         // 2. Names and radio groups.
@@ -1162,7 +1524,8 @@ final class KeyboardStructureTest extends TestCase
         }
 
         // 7.
-        self::assertSame(0, $x->query('//*[@accesskey or @autofocus]')->length, "{$where}: no accesskey or autofocus.");
+        self::assertSame(0, $x->query('//*[@accesskey]')->length, "{$where}: no accesskey.");
+        self::assertSame($autofocus, $x->query('//*[@autofocus]')->length, "{$where}: autofocus only where named.");
     }
 
     /** The name of a link or button: aria-label, else its text without aria-hidden parts. */

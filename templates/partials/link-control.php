@@ -18,7 +18,9 @@
  * {path, title}: the linked record's address and title), `choosePath` (the
  * picker's address, or null when the person cannot edit or the record is
  * new), `item` (the other table's item name, plain), `table` (its name,
- * plain), `required` (bool; the label shows the marker), `isNew` (bool).
+ * plain), `required` (bool; the label shows the marker), `isNew` (bool),
+ * `invalid` (optional bool: the field has an error text, id('err', key),
+ * which the choose link then lists in aria-describedby; P186).
  * Every text is plain and escaped here; paths go through url().
  */
 
@@ -33,9 +35,17 @@ declare(strict_types=1);
 <span class="link-none"><?= $this->t('components.link.none', ['item' => $data['item']]) ?></span>
 <?php endif; ?>
 <?php if (is_string($data['choosePath']) && is_array($data['link'])) : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-plain" href="<?= $this->url($data['choosePath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.link.choose_other', ['item' => $data['item']]) ?></a>
+<?php else : ?>
 <a class="button button-plain" href="<?= $this->url($data['choosePath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.link.choose_other', ['item' => $data['item']]) ?></a>
+<?php endif; ?>
 <?php elseif (is_string($data['choosePath'])) : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-plain" href="<?= $this->url($data['choosePath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.link.choose') ?></a>
+<?php else : ?>
 <a class="button button-plain" href="<?= $this->url($data['choosePath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.link.choose') ?></a>
+<?php endif; ?>
 <?php endif; ?>
 </div>
 <?php endif; ?>

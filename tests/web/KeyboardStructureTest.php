@@ -20,6 +20,7 @@ use TiffinDB\Tests\Support\CoreFixture;
 use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
+use TiffinDB\Tests\Support\M4Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\CoreServices;
@@ -30,6 +31,10 @@ require_once __DIR__ . '/EndToEndTest.php';
 require_once __DIR__ . '/ScreenStructureTest.php';
 
 /**
+ * T-KBD-3 (M4 spec part 2 section 10.1) is in the methods named testM4*:
+ * the M4 screens over the M4 data set in a CoreFixture of their own, with
+ * the seven rules below and the six M4 items of assertM4Rules.
+ *
  * T-KBD-2 (M3 spec part 2 section 9.1) is in the methods after
  * testUndoNoticeOnTheList: the M3 screens as the Admin (a second client
  * signed in through the form), with the same seven rules and the four M3
@@ -138,6 +143,7 @@ final class KeyboardStructureTest extends TestCase
 
     protected function tearDown(): void
     {
+        $this->core4?->remove();
         $this->core->remove();
     }
 
@@ -550,6 +556,392 @@ final class KeyboardStructureTest extends TestCase
         $this->checkAs($added, '/admin/plugins/import/example/enable', [...self::ADMIN_TOP, 'Plugins', 'Turn it on', 'Cancel', ...self::FOOTER]);
     }
 
+    // T-KBD-3 (M4 spec part 2 section 10.1): the M4 screens over the M4
+    // data set (M4Fixture, its own CoreFixture), as the Member, and as the
+    // Admin for the empty-trash pages, with rules 1 to 7 and the six M4
+    // items (assertM4Rules).
+
+    public function testM4RecordFormControls(): void
+    {
+        [$fx, $member] = $this->m4();
+        $m2 = $fx->m2;
+        $this->checkM4($member, $m2->itemPath('Stand mixer'), [
+            ...self::TOP, 'Home Inventory', 'Items', 'Previous item: Sewing machine', 'Next item: Tent, 4-person',
+            'Name', 'Kitchen', 'Choose a different room', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Serial number', 'Under warranty', 'Manual', 'Notes',
+            'Open receipt-stand-mixer.pdf', 'Replace receipt-stand-mixer.pdf', 'Remove receipt-stand-mixer.pdf', 'Add a file',
+            'Open stand-mixer.png', 'Replace stand-mixer.png', 'Remove stand-mixer.png', 'Add an image',
+            'Stand mixer, manufacturer warranty', 'Unlink Stand mixer, manufacturer warranty', 'Link another warranty',
+            'Save', 'Back to list', 'Move to trash',
+            ...self::FOOTER,
+        ]);
+        self::assertSame(['stand-mixer.png'], $member->texts('//li[contains(@class, "file-row")]/img/@alt'));
+
+        // No room, no files, no warranty.
+        $admin = $this->core4->actor('admin');
+        $bookshelf = (string) $m2->itemIds['Bookshelf, oak'];
+        $this->ops4->records()->unlink($admin, $m2->project, $m2->items, $bookshelf, $m2->itemFields['Room'], (string) $m2->roomIds['Study']);
+        $this->checkM4($member, $m2->itemPath('Bookshelf, oak'), [
+            ...self::TOP, 'Home Inventory', 'Items', 'Next item: Cordless drill',
+            'Name', 'Choose a record', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Serial number', 'Under warranty', 'Manual', 'Notes',
+            'Add a file', 'Add an image', 'Link a record',
+            'Save', 'Back to list', 'Move to trash',
+            ...self::FOOTER,
+        ]);
+        self::assertSame(['No room chosen', 'Choose a record'], $member->texts('//div[@class="link-control"]/*'));
+
+        // Other file types: download-only rows, no image.
+        $this->checkM4($member, $m2->itemPath('Sewing machine'), [...self::TOP, 'Home Inventory', 'Items'], false);
+        $names = $this->focusNames($member->page());
+        foreach (['receipt-sewing-machine.pdf', 'receipt-sewing-machine-2.pdf', 'manual.html', 'diagram.svg'] as $file) {
+            $at = array_search('Open ' . $file, $names, true);
+            self::assertIsInt($at, $file);
+            self::assertSame(['Open ' . $file, 'Replace ' . $file, 'Remove ' . $file], array_slice($names, $at, 3));
+        }
+        self::assertSame(0, $member->xpath()->query('//img')->length);
+
+        // A new record: notes in place of the controls.
+        $this->checkM4($member, $m2->tablePath($m2->items) . '/records/new', [
+            ...self::TOP, 'Home Inventory', 'Items',
+            'Name', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Serial number', 'Under warranty', 'Manual', 'Notes',
+            'Save', 'Cancel',
+            ...self::FOOTER,
+        ]);
+    }
+
+    public function testM4RequiredRelationAndAttachmentErrors(): void
+    {
+        [$fx, $member] = $this->m4();
+        $m2 = $fx->m2;
+        $admin = $this->core4->actor('admin');
+        $schema = $this->ops4->schema();
+        $schema->updateField($admin, $m2->project, $m2->items, $m2->itemFields['Room'], 'Room', [], true, '', 0);
+        $schema->updateField($admin, $m2->project, $m2->items, $m2->itemFields['Receipt'], 'Receipt', [], true, '', 0);
+        $id = (string) $m2->itemIds['Bookshelf, oak'];
+        $this->ops4->records()->unlink($admin, $m2->project, $m2->items, $id, $m2->itemFields['Room'], (string) $m2->roomIds['Study']);
+        $path = $m2->itemPath('Bookshelf, oak');
+        $member->get($path);
+        $bad = $member->submit($path);
+        self::assertSame(422, $bad->status, $bad->body);
+        $this->assertStructure($bad->body, ['Skip to main content', ...array_slice(self::TOP, 1), 'Home Inventory', 'Items'], 'Bookshelf 422');
+        $this->assertM4Rules($bad->body, 'Bookshelf 422');
+        $x = $member->xpath();
+        self::assertSame(2, $x->query('//div[@class="error-summary"]//a')->length, 'Room and Receipt, each linked.');
+        foreach (['Room' => '//div[@class="link-control"]/a[@class="button button-plain"]', 'Receipt' => '//div[@class="control-actions"]/a[starts-with(normalize-space(.), "Add a file")]'] as $field => $control) {
+            $key = $m2->itemFields[$field];
+            self::assertSame(1, $x->query('//div[@class="error-summary"]//a[@href="#f-' . $key . '"]')->length, "The summary links to {$field}'s label region.");
+            self::assertSame(1, $x->query('//p[@id="f-' . $key . '"]')->length);
+            self::assertSame('f-' . $key . ' err-' . $key, (string) $x->query($control . '/@aria-describedby')->item(0)?->nodeValue, "{$field}: the control names its label and its error (P186).");
+        }
+    }
+
+    public function testM4Picker(): void
+    {
+        [$fx, $member] = $this->m4(withMoreRooms: true);
+        $m2 = $fx->m2;
+        $mixer = $m2->itemPath('Stand mixer');
+        $room = $mixer . '/links/' . $m2->itemFields['Room'];
+        $head = [...self::TOP, 'Home Inventory', 'Items', 'Stand mixer', 'Kitchen', 'Unlink Kitchen', 'Find in Rooms', 'Find'];
+        $rooms = [];
+        foreach (['Bathroom', 'Bedroom', 'Dining room', 'Garage', 'Hallway', 'Laundry', 'Living room'] as $name) {
+            $rooms[] = $name;
+            $rooms[] = 'Choose ' . $name;
+        }
+        $this->checkM4($member, $room, [...$head, ...$rooms], false);
+        $this->checkM4($member, $room . '?page=2', $head, false);
+        $this->checkM4($member, $room . '?q=gar', [...$head, 'Show all', 'Garage', 'Choose Garage', 'Back to Stand mixer', 'Add a new room and choose it', ...self::FOOTER]);
+        $this->checkM4($member, $room . '?q=' . str_repeat('x', 201), $head, false);
+        self::assertSame(1, $member->xpath()->query('//input[@name="q"][@aria-invalid="true"][@aria-describedby="err-q"]')->length);
+
+        // Many links, with taken candidates (no button).
+        $warranties = $mixer . '/links/' . $m2->itemFields['Warranties'];
+        $taken = [];
+        foreach (M2Fixture::WARRANTY_ITEMS as $item) {
+            if ($item !== 'Stand mixer') {
+                $taken[] = $item . ', manufacturer warranty';
+            }
+        }
+        usort($taken, static fn (string $a, string $b): int => strcasecmp($a, $b));
+        $this->checkM4($member, $warranties, [
+            ...self::TOP, 'Home Inventory', 'Items', 'Stand mixer', 'Stand mixer, manufacturer warranty', 'Unlink Stand mixer, manufacturer warranty',
+            'Find in Warranties', 'Find', ...$taken, 'Back to Stand mixer', 'Add a new warranty and link it', ...self::FOOTER,
+        ]);
+        self::assertSame(count($taken), $member->xpath()->query('//span[@class="picker-taken"]')->length);
+
+        // A trashed link: the note, and no Choose buttons.
+        $laundry = (string) array_search('Laundry', $m2->itemRooms, true);
+        $this->ops4->records()->trash($this->core4->actor('admin'), $m2->project, $m2->rooms, (string) $m2->roomIds['Laundry']);
+        $this->checkM4($member, $m2->itemPath($laundry) . '/links/' . $m2->itemFields['Room'], [...self::TOP, 'Home Inventory', 'Items', $laundry, 'Find in Rooms', 'Find', 'Bathroom', 'Bedroom'], false);
+        self::assertSame(0, $member->xpath()->query('//button[starts-with(@aria-label, "Choose ")]')->length);
+        self::assertSame(1, $member->xpath()->query('//p[contains(@class, "notice-warn")]')->length);
+
+        // A 422: a warranty taken by another item.
+        $member->get($warranties);
+        $other = (string) $m2->warrantyIds['Espresso machine, manufacturer warranty'];
+        $csrf = (string) $member->xpath()->query('//form[contains(@action, "/remove")]/input[@name="_csrf"]/@value')->item(0)?->nodeValue;
+        $refused = $member->post($warranties . '/add', ['_csrf' => $csrf, 'target' => $other, 'back' => 'picker', 'q' => '', 'page' => '1']);
+        self::assertSame(422, $refused->status, $refused->body);
+        $this->assertStructure($refused->body, ['Skip to main content', ...array_slice(self::TOP, 1), 'Home Inventory', 'Items', 'Stand mixer'], 'Picker 422');
+        $this->assertM4Rules($refused->body, 'Picker 422');
+    }
+
+    public function testM4UploadFileAndRemovePages(): void
+    {
+        [$fx, $member] = $this->m4();
+        $m2 = $fx->m2;
+        $mixer = $m2->itemPath('Stand mixer');
+        $receipt = $mixer . '/files/' . $m2->itemFields['Receipt'];
+        $photo = $mixer . '/files/' . $m2->itemFields['Photo'];
+        $crumbs = [...self::TOP, 'Home Inventory', 'Items', 'Stand mixer'];
+        $this->checkM4($member, $receipt . '/new', [...$crumbs, 'File', 'Add the file', 'Cancel', ...self::FOOTER]);
+        $this->assertUploadInput($member->page());
+        $this->checkM4($member, $photo . '/new?replace=' . $fx->attachmentIds['stand-mixer.png'], [...$crumbs, 'File', 'Replace the file', 'Cancel', ...self::FOOTER]);
+        $this->assertUploadInput($member->page());
+
+        // A 422: an empty file.
+        $member->get($receipt . '/new');
+        $path = $this->core4->upload('');
+        $refused = $member->upload($receipt, 'file', $path, 'empty.pdf');
+        self::assertSame(422, $refused->status);
+        $this->assertStructure($refused->body, ['Skip to main content', ...array_slice(self::TOP, 1), 'Home Inventory', 'Items', 'Stand mixer'], 'Upload 422');
+        $this->assertM4Rules($refused->body, 'Upload 422');
+        self::assertSame(1, $member->xpath()->query('//input[@id="f-file"][@aria-invalid="true"][contains(concat(" ", @aria-describedby, " "), " err-file ")]')->length);
+        $member->cleanUp();
+
+        $file = [...$crumbs, 'Download', 'Replace', 'Remove', 'Back to Stand mixer', ...self::FOOTER];
+        $this->checkM4($member, $photo . '/' . $fx->attachmentIds['stand-mixer.png'], $file);
+        self::assertSame(['stand-mixer.png'], $member->texts('//img/@alt'));
+        $this->checkM4($member, $receipt . '/' . $fx->attachmentIds['receipt-stand-mixer.pdf'], $file);
+        $this->checkM4($member, $receipt . '/' . $fx->attachmentIds['receipt-stand-mixer.pdf'] . '/remove', [...$crumbs, 'Remove the file', 'Cancel', ...self::FOOTER]);
+    }
+
+    public function testM4CollectionEditorViewAndDelete(): void
+    {
+        [$fx, $member] = $this->m4();
+        $m2 = $fx->m2;
+        $items = $m2->tablePath($m2->items);
+        $head = [...self::TOP, 'Home Inventory', 'Items', 'Collection name', 'All of these rules', 'Any of these rules'];
+        $this->checkM4($member, $items . '/collections/new', [...$head, 'Field for rule 1', 'Remove rule 1', 'Add a rule', 'Sort by', 'Save collection', 'Preview', 'Cancel'], false);
+        $this->checkM4($member, $fx->collectionPath('Under warranty') . '/edit', [
+            ...$head, 'Field for rule 1', 'Test for rule 1', 'Remove rule 1', 'Field for rule 2', 'Test for rule 2', 'Date for rule 2', 'Remove rule 2',
+            'Add a rule', 'Sort by', 'Save collection', 'Preview', 'Cancel', 'Delete this collection',
+        ], false);
+        $this->checkM4($member, $fx->collectionPath('Retired items') . '/edit', [
+            ...$head, 'Field for rule 1', 'Remove rule 1', 'Field for rule 2', 'Test for rule 2', 'Amount for rule 2', 'Remove rule 2',
+            'Add a rule', 'Sort by', 'Save collection', 'Preview', 'Cancel', 'Delete this collection',
+        ], false);
+        self::assertSame(1, $member->xpath()->query('//fieldset[contains(@class, "rule-broken")]')->length, 'The broken rule is shown.');
+
+        // After Add a rule, after Remove, and a 422.
+        $edit = $fx->collectionPath('Under warranty') . '/edit';
+        $member->get($edit);
+        $added = $member->submit($edit, ['action' => 'add']);
+        self::assertSame(200, $added->status);
+        $this->assertStructure($added->body, [...$head, 'Field for rule 1', 'Test for rule 1', 'Remove rule 1', 'Field for rule 2', 'Test for rule 2', 'Date for rule 2', 'Remove rule 2', 'Field for rule 3', 'Remove rule 3', 'Add a rule'], 'Editor after Add');
+        $this->assertM4Rules($added->body, 'Editor after Add');
+        $removed = $member->submit($edit, ['action' => 'remove-1']);
+        self::assertSame(200, $removed->status);
+        $this->assertStructure($removed->body, [...$head, 'Field for rule 1', 'Test for rule 1', 'Date for rule 1', 'Remove rule 1', 'Field for rule 2', 'Remove rule 2', 'Add a rule'], 'Editor after Remove');
+        $this->assertM4Rules($removed->body, 'Editor after Remove');
+        $bad = $member->submit($edit, ['name' => '', 'rules[1][value]' => 'not a date', 'action' => 'save']);
+        self::assertSame(422, $bad->status, $bad->body);
+        $this->assertStructure($bad->body, ['Skip to main content', ...array_slice(self::TOP, 1), 'Home Inventory', 'Items'], 'Editor 422');
+        $this->assertM4Rules($bad->body, 'Editor 422');
+        self::assertGreaterThanOrEqual(2, $member->xpath()->query('//div[@class="error-summary"]//a')->length, 'The name and the rule, each linked.');
+
+        // The view (with the broken-rule notice) and the delete confirmation.
+        $sidebar = ['Switch project', 'Items 48', 'Rooms 9', 'Warranties 12'];
+        $this->checkM4($member, $fx->collectionPath('Retired items'), [...self::TOP_SEARCH, ...$sidebar], false);
+        self::assertSame(1, $member->xpath()->query('//main//div[contains(@class, "notice-warn")][@role="status"]')->length);
+        $this->checkM4($member, $fx->collectionPath('Under warranty') . '/delete', [...self::TOP, 'Home Inventory', 'Items', 'Collection: Under warranty', 'Delete the collection', 'Cancel', ...self::FOOTER]);
+    }
+
+    public function testM4TrashAndEmptyConfirmation(): void
+    {
+        [$fx, $member, $admin] = $this->m4(withMoreRooms: true);
+        $m2 = $fx->m2;
+        $trash = $m2->projectPath() . '/trash';
+        $this->checkM4($member, $trash, [...self::TOP, 'Home Inventory', 'Restore all in Items', 'Restore Worn rug', 'Restore Old kettle', 'Restore Cracked mirror', 'Restore all in Rooms'], false);
+        $this->checkM4($member, $trash . '?table=' . $m2->rooms . '&page=2', [...self::TOP, 'Home Inventory', 'Show every table', 'Restore all in Rooms'], false);
+        self::assertCount(1, $member->texts('//main//button[starts-with(@aria-label, "Restore ") and not(starts-with(@aria-label, "Restore all"))]'), 'One room on the second page.');
+        $this->checkM4($member, '/projects/' . $this->garden . '/trash', [...self::TOP, 'Garden Log', 'Back to Garden Log', ...self::FOOTER]);
+
+                $this->checkM4($admin, $m2->projectPath() . '/trash/empty', [...self::ADMIN_TOP, 'Home Inventory', 'Trash', 'Empty the trash', 'Cancel', ...self::FOOTER]);
+        self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")][normalize-space(.)="Empty the trash"]')->length);
+    }
+
+    // M4 helpers.
+
+    private ?CoreFixture $core4 = null;
+    private ?Operations $ops4 = null;
+    private string $garden = '';
+
+    /**
+     * The M4 data set in its own CoreFixture (closed in tearDownM4), with
+     * the Member and the Admin signed in through the form. With
+     * $withMoreRooms: 50 more rooms and 51 in the trash (so the Room picker
+     * and the Rooms trash have a second page), and a project Garden Log
+     * with an empty trash.
+     *
+     * @return array{0: M4Fixture, 1: EndToEndClient, 2: EndToEndClient}
+     */
+    private function m4(bool $withMoreRooms = false): array
+    {
+        $this->core4 = new CoreFixture();
+        $this->core4->clock->set('2026-11-03T10:00:00Z');
+        $this->ops4 = $this->core4->operations();
+        $fx = M4Fixture::build($this->core4, $this->ops4);
+        $m2 = $fx->m2;
+        $actor = $this->core4->actor('admin');
+        if ($withMoreRooms) {
+            for ($n = 1; $n <= 51; $n++) {
+                $id = $this->core4->addRecord($m2->project, $m2->rooms, [$m2->roomFields['Name'] => sprintf('Store %02d', $n)]);
+                $this->ops4->records()->trash($actor, $m2->project, $m2->rooms, (string) $id);
+            }
+            for ($n = 52; $n <= 101; $n++) {
+                $this->core4->addRecord($m2->project, $m2->rooms, [$m2->roomFields['Name'] => sprintf('Store %03d', $n)]);
+            }
+            $this->garden = $this->ops4->projects()->create($actor, 'Garden Log', 'Plants')->key;
+            $this->ops4->projects()->setSharing($actor, $this->garden, [$this->core4->person('member')->key]);
+        }
+        $config = Fixtures::config(false) + ['data_dir' => $this->core4->temp->path('data'), 'timezone' => 'UTC'];
+        $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $this->core4->clock, new SeededRandom('tiffindb-keyboard-structure-m4-seed'), $this->core4->hasher));
+        $clients = [];
+        foreach (['member', 'admin'] as $username) {
+            $client = new EndToEndClient($kernel);
+            $client->get('/sign-in');
+            self::assertSame(303, $client->submit('/sign-in', ['username' => $username, 'password' => CoreFixture::PASSWORD])->status);
+            $clients[] = $client;
+        }
+
+        return [$fx, $clients[0], $clients[1]];
+    }
+
+    /** GETs $uri as $client (200), rules 1 to 7 ($exact: the whole focus order, else its start) and the M4 items. */
+    private function checkM4(EndToEndClient $client, string $uri, array $names, bool $exact = true): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        if ($exact) {
+            self::assertSame(self::FOOTER[0], $names[count($names) - 1], 'An exact order ends with the footer.');
+        } else {
+            self::assertNotSame(self::FOOTER[0], $names[count($names) - 1], 'A start of the order.');
+        }
+        $this->assertStructure($response->body, $names, $uri);
+        $this->assertM4Rules($response->body, $uri);
+    }
+
+    /** @return list<string> the accessible names of the focusable elements, in document order (rule 4's list) */
+    private function focusNames(string $html): array
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $names = [];
+        foreach ($x->query('//a[@href] | //button[not(@tabindex="-1")] | //input[not(@type="hidden")] | //select | //textarea') as $element) {
+            /** @var DOMElement $element */
+            $names[] = in_array($element->nodeName, ['input', 'select', 'textarea'], true) ? self::labelName($x, $element) : self::accessibleName($x, $element);
+        }
+
+        return $names;
+    }
+
+    /**
+     * The M4 items of section 10.1: (1) Unlink, Link, Choose, Open,
+     * Replace, and Remove on the record form and the picker have a name
+     * that starts with their visible text and names the record or file;
+     * (2) every `form` attribute names a form on the page, and no form is
+     * nested; (3) each rule row is a fieldset with the legend "Rule n" and
+     * the mock-up's labels; (4) the editor's first submit button is the
+     * hidden Preview (tabindex -1), and the visible Preview, Add a rule,
+     * and Save collection come after it; (5) each picker row holds one
+     * title and at most one button, and the find box has a visible label;
+     * (6) every image has an alt text, the file's name.
+     */
+    private function assertM4Rules(string $html, string $where): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+
+        // 1.
+        $controls = '//*[contains(@class, "link-control") or contains(@class, "link-list") or contains(@class, "file-list") or contains(@class, "picker-list")]';
+        foreach ($x->query($controls . '//a[@href] | ' . $controls . '//button') as $element) {
+            /** @var DOMElement $element */
+            $visible = self::text($element);
+            if (!in_array($visible, ['Unlink', 'Link', 'Choose', 'Open', 'Replace', 'Remove'], true)) {
+                continue;
+            }
+            $name = self::accessibleName($x, $element);
+            self::assertStringStartsWith($visible . ' ', $name, "{$where}: {$visible} names what it acts on.");
+            self::assertGreaterThan(strlen($visible) + 1, strlen($name));
+        }
+
+        // 2.
+        foreach ($x->query('//*[@form]') as $element) {
+            /** @var DOMElement $element */
+            self::assertSame(1, $x->query('//form[@id="' . $element->getAttribute('form') . '"]')->length, "{$where}: form=\"{$element->getAttribute('form')}\" names a form.");
+        }
+        self::assertSame(0, $x->query('//form//form')->length, "{$where}: no nested form.");
+
+        // 3.
+        $n = 0;
+        foreach ($x->query('//fieldset[contains(concat(" ", @class, " "), " rule-row ")]') as $row) {
+            $n++;
+            self::assertSame('Rule ' . $n, trim((string) $x->query('legend', $row)->item(0)?->textContent), "{$where}: rule {$n} legend.");
+            $labels = [];
+            foreach ($x->query('.//select | .//input[not(@type="hidden")]', $row) as $control) {
+                /** @var DOMElement $control */
+                $labels[] = $control->getAttribute('aria-label');
+            }
+            self::assertSame('Field for rule ' . $n, $labels[0] ?? null, "{$where}: rule {$n} field.");
+            if (isset($labels[1])) {
+                self::assertSame('Test for rule ' . $n, $labels[1], "{$where}: rule {$n} test.");
+            }
+            if (isset($labels[2])) {
+                self::assertStringEndsWith(' for rule ' . $n, $labels[2], "{$where}: rule {$n} value.");
+            }
+            self::assertSame(1, $x->query('.//button[@aria-label="Remove rule ' . $n . '"][normalize-space(.)="Remove"]', $row)->length, "{$where}: Remove rule {$n}.");
+        }
+
+        // 4.
+        $editor = $x->query('//form[@id="collection-form"]')->item(0);
+        if ($editor instanceof DOMElement) {
+            $submits = $x->query('.//button[not(@type) or @type="submit"]', $editor);
+            $first = $submits->item(0);
+            self::assertInstanceOf(DOMElement::class, $first);
+            self::assertSame(['default-action', '-1', 'action', 'preview'], [$first->getAttribute('class'), $first->getAttribute('tabindex'), $first->getAttribute('name'), $first->getAttribute('value')], "{$where}: the hidden Preview first.");
+            foreach (['Preview', 'Add a rule', 'Save collection'] as $label) {
+                self::assertSame(1, $x->query('.//button[not(@tabindex)][normalize-space(.)="' . $label . '"]', $editor)->length, "{$where}: {$label} is in the tab order.");
+            }
+        }
+
+        // 5.
+        foreach ($x->query('//ul[@class="picker-list"]/li') as $row) {
+            self::assertSame('picker-row', $row->getAttribute('class'));
+            self::assertSame(1, $x->query('span[@class="picker-title"]', $row)->length, "{$where}: one title per picker row.");
+            self::assertLessThanOrEqual(1, $x->query('.//button', $row)->length, "{$where}: at most one button per picker row.");
+        }
+        $find = $x->query('//form[@class="picker-find"]//input[@name="q"]')->item(0);
+        if ($find instanceof DOMElement) {
+            self::assertSame(1, $x->query('//label[@for="' . $find->getAttribute('id') . '"][not(contains(@class, "visually-hidden"))]')->length, "{$where}: the find box has a visible label.");
+        }
+
+        // 6.
+        foreach ($x->query('//img') as $img) {
+            /** @var DOMElement $img */
+            self::assertNotSame('', trim($img->getAttribute('alt')), "{$where}: an image has an alt text.");
+            $row = $x->query('ancestor::li[contains(@class, "file-row")][1]', $img)->item(0);
+            if ($row instanceof DOMElement) {
+                self::assertStringStartsWith($img->getAttribute('alt') . ' ', self::text($x->query('span[@class="file-name"]', $row)->item(0) ?? $row), "{$where}: the alt text is the file's name.");
+            }
+        }
+    }
+
+    /** The file input of the upload page: a visible label and its help through aria-describedby. */
+    private function assertUploadInput(string $html): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        self::assertSame(1, $x->query('//label[@for="f-file"][not(contains(@class, "visually-hidden"))]')->length);
+        self::assertSame(1, $x->query('//input[@id="f-file"][@type="file"][contains(concat(" ", @aria-describedby, " "), " help-file ")]')->length);
+        self::assertMatchesRegularExpression('/up to \d[\d.,]* ?(bytes|KB|MB|GB)/', (string) $x->query('//p[@id="help-file"]')->item(0)?->textContent);
+    }
+
     // M3 helpers.
 
     /** A client signed in as the Admin through the sign-in form. */
@@ -672,9 +1064,11 @@ final class KeyboardStructureTest extends TestCase
         foreach ($x->query('//*[@tabindex]') as $element) {
             /** @var DOMElement $element */
             self::assertSame('-1', $element->getAttribute('tabindex'), "{$where}: only -1 is allowed.");
+            // M4: the collection editor's hidden default Preview button (section 10.1 item 4).
             $allowed = $element->getAttribute('class') === 'error-summary'
-                || ($element->nodeName === 'main' && $element->getAttribute('id') === 'main');
-            self::assertTrue($allowed, "{$where}: only the error summary and main#main have a tabindex.");
+                || ($element->nodeName === 'main' && $element->getAttribute('id') === 'main')
+                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'default-action');
+            self::assertTrue($allowed, "{$where}: only the error summary, main#main, and the editor's default button have a tabindex.");
         }
 
         // 2. Names and radio groups.
@@ -697,7 +1091,8 @@ final class KeyboardStructureTest extends TestCase
 
         // 4. Order of the focusable elements.
         $actual = [];
-        foreach ($x->query('//a[@href] | //button | //input[not(@type="hidden")] | //select | //textarea') as $element) {
+        // Elements with tabindex -1 are not reached by Tab (M4: the editor's hidden default button).
+        foreach ($x->query('//a[@href] | //button[not(@tabindex="-1")] | //input[not(@type="hidden")] | //select | //textarea') as $element) {
             /** @var DOMElement $element */
             $actual[] = in_array($element->nodeName, ['input', 'select', 'textarea'], true) ? self::labelName($x, $element) : self::accessibleName($x, $element);
         }
@@ -736,7 +1131,8 @@ final class KeyboardStructureTest extends TestCase
             }
             // M3: the import's "Start again" form (`.../cancel`) and a plugin's "Turn off" form (`.../disable`) are a single
             // secondary button by design (import.md 3, 4, 6, 8; plugins.md 3).
-            if ($action === '/sign-out' || str_contains($class, 'trash-form') || str_contains($class, 'notice-form') || preg_match('#/(cancel|disable)\z#', $action) === 1) {
+            // M4: the picker's and the trash screen's per-row forms (Link, Choose, Unlink, Restore, Restore all) are one plain button each (picker.md 2, trash.md 3).
+            if ($action === '/sign-out' || str_contains($class, 'trash-form') || str_contains($class, 'notice-form') || str_contains($class, 'inline-form') || preg_match('#/(cancel|disable)\z#', $action) === 1) {
                 self::assertSame(1, $submits->length, "{$where}: one button in {$action}.");
                 continue;
             }

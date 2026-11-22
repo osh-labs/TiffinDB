@@ -24,7 +24,9 @@
  * the Unlink buttons are shown and the unlink form exists), `linkPath`
  * (the picker's address, or null when the person cannot edit or the
  * record is new), `item` (the other table's item name, plain), `isNew`
- * (bool). Every text is plain and escaped here; paths go through url().
+ * (bool), `invalid` (optional bool: the field has an error text,
+ * id('err', key), which the link to the picker then lists in
+ * aria-describedby; P186). Every text is plain and escaped here; paths go through url().
  */
 
 declare(strict_types=1);
@@ -55,9 +57,17 @@ declare(strict_types=1);
 <?php if (is_string($data['linkPath'])) : ?>
 <div class="control-actions">
 <?php if (count($data['rows']) > 0) : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-strong" href="<?= $this->url($data['linkPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.link.add', ['item' => $data['item']]) ?></a>
+<?php else : ?>
 <a class="button button-strong" href="<?= $this->url($data['linkPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.link.add', ['item' => $data['item']]) ?></a>
+<?php endif; ?>
+<?php else : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-strong" href="<?= $this->url($data['linkPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.link.add_first') ?></a>
 <?php else : ?>
 <a class="button button-strong" href="<?= $this->url($data['linkPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.link.add_first') ?></a>
+<?php endif; ?>
 <?php endif; ?>
 </div>
 <p class="help"><?= $this->t('components.link.unlink_help', ['item' => $data['item']]) ?></p>

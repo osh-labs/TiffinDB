@@ -583,13 +583,10 @@ final class ShellTest extends TestCase
             self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
             HtmlAssertions::assertNoInlineCode($continue, self::sourceUrl());
 
-            // M4 spec part 2 section 8: the fourth script.
+            // P185: the collection editor's script was removed; the name loads nothing.
             $editor = self::render('components', self::componentData($shell, ['script' => 'collection-editor']));
-            $xpath = self::xpath($editor);
-            self::assertSame(1, $xpath->query('//script')->length, 'Exactly one script element.');
-            self::assertSame('/assets/js/collection-editor.js?v=' . self::VERSION, self::element($xpath, '/html/head/script')->getAttribute('src'));
-            self::assertSame('defer', self::element($xpath, '/html/head/script')->getAttribute('defer'));
-            HtmlAssertions::assertNoInlineCode($editor, self::sourceUrl());
+            self::assertStringNotContainsString('<script', $editor);
+            self::assertStringNotContainsString('collection-editor', $editor);
         }
     }
 
@@ -1029,6 +1026,9 @@ final class ShellTest extends TestCase
         yield 'record' => ['record', 'page page-record'];
         yield 'record-narrow' => ['record-narrow', 'page page-record page-record-narrow'];
         yield 'settings' => ['settings', 'page page-settings'];
+        yield 'picker' => ['picker', 'page page-picker'];
+        yield 'collection' => ['collection', 'page page-collection'];
+        yield 'trash' => ['trash', 'page page-trash'];
         yield 'unknown' => ['other', 'page'];
     }
 
@@ -1402,34 +1402,27 @@ final class ShellTest extends TestCase
         self::assertSame([], $missing, 'Classes of docs/design/m4/components.md missing from app.css.');
     }
 
-    /** M4 spec part 2 section 8: collection-editor.js. */
-    public function testTheCollectionEditorScriptFollowsItsRules(): void
+    /** CF-2: in the import report only the count cells (`.num`) are right-aligned. */
+    public function testTheReportTableRightAlignsOnlyCountCells(): void
     {
-        $js = RepoFiles::read('public/assets/js/collection-editor.js');
-
-        self::assertStringStartsWith("// SPDX-License-Identifier: AGPL-3.0-or-later\n// Copyright (C) TiffinDB contributors\n", $js);
-        self::assertMatchesRegularExpression("/^\\(function \\(\\) \\{\n  'use strict';$/m", $js, 'Strict mode inside an IIFE.');
-        self::assertStringEndsWith("}());\n", $js);
-        $code = (string) preg_replace(['#/\*.*?\*/#s', '#^\s*//.*$#m'], '', $js);
-        foreach (
-            [
-                'innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval', 'Function(', 'setTimeout', 'setInterval',
-                'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'import(', 'Storage', 'cookie',
-                'indexedDB', '.style', 'setAttribute', 'className', 'location', 'http', 'src', 'href', 'postMessage',
-                '.submit(', 'classList', 'createElement', 'appendChild', 'textContent', 'disabled',
-            ] as $forbidden
-        ) {
-            self::assertStringNotContainsString($forbidden, $code, "The script must not use {$forbidden}.");
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        preg_match_all('/([^{}]+)\{([^{}]*)\}/', $css, $rules, PREG_SET_ORDER);
+        $right = [];
+        foreach ($rules as [, $selectors, $body]) {
+            if (!str_contains($selectors, '.report-table') || !preg_match('/text-align:\s*right/', $body)) {
+                continue;
+            }
+            foreach (explode(',', $selectors) as $selector) {
+                $right[] = trim($selector);
+            }
         }
-        self::assertStringContainsString("querySelectorAll('form[data-collection-editor=\"1\"]')", $code);
-        self::assertStringContainsString('forms.length !== 1', $code, 'Only when exactly one editor form exists.');
-        self::assertStringContainsString("form.querySelector('button[type=\"submit\"][data-preview=\"1\"]')", $code);
-        self::assertStringContainsString("target.matches('select[data-rule-field]')", $code);
-        self::assertStringContainsString("target.matches('input[name=\"match\"]')", $code);
-        self::assertSame(1, substr_count($code, 'form.requestSubmit(previewButton);'), 'Submits once, with the visible Preview as the submitter.');
-        self::assertSame(1, substr_count($code, 'requestSubmit('));
-        self::assertSame(1, substr_count($code, "addEventListener('change'"));
-        self::assertSame(1, substr_count($code, "addEventListener('DOMContentLoaded'"));
+        self::assertSame(['.report-table .num'], $right);
+    }
+
+    /** P185: the collection editor's script is gone (the editor submits only from its buttons). */
+    public function testTheCollectionEditorScriptIsRemoved(): void
+    {
+        self::assertFileDoesNotExist(RepoFiles::path('public/assets/js/collection-editor.js'));
     }
 
     /** M3 spec part 2 section 7: import-continue.js. */
@@ -1612,6 +1605,7 @@ final class ShellTest extends TestCase
         yield 'slash-backslash script' => [$script('src="/\\example.org/assets/js/a.js?v=1" defer="defer"')];
         yield 'data script' => [$script('src="data:text/javascript,alert(1)" defer="defer"')];
         yield 'other script file' => [$script('src="/assets/js/other.js?v=1" defer="defer"')];
+        yield 'removed editor script' => [$script('src="/assets/js/collection-editor.js?v=1" defer="defer"')];
         yield 'script without version' => [$script('src="/assets/js/show-password.js" defer="defer"')];
         yield 'script with content' => [$page('', '<script src="/assets/js/show-password.js?v=1" defer="defer">alert(1)</script>')];
         yield 'two scripts' => [$page('', '<script src="/assets/js/a.js?v=1" defer="defer"></script><script src="/assets/js/b.js?v=1" defer="defer"></script>')];
@@ -1643,7 +1637,7 @@ final class ShellTest extends TestCase
 
     public function testInlineCodeAssertionAcceptsTheScript(): void
     {
-        foreach (['show-password', 'settings-preview', 'import-continue', 'collection-editor'] as $name) {
+        foreach (['show-password', 'settings-preview', 'import-continue'] as $name) {
             $html = "<!DOCTYPE html>\n<html lang=\"en\"><head><title>x</title><script src=\"/base/assets/js/{$name}.js?v=1.0.0-dev\" defer=\"defer\"></script></head><body></body></html>";
             HtmlAssertions::assertNoInlineCode($html, 'https://example.com/source');
         }

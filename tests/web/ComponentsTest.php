@@ -1523,4 +1523,28 @@ final class ComponentsTest extends TestCase
         $xpath = self::xpath(self::renderM4(['leave' => true]));
         self::assertSame('Save your changes first: the buttons here leave this page.', self::one($xpath, '//p[@class="help leave-note"]')->textContent);
     }
+
+    /** P186: a field with an error text names it from its control, so the 422 summary's target describes the control. */
+    public function testControlsListTheErrorIdWhenTheFieldIsInvalid(): void
+    {
+        $label = 'f-' . self::FIELD;
+        $both = $label . ' err-' . self::FIELD;
+        $cases = [
+            'one link, linked' => [['one' => self::oneLink()], '//div[@class="link-control"]/a[@class="button button-plain"]'],
+            'one link, empty' => [['one' => self::oneLink(['link' => null])], '//div[@class="link-control"]/a[@class="button button-plain"]'],
+            'many links' => [['many' => self::manyLinks()], '//div[@class="control-actions"]/a'],
+            'no links' => [['many' => self::manyLinks(['rows' => []])], '//div[@class="control-actions"]/a'],
+            'files' => [['files' => self::fileRows()], '//div[@class="control-actions"]/a'],
+            'images only' => [['files' => self::fileRows(['imagesOnly' => true, 'files' => []])], '//div[@class="control-actions"]/a'],
+        ];
+        foreach ($cases as $name => [$data, $query]) {
+            $plain = self::xpath(self::renderM4($data));
+            self::assertSame($label, self::one($plain, $query)->getAttribute('aria-describedby'), $name);
+            $key = (string) array_key_first($data);
+            $invalid = self::xpath(self::renderM4([$key => ['invalid' => true] + $data[$key]]));
+            self::assertSame($both, self::one($invalid, $query)->getAttribute('aria-describedby'), $name);
+            $valid = self::xpath(self::renderM4([$key => ['invalid' => false] + $data[$key]]));
+            self::assertSame($label, self::one($valid, $query)->getAttribute('aria-describedby'), $name);
+        }
+    }
 }

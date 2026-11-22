@@ -162,6 +162,18 @@ final class ExportScreenTest extends TestCase
         self::assertSame(0, $this->xpath($view->page('export/form', $data)->body)->query($size)->length);
     }
 
+    /** CF-5: the page through the kernel shows the core's project size, formatted. */
+    public function testThePageShowsTheProjectSizeFromTheCore(): void
+    {
+        $bytes = $this->ops->exports()->screen($this->core->actor('admin'), $this->m2->project)->projectBytes;
+        self::assertGreaterThan(0, $bytes);
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        $format = new Format($strings, new DateTimeZone('UTC'), static fn (): DateTimeImmutable => new DateTimeImmutable('2026-11-12T10:00:00Z'));
+        $html = $this->page(self::ADMIN, $this->path());
+
+        self::assertSame(['About ' . $format->fileSize($bytes) . '.'], $this->texts($this->xpath($html), '//section[@aria-labelledby="x-archive"]/p[@class="help"]'));
+    }
+
     public function testDisabledPluginsAreNotOffered(): void
     {
         $admin = $this->core->actor('admin');

@@ -2111,8 +2111,7 @@ div.table-scroll {
   vertical-align: middle;
 }
 
-.report-table td,
-.report-table thead th + th,
+/* Only count cells are right-aligned (CF-2); the rows column reads as text. */
 .report-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;

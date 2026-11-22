@@ -12,7 +12,11 @@
  *   (`sidebar`, from Sidebar::build()) and `main.page.page-list`; `record`,
  *   `record-narrow`, and `settings` the record and settings widths; `io`
  *   the import, export, archive, and plugins pages (`main.page.page-io`,
- *   M3 spec part 2 section 4); then the footer.
+ *   M3 spec part 2 section 4); `picker`, `collection`, and `trash` the
+ *   M4 relation picker, collection editor and delete confirmation, and
+ *   trash pages (`main.page.page-picker`, `.page-collection`,
+ *   `.page-trash`, docs/design/m4/components.md; P184 to P186); then the
+ *   footer.
  * - Plain shell (`shell` null): lockup header, `main.page.page-plain` (or
  *   `main.page` when `wide` is true), centred footer.
  *
@@ -24,8 +28,8 @@
  *
  * Data (see View for the full contract): `title`, `documentTitle`,
  * `hasError`, `sourceUrl`, `shell`, `wide`, `script` (`show-password`,
- * `settings-preview`, `import-continue`, M3 spec part 2 section 7, or
- * `collection-editor`, M4 spec part 2 section 8),
+ * `settings-preview`, or `import-continue`, M3 spec part 2 section 7;
+ * M4 adds none, P185),
  * `layout`, `sidebar`, `search` (the top bar's project search),
  * `breadcrumb`, `problems`. Output is HTML5 in XML-well-formed syntax (ADR 0008
  * decision 4).
@@ -55,8 +59,6 @@ declare(strict_types=1);
 <script src="<?= $this->asset('js/settings-preview.js') ?>" defer="defer"></script>
 <?php elseif (($data['script'] ?? null) === 'import-continue') : ?>
 <script src="<?= $this->asset('js/import-continue.js') ?>" defer="defer"></script>
-<?php elseif (($data['script'] ?? null) === 'collection-editor') : ?>
-<script src="<?= $this->asset('js/collection-editor.js') ?>" defer="defer"></script>
 <?php endif; ?>
 </head>
 <body>
@@ -76,6 +78,12 @@ declare(strict_types=1);
 <main id="main" class="page page-settings" tabindex="-1">
 <?php elseif (($data['layout'] ?? null) === 'io') : ?>
 <main id="main" class="page page-io" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'picker') : ?>
+<main id="main" class="page page-picker" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'collection') : ?>
+<main id="main" class="page page-collection" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'trash') : ?>
+<main id="main" class="page page-trash" tabindex="-1">
 <?php else : ?>
 <main id="main" class="page" tabindex="-1">
 <?php endif; ?>

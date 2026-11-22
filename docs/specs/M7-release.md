@@ -4,7 +4,7 @@ Status: design spec for milestone M7, part 1 of 2 (M7-D1), awaiting spec review 
 
 Sections 18 and 19 (M7 part 2: release test, screen catalogue, visual pass, exit audit, final audit, the importer documentation) are an **outline only**. They are reconciled with the M6 as-built notes before part 2 starts (M7-D3).
 
-Decisions this spec relies on: ADR 0001, ADR 0002, ADR 0008, ADR 0011, ADR 0012, ADR 0015, ADR 0016, ADR 0017, ADR 0018, and the new ADR 0021 (release packaging, versioning, upgrade path) and ADR 0022 (snapshot restore, project deletion, audit-log screen, Admin recovery). Everything in the M1 to M5 specs, with their as-built notes and provisional decisions, still applies unless a section below changes it. New provisional decisions are listed in section 20 as P213 to P236 (M5 took P189 to P212); the orchestrator records them in the ledger under these numbers.
+Decisions this spec relies on: ADR 0001, ADR 0002, ADR 0008, ADR 0011, ADR 0012, ADR 0015, ADR 0016, ADR 0017, ADR 0018, and the new ADR 0021 (release packaging, versioning, upgrade path) and ADR 0022 (snapshot restore, project deletion, audit-log screen, Admin recovery). Everything in the M1 to M5 specs, with their as-built notes and provisional decisions, still applies unless a section below changes it. New provisional decisions are listed in section 20 as P213 to P241 (M5 took P189 to P212; P237 to P241 are the spec review rulings); the orchestrator records them in the ledger under these numbers.
 
 **Designed against the code as built at M4 close** with the M5 design merged but **M5 not built** (integration branch at `0c3ad18`). Signatures quoted from the tree are marked "(as built)". Where M5 changes a file named here (`routes.php`, `layout.php`, `app.css`, `problems.php`, `AuditAction.php`, `MessageKeysTest.php`, `Operations.php`, `Response.php`), M7-D2 checks the M5 as-built notes and adjusts ownership or line-level detail before any M7 package starts (gate G-close, session plan section 4.2). Session plan: `docs/build/M5-M7-session-plan.md` ("plan N" below is a section of that document). The maintainer has not answered plan section 3; rows 1, 6, and 7 are applied as their defaults.
 
@@ -164,7 +164,7 @@ Each rule gives a fixed message naming the rule and the path (relative). Paths a
 
 ### 3.7 Version and changelog
 
-- WP6 sets `config/app.php` `version` to `1.0.0-rc.1`. Tests that compare a version with the configured one read it from `config/app.php`; tests that write `created_with` constants (`EndToEndTest`, `M4Fixture`, `FormatUpgradeTest`, as built) keep their own constants.
+- `config/app.php` `version` stays `0.1.0-dev` through part 1 (WP6 does not change it; test builds use `--test-build`). It becomes `1.0.0-rc.1` in the hand-over build commit, M7-WP12 (P240), after every part 1 package is merged. Tests that compare a version with the configured one read it from `config/app.php`; tests that write `created_with` constants (`EndToEndTest`, `M4Fixture`, `FormatUpgradeTest`, as built) keep their own constants.
 - `CHANGELOG.md` (new, WP6): "## 1.0.0 (not yet released)" with one bullet list of what v1 holds, by plan section 8 milestone, in plain words; no names, no links other than repository-relative ones. A release candidate adds no section of its own.
 - The final build commit (part 2) sets `1.0.0` and dates the section; the tag is the maintainer's.
 
@@ -279,7 +279,8 @@ It does not change the registry (name, state), grants, plugins, or anything in t
 ```php
 final class ProjectDeleteScreen {
     // ProjectRecord $project;
-    // int $records (live); int $trashed; int $files; int $fileBytes; int $snapshots; int $members (granted Members, active or not)
+    // int $records (live); int $trashed; int $files; int $fileBytes; int $snapshots; int $members (granted Members, active or not);
+    // bool $folderMissing (P239)
 }
 final class ProjectDeleted { /* string $name; int $records; int $trashed; int $files; int $snapshots */ }
 ```
@@ -288,12 +289,14 @@ final class ProjectDeleted { /* string $name; int $records; int $trashed; int $f
 
 | Method (after `Actor $actor, string $projectKey`) | Does |
 |---|---|
-| `deleteScreen()` | `ProjectDeleteScreen`. Counts as the project settings totals (`attachmentTotals`, as built) and `Snapshots::list` |
+| `deleteScreen()` | `ProjectDeleteScreen`. Counts as the project settings totals (`attachmentTotals`, as built) and `Snapshots::list`. When nothing at all is at `DataDirectory::projectFolder($key)` (`Fs::exists` false, lstat-based) the project is not opened: every count is 0 and `ProjectDeleteScreen::$folderMissing` (new, bool) is true (P239) |
 | `delete(string $typedName, int $expected)` | `ProjectDeleted` (steps below) |
 
 Both begin with `Context::project($actor, Permission::ManageProject, $projectKey)` (Admins only) and `Context::requireCurrentActor($actor)` (as built, outside a transaction); `delete` also runs `Context::requireCurrentAdmin($actor)` inside step 3's write. Steps of `delete`:
 
 1. **Name.** `Text::trim($typedName)` compared with the registry name ignoring ASCII case (`strcasecmp` on both, after the trim; names are unique ignoring ASCII case, as built). Mismatch: `ValidationFailed([Problem('confirm-name', 'problem.project.delete_name')])`.
+Missing folder (P239): when `Fs::exists(DataDirectory::projectFolder($key))` is false at step 2, the deletion skips the counts (they are 0), the lock (step 4), the move (step 5), and the removal and release (steps 7 and 8): steps 1, 3, 6, and 9 run, so the registry row, its grants, and the audit entry (`records`, `trashed`, `files`, `snapshots` all 0) are handled as for any project. The check is made again inside step 3's write; a folder that appeared meanwhile makes the request take the normal path from step 4. Anything at the path that is not a directory (a symbolic link, dangling or not, or a file) is not "missing" and is refused at step 5 as before.
+
 2. **Counts.** `records + trashed` counted again; when greater than `$expected`: `ConfirmationRequired` (as built, the P82 pattern), nothing changed.
 3. **Mark.** One system `Database::write()`: `requireCurrentAdmin`; re-read the row by key; unless its state is `active`, `NotFound`; `ProjectRegistry::setState($id, ProjectRecord::STATE_DELETING)`. From now on `Context::project` gives `NotFound` for it (as built for any state but `active`), and no list shows it.
 4. **Lock.** `ProjectOpener::lockExclusive($projectKey)`. On `Busy` or `LocksUnavailable`: set the state back to `active` (system write), then rethrow `Busy`, or throw `ValidationFailed([Problem(null, 'problem.lock.unavailable')])`.
@@ -305,7 +308,7 @@ Both begin with `Context::project($actor, Permission::ManageProject, $projectKey
 
 Staging sweep for `deleted` (`StagingArea`, WP1): an entry whose `project.lock` exists is removed only when an exclusive `flock` on it can be had at once (the file is opened without creating it; an entry whose lock is held is skipped, because a deletion is still removing it); an entry with no `project.lock` (the removal has already taken it) is removed only when the entry's own modification time is over an hour old, since a running removal keeps changing it. The kinds' `MAX_AGE` map gains `deleted` 3600 (used for that second case) and `restores` 3600.
 
-Recovery from a crash: `ProjectOperations::clearAbandoned` (as built for `creating` rows older than an hour) also handles every `deleting` row whatever its age: when `projects/<key>` still exists and is a directory, it is moved as in step 5 (skipped, and retried next time, when the exclusive lock cannot be had at once); then the row is removed and the staging folder removed as in step 7. No audit row is written by the sweep (the original request either wrote it or died before step 6).
+Recovery from a crash: `ProjectOperations::clearAbandoned` (as built for `creating` rows older than an hour, and run at step 0 of `create`) also handles every `deleting` row whatever its age, and is also run by the staging sweep (P238): `Context::sweepStaging` (as built: called by imports, exports, and file uploads) calls it first, outside any write, through `ProjectOperations::clearAbandoned` made `@internal` public; a failure is logged without a key or path and never stops the caller. A `deleting` row is therefore finished on the next import, export, or upload, not only at the next project creation: when `projects/<key>` still exists and is a directory, it is moved as in step 5 (skipped, and retried next time, when the exclusive lock cannot be had at once); then the row is removed and the staging folder removed as in step 7. No audit row is written by the sweep (the original request either wrote it or died before step 6).
 
 ### 6.3 What deletion does not do
 
@@ -388,6 +391,8 @@ final class RecoveryCode
 7. Otherwise result `failed`.
 
 Note on step 6: a code whose file could not be removed stays usable until it expires. This is recorded as an accepted residual risk (P227): anyone who could use it can read the file, and so already has file access to the data folder.
+
+Note on the global bucket (P237): `s:recovery` and `s:recoverystart` count every visitor together, so a visitor without file access can use up the five attempts, which deletes the code file, and keep the bucket blocked, holding up recovery for as long as they keep at it. This is accepted: a limit per address would need TiffinDB to trust proxy headers to tell visitors apart, and the visitor gains nothing but the delay. `docs/host/accounts-and-recovery.md` says so plainly and names the ways that still work (a second Admin; `tools/admin/reset-password.php` with a shell; turning `admin_recovery` off).
 
 ### 9.4 What recovery never does
 
@@ -512,7 +517,7 @@ Designs: `docs/specs/M7-screens.md` sections 3 and 8 (WP3) and section 15 item C
 | `https-and-proxies.md` | HTTPS and `secure_cookies`; reverse proxies: the `Origin` check compares the browser's origin with the request's own scheme and host, so a proxy must pass the original `Host` and tell PHP about HTTPS, or sign-in and every form are refused (ledger, M2-WP0 review); `probe_port` behind a proxy |
 | `upgrade.md` | Section 12.1 |
 | `backup-and-restore.md` | Project archives (and their 64 MiB upload cap, P136); snapshots: what they hold (the database, not files), restoring in TiffinDB, restoring by hand (format sections 10 and 13.4); backing up a large project by copying its folder while nobody uses TiffinDB (format section 9); the system database |
-| `accounts-and-recovery.md` | Keep two Admins; resetting a Member's password (People); `tools/admin/reset-password.php` with a shell; Admin recovery without a shell, step by step, including where the code file appears and that it is deleted after use; turning recovery off |
+| `accounts-and-recovery.md` | Keep two Admins; resetting a Member's password (People); `tools/admin/reset-password.php` with a shell; Admin recovery without a shell, step by step, including where the code file appears and that it is deleted after use; that the attempt limit is shared by every visitor, so someone else can delay recovery (P237), and what to do then; turning recovery off |
 | `plugins.md` | What plugins are; that they run with the full privileges of PHP and of the web server account, with no sandbox, and can read every project and the system database; only add plugins you trust; how to turn one on and off (plan 6.2, stated plainly) |
 | `limits.md` | Upload and import limits (P116, P139, P142, P147), archive limits, paging; what the host's PHP limits change; the known slow cases recorded in the ledger (XLSX late chunks, large archive rebuilds) as "may take longer on a shared host" |
 | `host-check.md` | When to run the host check and how to read its lines, linking `tools/host-check/README.md` for the procedure |
@@ -612,6 +617,8 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-ADM-18 | A `deleting` row left by an interrupted deletion (seam after step 3, and after step 5): the next `clearAbandoned` finishes it; a `staging/deleted/` entry whose `project.lock` another process holds is skipped by the staging sweep, and removed once released |
 | T-ADM-19 | After step 3 and before step 6, `Context::project` for that key is `NotFound` for the Admin and the project is in no list |
 | T-ADM-20 | Audit search: each filter alone and in combination, `deleted`, paging and clamping, ignored bad values, names of deactivated people and deleted projects |
+| T-ADM-22 | P239: deletion of a project whose folder is absent: 303 path in core succeeds, registry row and grants gone, `project.deleted` with zero counts, no lock file or staging entry made; `deleteScreen` shows `folderMissing` without opening the project; a dangling symbolic link at the folder path is refused and the state goes back to `active` |
+| T-ADM-23 | P238: a `deleting` row left by an interrupted deletion is finished by `Context::sweepStaging` (an export start), not only by `create`; a sweep failure is logged and the export goes on |
 | T-ADM-21 | P183: a failing step run three times leaves one `format-upgrade` snapshot; an older manual and 19 automatic snapshots all survive |
 | T-ADM-30 | A granted Member is refused (`AccessDenied`) on every new `SnapshotOperations`, `ProjectOperations`, and `AuditOperations` method before anything is read (spy on the opener) |
 | T-ADM-31 | An ungranted person and an unknown key: `NotFound`, the same for both |
@@ -680,6 +687,7 @@ Changes from plan 8.3, with reasons: WP2 also holds the About facts (`AboutOpera
 | 1a | WP0, WP1, WP6 | M7-D2 merged and M5 CLOSED (G-close) |
 | 1b | WP2, WP3 (and WP9 in any free slot) | WP2: WP1 and WP6 merged. WP3: WP6 merged |
 | 2 | WP4, WP5, then WP7, WP8, WP9 as slots free | WP4: WP1, WP3 merged. WP5: WP1, WP2, WP3 merged. WP7: WP0, WP1 merged. WP8: WP0, WP1, WP2, WP6 merged. WP9: M5 CLOSED |
+| hand-over | WP12 | WP0 to WP9 merged |
 | 3 (part 2) | WP10, WP11 | Part 1 merged and G7-release open; WP11 also needs M6 CLOSED |
 
 ### M7-WP0: Carried-forward hardening
@@ -701,10 +709,10 @@ Changes from plan 8.3, with reasons: WP2 also holds the About facts (`AboutOpera
 | Tier | implementation |
 | Depends on | none |
 | Security-critical | Yes (restore, deletion, locks, authorization) |
-| Owned files | New `src/Core/Storage/ProjectLock.php`, `LocksUnavailable.php`; `src/Core/Storage/Snapshots.php` (`find`), `SnapshotReason.php`, `Fs.php` (`copyIn`, `replace`); `src/Core/Schema/FormatMigrations.php` (section 8 only); `src/Core/App/ProjectOpener.php`, `SnapshotOperations.php`, `ProjectOperations.php`, `AuditOperations.php`; new `src/Core/App/SnapshotScreen.php`, `RestoreScreen.php`, `RestoreResult.php`, `ProjectDeleteScreen.php`, `ProjectDeleted.php`, `AuditPage.php`, `AuditRow.php`, `AuditChoices.php`; `src/Core/Io/StagingArea.php` (kinds `restores`, `deleted`; `reserve`); `src/Core/System/ProjectRegistry.php`, `ProjectRecord.php`, `AuditLog.php`, `AuditAction.php`; new `src/Core/System/AuditQuery.php`; `strings/en/problems.php` (WP1 rows); `docs/formats/tiffin.md` (sections 1 and 10 only); tests: new `tests/core/storage/ProjectLockTest.php`, `tests/Support/LockHolder.php`, `tests/core/app/SnapshotRestoreTest.php`, `ProjectDeletionTest.php`, `AuditPageTest.php`, `M7PermissionsTest.php`; `tests/core/storage/SnapshotsTest.php`, `FsTest.php`; `tests/core/schema/FormatUpgradeTest.php` (T-ADM-21 case), `SqlStringsTest.php` (audit filters); `tests/core/system/AuditLogTest.php`, `ProjectRegistryTest.php`; `tests/core/io/StagingAreaTest.php`; `tests/core/app/MessageKeysTest.php`, `AuditTrailTest.php`, `TrashAndSnapshotOperationsTest.php`; `tests/repo/CoreLayerRulesTest.php` |
+| Owned files | New `src/Core/Storage/ProjectLock.php`, `LocksUnavailable.php`; `src/Core/Storage/Snapshots.php` (`find`), `SnapshotReason.php`, `Fs.php` (`copyIn`, `replace`); `src/Core/Schema/FormatMigrations.php` (section 8 only); `src/Core/App/ProjectOpener.php`, `SnapshotOperations.php`, `ProjectOperations.php`, `AuditOperations.php`; `src/Core/App/Context.php` (`sweepStaging` only, P238); new `src/Core/App/SnapshotScreen.php`, `RestoreScreen.php`, `RestoreResult.php`, `ProjectDeleteScreen.php`, `ProjectDeleted.php`, `AuditPage.php`, `AuditRow.php`, `AuditChoices.php`; `src/Core/Io/StagingArea.php` (kinds `restores`, `deleted`; `reserve`); `src/Core/System/ProjectRegistry.php`, `ProjectRecord.php`, `AuditLog.php`, `AuditAction.php`; new `src/Core/System/AuditQuery.php`; `strings/en/problems.php` (WP1 rows); `docs/formats/tiffin.md` (sections 1 and 10 only); tests: new `tests/core/storage/ProjectLockTest.php`, `tests/Support/LockHolder.php`, `tests/core/app/SnapshotRestoreTest.php`, `ProjectDeletionTest.php`, `AuditPageTest.php`, `M7PermissionsTest.php`; `tests/core/storage/SnapshotsTest.php`, `FsTest.php`; `tests/core/schema/FormatUpgradeTest.php` (T-ADM-21 case), `SqlStringsTest.php` (audit filters); `tests/core/system/AuditLogTest.php`, `ProjectRegistryTest.php`; `tests/core/io/StagingAreaTest.php`; `tests/core/app/MessageKeysTest.php`, `AuditTrailTest.php`, `TrashAndSnapshotOperationsTest.php`; `tests/repo/CoreLayerRulesTest.php` |
 | Must not touch | `src/Web`, `templates`, WP0 files |
 | Scope | Sections 4 to 8, 11 (WP1 parts) |
-| Acceptance | T-ADM-1 to T-ADM-21 and T-ADM-30 to T-ADM-34 pass; a Member is refused; restore under injected failure leaves the current file intact; deletion removes exactly the project folder and never follows a link; a second failed upgrade does not push out an older snapshot; design-tier security review |
+| Acceptance | T-ADM-1 to T-ADM-23 and T-ADM-30 to T-ADM-34 pass; a Member is refused; restore under injected failure leaves the current file intact; deletion removes exactly the project folder and never follows a link; a second failed upgrade does not push out an older snapshot; design-tier security review |
 
 ### M7-WP2: Core Admin recovery and About facts
 
@@ -761,10 +769,10 @@ Changes from plan 8.3, with reasons: WP2 also holds the About facts (`AboutOpera
 | Tier | implementation |
 | Depends on | none |
 | Security-critical | Yes (what ships) |
-| Owned files | New `tools/release/build.php`, `ReleaseRules.php`, `ArchiveBuilder.php`, `README.md`; new `tests/tools/ReleaseBuildTest.php`, `tests/repo/ReleaseContentsTest.php`; `tests/repo/SpdxHeaderTest.php` (calls `ReleaseRules::spdxProblem`, no rule change; two new `EXEMPTIONS` entries, `config/notices.json` and `public/assets/app.webmanifest`, JSON having no comments); `config/app.php` (version); new `config/notices.json`; `.github/workflows/ci.yml`; `docs/dependencies.md` (a sentence on what ships from `vendor/`); new `THIRD-PARTY-NOTICES.md`, `CHANGELOG.md`; `.gitignore` (`/build/`); `tests/repo/GitignoreTest.php` (if it pins the entry list) |
+| Owned files | New `tools/release/build.php`, `ReleaseRules.php`, `ArchiveBuilder.php`, `README.md`; new `tests/tools/ReleaseBuildTest.php`, `tests/repo/ReleaseContentsTest.php`; `tests/repo/SpdxHeaderTest.php` (calls `ReleaseRules::spdxProblem`, no rule change; two new `EXEMPTIONS` entries, `config/notices.json` and `public/assets/app.webmanifest`, JSON having no comments); new `config/notices.json`; `.github/workflows/ci.yml`; `docs/dependencies.md` (a sentence on what ships from `vendor/`); new `THIRD-PARTY-NOTICES.md`, `CHANGELOG.md`; `.gitignore` (`/build/`); `tests/repo/GitignoreTest.php` (if it pins the entry list) |
 | Must not touch | `src/`, `public/`, `templates/` |
 | Scope | Section 3 |
-| Acceptance | T-REL-1 to T-REL-14 pass; two builds are byte-identical; each rule of 3.5 has a failing case; the release-candidate archive is built from the merged tree by the orchestrator at the hand-over (the WP6 author records the command and a test-build hash in its report); design-tier security review |
+| Acceptance | T-REL-1 to T-REL-14 pass; two builds are byte-identical; each rule of 3.5 has a failing case; the release-candidate archive is built from the merged tree by the orchestrator at the hand-over, after M7-WP12 (the WP6 author records the command and a test-build hash in its report); design-tier security review |
 
 ### M7-WP7: Upgrade-path tests
 
@@ -802,6 +810,18 @@ Changes from plan 8.3, with reasons: WP2 also holds the About facts (`AboutOpera
 | Scope | Sections 14.2, 14.3 |
 | Acceptance | `UserDocsTest` passes: every quoted label matches `strings/en/`; the reserved place present and naming nothing; implementation-tier review |
 
+### M7-WP12: Release-candidate version commit (P240)
+
+| | |
+|---|---|
+| Tier | mechanical |
+| Depends on | WP0 to WP9 merged (part 1 complete) |
+| Security-critical | No |
+| Owned files | `config/app.php` (`version` only) |
+| Must not touch | Everything else |
+| Scope | Section 3.7 |
+| Acceptance | `version` is `1.0.0-rc.1`; `composer test` and `composer lint` pass (tests read the version from `config/app.php`); then the orchestrator builds the archive without `--test-build` and records its SHA-256; reviewed by an implementation-tier agent |
+
 ### M7-WP10 and M7-WP11 (part 2)
 
 Outline in section 18. Their owned files and acceptance are fixed by M7-D3.
@@ -812,7 +832,7 @@ Outline in section 18. Their owned files and acceptance are fixed by M7-D3.
 |---|---|---|---|---|---|
 | M7-WP0 | Carried-forward hardening: Origin, probe port, file-name extension, throttle, newer-system page, tools | implementation | none | Yes | 1a |
 | M7-WP1 | Core administration: lock, restore, deletion, audit listing, P183 | implementation | none | Yes | 1a |
-| M7-WP6 | Release build tool, rules, notices, version, CI step | implementation | none | Yes | 1a |
+| M7-WP6 | Release build tool, rules, notices, CI step | implementation | none | Yes | 1a |
 | M7-WP2 | Core Admin recovery and About facts | implementation | WP1, WP6 | Yes | 1b |
 | M7-WP3 | Web components: routes, shell links, icons, static headers, stylesheet | implementation | WP6 (file order) | Yes | 1b |
 | M7-WP4 | Snapshot and deletion screens | implementation | WP1, WP3 | Yes | 2 |
@@ -820,12 +840,13 @@ Outline in section 18. Their owned files and acceptance are fixed by M7-D3.
 | M7-WP7 | Upgrade-path tests | implementation | WP0, WP1 | No | 2 |
 | M7-WP8 | Host documentation, README | implementation | WP0, WP1, WP2, WP6 | No (statements reviewed) | 2 |
 | M7-WP9 | User documentation | implementation | M5 CLOSED (and WP4, WP5 for three sections) | No | 1b or 2 |
+| M7-WP12 | Release-candidate version commit | mechanical | WP0 to WP9 | No | hand-over |
 | M7-WP10 | Release test, visual pass, keyboard run (part 2) | implementation | part 1; G7-release | No | 3 |
 | M7-WP11 | Importer documentation; consistency pass (part 2) | implementation | M6 CLOSED | No | 3 |
 
 Design-tier security reviews (orch 2 rule 4; plan 8.5): WP0 (request pipeline, throttle), WP1 (lock, restore, deletion), WP2 (account recovery), WP3 (headers, templates), WP4 with WP5 together, WP6 (what ships), the security statements in WP8. Implementation-tier review: WP7, WP9, WP10, WP11.
 
-Ownership check. Wave 1a: WP0 holds the request pipeline files, `Attachments.php`, `Authenticator.php`, `Unavailable.php`, `SystemSchema.php`, `errors.php`, the two tools and their tests; WP1 holds storage, `FormatMigrations.php`, the opener and the three operation classes, the registry and audit classes, `StagingArea.php`, `problems.php`, `MessageKeysTest.php`, `AuditTrailTest.php`, `CoreLayerRulesTest.php`, `tiffin.md`; WP6 holds `tools/release/`, `config/`, `ci.yml`, `dependencies.md`, the two new root files, `.gitignore`, `SpdxHeaderTest.php`. No file is in two of them. Wave 1b: WP2 holds its new files and `Operations.php`, and takes `AuditAction.php`, `problems.php`, `MessageKeysTest.php`, `AuditTrailTest.php` after WP1 is merged; WP3 holds web shell files, `routes.php`, `SecurityHeaders.php`, `app.css`, `.htaccess`, icons, `shell.php`, and its tests; WP2 and WP3 share nothing. Wave 2: WP4 and WP5 each hold their controllers, page templates, strings files, and tests (WP4 `ProjectController.php`, `projects.php`; WP5 `SignInController.php`, `sign-in.php`, `account.php`, `SignInScreenTest.php`); WP7 tests only; WP8 `docs/host/`, `README.md`; WP9 `docs/user/`. No file is shared within wave 2.
+Ownership check. Wave 1a: WP0 holds the request pipeline files, `Attachments.php`, `Authenticator.php`, `Unavailable.php`, `SystemSchema.php`, `errors.php`, the two tools and their tests; WP1 holds storage, `FormatMigrations.php`, the opener and the three operation classes, the registry and audit classes, `StagingArea.php`, `problems.php`, `MessageKeysTest.php`, `AuditTrailTest.php`, `CoreLayerRulesTest.php`, `tiffin.md`; WP6 holds `tools/release/`, `config/notices.json`, `ci.yml`, `dependencies.md`, the two new root files, `.gitignore`, `SpdxHeaderTest.php`. No file is in two of them. Wave 1b: WP2 holds its new files and `Operations.php`, and takes `AuditAction.php`, `problems.php`, `MessageKeysTest.php`, `AuditTrailTest.php` after WP1 is merged; WP3 holds web shell files, `routes.php`, `SecurityHeaders.php`, `app.css`, `.htaccess`, icons, `shell.php`, and its tests; WP2 and WP3 share nothing. Wave 2: WP4 and WP5 each hold their controllers, page templates, strings files, and tests (WP4 `ProjectController.php`, `projects.php`; WP5 `SignInController.php`, `sign-in.php`, `account.php`, `SignInScreenTest.php`); WP7 tests only; WP8 `docs/host/`, `README.md`; WP9 `docs/user/`. No file is shared within wave 2.
 
 ## 18. M7 part 2 (outline only; reconciled by M7-D3 with the M6 as-built notes)
 
@@ -885,7 +906,7 @@ Each is the option cheapest to reverse (orchestration guide section 5) and is re
 | P213 | Archive contents (plan 8.2 row 1) | As the plan, plus `composer.json`, `config/notices.json`, `CHANGELOG.md`, generated `MANIFEST.txt`; minus `vendor/composer/installed.json` and packages' test folders; files from `git ls-files` only | ADR 0021 d1, d2 |
 | P214 | Build tool (row 2) | `tools/release/build.php`; prepared `vendor/`; sorted entries, time 1980-01-01, modes 0644/0755, deflate 9; `.sha256`; byte-identical on the same machine | ADR 0021 d3 |
 | P215 | Release rules (row 3) | R1 to R8 of section 3.5 | ADR 0021 d4 |
-| P216 | Version (row 4) | `1.0.0-rc.1` set by WP6; `1.0.0` in the final build commit; `-dev` only for test builds; `CHANGELOG.md` from 1.0.0 | ADR 0021 d5 |
+| P216 | Version (row 4) | `1.0.0-rc.1` set in the hand-over commit (P240); `1.0.0` in the final build commit; `-dev` only for test builds; `CHANGELOG.md` from 1.0.0 | ADR 0021 d5 |
 | P217 | Upgrade procedure (row 5) | Delete the release-owned folders, upload, open; data and `config/local.php` kept | ADR 0021 d6 |
 | P218 | Newer system database page | New reason `system-newer` with its own wording | ADR 0021 d6; section 12.2 |
 | P219 | Repeated failed upgrades (P183) | No new snapshot when the newest is a `format-upgrade` snapshot of the same starting version | ADR 0021 d6; section 8 |
@@ -906,6 +927,11 @@ Each is the option cheapest to reverse (orchestration guide section 5) and is re
 | P234 | Bidirectional characters in shown values and import headings | Accepted (stripped from file names and names; values escaped, not isolated) | section 15.3 |
 | P235 | Documentation (row 9) | Chapters of section 14, plus `for-admins.md`; bold only for UI labels, checked against strings; no screenshots | section 14 |
 | P236 | Work-package changes from the session plan | Section 17 list (process; ledger only) | section 17 |
+| P237 | Global recovery throttle buckets (review ruling a) | Accepted: a visitor can delay recovery; no limit per address (it would need trusted proxy headers); stated in `docs/host/accounts-and-recovery.md` | section 9.3; ADR 0022 d5 |
+| P238 | Interrupted deletions (review ruling b) | `clearAbandoned` also runs from `Context::sweepStaging`, as well as at `create` step 0 | section 6.2; ADR 0022 d3 |
+| P239 | Deleting a project whose folder is missing (review ruling c) | Succeeds: no lock, no move, no removal; registry row, grants, and audit as usual | section 6.2; ADR 0022 d3 |
+| P240 | When the version becomes `1.0.0-rc.1` (review ruling d) | In the hand-over build commit, M7-WP12, not in WP6 | section 3.7; ADR 0021 d5; ADR 0022 |
+| P241 | Restore sweeps files the pre-restore snapshot names (review ruling e) | Accepted as designed; stays on the maintainer list (section 21 item 4) | ADR 0022 d2 |
 
 ## 21. Assumptions and unknowns
 

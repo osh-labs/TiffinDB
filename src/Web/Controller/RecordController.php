@@ -492,6 +492,7 @@ final class RecordController
                     'table' => $facts['table'],
                     'required' => $def->required,
                     'isNew' => $isNew,
+                    'invalid' => $errors !== [],
                 ]
                 : [
                     'onlyOne' => false,
@@ -501,6 +502,7 @@ final class RecordController
                     'linkPath' => $picker,
                     'item' => $other['item'],
                     'isNew' => $isNew,
+                    'invalid' => $errors !== [],
                 ];
         }
 
@@ -531,6 +533,7 @@ final class RecordController
                 'addPath' => $controls ? $base . '/new' : null,
                 'imagesOnly' => ($def->options['images_only'] ?? false) === true,
                 'isNew' => $isNew,
+                'invalid' => $errors !== [],
             ];
         }
 

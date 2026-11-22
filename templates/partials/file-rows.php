@@ -24,7 +24,9 @@
  * replacePath (the upload page, or null) with optional replaceQuery (its
  * query, `['replace' => '<attachment id>']`), removePath (or null), image
  * (null or {src, alt})}), `addPath` (the upload page, or null when the person cannot edit
- * or the record is new), `imagesOnly` (bool), `isNew` (bool). Every text
+ * or the record is new), `imagesOnly` (bool), `isNew` (bool), `invalid`
+ * (optional bool: the field has an error text, id('err', key), which the
+ * add link then lists in aria-describedby; P186). Every text
  * is plain and escaped here; paths go through url().
  */
 
@@ -60,9 +62,17 @@ declare(strict_types=1);
 <?php if (is_string($data['addPath'])) : ?>
 <div class="control-actions">
 <?php if ($data['imagesOnly'] === true) : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-strong" href="<?= $this->url($data['addPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.file.add_image') ?></a>
+<?php else : ?>
 <a class="button button-strong" href="<?= $this->url($data['addPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.file.add_image') ?></a>
+<?php endif; ?>
+<?php else : ?>
+<?php if (($data['invalid'] ?? false) === true) : ?>
+<a class="button button-strong" href="<?= $this->url($data['addPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?> <?= $this->id('err', $data['key']) ?>"><?= $this->t('components.file.add') ?></a>
 <?php else : ?>
 <a class="button button-strong" href="<?= $this->url($data['addPath']) ?>" aria-describedby="<?= $this->id('f', $data['key']) ?>"><?= $this->t('components.file.add') ?></a>
+<?php endif; ?>
 <?php endif; ?>
 </div>
 <?= $this->partial('leave-note') ?>

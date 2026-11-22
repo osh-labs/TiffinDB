@@ -45,6 +45,7 @@ final class Operations
     private ?PluginOperations $plugins = null;
     private ?AttachmentOperations $attachments = null;
     private ?CollectionOperations $collections = null;
+    private ?FormOperations $forms = null;
 
     /**
      * @param (\Closure(string): void)|null $seam Test seam (T-APP-30), not for
@@ -137,6 +138,11 @@ final class Operations
     public function collections(): CollectionOperations
     {
         return $this->collections ??= new CollectionOperations($this->context);
+    }
+
+    public function forms(): FormOperations
+    {
+        return $this->forms ??= new FormOperations($this->context);
     }
 
     /**

@@ -414,6 +414,9 @@ final class CoreLayerRulesTest extends TestCase
         yield 'app uses everything allowed' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Error\\A;\nuse TiffinDB\\Core\\Storage\\B;\nuse TiffinDB\\Core\\System\\C;\nuse TiffinDB\\Core\\Auth\\D;\nuse TiffinDB\\Core\\Schema\\E;\nuse TiffinDB\\Core\\Query\\F;\n", []];
         yield 'app uses install' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Install\\Installer;\n", ['uses TiffinDB\\Core\\Install, which App may not use']];
         yield 'app uses forms' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Forms\\FormStore;\n", []];
+        // M5 spec section 2.1 (T-APP-174): the form operations use the parser, serializer, editor, and report.
+        yield 'app uses the form editor' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Forms\\FormParser;\nuse TiffinDB\\Core\\Forms\\FormEditor;\nuse TiffinDB\\Core\\Forms\\FormReport;\n", []];
+        yield 'forms uses system' => ['src/Core/Forms/A.php', $head('Forms') . "use TiffinDB\\Core\\System\\AuditAction;\n", ['uses TiffinDB\\Core\\System, which Forms may not use']];
         yield 'forms uses schema, storage, error' => ['src/Core/Forms/A.php', $head('Forms') . "use TiffinDB\\Core\\Schema\\Schema;\nuse TiffinDB\\Core\\Storage\\Database;\nuse TiffinDB\\Core\\Error\\Text;\n", []];
         yield 'forms uses query' => ['src/Core/Forms/A.php', $head('Forms') . "use TiffinDB\\Core\\Query\\Records;\n", ['uses TiffinDB\\Core\\Query, which Forms may not use']];
         yield 'forms uses app' => ['src/Core/Forms/A.php', $head('Forms') . "\$x = \\TiffinDB\\Core\\App\\Context::class;\n", ['uses TiffinDB\\Core\\App, which Forms may not use']];

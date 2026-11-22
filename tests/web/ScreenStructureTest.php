@@ -326,6 +326,9 @@ final class ScreenStructureTest extends TestCase
         // M5 editor screens (T-SCR-5, M5-WP5), on Home Inventory.
         $this->m5EditorScreens($admin, $items);
 
+        // M5 source screens (T-SCR-5, M5-WP6), on Home Inventory.
+        $this->m5SourceScreens($admin, $items);
+
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
         $this->screen($admin, '/sign-in?signed-out=1', 'Sign in', 'Sign in', 'You have signed out.');
@@ -691,6 +694,16 @@ final class ScreenStructureTest extends TestCase
         $this->screen($admin, $items . '/form', 'Form for Items', 'Form for Items');
         self::assertSame('page page-form', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
         $this->screen($admin, $items . '/form/reset', 'Go back to the standard form?', 'Go back to the standard form?');
+        self::assertSame('page page-form page-form-narrow', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
+    }
+
+    /** M5-WP6: the form source view, the download, and the upload page, with the main class of each layout. */
+    private function m5SourceScreens(EndToEndClient $admin, string $items): void
+    {
+        $this->screen($admin, $items . '/form/source', 'Form source for Items', 'Form source for Items');
+        self::assertSame('page page-form', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
+        $this->visitFile($items . '/form/download', 200, $admin);
+        $this->screen($admin, $items . '/form/upload', 'Upload a form file for Items', 'Upload a form file for Items');
         self::assertSame('page page-form page-form-narrow', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
     }
 

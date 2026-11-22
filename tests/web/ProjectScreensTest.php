@@ -332,6 +332,32 @@ final class ProjectScreensTest extends TestCase
         self::assertSame(['Projects', 'Recipes', 'Settings'], $this->texts($this->xpath($response->body), '//nav[@class="breadcrumb"]/*[not(@aria-hidden)]'));
     }
 
+    // T-WEB-54 (M4-WP6): the stored files on the settings page (ADR 0018 decision 3).
+
+    public function testProjectSettingsShowTheStoredFiles(): void
+    {
+        $admin = $this->core->actor('admin');
+        $key = $this->project('Home Inventory', 'Items');
+        self::assertSame('This project stores 0 files, 0 bytes in all.', HtmlAssertions::text($this->page(self::ADMIN, '/projects/' . $key . '/settings'), '//main/p[@class="help"]'));
+
+        $items = $this->ops->schema()->tables($admin, $key)[0]->table->key;
+        $photo = $this->ops->schema()->addField($admin, $key, $items, 'Photo', 'attachment', [], false, '')->key;
+        $one = $this->core->addRecord($key, $items, []);
+        $two = $this->core->addRecord($key, $items, []);
+        $png = "\x89PNG\r\n\x1A\n" . str_repeat('a', 2040);
+        $this->ops->attachments()->add($admin, $key, $items, (string) $one, $photo, $this->core->upload($png), 'stand-mixer.png', null);
+        // The same content again is stored once (ADR 0018 decision 4).
+        $this->ops->attachments()->add($admin, $key, $items, (string) $two, $photo, $this->core->upload($png), 'copy.png', null);
+        $this->ops->attachments()->add($admin, $key, $items, (string) $two, $photo, $this->core->upload('%PDF-1.4 receipt'), 'receipt.pdf', null);
+
+        $html = $this->page(self::ADMIN, '/projects/' . $key . '/settings');
+        self::assertSame('This project stores 2 files, 3 KB in all.', HtmlAssertions::text($html, '//main/p[@class="help"]'));
+
+        $response = $this->request(self::ADMIN, 'POST', '/projects/' . $key . '/settings', ['name' => '']);
+        self::assertSame(422, $response->status);
+        self::assertSame('This project stores 2 files, 3 KB in all.', HtmlAssertions::text($response->body, '//main/p[@class="help"]'));
+    }
+
     // Helpers.
 
     private function signedIn(string $username): SignedIn

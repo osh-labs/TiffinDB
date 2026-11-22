@@ -10,7 +10,9 @@
  * section 2), M3 the import, export, archive, and plugins routes (M3 spec
  * part 2 section 3; their controllers arrive with M3-WP9 and WP10), M4
  * the file, collection, trash, link, and upload routes (M4 spec part 2
- * section 3; their controllers arrive with M4-WP6 to WP8). `/files/{field}/new`
+ * section 3; their controllers arrive with M4-WP6 to WP8), M5 the form
+ * editor, source, download, upload, and reset routes (M5 spec part 2
+ * section 2; their controllers arrive with M5-WP5 and WP6). `/files/{field}/new`
  * comes before `/files/{field}/{attachment}`.
  */
 
@@ -24,6 +26,8 @@ use TiffinDB\Web\Controller\CollectionController;
 use TiffinDB\Web\Controller\ExportController;
 use TiffinDB\Web\Controller\FieldController;
 use TiffinDB\Web\Controller\FileController;
+use TiffinDB\Web\Controller\FormController;
+use TiffinDB\Web\Controller\FormSourceController;
 use TiffinDB\Web\Controller\HomeController;
 use TiffinDB\Web\Controller\ImportController;
 use TiffinDB\Web\Controller\LinkController;
@@ -109,6 +113,15 @@ return [
     ['POST', '/projects/{project}/tables/{table}/settings', [TableController::class, 'update'], 'user'],
     ['GET', '/projects/{project}/tables/{table}/delete', [TableController::class, 'deleteForm'], 'user'],
     ['POST', '/projects/{project}/tables/{table}/delete', [TableController::class, 'delete'], 'user'],
+    ['GET', $table . '/form', [FormController::class, 'edit'], 'user'],
+    ['POST', $table . '/form', [FormController::class, 'change'], 'user'],
+    ['GET', $table . '/form/reset', [FormController::class, 'resetForm'], 'user'],
+    ['POST', $table . '/form/reset', [FormController::class, 'reset'], 'user'],
+    ['GET', $table . '/form/source', [FormSourceController::class, 'show'], 'user'],
+    ['POST', $table . '/form/source', [FormSourceController::class, 'submit'], 'user'],
+    ['GET', $table . '/form/download', [FormSourceController::class, 'download'], 'user'],
+    ['GET', $table . '/form/upload', [FormSourceController::class, 'uploadForm'], 'user'],
+    ['POST', $table . '/form/upload', [FormSourceController::class, 'upload'], 'user'],
 
     ['GET', $table, [RecordListController::class, 'index'], 'user'],
     ['GET', $table . '/filter', [RecordListController::class, 'filter'], 'user'],

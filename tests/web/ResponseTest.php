@@ -21,6 +21,7 @@ use TiffinDB\Web\SecurityHeaders;
 /**
  * T-WEB-14: response values, header and cookie validation, redirects, send(), and the fallback reply.
  * T-WEB-40 (M3 spec part 2 section 2.2): downloads, their headers, streaming, HEAD, and the after-send callback.
+ * T-WEB-74 (M5 spec part 2 section 3.1): attachmentText(), the form download.
  */
 #[CoversClass(Response::class)]
 #[CoversClass(Fallback::class)]
@@ -751,5 +752,69 @@ final class ResponseTest extends TestCase
         self::assertFalse(Response::download($this->file('x'), 'text/csv', 'a.csv', false)->isSandboxed());
         self::assertFalse((new Response(200, [], 'x'))->isSandboxed());
         self::assertFalse(Response::redirect('/x')->isSandboxed());
+    }
+
+    // T-WEB-74: Response::attachmentText (M5 spec part 2 section 3.1).
+
+    public function testAttachmentTextHeadersAndSandbox(): void
+    {
+        $body = "<div data-tiffin-form=\"1\">\n<script>alert(1)</script>\x00\xFF</div>\n";
+        $response = Response::attachmentText($body, 'items-form.html');
+        self::assertSame(200, $response->status);
+        self::assertSame($body, $response->body);
+        self::assertSame($body, $response->body());
+        self::assertSame('application/octet-stream', $response->header('Content-Type'));
+        self::assertSame((string) strlen($body), $response->header('Content-Length'));
+        self::assertSame('attachment; filename="items-form.html"; filename*=UTF-8\'\'items-form.html', $response->header('Content-Disposition'));
+        self::assertSame('no-store', $response->header('Cache-Control'));
+        self::assertTrue($response->isSandboxed());
+        self::assertTrue($response->isDownload());
+        self::assertFalse($response->removesAfterSend());
+        self::assertCount(4, $response->headers);
+
+        $secured = (new SecurityHeaders())->apply($response);
+        self::assertTrue($secured->isSandboxed());
+        self::assertTrue($secured->isDownload());
+        self::assertSame(SecurityHeaders::FILE_CSP, $secured->header('Content-Security-Policy'));
+        self::assertSame('nosniff', $secured->header('X-Content-Type-Options'));
+        self::assertTrue($response->withHeader('X-Test', 'kept')->isDownload());
+
+        $this->expectOutputString($body);
+        $steps = self::sendAndRecord($secured, false);
+        self::assertContains(['header', 'Content-Length: ' . strlen($body)], $steps);
+        self::assertSame([], array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'), 'A string body is echoed, not streamed.');
+    }
+
+    public function testAttachmentTextHeadSendsNoBody(): void
+    {
+        $this->expectOutputString('');
+        $steps = self::sendAndRecord(Response::attachmentText('abc', 'a.html'), true);
+        self::assertContains(['header', 'Content-Length: 3'], $steps);
+        self::assertContains(['header', 'Content-Type: application/octet-stream'], $steps);
+    }
+
+    public function testAttachmentTextCleansTheName(): void
+    {
+        self::assertSame(
+            'attachment; filename="receiptlmth.exe__x_"; filename*=UTF-8\'\'receiptlmth.exe%22%3Bx%22',
+            Response::attachmentText('', "receipt\u{202E}lmth.exe\";x\"")->header('Content-Disposition'),
+        );
+        $long = Response::attachmentText('', str_repeat('y', 600) . '.html');
+        self::assertSame('attachment; filename="' . str_repeat('y', 255) . '"; filename*=UTF-8\'\'' . str_repeat('y', 255), $long->header('Content-Disposition'));
+        self::assertSame('0', $long->header('Content-Length'));
+    }
+
+    #[DataProvider('badNames')]
+    public function testAttachmentTextRefusesBadNames(string $name): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::attachmentText('x', $name);
+    }
+
+    public function testAttachmentTextTakesNoAfterSendCallback(): void
+    {
+        $this->expectException(LogicException::class);
+        Response::attachmentText('x', 'a.html')->withAfterSend(static function (): void {
+        });
     }
 }

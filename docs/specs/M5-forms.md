@@ -147,7 +147,7 @@ A line number is 1 plus the number of line breaks before the problem's offset, w
 | `TOO_LARGE`; empty text (`ROOT`) | null |
 | `ENCODING` | The line of the first byte that is not part of a valid UTF-8 sequence: the offset is the length of the longest valid prefix, found with `preg_match('/\A(?:[\x00-\x7F]\|[\xC2-\xDF][\x80-\xBF]\|\xE0[\xA0-\xBF][\x80-\xBF]\|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}\|\xED[\x80-\x9F][\x80-\xBF]\|\xF0[\x90-\xBF][\x80-\xBF]{2}\|[\xF1-\xF3][\x80-\xBF]{3}\|\xF4[\x80-\x8F][\x80-\xBF]{2})*/', ...)`; the lines before it are counted on that prefix only |
 | `NUL`, `DECLARATION`, `PROCESSING_INSTRUCTION` | The line of the first match |
-| `MALFORMED` | The line of the first libxml error (`LibXMLError::line`) when it is 1 or more, else null |
+| `MALFORMED` | The line of the first libxml error (`LibXMLError::line`) when it is 1 or more, else null. Raised by the walk itself (a duplicate attribute name seen by `attributes()`, an end tag with nothing open): the line of the current element's start tag |
 | Element reasons (`ROOT` for a second root, `FORMAT_VERSION`, `ELEMENT`, `MISPLACED`, `ATTRIBUTE`, `ATTRIBUTE_VALUE`, `HREF`, `SRC`, `CONTENT` for an element in a `legend` or empty element, `DUPLICATE_FIELD`, `TOO_MANY_ELEMENTS`, `TOO_DEEP`) | The line of that element's start tag (`<`) |
 | `TEXT`, `TEXT_VALUE`, `CONTENT` for text | The line of the start tag of the innermost element open when the text was read (for text after the root closes: the root's start tag line). This is an approximation (XMLReader gives no position for text) and is documented as such on the page ("near line") |
 | `NODE_TYPE` | The line of the most recent element start tag, or null before the root |
@@ -395,6 +395,19 @@ After the commit, when changed: audit `form.saved` (section 9.6). An editor save
 - Accepted, `save`: section 9.4 with the parsed document; `saved.rewritten` = `serialize(document) !== text`; the screen's `text` becomes the stored text.
 
 Texts over `MAX_BYTES` are refused by the parser (`too-large`); the web layer also refuses a request body over its limit (part 2 section 5.3).
+
+```php
+final class FormSourceScreen
+{
+    // ProjectRecord $project; TableDef $table;
+    // string $text (the text area's content); string $base;
+    // string $state ('stored', 'none', 'refused'); ?Problem $storedProblem (the stored text's refusal, field 'source', with its line);
+    // list<Problem> $problems (field 'source'; params from FormRejected::params());
+    // ?FormReport $report (after a check or save that was accepted); ?FormSaved $saved
+}
+```
+
+Whether the source view writes "Line" or "Near line" is decided by the web layer from the message key (`problem.form.text`, `problem.form.text_value`, `problem.form.content`, `problem.form.node_type` are "near"); the core passes only the key and its parameters.
 
 ### 9.6 Audit actions (amends ADR 0012 decision 4)
 

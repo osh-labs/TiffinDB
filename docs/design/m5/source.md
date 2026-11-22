@@ -49,7 +49,7 @@ The core gives a message key, its parameters, and a line (`docs/specs/M5-forms.m
 | `forms.source.near_line` | Near line {line}: {message} |
 | `forms.source.no_line` | {message} |
 
-`near_line` for the reasons `text`, `text-value` (text), `content` (text), `node-type`; `no_line` when the line is null (too large, empty). `{message}` is the problem text with its parameters (`{element}`, `{attribute}`, `{max}`); the element and attribute names are escaped like every value. Example: "Line 7: The element p cannot have the attribute onclick, or is missing one it needs."
+`near_line` for the keys `problem.form.text`, `problem.form.text_value`, `problem.form.content`, and `problem.form.node_type` (their line is the enclosing element's); `no_line` when the line is null (too large, empty). `{message}` is the problem text with its parameters (`{element}`, `{attribute}`, `{max}`); the element and attribute names are escaped like every value. Example: "Line 7: The element p cannot have the attribute onclick, or is missing one it needs."
 
 The page never repeats any other part of the refused text outside the text area.
 

@@ -1,6 +1,6 @@
 # ADR 0022: Snapshot restore, project deletion, the audit-log screen, and Admin recovery
 
-Status: Accepted (provisional, awaiting maintainer confirmation). Settles the P49 items assigned to M7 (P170): snapshot restore, project deletion, and the audit-log screen; and Admin recovery without shell access (P27, P49; `docs/build/M5-M7-session-plan.md` section 3 row 6, applied as its default). Settles section 8.2 rows 6 to 8 and 10 of that plan. Adds a project lock (new), the snapshot reason `pre-restore`, the staging kinds `restores` and `deleted`, and the audit actions `snapshot.restored`, `project.deleted`, `auth.recovery_started`, and `auth.recovered` (amends ADR 0012 decisions 3 and 4, and P127). No project format step and no system schema step. The implementation design is `docs/specs/M7-release.md` and `docs/specs/M7-screens.md`; screens are in `docs/design/m7/`.
+Status: Accepted (provisional, awaiting maintainer confirmation). Settles the P49 items assigned to M7 (P170): snapshot restore, project deletion, and the audit-log screen; and Admin recovery without shell access (P27, P49; `docs/build/M5-M7-session-plan.md` section 3 row 6, applied as its default). Settles section 8.2 rows 6 to 8 and 10 of that plan. Adds a project lock (new), the snapshot reason `pre-restore`, the staging kinds `restores` and `deleted`, and the audit actions `snapshot.restored`, `project.deleted`, `auth.recovery_started`, and `auth.recovered` (amends ADR 0012 decisions 3 and 4, and P127). No project format step and no system schema step. Provisional decisions P220 to P228 (`docs/specs/M7-release.md` section 20). The implementation design is `docs/specs/M7-release.md` and `docs/specs/M7-screens.md`; screens are in `docs/design/m7/`.
 
 ## Context
 
@@ -10,13 +10,13 @@ Two facts shape the design. First, every request opens project files directly wi
 
 ## Decisions
 
-### 1. A project lock
+### 1. A project lock (P220)
 
 Each project folder holds `project.lock`, an empty file. Every opening of a project through `ProjectOpener` takes a shared `flock` on it and holds it until the connection is closed (the end of the request at the latest; the operating system releases it if the process dies). Restore and deletion take an exclusive lock, waiting at most 10 seconds; when they cannot get it, they change nothing and answer "busy, try again". A shared lock is waited for at most 2 seconds and then also answers busy, which happens only while a restore or deletion holds the exclusive lock.
 
 When the file system does not support locks (the call fails for a reason other than contention), normal opening goes on without the lock and logs that once per request, while restore and deletion refuse with a plain message: they never run without exclusion. A repository test keeps `ProjectFile::open` callable only from `ProjectOpener`, so no path opens a project without the lock.
 
-### 2. Snapshot restore replaces the file under the exclusive lock
+### 2. Snapshot restore replaces the file under the exclusive lock (P221)
 
 Restore is for Admins (`snapshots.manage`) through a confirmation page. In the core:
 
@@ -29,7 +29,7 @@ A failure at any step before the rename leaves the current file untouched; the r
 
 The alternative of rebuilding the live file in one transaction from the snapshot's contents (the archive-import rebuilder) was not chosen: it is not an exact restore (it empties values that fail checks, drops the import log, rewrites forms), it holds one long write transaction on large projects, and it would turn the reviewed archive rebuilder into a second, in-place code path.
 
-### 3. Project deletion moves the folder into the staging area
+### 3. Project deletion moves the folder into the staging area (P222)
 
 Deletion is for Admins (`project.manage`) through a confirmation page that states the counts of live records, records in the trash, stored files and their total size, snapshots, and Members with access; offers a project archive download first (a link to the export page); and requires the project's name to be typed. The core checks the typed name (white space trimmed, ASCII case ignored, as names are unique) and refuses it otherwise; it also asks again when more records exist than the page stated (the P82 pattern).
 
@@ -40,11 +40,11 @@ Deletion is for Admins (`project.manage`) through a confirmation page that state
 
 This keeps the one rule that allows recursive removal (inside the staging area only) instead of adding a second one for project folders, which the session plan proposed (amending P64 and P127). The move is the only operation on the live folder, and it is atomic. There is no trash for projects in v1. `project.deleted` keeps the deleted project's name in its detail, so the audit-log screen can still say which project it was.
 
-### 4. The audit-log screen is read-only
+### 4. The audit-log screen is read-only (P223)
 
 Admins only (`audit.view`). Newest first, 50 entries per page, filtered by person, by project, and by action (any combination), with the filters in the query string. Each entry shows when, who (the person's display name, or "TiffinDB" when no person acted), what (a sentence per action from the strings file), which project (its current name, or the deleted project's name from `project.deleted`, or nothing), and the detail values as escaped plain text. No entry can be changed or removed from the screen. The core resolves names, so the web layer needs no system-database access. Failed sign-in entries keep their 90-day retention (as built).
 
-### 5. Admin recovery by a code file
+### 5. Admin recovery by a code file (P224 to P227)
 
 - On the sign-in page, a link leads to a recovery page that explains the procedure. Its "Start recovery" button asks TiffinDB to write a one-time code into `recovery-code.txt` in the data folder, which only someone with access to the host's files (a file manager, SFTP, or a shell) can read. The code has the form and strength of the setup code (16 characters, about 78 bits).
 - The person then types the username of an active Admin, the code, and a new password twice. On success TiffinDB sets the password (no change required at the next sign-in), ends every session of that account, clears its sign-in throttle, deletes the code file, records `auth.recovered` with no acting person, and sends the person to the sign-in page.
@@ -56,7 +56,7 @@ Admins only (`audit.view`). Newest first, 50 entries per page, filtered by perso
 
 A visitor without file access learns nothing and changes nothing except the existence of a code file nobody can read. Someone with file access to the data folder can already read every project, so the recovery path gives them nothing they did not have.
 
-### 6. About page
+### 6. About page (P228)
 
 `/about`, for every signed-in person: the version, the licence, the "Source code" link, the third-party components and their licences (from `config/notices.json`, each licence text on its own page), and the plugins from the plugin registry. Admins also see the PHP and SQLite versions. The footer of the signed-in shell links to it.
 

@@ -129,7 +129,7 @@ final class FormEditorScreenTest extends TestCase
         self::assertSame(['up-1-1', 'down-1-1', 'hide-1-1'], $this->values($x, '//li[@id="row-1-1"]/div[@class="form-row-actions"]/button'));
         self::assertSame(['up-1-5', 'down-1-5', 'hide-1-5'], $this->values($x, '//li[@id="row-1-5"]/div[@class="form-row-actions"]/button'));
         self::assertSame(['ungroup-1'], $this->values($x, '//li[@id="row-1"]/div[@class="form-row-actions"]/button'), 'The only root row moves neither way.');
-        self::assertSame(['Move Brand up', 'Move Brand down', 'Hide Brand'], $this->values($x, '//li[@id="row-1-2"]/div[@class="form-row-actions"]/button/@aria-label'));
+        self::assertSame(['Move up: Brand', 'Move down: Brand', 'Hide Brand'], $this->values($x, '//li[@id="row-1-2"]/div[@class="form-row-actions"]/button/@aria-label'));
         self::assertNotSame('', $name);
 
         self::assertSame(['add-section'], $this->values($x, $form . '/div[@class="form-actions-inline"]/button'));
@@ -173,7 +173,7 @@ final class FormEditorScreenTest extends TestCase
         // An unnamed, empty section.
         self::assertSame('Section 2, no name', HtmlAssertions::text($html, '//li[@id="row-7"]//span[@class="form-row-name"]'));
         self::assertSame('This section is empty.', HtmlAssertions::text($html, '//li[@id="row-7"]/p[contains(@class, "form-row-note")]'));
-        self::assertSame('Name of section 2', $this->attr($x, '//input[@id="legend-7"]', 'aria-label'));
+        self::assertSame('Section name, section 2', $this->attr($x, '//input[@id="legend-7"]', 'aria-label'));
 
         // Not on this form: every field without a slot, the required one with its note.
         $list = '//section[@aria-labelledby="not-on-form-title"]/ul[@class="form-rows"]/li';

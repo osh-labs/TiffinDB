@@ -790,10 +790,10 @@ final class KeyboardStructureTest extends TestCase
         $this->checkM5($admin, $rooms, [
             ...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Rooms',
             'Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form',
-            'Name of section 1', 'Move Details down', 'Remove section Details and keep what is in it',
-            'Label for Name', 'Width of Name', 'Move Name up', 'Move Name down', 'Hide Name',
-            'Name of section 2', 'Move Items up', 'Remove section Items and keep what is in it',
-            'Label for Items', 'Width of Items', 'Move Items up', 'Move Items down', 'Hide Items',
+            'Section name, section 1', 'Move down: Details', 'Remove section Details and keep what is in it',
+            'Label for Name', 'Width of Name', 'Move up: Name', 'Move down: Name', 'Hide Name',
+            'Section name, section 2', 'Move up: Items', 'Remove section Items and keep what is in it',
+            'Label for Items', 'Width of Items', 'Move up: Items', 'Move down: Items', 'Hide Items',
             'Add a section', 'Save the form', 'Cancel', ...self::FOOTER,
         ]);
 
@@ -1053,12 +1053,7 @@ final class KeyboardStructureTest extends TestCase
                     $visible = self::text($button);
                     $name = self::accessibleName($x, $button);
                     self::assertNotSame('', $visible, "{$where}: a row button has visible text.");
-                    // The design's names put the row inside the visible words ("Move up" is named "Move Brand up",
-                    // docs/design/m5/editor.md 3.1): the name starts with the first visible word and holds every
-                    // visible word in order (reported: "Move up" is not a substring of its name, WCAG 2.5.3).
-                    $words = explode(' ', $visible);
-                    self::assertStringStartsWith($words[0] . ' ', $name, "{$where}: {$name} starts with its visible text.");
-                    self::assertMatchesRegularExpression('/\A' . implode('\b.*\b', array_map(static fn (string $w): string => preg_quote($w, '/'), $words)) . '\b/u', $name, "{$where}: {$name} holds its visible text.");
+                    self::assertStringStartsWith($visible, $name, "{$where}: {$name} starts with its visible text.");
                     self::assertStringContainsString($rowName, $name, "{$where}: {$name} names its row.");
                     self::assertGreaterThan(strlen($visible), strlen($name), "{$where}: {$name} says more than its visible text.");
                 }
@@ -1080,13 +1075,6 @@ final class KeyboardStructureTest extends TestCase
                 /** @var DOMElement $control */
                 $label = $x->query('//label[@for="' . $control->getAttribute('id') . '"]')->item(0);
                 self::assertInstanceOf(DOMElement::class, $label, "{$where}: {$control->getAttribute('name')} has a label.");
-                if (str_starts_with($control->getAttribute('name'), 'legend[')) {
-                    // Reported (WP7): the section name box is labelled "Section name" but named "Name of section {n}"
-                    // (strings/en/forms.php, docs/design/m5/components.md), so its label does not start its name.
-                    self::assertSame('Section name', self::text($label), $where);
-                    self::assertMatchesRegularExpression('/\AName of section \d+\z/', self::labelName($x, $control), $where);
-                    continue;
-                }
                 self::assertStringStartsWith(self::text($label), self::labelName($x, $control), "{$where}: the label starts the accessible name of {$control->getAttribute('name')}.");
                 if ($control->nodeName === 'textarea' && $x->query('//*[@id="source-error"]')->length > 0) {
                     self::assertContains('source-error', preg_split('/\s+/', $control->getAttribute('aria-describedby')) ?: [], "{$where}: the problem describes the text area.");

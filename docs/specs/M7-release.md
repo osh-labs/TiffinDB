@@ -134,7 +134,7 @@ Exit 0 on success, 1 on a refusal (one plain line per problem on standard error,
 4. Apply every rule of 3.5 to the full list; refuse on any violation.
 5. Read every file as bytes; refuse symbolic links and anything that is not a regular file.
 6. Sort the archive paths by byte value (`strcmp`).
-7. Write `MANIFEST.txt`: one line per file, `<lower-case SHA-256 hex>  <path below the top folder>\n`, in the same order; it is itself the last entry and is not listed in itself.
+7. Write `MANIFEST.txt`: one line per file, `<lower-case SHA-256 hex>  <path below the top folder>\n`, in the same order; it is added after the sorted files as the last entry and is not listed in itself.
 8. Write the zip with `ZipArchive` to `<out>/tiffindb-<version>.zip.part`: first the folder entries (each folder that holds a file, sorted, with a trailing `/`), then the files; each entry gets `setMtimeName` 315532800 (1980-01-01 00:00:00 UTC), `setExternalAttributesName` with `ZipArchive::OPSYS_UNIX` and mode `0100644` (files) or `040755` (folders), and `setCompressionName` `ZipArchive::CM_DEFLATE` level 9. No archive comment, no extra fields beyond what these calls write.
 9. Rename `.part` to `tiffindb-<version>.zip`, refusing to overwrite an existing file; write `tiffindb-<version>.zip.sha256` as `<hex>  tiffindb-<version>.zip\n`.
 10. Print the SHA-256, the file count, the archive size, and the PHP, libzip (`ZipArchive::LIBZIP_VERSION`), and zlib (`ZLIB_VERSION`) versions.
@@ -203,6 +203,8 @@ final class ProjectLock
 - `adopt(string $projectKey, Database $db)`: takes the shared lock as `open` does (new projects and archive imports).
 - New `openExclusive(ProjectRecord $project): array{Database, ProjectLock}`: forgets any open connection for the key (releasing this process's shared lock), takes `ProjectLock::exclusive`, then opens the file with `Sqlite::open` directly (no upgrade, no identity check beyond what the caller does) and returns both; the caller closes the database and releases the lock. Used only by restore (section 5.3).
 - New `lockExclusive(string $projectKey): ProjectLock`: forgets the connection and takes the exclusive lock, opening no database. Used only by deletion (section 6.2).
+- A process holds at most one lock per project: `flock` locks belong to the open file, so a second `fopen` of the same lock file in one process would wait for itself. `ProjectOpener` keeps one lock per key, and `openExclusive` and `lockExclusive` release this process's shared lock before asking for the exclusive one.
+- The places that remove a project folder's known files, `ProjectOperations::undoCreate` and `removeAbandonedFolder` (as built), also remove `project.lock` (after releasing it), because `adopt` now creates it in a new project's folder; otherwise the folder would not be empty and the removal would fail.
 
 ### 4.3 Request lifetime
 
@@ -255,7 +257,7 @@ Every method begins with `Context::project($actor, Permission::ManageSnapshots, 
 3. **Counts** (for `restoreScreen` and the result): live records now (sum over `_tiffin_tables` of `COUNT(*) WHERE "_trashed_at" IS NULL`, through `Records` as the project settings totals do), records then (the same on the candidate, by literal SQL over the validated table keys read from its `_tiffin_tables` with `Identifier`), `filesMissing` (distinct `sha256` of the candidate's `_tiffin_attachments` for which `AttachmentStore::path` is null, as built), `filesRemoved` (hashes of `AttachmentStore::storedHashes()`, as built, that no candidate row names). The candidate's connection is closed after counting.
 4. **Exclusive.** `[$db, $lock] = ProjectOpener::openExclusive($project)`. `Busy` (others still working) ends the restore here and reaches the kernel's busy page; `LocksUnavailable` becomes `ValidationFailed([Problem(null, 'problem.lock.unavailable')])`. Either way the job folder is removed and nothing has changed.
 5. **Pre-restore snapshot.** `Snapshots::take($db, $folder, SnapshotReason::PreRestore)` (automatic, pruned with the others; the one just taken always stays, as built). Then `PRAGMA wal_checkpoint(TRUNCATE)` and `$db->close()`.
-6. **Swap.** `Fs::moveIn(<job>/candidate.tiffin, <folder>/project.tiffin.restoring)` (as built: rename, or copy then remove across devices), then `Fs::replace(<folder>/project.tiffin.restoring, <folder>/project.tiffin)` (new: `rename` over an existing regular file in the same folder; refuses when either path is a link or the target is not a regular file; `\RuntimeException` on failure, leaving the target as it was). Then `Fs::remove` on `project.tiffin-wal` and `project.tiffin-shm` when present (they belong to the old file; after step 5's checkpoint and close they are normally absent).
+6. **Swap.** A `project.tiffin.restoring` left by an interrupted restore is removed first (`Fs::remove`; under the lock nobody else can be using it). `Fs::moveIn(<job>/candidate.tiffin, <folder>/project.tiffin.restoring)` (as built: rename, or copy then remove across devices), then `Fs::replace(<folder>/project.tiffin.restoring, <folder>/project.tiffin)` (new: `rename` over an existing regular file in the same folder; refuses when either path is a link or the target is not a regular file; `\RuntimeException` on failure, leaving the target as it was). Then `Fs::remove` on `project.tiffin-wal` and `project.tiffin-shm` when present (they belong to the old file; after step 5's checkpoint and close they are normally absent).
 7. **Release** the lock. Remove the job folder.
 8. **Reopen** with `ProjectOpener::open` (shared lock again): a snapshot of an older format is upgraded after its own `format-upgrade` snapshot (`upgradedFrom` set). In one `Database::write()`: `ProjectFile::setName($db, $project->name)` (the registry name wins), `ProjectFile::touch($db, $actor->userKey, clock)`.
 9. **Files.** `Attachments::sweepFiles()` (as built, M4: removes stored files no row names), then count `filesMissing` again on the live file.
@@ -296,11 +298,13 @@ Both begin with `Context::project($actor, Permission::ManageProject, $projectKey
 4. **Lock.** `ProjectOpener::lockExclusive($projectKey)`. On `Busy` or `LocksUnavailable`: set the state back to `active` (system write), then rethrow `Busy`, or throw `ValidationFailed([Problem(null, 'problem.lock.unavailable')])`.
 5. **Move.** The folder `DataDirectory::projectFolder($key)` must be a directory and not a link (`Fs::isDir`, lstat-based, as built); then `StagingArea::reserve('deleted', $key)` (new: returns `<data>/staging/deleted/<key>` without creating it; `\RuntimeException` when it exists) and `Fs::moveIn($folder, $target)` (as built: `rename` of a directory; no copy fallback for directories). On failure: state back to `active`, release the lock, `\RuntimeException` becomes `ValidationFailed([Problem(null, 'problem.project.delete_failed')])`.
 6. **Forget.** One system write: `ProjectRegistry::remove($id)` (as built; grants cascade, audit `project_id` set null).
-7. **Release** the lock (its file now lies inside the moved folder; releasing it there is harmless).
-8. **Remove** with `Fs::removeTree($target, <data>/staging)` (as built, staging-only, never follows links). A failure is logged without a path; the staging sweep removes the folder later (`deleted` has `MAX_AGE` 3600).
-9. **Audit** `project.deleted` (section 11.2) after step 6, whatever step 8 did.
+7. **Remove** with `Fs::removeTree($target, <data>/staging)` (as built, staging-only, never follows links), still holding the lock, whose file now lies inside the moved folder (removing an open, locked file is harmless on the file systems TiffinDB supports). A failure is logged without a path; the staging sweep finishes the removal later.
+8. **Release** the lock.
+9. **Audit** `project.deleted` (section 11.2) after step 6, whatever step 7 did.
 
-Recovery from a crash: `ProjectOperations::clearAbandoned` (as built for `creating` rows older than an hour) also handles every `deleting` row whatever its age: when `projects/<key>` still exists and is a directory, it is moved as in step 5 (skipped, and retried next time, when the exclusive lock cannot be had at once); then the row is removed and the staging folder removed as in step 8. No audit row is written by the sweep (the original request either wrote it or died before step 6).
+Staging sweep for `deleted` (`StagingArea`, WP1): an entry whose `project.lock` exists is removed only when an exclusive `flock` on it can be had at once (the file is opened without creating it; an entry whose lock is held is skipped, because a deletion is still removing it); an entry with no `project.lock` (the removal has already taken it) is removed only when the entry's own modification time is over an hour old, since a running removal keeps changing it. The kinds' `MAX_AGE` map gains `deleted` 3600 (used for that second case) and `restores` 3600.
+
+Recovery from a crash: `ProjectOperations::clearAbandoned` (as built for `creating` rows older than an hour) also handles every `deleting` row whatever its age: when `projects/<key>` still exists and is a directory, it is moved as in step 5 (skipped, and retried next time, when the exclusive lock cannot be had at once); then the row is removed and the staging folder removed as in step 7. No audit row is written by the sweep (the original request either wrote it or died before step 6).
 
 ### 6.3 What deletion does not do
 
@@ -367,7 +371,7 @@ final class RecoveryCode
 
 | Method | Does |
 |---|---|
-| `start(bool $enabled, string $clientAddress): void` | `NotFound` when `$enabled` is false. Throttle: `LoginThrottle::failure('s:recoverystart', 5)` counted on every call; when the bucket is blocked, nothing else happens. Otherwise `RecoveryCode::start`; audit `auth.recovery_started` with `{written: bool}`. Returns nothing either way |
+| `start(bool $enabled, string $clientAddress): void` | `NotFound` when `$enabled` is false. When `LoginThrottle::wait(['s:recoverystart'])` is over 0, nothing else happens. Otherwise, in one system write, `LoginThrottle::failure('s:recoverystart', 5)` (every start counts, so the throttle's own rules limit starts); then `RecoveryCode::start`; audit `auth.recovery_started` with `{written: bool}`. Returns nothing either way; `$clientAddress` is not used for this bucket (a global limit, as the setup code's, P76) |
 | `recover(bool $enabled, string $username, string $code, string $password, string $again, string $clientAddress): RecoveryResult` | Section 9.3 |
 
 `$code`, `$password`, `$again` carry `#[\SensitiveParameter]`. `RecoveryResult { string $outcome ('done', 'failed', 'wait'); int $waitSeconds }`.
@@ -375,11 +379,11 @@ final class RecoveryCode
 ### 9.3 `recover`, step by step
 
 1. `NotFound` when `$enabled` is false.
-2. Password problems: `$password !== $again` gives `Problem('password-again', 'problem.password.mismatch')` (as built key for the change-password page); then `PasswordPolicy::problems($password, $username)` (as built). Any problem: `ValidationFailed` (these depend only on what was typed and disclose nothing).
+2. Password problems: `$password !== $again` gives `Problem('password-again', 'problem.password.mismatch')` (new key, section 11.3; the change-password page checks this in its controller with `account.password.mismatch`, as built, but recovery has no signed-in controller logic to lean on); then `PasswordPolicy::problems($password, $username)` (as built). Any problem: `ValidationFailed` (these depend only on what was typed and disclose nothing).
 3. Throttle: `LoginThrottle::wait([LoginThrottle::addressBucket($s, $clientAddress), 's:recovery'])` (as built); over 0: `RecoveryResult('wait', $seconds)`; nothing else runs.
 4. `$hash = PasswordHasher::hash($password)` always, before any lookup, so every outcome costs the same.
-5. In one system `Database::write()`: `$expected = RecoveryCode::current(...)`; `$person = Users::byUsername(Usernames::normalise($username))` (as built); `$ok = $expected !== null && SetupCode::matches($expected, $code) && $person !== null && $person->active && $person->role === Role::Admin`. When `$ok`: `Users::setPassword($person->id, $hash, false)`, `Sessions::endAllFor($person->id)`, `LoginThrottle::clear(userBucket)`, `clear('s:recovery')`. When not: `LoginThrottle::failure('s:recovery', 5)` and `failure(addressBucket, LoginThrottle::ADDRESS_LIMIT)`; when the `s:recovery` bucket has now reached 5 failures, `RecoveryCode::remove`.
-6. After the write, when `$ok`: `RecoveryCode::remove`. When the file cannot be removed, the line `TiffinDB: the recovery code file could not be removed; delete it by hand.` is logged (no path, no code); the code then stays usable until it expires. Then audit `auth.recovered` (actor null, target `user`, key the person's key). Result `done`.
+5. In one system `Database::write()`: `$expected = RecoveryCode::current(...)`; `$person = Users::byUsername($username)` (as built: it normalises the name itself); `$ok = $expected !== null && SetupCode::matches($expected, $code) && $person !== null && $person->active && $person->role === Role::Admin`. When `$ok`: `RecoveryCode::remove` first (inside the write, so a second request with the same code, which waits for this write, finds no code; when the file cannot be removed the write still goes on and step 6 logs it), then `Users::setPassword($person->id, $hash, false)`, `Sessions::endAllFor($person->id)`, `LoginThrottle::clear` of the person's user bucket (`LoginThrottle::userBucket`, as built), `clear('s:recovery')`. When not: `LoginThrottle::failure('s:recovery', 5)` and `failure(addressBucket, LoginThrottle::ADDRESS_LIMIT)`; when the `s:recovery` bucket has now reached 5 failures, `RecoveryCode::remove`.
+6. After the write, when `$ok`: when the code file could not be removed in step 5, the line `TiffinDB: the recovery code file could not be removed; delete it by hand.` is logged (no path, no code); the code then stays usable until it expires. Then audit `auth.recovered` (actor null, target `user`, key the person's key). Result `done`.
 7. Otherwise result `failed`.
 
 Note on step 6: a code whose file could not be removed stays usable until it expires. This is recorded as an accepted residual risk (M7-P15): anyone who could use it can read the file, and so already has file access to the data folder.
@@ -402,7 +406,7 @@ The code lives in the file; attempts use `login_throttle` rows with buckets `s:r
 final class AboutFacts { /* string $version; list<AboutComponent> $components; list<AboutPlugin> $plugins; ?array{php: string, sqlite: string} $server */ }
 final class AboutComponent { /* string $id; string $name; string $version; string $licence */ }
 final class AboutPlugin { /* string $name; string $version; string $kind ('import'|'export'); string $licence; bool $enabled */ }
-final class LicenceText { /* string $name; list<array{file: string, text: string}> $files */ }
+final class LicenceText { /* string $name; list<array{file: string, text: string, cut: bool}> $files */ }
 ```
 
 | Method | Does |
@@ -413,7 +417,7 @@ final class LicenceText { /* string $name; list<array{file: string, text: string
 ### 10.1 Reading the notices and licence files
 
 - `config/notices.json` is read from the application root (`dirname(__DIR__, 3)` of `src/Core/App`, as `Context` finds `plugins/`), at most 64 KiB, with `json_decode` (`JSON_THROW_ON_ERROR`); a malformed file or element is a `\RuntimeException` (a broken release, 500 page). Elements are validated against section 3.6's shape.
-- A licence path must match `^(LICENSE|vendor/[A-Za-z0-9._/-]+|public/assets/fonts/[a-z0-9-]+/[A-Za-z0-9._-]+)\z`, hold no `..` segment, and name a regular file that is not a link (`Fs::isFile`, as built). Each file is read at most 256 KiB (larger: cut, with `…` appended by the template), invalid UTF-8 replaced with U+FFFD. The text is returned as data; the template escapes it inside `pre`.
+- A licence path must match `^(LICENSE|vendor/[A-Za-z0-9._/-]+|public/assets/fonts/[a-z0-9-]+/[A-Za-z0-9._-]+)\z`, hold no `..` segment, and name a regular file that is not a link (`Fs::isFile`, as built). Each file is read at most 256 KiB (larger: cut, and `cut` is true, so the page says the rest is in the file), invalid UTF-8 replaced with U+FFFD. The text is returned as data; the template escapes it inside `pre`.
 - The test fixture for `AboutOperations` points the application root at a temporary folder through a constructor default (`AboutOperations::__construct(Context $c, ?string $root = null)`), as `Context::usePluginsRoot` does for plugins.
 
 ## 11. Core operations: permissions, audit actions, message keys
@@ -451,6 +455,7 @@ A Member is refused before anything is read. The project-scoped methods re-check
 | `problem.project.delete_name` | WP1 | Type the project's name exactly as it is shown above. | |
 | `problem.project.delete_failed` | WP1 | TiffinDB could not move the project folder, so nothing was deleted. The person who looks after this TiffinDB can check the data folder. | |
 | `problem.lock.unavailable` | WP1 | This server cannot lock files, so TiffinDB cannot do this safely here. Nothing was changed. The host documentation describes how to do it by hand. | |
+| `problem.password.mismatch` | WP2 | The two new passwords are different. | |
 | `problem.recovery.failed` | WP2 | That did not work. Check the username and the code, or start again for a new code. | |
 
 `problem.password.*` keys are reused (as built). `tests/core/app/MessageKeysTest.php` reads this table as it reads the M4 and M5 tables (WP1 adds its rows; WP2 its row). The error page for `Unavailable('system-newer')` is WP0's (`strings/en/errors.php`, section 12.2).
@@ -603,7 +608,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 | T-ADM-15 | Deletion when `projects/<key>` is a symbolic link to a folder outside: refused, the outside folder and its files untouched, state back to `active` |
 | T-ADM-16 | Deletion with a symbolic link inside the project folder pointing outside: the link is removed, its target untouched |
 | T-ADM-17 | Deletion while another process holds a shared lock: `Busy`, state back to `active`, folder untouched |
-| T-ADM-18 | A `deleting` row left by an interrupted deletion (seam after step 3, and after step 5): the next `clearAbandoned` finishes it |
+| T-ADM-18 | A `deleting` row left by an interrupted deletion (seam after step 3, and after step 5): the next `clearAbandoned` finishes it; a `staging/deleted/` entry whose `project.lock` another process holds is skipped by the staging sweep, and removed once released |
 | T-ADM-19 | After step 3 and before step 6, `Context::project` for that key is `NotFound` for the Admin and the project is in no list |
 | T-ADM-20 | Audit search: each filter alone and in combination, `deleted`, paging and clamping, ignored bad values, names of deactivated people and deleted projects |
 | T-ADM-21 | P183: a failing step run three times leaves one `format-upgrade` snapshot; an older manual and 19 automatic snapshots all survive |
@@ -639,7 +644,7 @@ All tests offline and deterministic with `TempDir`, `FixedClock`, `SeededRandom`
 
 | Test | Checks |
 |---|---|
-| T-REL-1 | Two builds of a fixture tree (temporary git repository made by the test with `git init`, synthetic files, a fake prepared vendor with one package) give byte-identical zips and equal `.sha256` files; the entries are sorted, times and modes fixed |
+| T-REL-1 | Two builds of a fixture tree (temporary git repository made by the test with `git init`, synthetic files, a fake prepared vendor with one package) give byte-identical zips and equal `.sha256` files; folder entries, then files sorted by byte value, then `MANIFEST.txt` last; times and modes fixed |
 | T-REL-2 to T-REL-9 | One failing fixture per rule R1 to R8, each giving exactly that rule's message |
 | T-REL-10 | Vendor refusals of 3.2: a dev package, an unlisted package, a version or commit mismatch, a listed package missing, `autoload_files.php` naming an outside file; `installed.json` and package `tests/` folders not shipped, licence files shipped |
 | T-REL-11 | `ReleaseContentsTest`: the current tree's include list passes R1 to R5, R7, R8 (R6 needs a prepared vendor and runs in T-REL-10 and the CI step) |

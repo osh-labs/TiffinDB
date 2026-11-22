@@ -1,49 +1,43 @@
-# TiffinDB build session plan: M5, M6, and M7
+# TiffinDB build session plan: M5 and M7 (M6 deferred to the end)
 
-Status: proposed, awaiting the maintainer's go-ahead. This is a session-level plan for the orchestrator. It does not replace the per-milestone design specs (`docs/specs/M5-*.md`, `docs/specs/M6-*.md`, `docs/specs/M7-*.md`), which the design tier writes during the session under `docs/build/orchestration.md` section 3. `CLAUDE.md` overrides anything here. Build state stays in `docs/build/ledger.md`.
+Status: proposed, awaiting the maintainer's go-ahead. This is a session-level plan for the orchestrator. It does not replace the per-milestone design specs (`docs/specs/M5-*.md`, `docs/specs/M7-*.md`), which the design tier writes during the session under `docs/build/orchestration.md` section 3. `CLAUDE.md` overrides anything here. Build state stays in `docs/build/ledger.md`.
 
 References: "plan N" is `docs/plan.md` section N; "ui N" is `docs/ui-design-plan.md` section N; "orch N" is `docs/build/orchestration.md` section N; "P n" is a provisional decision in ledger section 4; "format N" is `docs/formats/tiffin.md` section N.
 
 ## 1. Bottom line
 
-- One orchestrated session delivers M5 (form editor, source editing, sanitizer), M6 (legacy-product import plugin), and M7 (packaging, upgrade path, documentation, v1 release), and ends with the final audit of orch 10.
-- M6 has a hard gate that only the maintainer can open: the reviewed output of the discovery run (`tools/discovery/`). Nothing in the repository guesses the legacy format, and this plan does not change that. The session order therefore depends on when the gate opens (section 4.2).
-- M7 is split so that the gate cannot stall the build. Part 1 (administration screens, release build tool, upgrade path, documentation) does not depend on M6. Part 2 (release test, final visual pass, exit audit, final audit) runs after M6 closes, or after the maintainer decides to release without the importer.
+- One orchestrated session delivers M5 (form editor, source editing, sanitizer) and M7 part 1 (administration screens, release build tool, upgrade path, documentation), and stops at a release candidate.
+- M6 (legacy-product import) is deferred to near the end of the build by maintainer instruction, and is likely to be done by another developer. Its plan is a separate document that can be read on its own: `docs/build/M6-handoff-plan.md`.
+- Order: M5, M7 part 1, M6, M7 part 2. M7 part 2 (release test, final visual pass, exit audit, final audit of orch 10) runs after M6 closes, or earlier only if the maintainer decides to release without the importer (section 3 row 1).
+- M7 part 1 does not depend on M6, and is designed so that M6 later adds its files without a redesign (section 8.2 row 14).
 - Most of the form machinery exists: form format 1, the default-deny parser, the node model, the serializer, the binder, the generator, `_tiffin_forms`, and the `forms.edit` permission are in the tree. M5 adds the write path (editor model, store writes, core operations), the screens, link rendering, width rendering, and the sanitizer corpus. No project-format step is expected for M5.
-- The importer contract (API 1) cannot carry what M6 needs. It reads one table per import as text cells; it has no declared field types, no relations between source tables, and no files (`src/Core/Io/Contract/Importer.php`, `SourceTable.php`; `docs/specs/M3-io.md` section 1). M6 therefore includes a contract extension and a whole-source import path, not only a plugin.
-- The only real legacy database available is one file of about 12 GB as a zip (maintainer statement). Every size limit in the tree is far below that: uploads 64 MiB, project archives 4 GiB in total, 50,000 rows per import, and a one-hour sweep of unfinished projects (`IoLimits`, `ProjectOperations::ABANDONED_SECONDS`). M6 is therefore designed for that file from the start: no browser upload for a large source, resumable steps with bounded memory, a command-line driver, a dry run, and a maintainer trial on the real file before the release (sections 7.2 and 7.6).
-- Size: 4 design packages, 3 spec reviews, 28 work packages, 3 exit audits, 1 final audit. Estimate 11 to 14 usage windows (M5 3 to 4, M6 4 to 5, M7 4 to 5). Basis: M1 (13 packages) took about 3 windows; the ledger's usage log does not record window counts for M2 to M4. This is an extrapolation, not a measurement.
-- Eleven maintainer answers would remove rework (section 3). Only the discovery output blocks anything; every other question has a provisional default.
+- Size of this session: 2 design packages and 1 reconciliation, 2 spec reviews, 17 work packages (M5: 7; M7 part 1: 10), 1 exit audit. Estimate 6 to 8 usage windows (M5 3 to 4, M7 part 1 3 to 4). M7 part 2 adds 2 work packages, the exit audit, and the final audit: about 1 to 2 windows. Basis: M1 (13 packages) took about 3 windows; the ledger's usage log does not record window counts for M2 to M4. This is an extrapolation, not a measurement.
+- Seven maintainer answers would remove rework (section 3). None blocks the start; each has a provisional default.
 
 ## 2. Scope and exit criteria
 
 | Milestone | Scope (plan 8, ui 6.2 and 11) | Exit criteria |
 |---|---|---|
 | M5 | Simple form editor for Admins (reorder, show and hide, width, grouping, labels); source view with validation; download and upload of a form as a file; reset to the standard form; sanitizer (the default-deny parser, hardened, with a test corpus); links in forms; widths on the record screen | Editor output equals hand-editable HTML; sanitizer test corpus passes; editor output renders correctly under every appearance setting; the editor works by keyboard only (plan 5, continuous) |
-| M6 | `docs/formats/bento.md` from the discovery output; importer contract extension; whole-source import into a new project (tables, typed fields, relations, attachments); the large-source path (inbox folder, resumable file staging, command-line driver, dry run); the legacy-product import plugin; seeded synthetic fixture generator with a scale profile; import screens and report | A synthetic fixture with the observed structure imports with relations and attachments; the import report is complete; a synthetic source at the scale of the real file (section 7.2 row 16) imports within the memory ceiling and survives interruption at any step. The maintainer trial on the real file (section 7.6) is gate G6-trial |
+| M6 | Deferred. See `docs/build/M6-handoff-plan.md` section 2 | In that plan |
 | M7 part 1 | Snapshot restore, project deletion, audit-log screen (P170); Admin recovery without shell access (P49); About page; favicon and app icon; release build tool; upgrade path and its tests; host and user documentation; carried-forward hardening items | Each screen meets its design; the build tool makes a reproducible archive whose contents pass the release rules; installations made by earlier code open under the release code |
 | M7 part 2 | Release test from the built archive; visual pass of every screen in every theme; exit audit; final audit (orch 10) | The release archive installs by upload and setup page only (verified here on the PHP built-in server; the reference shared host is pending maintainer verification, orch 7); visual pass of every screen in every theme |
 
-Not in this session: the WYSIWYG form editor (M8) and the MCP server (M9), which are post-v1 and need an explicit maintainer instruction; non-Apache hosting and desktop packaging (P5); creating a release tag or a hosted release (section 3 row 9).
+Not in this session: M6 (section 7); the WYSIWYG form editor (M8) and the MCP server (M9), which are post-v1 and need an explicit maintainer instruction; non-Apache hosting and desktop packaging (P5); creating a release tag or a hosted release (section 3 row 7).
 
 ## 3. Maintainer decisions that would help before the start
 
 | # | Question | Default if not answered | Why it matters now |
 |---|---|---|---|
-| 1 | Discovery output for the legacy format (plan 6.4, ADR 0009 D1) | None possible. M6 does not start; the session runs M5, then M7 part 1, then stops (section 4.2) | M6 fixtures must reproduce the observed structure; guessing it would break the clean-room rule |
-| 2 | Is v1 released without the legacy importer if the discovery output has not arrived when M7 part 1 closes? | No. The session stops with a release candidate and waits. ADR 0004 puts the importer in v1 scope | Decides whether M7 part 2 may run before M6 |
-| 3 | Form CSS in v1. ADR 0003 stores a form as HTML "plus a scoped CSS block"; ADR 0014 reserved the `css` column and left it to M5 | The column stays reserved and ignored. Layout comes only from the placement attributes, shown through stylesheet classes. Per-form styling moves to M8 with the token-drawn choices of ADR 0006 | A CSS sanitizer is a second attack surface (addresses in `url()`, `@import`, selectors that leave the form). The strict CSP forbids style blocks in the page, so form CSS would also need its own serving route. The column exists, so adding it later needs no format step. This default narrows ADR 0003 and needs confirmation |
-| 4 | What is stored when an Admin saves form source: the text as typed, or TiffinDB's own rewriting of it? | The rewriting (parse, then serialize). Comments and spacing are not kept, and the source view says so | Makes "editor output equals hand-editable HTML" exact and testable: every stored form is a fixed point of parse and serialize. Keeping typed text means two forms with the same meaning can differ |
-| 5 | Links in forms (ADR 0009 E2) | Shown as real links from M5: `http` and `https` only, by the `url` field type's rules, with `rel="noopener noreferrer"`, no `target`. Images stay attachment references only | Settles the "no external URLs" rule of plan 4 for links. A link is followed by the person, not fetched by TiffinDB |
-| 6 | More than one form per table | One form per table in v1: the default form is the one shown and edited. Other rows in `_tiffin_forms` are kept untouched and not listed | The table allows several forms, but no document describes choosing between them |
-| 7 | Name of the legacy importer in the UI and in plugin metadata (ADR 0009 D5, P11) | Plugin id `legacy-package`, directory `plugins/import/legacy-package/`, name shown to Admins "Mac personal database package". The legacy product is named only in documentation prose and in `docs/formats/bento.md` | `CLAUDE.md` forbids the legacy name in the UI and in package metadata. Whether a file extension that contains the name may be shown in the UI is the maintainer's call; the default does not show it |
-| 8 | Admin recovery without shell access (P27, P49) | Built: a one-time code file written into the data folder, read through the host's file manager, on the pattern of the setup code. The host documentation also recommends a second Admin | A lone Admin on a host with no shell has no recovery path today. Documentation only is cheaper; the maintainer may choose it |
-| 9 | Release publication | The session builds the archive with a documented command, records its SHA-256 in the ledger, and stops. The maintainer creates the tag and any hosted release | Publication is outward-facing and not reversible |
+| 1 | Is v1 released without the legacy importer? | No. This session stops after M7 part 1 with a release candidate. M7 part 2 and the release wait for M6. ADR 0004 puts the importer in v1 scope | Decides whether M7 part 2 may run before M6. To change it, send `DECIDE release-without-importer: yes` |
+| 2 | Form CSS in v1. ADR 0003 stores a form as HTML "plus a scoped CSS block"; ADR 0014 reserved the `css` column and left it to M5 | The column stays reserved and ignored. Layout comes only from the placement attributes, shown through stylesheet classes. Per-form styling moves to M8 with the token-drawn choices of ADR 0006 | A CSS sanitizer is a second attack surface (addresses in `url()`, `@import`, selectors that leave the form). The strict CSP forbids style blocks in the page, so form CSS would also need its own serving route. The column exists, so adding it later needs no format step. This default narrows ADR 0003 and needs confirmation |
+| 3 | What is stored when an Admin saves form source: the text as typed, or TiffinDB's own rewriting of it? | The rewriting (parse, then serialize). Comments and spacing are not kept, and the source view says so | Makes "editor output equals hand-editable HTML" exact and testable: every stored form is a fixed point of parse and serialize. Keeping typed text means two forms with the same meaning can differ |
+| 4 | Links in forms (ADR 0009 E2) | Shown as real links from M5: `http` and `https` only, by the `url` field type's rules, with `rel="noopener noreferrer"`, no `target`. Images stay attachment references only | Settles the "no external URLs" rule of plan 4 for links. A link is followed by the person, not fetched by TiffinDB |
+| 5 | More than one form per table | One form per table in v1: the default form is the one shown and edited. Other rows in `_tiffin_forms` are kept untouched and not listed | The table allows several forms, but no document describes choosing between them |
+| 6 | Admin recovery without shell access (P27, P49) | Built: a one-time code file written into the data folder, read through the host's file manager, on the pattern of the setup code. The host documentation also recommends a second Admin | A lone Admin on a host with no shell has no recovery path today. Documentation only is cheaper; the maintainer may choose it |
+| 7 | Release publication | The session builds the archive with a documented command, records its SHA-256 in the ledger, and stops. The maintainer creates the tag and any hosted release | Publication is outward-facing and not reversible |
 
-| 10 | Where the 12 GB import runs | On the command line, with the same core job the browser uses: either on the host over SSH, or on a local machine that has PHP, after which the finished project folder is copied to the host by the documented by-hand procedure (format 9 and 13.4). The browser path with a Continue button also works from the inbox folder, for hosts with no shell | A shared host's time limits and disk quota are not known until the host check. The local route needs no upload of the source at all, only of the result |
-| 11 | Limits for a whole-source import | Set in the M6 spec from the real counts in the discovery report, with headroom. No limit may be below the real file's figure. A value over a limit is reported with a count and never dropped silently. A file is limited by free disk space, not by the 64 MiB upload cap | The existing caps were chosen for CSV and XLSX uploads |
-
-Also open, with defaults in the sections named: whether the session stops at each milestone close (section 4.3); screenshots in the user documentation (section 8.2 row 9).
+Also open, with defaults in the sections named: screenshots in the user documentation (section 8.2 row 9). The decisions for M6 (discovery output, the importer's name, where a 12 GB import runs, import limits, who holds the real file) are in `docs/build/M6-handoff-plan.md` section 3.
 
 ## 4. Session shape
 
@@ -53,50 +47,42 @@ Also open, with defaults in the sections named: whether the session stops at eac
 |---|---|---|---|
 | 0 | Resume set-up (section 5) | orchestrator | - |
 | 1 | M5 design (M5-D1), spec review (M5-R1), rulings applied | design | - |
-| 2 | M5 implementation, waves 1 to 4 | implementation | M7 design (M7-D1) and its review (M7-R1), using one of the three agent slots; M6-D0 if the discovery output has arrived |
+| 2 | M5 implementation, waves 1 to 4 | implementation | M7 design (M7-D1) and its review (M7-R1), using one of the three agent slots |
 | 3 | M5 exit audit (M5-X), fixes, as-built notes, ledger close, notification | design | - |
-| 4 | M6: format document (M6-D0), design (M6-D1), review (M6-R1), waves 1 to 5, exit audit (M6-X), then the maintainer trial (section 7.6) and any fixes from it | design, implementation | M7 part 1 may run while the trial is with the maintainer |
-| 5 | M7 reconciliation (M7-D2): the M7 spec author is resumed with the as-built notes of the milestones closed so far; then M7 part 1, waves 1 and 2 | design, implementation | - |
-| 6 | M7 part 2: release test and visual pass (wave 3), exit audit (M7-X), final audit (M7-A), fixes, final build, end-of-build notification | design, implementation | - |
+| 4 | M7 reconciliation (M7-D2): the M7 spec author is resumed with the M5 as-built notes; then M7 part 1, waves 1 and 2 | design, implementation | - |
+| 5 | Hand-over point: release candidate built and its hash recorded, ledger checkpoint, notification (section 12). This session stops | orchestrator | - |
+| 6 | M6, by `docs/build/M6-handoff-plan.md` | as that plan says | - |
+| 7 | M7 part 2: the part 2 sections of the M7 spec reconciled with the M6 as-built notes (M7-D3); release test and visual pass (wave 3); exit audit (M7-X); final audit (M7-A); fixes; final build; end-of-build notification | design, implementation | - |
+
+Phases 0 to 5 are one session. Phase 7 is a later session, or the same orchestrator resumed from the ledger.
 
 ### 4.2 Gates and order
 
 | Gate | Opens when | Blocks |
 |---|---|---|
 | G-spec (per milestone) | That milestone's spec review is merged and its rulings are applied | Every work package of the milestone |
-| G-close (per milestone) | The milestone before it, in the order below, is recorded CLOSED in the ledger | Every work package of the next milestone. Designs may run earlier (section 4.1) |
-| G6-report | The maintainer supplies the reviewed discovery report (section 3 row 1) | M6-D0 |
-| G6-doc | The maintainer approves the text of `docs/formats/bento.md` before it is committed (section 7.1) | M6-D1 and all M6 packages |
-| G6-trial | The maintainer's trial on the real file passes (section 7.6), or the maintainer waives it | M6 CLOSED. Until then M6 is recorded as "audited, trial pending" |
-| G7-release | M6 is CLOSED (so G6-trial is open), or the maintainer sends `DECIDE release-without-importer: yes` | M7 part 2 |
+| G-close | M5 is recorded CLOSED in the ledger | Every M7 work package. The M7 design may run earlier (section 4.1) |
+| G7-release | M6 is recorded CLOSED in the ledger (which includes its trial gate), or the maintainer sends `DECIDE release-without-importer: yes` | M7 part 2 |
 
-Order by gate state:
-
-| State at M5 close | Order |
-|---|---|
-| G6-doc open | M5, M6, M7 part 1, M7 part 2 |
-| G6-report open, G6-doc pending | M5, M7 part 1 while the approval is pending, then M6, then M7 part 2 |
-| G6-report not open | M5, M7 part 1, then stop with a notification (section 11). The session resumes at M6 when the gate opens |
-
-M7 part 1 never depends on M6. When M6 closes after M7 part 1, the only M7 work that follows it is M7-WP11 (documentation for the importer) and part 2.
+The order is fixed: M5, M7 part 1, stop, M6, M7 part 2. M7 part 1 never depends on M6. After M6 closes, the M7 work that remains is M7-WP11 (documentation for the importer) and part 2. The gates of M6 itself are in its plan, section 4.
 
 ### 4.3 Rules in addition to orch 2 and 3
 
 1. Concurrency: at most three agents at once, including a design agent that runs alongside implementation (orch 3 step 3).
-2. No implementation package of a milestone is dispatched before its G-spec and G-close gates are open. If an exit audit fails a criterion after root-cause analysis and one redesign, that is a blocker (orch 7) and the next milestone does not start.
-3. Model floor for design work: the floor set by the maintainer for M4 (`docs/build/M4-session-plan.md` section 4) carries over to every design-tier call in this session: specs, ADRs, format documents, screen designs, spec reviews, rulings, root-cause redesigns, the security reviews named in sections 6.5, 7.5, and 8.5, the exit audits, and the final audit. The orchestrator sets the model explicitly on each call (orch 2 rule 1). If no model at or above the floor is available, that is a blocker. The ledger records only that the floor was met (orch 8).
-4. Reviewer independence (orch 2 rules 3 and 5): a reviewer or auditor is a different agent instance from the author and receives the code, the spec, and the properties to check, never the author's conclusions. In M6 the fixture generator (M6-WP3) and the plugin (M6-WP4) are written by different agents, each from the format document only, so that one misreading cannot pass on both sides.
+2. No implementation package of a milestone is dispatched before its gates are open. If the M5 exit audit fails a criterion after root-cause analysis and one redesign, that is a blocker (orch 7) and M7 does not start.
+3. Model floor for design work: the floor set by the maintainer for M4 (`docs/build/M4-session-plan.md` section 4) carries over to every design-tier call in this session: specs, ADRs, format documents, screen designs, spec reviews, rulings, root-cause redesigns, the security reviews named in sections 6.5 and 8.5, the exit audits, and the final audit. The orchestrator sets the model explicitly on each call (orch 2 rule 1). If no model at or above the floor is available, that is a blocker. The ledger records only that the floor was met (orch 8).
+4. Reviewer independence (orch 2 rules 3 and 5): a reviewer or auditor is a different agent instance from the author and receives the code, the spec, and the properties to check, never the author's conclusions.
 5. Checkpoint after every merge: commit, push, ledger. The ledger names unpushed worktree work at all times (orch 9).
 6. Each agent brief names its own scratch subfolder and port, starts with `git merge --ff-only <assigned branch>`, and lists the owned files and the files it must not touch (orch 2 rule 6).
 7. Mechanical tier: no package is planned as mechanical. A spec may mark a fully specified package or part as mechanical (for example third-party notices entries, the screen catalogue for the visual pass, or the fixture generator once the format tables are exact); its output is then reviewed under orch 2 rule 2.
-8. Stops: the session does not stop between milestones. It sends one notification at each milestone close and continues. It holds only at G6-doc, at G6-trial, at G7-release, and before any publication (section 3 row 9). The maintainer may send `PAUSE` or `STOP` at any time (orch 7).
+8. Stops: the session does not stop between M5 and M7 part 1. It sends one notification at M5 close and continues. It stops at the hand-over point (phase 5). M7 part 2 holds at G7-release and before any publication (section 3 row 7). The maintainer may send `PAUSE` or `STOP` at any time (orch 7).
 
 ## 5. Phase 0: resume set-up
 
 1. Record the window start and the assigned integration branch in ledger section 1; arm the single resume reminder (orch 6).
 2. Add `/.claude/` to `.git/info/exclude`. Rebuild the trimmed offline PHPUnit install with the pinned XLSX library (orch 9; ledger note "M3-WP0 merged"). Run `composer lint` and `composer test`; expected 9498 tests, 1 skipped, lint 786 files, as at M4 close.
-3. Bring three stale status lines up to date in one commit: `CLAUDE.md` ("Status" paragraph still says M2 is next), `docs/plan.md` (status line says no application code exists), and orch 1 (role sentence, to match section 4.2 of this plan). These are statements of fact, not decisions.
-4. Record in the ledger whether G6-report is open.
+3. Bring three stale status lines up to date in one commit: `CLAUDE.md` ("Status" paragraph still says M2 is next), `docs/plan.md` (status line says no application code exists), and orch 1 (role sentence: this session's milestones and the M6 plan's location). These are statements of fact, not decisions.
+4. Record in the ledger that M6 is deferred to the end by maintainer instruction and that its plan is `docs/build/M6-handoff-plan.md`.
 
 ## 6. M5: form editor, source editing, sanitizer
 
@@ -116,7 +102,7 @@ M7 part 1 never depends on M6. When M6 closes after M7 part 1, the only M7 work 
 |---|---|---|---|
 | 1 | What "sanitizer" means here | Keep ADR 0014 decision 4: stored form text is never printed. The parser refuses a whole form on any rule break; the page is built from the node model by templates. No stripping, no safe-HTML type | One path already holds for M2 to M4 and for archive import; a second, lenient path is the classic sanitizer failure |
 | 2 | Problem reporting | `FormRejected` carries a reason code only (no position). Add the line number and a message key per reason so the source view can say what is wrong and where, without echoing content into logs | The source view needs "validation" (plan 4) |
-| 3 | Stored text | Section 3 row 4: every write stores `serialize(parse(text))`. Property: parse of the stored text succeeds and serializing it again gives the same bytes | Exit criterion 1 |
+| 3 | Stored text | Section 3 row 3: every write stores `serialize(parse(text))`. Property: parse of the stored text succeeds and serializing it again gives the same bytes | Exit criterion 1 |
 | 4 | Editor without JavaScript | One page per table's form. Every control is a submit button that redisplays the page (the P163 pattern): move up, move down, hide, show, width, label, add a section, rename a section, remove a section. The working copy travels in a hidden field as form text and is parsed again on every request; Save writes it. No server-side drafts | Every screen works without scripts; a hidden draft is untrusted input and takes the same parser as everything else |
 | 5 | What the simple editor edits | Sections (`fieldset` with `legend`) and field slots: order, visibility, width, label, grouping. Static elements already in a form (headings, text, dividers, images, from source editing) appear as fixed rows that can be moved or removed and are otherwise kept exactly | ADR 0003 scope; ADR 0006 needs the editors to round-trip without loss |
 | 6 | Width | `data-tiffin-span` from a short list (full, two thirds, half, one third) on the 12-column grid, shown through stylesheet classes; one column on narrow screens; source order equals reading order. `data-tiffin-col` and `data-tiffin-row` are kept and shown in reading order, as now. Generated forms keep the P95 auto-fit layout | No inline styles (ui 10); ADR 0006 keeps explicit placement for M8 |
@@ -176,101 +162,11 @@ Owned files and acceptance:
 
 Independent design-tier audit against section 2, plus: hostile forms of the auditor's own through each entry path (hidden draft, source save, upload, archive import, a project file edited by hand); every rendered page holds only allowlisted elements and no inline code; fixed-point property with the auditor's own seed; mutation checks on the parser and on the link rule; a Member refused on every form operation in core; a version 4 file made by the M4 code opens and its forms can be edited; the editor by key presses only, also with JavaScript off; the appearance matrix. Manual screen-reader pass: recorded as not verified, as in M0 to M4.
 
-## 7. M6: legacy-product import
+## 7. M6: legacy-product import (deferred)
 
-### 7.1 Gate procedure (G6-report, G6-doc)
+Deferred to near the end of the build by maintainer instruction (2026-11-22), and likely to be done by another developer. The complete plan is `docs/build/M6-handoff-plan.md`: gates, decisions, design points, work packages, waves, reviews, exit audit, and the maintainer trial on the real file. This section number is kept so that the other section numbers in this document stay as they were.
 
-1. The maintainer runs `tools/discovery/discover-structure.php` by the procedure in `tools/discovery/README.md` and supplies the reviewed report. For the 12 GB file the tool must be run on the unpacked package folder, not on the zip: it does not open zip entries over 1 GiB (`MAX_EXTRACT_BYTES`), so a large database inside the zip would be listed and skipped. With the report the maintainer also states, as numbers only: the unpacked size, and the free space on the machine where the import will run (section 3 row 10). The report stays in the session scratchpad. It is never committed, in whole or in part.
-2. M6-D0 (design tier) writes `docs/formats/bento.md` in TiffinDB's own words: container layout, databases, tables, columns, how field definitions and field types are stored, how records, links, and files are stored, and which versions the report covers. It also records the scale figures the report gives (record counts per table, file count, total and largest file size) and where the bytes are: files beside the database, or values inside it. Those figures set the limits and the scale fixture (section 7.2 rows 16 and 11). It uses a name from the report only where the name is clearly the product's own and not chosen by a person.
-3. The orchestrator sends the text to the maintainer for approval before the commit (plan 6.4: identifier names can themselves be personal). This is a hold, headed `BLOCKER` (orch 7). M7 part 1 continues meanwhile.
-4. If the report shows that field definitions are stored as rows and structure alone does not show the mapping, the README's `--value-shapes` step is needed. That is a second maintainer round; M6-D0 states exactly which table it needs.
-
-### 7.2 Design outputs (M6-D1, reviewed by M6-R1) and design points
-
-| Output | Content |
-|---|---|
-| `docs/specs/M6-legacy-import.md` | Contract extension, untrusted-source reader, whole-source import pipeline, type map, relation and attachment handling, report, core operations, screens, test plan, work packages with exact owned files |
-| `docs/design/m6/` | Start page, review of a whole source, progress, report |
-| ADR 0021 (number indicative) | Importer contract API 2 and the whole-source import path (amends ADR 0015) |
-| ADR 0022 (number indicative) | Legacy importer: name and id (section 3 row 7), supported versions, type map, what is not imported |
-| `docs/formats/tiffin.md` | Import log wording for a whole-source import; a format step only if the log row cannot hold the report additively |
-
-| # | Point | Recommendation | Reason |
-|---|---|---|---|
-| 1 | Contract | Add a second importer interface under contract API 2 for sources that describe a whole project: tables with declared field types, relations between source tables, row pages per table with link cells as source ids, and file streams. API 1 plugins are unchanged | Plan 6.1 already describes this neutral model; API 1 was cut down to what CSV and XLSX need |
-| 2 | Target | Always a new project, with no grants, as archive import does. No merge into an existing project | Reuses the reviewed new-project path; a merge needs conflict rules nobody has asked for |
-| 3 | Source and size | No browser upload for a large source. The Admin puts the unpacked package folder into an inbox folder under the data folder, by SFTP or the host's file manager; TiffinDB lists what is there and the Admin picks one. No path is typed, links are not followed, and the choice is checked for containment. A zip through the browser stays possible under the 64 MiB cap (P116). A zip in the inbox is accepted only if the design can read its entries as streams without unpacking it whole (Zip64); otherwise the inbox takes unpacked folders only | The real file is about 12 GB zipped. Unpacking on the server would need the space twice over; an unpacked folder needs it once |
-| 4 | Reading the source database | The zip and the database inside it are hostile input: the zip checks of archive import, read-only and immutable open, no trust in the schema, no view or trigger ever run. Plugins may not hold SQL text (`PluginLayerRulesTest`), so the core gives the plugin a read-only source reader through the contract: list tables and columns, page through a named table | To confirm in the design that the layer test refuses SQL in plugins as the ledger describes; if so the reader belongs in core |
-| 5 | Commit | Rows follow the M3 staging job model: read and prepare in chunks, then one final transaction writes records, links, and file rows. Files cannot wait for that transaction at this size. They are placed in resumable steps before it, into the new project's folder while the project is in state `creating` and not visible: each step hashes and places a bounded number of bytes, by hard link from the inbox where the file system allows it and by copy otherwise. Placement is content-addressed, so a repeated step does no harm. Cancel or failure removes the unfinished project. This amends ADR 0018 decision 4 for imports | Plan 6.1 ("single transaction") holds for the database; 12 GB of files cannot be hashed and placed inside one request or one transaction |
-| 5a | Sweeps | The one-hour sweep of `creating` projects (P57) and the 24-hour staging sweep (P127) must never remove a running or paused import. The job has an explicit state and a heartbeat; only a job the Admin cancelled, or one idle past a much longer stated period, is removed | An import of this size can take hours across many steps |
-| 6 | Review step | One page: tables, fields, proposed types, what will not be imported. The Admin may rename or skip a table or a field. Types are changed afterwards in the schema editor | Plan 6.1 asks for review; a full mapping table for many tables at once is a large screen with little gain |
-| 7 | Type map | A table in the spec from every type observed in `docs/formats/bento.md` to a TiffinDB type, or to text; anything not mapped is imported as text where possible and always listed in the report (plan 6.4). Calculated and encrypted fields (deferred in plan 3.4) are reported, not imported | Exit criterion 2 |
-| 8 | Report | Per table: records read and imported; per field: type chosen, values emptied and why; links made and links whose target was missing; files imported, missing, over the cap, or over 100 per field (P147); source features not imported (layouts, saved searches, anything else observed) | "Import report complete" is checked against the generator's ground truth |
-| 9 | Legacy layouts and saved searches | Not imported. Forms are generated (plan 6.1). Listed in the report | Clean-room; TiffinDB has its own form format |
-| 10 | Versions and templates | Only the versions the report covers; anything else is refused with a plain message. Template files are out of v1 unless the report covers them and they share the structure | `CLAUDE.md` open decision |
-| 11 | Fixtures | Generated at test time by a seeded generator with a documented seed, with a ground-truth description of what it wrote. No binary fixtures committed. A scale profile, used only by the scale runs, takes its record and file counts from the figures in `docs/formats/bento.md` | `CLAUDE.md` fixture rules |
-| 12 | Memory and time | Every step has a fixed memory ceiling that does not grow with the source (the figure is set in the spec, under the host check's 128M threshold) and a time budget per web request. A test asserts the peak. If files are stored as values inside the source database, they are read in slices by SQL, never as one value | PHP's database layer returns a whole value at once; a single large value would otherwise exceed memory |
-| 13 | Command-line driver | A script under `tools/admin/` runs the same core job to the end, or resumes it, with no web time limit. It names the acting Admin, is audited like the web path, prints progress and the report, and can print the report with table and field names replaced by placeholders | Section 3 row 10; the pattern of `tools/admin/reset-password.php` |
-| 14 | Dry run | Reads, prepares, and reports without creating a project or placing a file | Lets the maintainer see the whole report for the real file before anything is written (section 7.6) |
-| 15 | Resume | Job state is on disk. A job stopped at any point (time limit, closed browser, killed process, restart) continues from its last finished step and gives the same project as an uninterrupted run. A lock stops the web path and the command line from driving one job at once | An import of hours will be interrupted |
-| 16 | Fit table | The spec holds a table of every limit that applies to a whole-source import (records per table, source rows, cells, new linked records, files per field, bytes per file, total bytes, entries) beside the real file's figure from the report and the chosen value. The scale fixture is the real figures times 1.5 in counts; in bytes it is as large as the build machine's disk allows, stated in the ledger | Makes "will it work" a checked table, not an expectation. The existing caps (50,000 rows, 100,000 source rows, 10,000 new linked records, 100 files per field) were set for spreadsheets |
-| 17 | Disk space | Before the first step the job works out the bytes it needs (zero extra per file when hard links work, the full size when it must copy) and refuses to start if free space less the reserve is short, stating both figures | A failure at 11 of 12 GB wastes hours |
-| 18 | After the import | The spec lists what must still work on a project of that size and how each is checked on the scale fixture: lists and search, the file page and download as a stream, project totals, the orphan-file sweep, snapshots (database only), JSON export, and project archive export. Archive export is capped at 4 GiB today; the design either lifts that for export or gives a plain refusal, and the host documentation describes backup by copying the folder (format 9) | A project that imports but cannot be backed up has not worked |
-
-### 7.3 Work packages
-
-Indicative; the M6 spec fixes ids, exact owned files, and acceptance tests.
-
-| ID | Title | Tier | Depends on | Security-critical |
-|---|---|---|---|---|
-| M6-WP1 | Contract API 2 values and interface; registry accepts API 2; untrusted-source reader | implementation | none | Yes |
-| M6-WP2 | Whole-source import pipeline: job with state, heartbeat, and lock; chunked read; resumable file staging by hard link or copy; disk-space check; preparation; single commit into a new project; dry run; report; import log; sweep rules | implementation | WP1 | Yes |
-| M6-WP3 | Seeded synthetic fixture generator, with a scale profile, and its structure test against `docs/formats/bento.md` | implementation | WP1 | No |
-| M6-WP4 | The plugin: manifest, importer, type map, plugin tests against a hand-built source | implementation | WP1 | Yes |
-| M6-WP5 | `Core\App` operations for a whole-source import: list the inbox, start, continue, review, dry run, commit, cancel; authorization; audit; strings | implementation | WP2 | Yes |
-| M6-WP6 | Screens and components: start with the inbox list, space check, progress with Continue, review, dry-run report, report; routes, layouts, stylesheet, entry link | implementation | WP5 | Yes |
-| M6-WP7 | End-to-end import of the fixture with relations and attachments; report check against ground truth; hostile corpus; failure injection; scale runs by web steps and by command line with peak memory recorded; kill-and-resume runs; the section 7.2 row 18 checks; keyboard-only run; visual check | implementation | WP3, WP4, WP6, WP8 | No |
-| M6-WP8 | Command-line driver: run, resume, dry run, report with names replaced | implementation | WP5 | Yes |
-| M6-WP9 | Fixes for defects found by the maintainer trial (section 7.6). Sized after the trial; may be empty | implementation | G6-trial result | As the defect |
-
-| ID | Owned files (indicative) | Must not touch | Acceptance |
-|---|---|---|---|
-| M6-WP1 | New files in `src/Core/Io/Contract/`; `src/Core/Io/Plugin/`; *`src/Core/Io/Source/`*; `tests/core/io/ContractTest.php`, `tests/core/io/plugin/`, `tests/repo/PluginLayerRulesTest.php` | Existing API 1 contract files except additive changes the spec names | API 1 plugins load and pass unchanged; the reader never runs a view or trigger, never writes beside the source, and refuses identifiers it did not list itself |
-| M6-WP2 | *`src/Core/Io/ProjectImport/`*; `src/Core/Io/IoLimits.php`, `StagingArea.php`, `ImportLog.php`; the attachment store's placement method for a linked or copied file (the spec names it); *`tests/core/io/projectimport/`* | The API 1 pipeline classes (`Reader`, `Preparer`, `Committer`), `src/Core/App` | One database transaction; injected failure at each step leaves no project folder, no registry row, no file; a job stopped after any step and resumed gives a byte-identical project file and the same file hashes; peak memory under the ceiling with a source many times larger than the ceiling; a running or paused job survives both sweeps; the start is refused with both figures when space is short; a dry run writes nothing under `projects/` |
-| M6-WP3 | *`tests/Support/LegacyFixture.php`*, *`tests/core/io/LegacyFixtureTest.php`* | Everything else | Same seed gives the same bytes; the generated structure matches every table and column the format document lists; ground truth lists every record, link, and file written; the scale profile builds the fit table's counts without holding the source in memory |
-| M6-WP4 | *`plugins/import/legacy-package/`* (name per ADR 0022); *`tests/plugins/legacy-package/`* | `src/` | Plugin layer rules pass; every type in the format document has a row in the type map and a test; unknown versions refused; the legacy product's name appears in no manifest field |
-| M6-WP5 | *`src/Core/App/ProjectImportOperations.php`* and value classes; `Operations.php`, `AuditAction.php`; `strings/en/problems.php`; *`tests/core/app/ProjectImportOperationsTest.php`*; `MessageKeysTest.php` | `src/Core/Io`, `src/Web` | A Member is refused on every method; a job belongs to the Admin who started it (P134); one audit row per import |
-| M6-WP6 | *`src/Web/Controller/ProjectImportController.php`*; *`templates/pages/project-import/`*; `templates/layout.php`, `app.css`, `routes.php`, `strings/en/import.php`, `TemplateRulesTest.php`; *`tests/web/ProjectImportScreenTest.php`* | `src/Core` | Works without JavaScript with a Continue button per chunk; hostile table and field names escaped; the legacy product's name appears in no string or template |
-| M6-WP7 | *`tests/roundtrip/LegacyImportTest.php`*, *`tests/web/M6EndToEndTest.php`*, *`tests/core/io/LegacyHostileTest.php`*; assigned residue | Product code, except assigned residue | Exit criteria of section 2, by test. The scale runs are opt-in (not in `composer test`) and their times, peak memory, and sizes go in the ledger |
-| M6-WP8 | *`tools/admin/import-source.php`*, *`tests/tools/ImportSourceToolTest.php`* | `src/Web`; `src/Core` except through the WP5 operations | Runs the fixture to the end; killed at seeded points and resumed, it gives the same project as one uninterrupted run; refuses an unknown or inactive Admin; the dry run and the names-replaced report print no source value |
-
-### 7.4 Waves
-
-| Wave | Packages | Starts when |
-|---|---|---|
-| 1 | WP1 | M6-R1 merged and M5 CLOSED |
-| 2 | WP2, WP3, WP4 | WP1 merged |
-| 3 | WP5 | WP2 merged |
-| 4 | WP6, WP8 | WP5 merged |
-| 5 | WP7 | WP3, WP4, WP6, WP8 merged |
-| after the trial | WP9 | The maintainer returns trial findings |
-
-### 7.5 Reviews and exit audit
-
-Design-tier security review (orch 2 rule 4: every importer that parses user-supplied files, plugin loading): WP1, WP2, WP4, WP5 with WP6, and WP8 (a tool that acts as an Admin outside the web sign-in). Implementation-tier review: WP3, WP7.
-
-M6-X: independent design-tier audit against section 2, plus: fixture import with the auditor's own seed, report compared line by line with the ground truth; hostile corpus (traversal names in the zip, a database with triggers and views, sizes that lie, row counts past the caps, a truncated database, an unknown version); a failed import leaves nothing; a Member refused in core; the new project opens with plain SQLite tools and matches `docs/formats/tiffin.md`; clean-room check (no vendor material; the legacy name only in documentation prose and the format document; none in templates, strings, or `plugin.json`); mutation checks. Scale, by the auditor's own run: the scale fixture imported by web steps and by the command line; peak memory under the ceiling; the process killed at points of the auditor's choosing and resumed; hard-link and copy placement both exercised; a start refused for lack of space; every check of section 7.2 row 18. The audit states plainly how far the byte scale it reached is below 12 GB. Not verifiable here: the real file. That is section 7.6.
-
-### 7.6 Maintainer trial on the real file (G6-trial)
-
-The build can show that the importer handles a synthetic source of the right shape and scale. Only the maintainer can show that it handles the real one. M6 is not recorded CLOSED until this trial passes or the maintainer waives it.
-
-1. After M6-X the orchestrator gives the maintainer the procedure and the exact commit to use (a checkout of the integration branch, or a release candidate once M7-WP6 exists).
-2. The maintainer runs the command-line dry run on the unpacked real package, on the machine chosen under section 3 row 10, and reads the report. Nothing from the real file enters the repository or the session except report text the maintainer has read and chosen to send, with names replaced if they are personal. That text is not committed.
-3. The dry run passes when: it ends without an error; peak memory stays under the ceiling; every table and field of the source appears in the report as imported, imported as text, or not imported with a reason; the record, link, and file counts equal the source's own counts in the discovery report; nothing is over a limit of the fit table.
-4. The maintainer then runs the real import and checks the result in the browser by their own judgement: a few records per table against the legacy application, links, files that open.
-5. Findings go to M6-WP9 as structure and counts, never as values. The trial is repeated after the fixes. Two failed rounds on one class of defect need a root-cause redesign (orch 3 step 4).
-6. Limits of this trial: one file, so one version of the legacy application. Other versions stay refused (section 7.2 row 10) and the user documentation says so.
+This session writes no M6 code. It does two things for M6: M7 part 1 leaves room for it (section 8.2 row 14), and M7-WP0 adds a free-space line to the host check, which the M6 plan uses.
 
 ## 8. M7: packaging, upgrade path, documentation, release
 
@@ -281,8 +177,8 @@ The build can show that the importer handles a synthetic source of the right sha
 | `docs/specs/M7-release.md` | Release archive contents and exclusions; build tool; version scheme; upgrade procedure and tests; documentation outline; carried-forward items with their owners; release test procedure; screen catalogue for the visual pass; work packages with exact owned files |
 | `docs/specs/M7-screens.md` | Snapshots (list, take, restore), project deletion, audit log, Admin recovery, About page, icons; routes, templates, strings, keyboard and visual procedures |
 | `docs/design/m7/` | Designs for those screens (ui 6.2 lists the About page; the others come from P49 and P170) |
-| ADR 0023 (number indicative) | Release packaging, versioning, and the upgrade path |
-| ADR 0024 (number indicative) | Snapshot restore, project deletion, audit-log screen, Admin recovery |
+| ADR 0021 (number indicative) | Release packaging, versioning, and the upgrade path |
+| ADR 0022 (number indicative) | Snapshot restore, project deletion, audit-log screen, Admin recovery |
 
 ### 8.2 Design points the spec must settle, with the recommended direction
 
@@ -291,16 +187,17 @@ The build can show that the importer handles a synthetic source of the right sha
 | 1 | Archive contents | `public/`, `src/`, `templates/`, `strings/`, `plugins/`, `config/app.php`, `vendor/` without development packages, the root `.htaccess`, `LICENSE`, `README.md`, a third-party notices file, `tools/admin/`, `tools/host-check/`, `docs/host/`, `docs/user/`, `docs/formats/`, `docs/dependencies.md`. Not shipped: `tests/`, `tools/dev/`, `tools/discovery/`, `docs/build/`, `docs/specs/`, `docs/design/`, `.github/` | Plan 3.2; the application has no build step, so the archive is source. The "Source code" link stays the AGPL section 13 offer |
 | 2 | Build tool | `tools/release/build.php`: takes a prepared `vendor/`, checks every shipped package against `docs/dependencies.md` (version and source reference, ADR 0016 decision 2), writes a zip with sorted entries, fixed times, and fixed modes, plus its SHA-256. Two runs give the same bytes. It does not download anything | Composer dist downloads are refused in the build environment (orch 9); a reproducible archive lets the maintainer rebuild and compare |
 | 3 | Release rules test | Fails on: a test or development file in the archive; `config/local.php`; any data file pattern of `.gitignore`; a nested `.htaccess` with rewrite directives under `vendor/` (ledger section 7); a file with no SPDX header where one is required; a shipped package missing from the dependency table | Ledger section 7 item for M7 packaging |
-| 4 | Version | `config/app.php` `version` becomes `1.0.0` in the final build commit; release candidates are `1.0.0-rc.N`. A `CHANGELOG.md` starts at 1.0.0. The tag is the maintainer's (section 3 row 9) | Asset addresses already carry the version (ADR 0008) |
+| 4 | Version | `config/app.php` `version` becomes `1.0.0` in the final build commit; release candidates are `1.0.0-rc.N`. A `CHANGELOG.md` starts at 1.0.0. The tag is the maintainer's (section 3 row 7) | Asset addresses already carry the version (ADR 0008) |
 | 5 | Upgrade path | Procedure: replace the application folders, keep the data folder and `config/local.php`; the system database and each project upgrade on first use after a snapshot (already built). Tests: installations generated at every earlier project format (1 to current) and system schema (1 to current) open under the release code; a data folder written by a newer version is refused with a plain page; a simulated next version step runs through the existing test seam. Stale files left by an upload over an old copy: the procedure says which folders to delete first | Plan 8 M7 scope; only project-file steps were described before (context brief 12.23) |
 | 6 | Snapshot restore | Admin only (`snapshots.manage`), through a confirmation page; takes a snapshot of the current state first; replaces the project file inside the project lock. Snapshots hold the database, not the files: after a restore, attachment rows whose file is gone are reported on the page (serving already answers "not found"), and files no row names are swept | P49; the file mismatch is the part that needs design |
 | 7 | Project deletion | Admin only, confirmation page that states record, file, and snapshot counts and requires the project name to be typed; offers the project archive first; removes the registry row, grants, and the project folder. Recursive removal is allowed for a project folder by an explicit rule (amends P64 and P127). Audit `project.deleted` | Irreversible; no trash for projects in v1 |
 | 8 | Audit-log screen | Admin only (`audit.view`), newest first, 50 per page, filter by person, project, and action; values escaped; read-only | P49; `AuditOperations::recent` exists |
-| 9 | Documentation | `docs/host/`: requirements, install by upload and setup page, data folder placement, HTTPS and reverse proxies (the `Origin` note from the ledger), upgrade, backup and restore (archive, and by hand per format 13.4), large projects (the inbox import, the command-line driver, backup by copying the folder), password reset script, Admin recovery, plugins and their full privileges (plan 6.2, stated plainly), limits, reading the host check. `docs/user/`: first steps, records, lists and search, collections, files, trash, forms, import and export, display settings. Synthetic examples only; no screenshots in v1 | `CLAUDE.md` rules on examples; screenshots would need a seeded generator and add binary files |
+| 9 | Documentation | `docs/host/`: requirements, install by upload and setup page, data folder placement, HTTPS and reverse proxies (the `Origin` note from the ledger), upgrade, backup and restore (archive, and by hand per format 13.4), large projects (backup by copying the folder), password reset script, Admin recovery, plugins and their full privileges (plan 6.2, stated plainly), limits, reading the host check. `docs/user/`: first steps, records, lists and search, collections, files, trash, forms, import and export, display settings. Synthetic examples only; no screenshots in v1 | `CLAUDE.md` rules on examples; screenshots would need a seeded generator and add binary files |
 | 10 | About page and icons | `/about` for signed-in people: version, licence, "Source code" link, third-party notices; server facts (PHP and SQLite versions) for Admins only. Favicon from `docs/brand/tiffindb-mark-small.svg`, app icon from `docs/brand/tiffindb-app-icon.svg`, both served from `public/` | ui 10 and 11; plan 7 |
 | 11 | Static assets | `public/.htaccess` sets a CSP and cache headers for static files (ledger section 7). Behaviour on Apache is reasoned, not run, until the host check (orch 9) | Assets are served by Apache without the application's headers |
 | 12 | Probe port | An optional `probe_port` key in `config/local.php` closes the P80 port question | P80 deferred it to M7 |
 | 13 | Manual checks | A short procedure for the manual screen-reader pass, for the maintainer; the build has never verified it | Plan 5 asks for one per milestone; recorded as not verified since M0 |
+| 14 | Room for M6 | The build tool ships `plugins/` and `tools/admin/` as it finds them, with no list of names; the release rules test and the notices file need no change for one more plugin and one more admin tool; `docs/host/` and `docs/user/` each have a named place for the importer chapter, which M7-WP11 writes; the About page lists plugins from the registry. Nothing in part 1 names the legacy importer | M6 is built after part 1, possibly by another developer; adding it must not reopen part 1 |
 
 ### 8.3 Work packages
 
@@ -310,7 +207,7 @@ Indicative; the M7 spec fixes ids, exact owned files, and acceptance tests. Part
 |---|---|---|---|---|
 | M7-WP0 | Carried-forward hardening (section 9.3): `Origin` malformed state, probe port key, overlong file name keeps its extension (P187), error suppression in the maintainer tools, remaining low items the spec confirms are still open | implementation | none | Yes |
 | M7-WP1 | Core administration: snapshot restore, project deletion, audit listing with filters, repeated failed-upgrade snapshots (P183), audit actions | implementation | none | Yes |
-| M7-WP2 | Core Admin recovery (section 3 row 8) | implementation | none | Yes |
+| M7-WP2 | Core Admin recovery (section 3 row 6) | implementation | none | Yes |
 | M7-WP3 | Web components: About and administration partials, icons in the page head, `public/.htaccess` static headers, stylesheet, layouts and routes for every M7 page, shared strings, navigation links | implementation | none | Yes |
 | M7-WP4 | Screens: snapshots (list, take, restore) and project deletion | implementation | WP1, WP3 | Yes |
 | M7-WP5 | Screens: audit log, About page, recovery | implementation | WP1, WP2, WP3 | Yes |
@@ -318,7 +215,7 @@ Indicative; the M7 spec fixes ids, exact owned files, and acceptance tests. Part
 | M7-WP7 | Upgrade-path tests: generators for earlier formats, newer-version refusal, simulated next step | implementation | WP1 | No |
 | M7-WP8 | Host documentation and `README.md` | implementation | WP1, WP2, WP6 | No (security statements reviewed by the design tier) |
 | M7-WP9 | User documentation | implementation | M5 CLOSED | No |
-| M7-WP10 | Release test from the built archive (both layouts: `public/` as the web root, and the whole tree under the web root); screen catalogue visual pass in every theme; whole-application keyboard structure run | implementation | part 1 merged; G7-release | No |
+| M7-WP10 | Release test from the built archive, rebuilt after M6 (both layouts: `public/` as the web root, and the whole tree under the web root); screen catalogue visual pass in every theme; whole-application keyboard structure run | implementation | part 1 merged; G7-release | No |
 | M7-WP11 | Documentation for the legacy importer; consistency pass over `docs/host/` and `docs/user/` against the as-built screens | implementation | M6 CLOSED | No |
 
 | ID | Owned files (indicative) | Must not touch | Acceptance |
@@ -348,7 +245,7 @@ Indicative; the M7 spec fixes ids, exact owned files, and acceptance tests. Part
 
 Design-tier security review (orch 2 rule 4): WP0 (request pipeline), WP1 (deletion, restore), WP2 (account recovery), WP3 (headers, templates), WP4 with WP5, WP6 (what ships), and the security statements in WP8. Implementation-tier review: WP7, WP9, WP10, WP11.
 
-M7-X: independent design-tier audit against section 2, plus: the archive rebuilt by the auditor has the recorded SHA-256; install from the archive in both layouts on the built-in server; an installation made by the code at M4 close upgrades under the archive; restore, deletion, and recovery attacked as a Member and across projects; shipped packages equal `docs/dependencies.md`; no network call in application code (as M3: none under a system-call trace); visual pass of every screen in every theme at 1360 px and 390 px, and at 320 px with largest text. Recorded as pending maintainer verification: the reference shared host (orch 7), `.htaccess` behaviour on Apache, the manual screen-reader pass, a real legacy file.
+M7-X: independent design-tier audit against section 2, plus: the archive rebuilt by the auditor has the recorded SHA-256; install from the archive in both layouts on the built-in server; an installation made by the code at M4 close upgrades under the archive; restore, deletion, and recovery attacked as a Member and across projects; shipped packages equal `docs/dependencies.md`; no network call in application code (as M3: none under a system-call trace); visual pass of every screen in every theme at 1360 px and 390 px, and at 320 px with largest text. Recorded as pending maintainer verification: the reference shared host (orch 7), `.htaccess` behaviour on Apache, the manual screen-reader pass. The trial on the real legacy file belongs to M6 and is recorded there.
 
 M7-A (orch 10): final design-tier audit of the whole codebase by an agent that took no earlier part in the session: repository rules, licences, SPDX coverage, the security baseline of plan 7, accessibility checks, portability exports. Findings are fixed by the owning package's author; the archive is rebuilt; the hash in the ledger is replaced.
 
@@ -358,10 +255,10 @@ M7-A (orch 10): final design-tier audit of the whole codebase by an agent that t
 
 | Item | Expected | If the design finds otherwise |
 |---|---|---|
-| Project format (now version 4) | No step in M5 or M7. M6: none if the import log's JSON report can hold a whole-source report additively | A step is designed with its exact upgrade SQL in `docs/formats/tiffin.md` section 11, taken after a snapshot, as versions 2 to 4 were |
+| Project format (now version 4) | No step in M5 or M7. M6 decides its own (its plan, section 5) | A step is designed with its exact upgrade SQL in `docs/formats/tiffin.md` section 11, taken after a snapshot, as versions 2 to 4 were |
 | Form format (now 1) | Unchanged. M5 adds no element or attribute | A new attribute means form format 2; avoid in v1 |
-| System schema (now version 2) | Version 3 only if Admin recovery needs a table | Designed in ADR 0024 |
-| Plugin contract (now API 1) | API 2 added in M6, API 1 kept | ADR 0021 |
+| System schema (now version 2) | Version 3 only if Admin recovery needs a table | Designed in ADR 0022 |
+| Plugin contract (now API 1) | Unchanged in M5 and M7. M6 adds API 2 and keeps API 1 | The M6 plan |
 | JSON export format (now 1) | Unchanged | - |
 
 ### 9.2 Files with one owner per wave
@@ -391,22 +288,15 @@ Candidates read from the ledger. M5-D1 and M7-D1 confirm each against the tree b
 | Bidirectional control characters kept in shown file names and headings | M2-WP5, M3-WP9, M3-WP10 reviews | M7-D1 decides |
 | Words that break mid-word at 320 px with largest text | M1-WP8d, M2 exit | M7-WP3 if a rule fixes it; else accepted |
 | Stale design documents (`docs/design/m1/installer.md`, `docs/design/m3/export.md`) | M3 notes | M7-WP11 consistency pass, if still stale |
-| Operations on a very large project that M6-X finds slow or capped (project archive export over 4 GiB and others, section 7.2 row 18) | M6-X | M7-D2 assigns each: fix, or a stated limit in the host documentation |
-| Host check does not report free disk space or quota | section 3 row 10 | M7-WP0 (the tool is its file) |
+| Host check does not report free disk space or quota | The M6 plan, section 3 row 3 | M7-WP0 (the tool is its file) |
 | XLSX late-chunk time; commit and rebuild times on a shared host; upload limits; direct access to `attachments/` | M3 and M4 exits | Host check (maintainer) |
 
 ## 10. Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Discovery output arrives late or never | M6 cannot start; v1 scope of ADR 0004 not met | M7 split (section 4.2); G7-release decision is the maintainer's |
-| Legacy format differs by version, or field definitions are rows that structure alone does not explain | Extra maintainer rounds; importer covers fewer files | M6-D0 states what is missing; unsupported versions refused plainly; unmapped types imported as text and reported |
-| Fixture and importer share one misreading of the format | Tests pass, real files fail | Different authors from the format document only (section 4.3 rule 4); maintainer trial on real files after the build |
-| Importer tested only on synthetic data | Unknown behaviour on the real file | Dry run and trial on the real file before M6 closes (section 7.6); M6-WP9 holds the fixes |
-| The real file exceeds a limit nobody tested | The one import that matters fails | Fit table from the report's real figures; scale fixture at 1.5 times the counts; no silent drop; dry run reports every overrun before anything is written |
-| The host cannot hold or process 12 GB (quota, time limits, no hard links) | Import cannot finish on the reference host | Command-line driver; local conversion and folder copy; space check before the start; the host figures are asked for at the gate |
-| The build machine's disk is smaller than the real file | Byte scale tested only in part | Counts tested in full, bytes as far as the disk allows and stated; memory ceiling proven independent of size; the trial is the proof at full size |
-| An import of hours is swept, interrupted, or driven twice | Lost work or a damaged project | Job state, heartbeat, lock, resume tests with seeded kill points |
+| M6 is built last, possibly by another developer | Part 1 has to be reopened to fit the importer; context is lost between sessions | Section 8.2 row 14; the M6 plan lists the interfaces it relies on; as-built notes in every spec; M7 part 2 tests the whole application again after M6 |
+| The release candidate waits for M6 for an unknown time | v1 not released; the candidate goes stale against later fixes | Reproducible build, rebuilt in part 2; the decision of section 3 row 1 is the maintainer's |
 | A form text that an XML parser and a browser read differently | Stored XSS | Stored text is never printed; pages are built from the node model; differential cases in the corpus; design-tier review; M5-X hostile forms |
 | Hidden-field draft in the editor is trusted by mistake | Parser bypass | Draft parsed on every request by the same parser; review property in section 6.5 |
 | Form CSS default (section 3 row 3) is not what the maintainer wants | M5 rework | Column reserved; adding CSS later is additive; asked before the start |
@@ -414,7 +304,7 @@ Candidates read from the ledger. M5-D1 and M7-D1 confirm each against the tree b
 | Project deletion removes the wrong folder | Data loss | Containment check, no link following, typed-name confirmation, archive offered first; design-tier review |
 | Release archive differs from what was tested | Untested code ships | Reproducible build; hash in the ledger; M7-WP10 and M7-X test the built archive, not the working tree |
 | Apache behaviour is reasoned, not run | Install fails on the reference host | Host check is the maintainer's; recorded as pending, never as passed |
-| Session length (10 to 13 windows) | Context loss; unpushed work lost on reclaim | Ledger is the only state; checkpoint after every merge |
+| Session length (6 to 8 windows) | Context loss; unpushed work lost on reclaim | Ledger is the only state; checkpoint after every merge |
 
 ## 11. Assumptions and unknowns
 
@@ -422,26 +312,22 @@ Candidates read from the ledger. M5-D1 and M7-D1 confirm each against the tree b
 2. The integration branch is the branch assigned to that session; it starts from `main`, which holds all of M0 to M4.
 3. The build environment is as in orch 9: no Apache, Composer dist downloads refused, headless Chromium available.
 4. Provisional decisions P1 to P188 stand unless the maintainer changes them; new open points are settled under orch 5 and recorded from P189 onward.
-5. ADR numbers 0020 to 0024 are indicative; the design tier assigns them in order.
-6. File names shown as new in sections 6.3, 7.3, and 8.3 are indicative. Existing files named there were read in the tree at the time of writing.
-7. Not known until the discovery report: the container form (package, single file, or archive); where the 12 GB is (files beside the database, or values inside it); record and file counts and the largest single file; how field types and links are stored; and so the size of M6-WP2 and M6-WP4. The M6 estimate carries the widest error.
-7a. Not known until the maintainer says: where the import will run, the free space there, and whether PHP with `pdo_sqlite` is available on the machine that holds the file. The 12 GB figure is the maintainer's statement of the zip size; the unpacked size is not known.
-8. Not known until M6-D1 reads the plugin layer test: whether a plugin may open a database itself. Section 7.2 row 4 assumes it may not.
-9. Not known until the host check: upload limits, whether the data folder can sit outside the web root, and execution-time limits on the reference host.
+5. ADR numbers 0020 (M5) and 0021 to 0022 (M7) are indicative; the design tier assigns them in order. M6 takes the next free numbers when it runs.
+6. File names shown as new in sections 6.3 and 8.3 are indicative. Existing files named there were read in the tree at the time of writing.
+7. Not known until the host check: upload limits, whether the data folder can sit outside the web root, and execution-time limits on the reference host.
 
 ## 12. Notifications and end of session
 
-- At M5 close and at M6 close: one notification with suite and lint totals, the exit table, and the provisional decisions added. The session continues.
-- After M6-X: one notification with the trial procedure of section 7.6 and the commit to use. The session continues with whatever does not need G6-trial.
-- If the session stops after M7 part 1 because G6-report or G7-release is not open: one notification with the same content, the release-candidate hash, and the two ways forward (supply the discovery report, or `DECIDE release-without-importer: yes`).
-- At the end of the build (orch 10): one notification with the archive build command and SHA-256, the test summary, the three exit tables, every provisional decision still awaiting confirmation, and the deferred maintainer tasks with their procedures:
+- At M5 close: one notification with suite and lint totals, the exit table, and the provisional decisions added. The session continues.
+- At the hand-over point (end of M7 part 1): one notification with suite and lint totals, the state of every part 1 package, the release-candidate build command and SHA-256, the provisional decisions added, the path of the M6 plan, and the two ways forward (M6 by its plan, or `DECIDE release-without-importer: yes`). The session stops.
+- At the end of the build, after M7 part 2 (orch 10): one notification with the archive build command and SHA-256, the test summary, the exit tables, every provisional decision still awaiting confirmation, and the deferred maintainer tasks with their procedures:
 
 | Task | Procedure |
 |---|---|
 | Reference shared host check (M7 exit criterion) | `tools/host-check/README.md`, then install the archive by upload and setup page |
-| Trial import of the real legacy file, if not yet done or if waived earlier | Section 7.6; nothing from the file enters the repository |
+| Trial import of the real legacy file, if it was waived or v1 was released without the importer | `docs/build/M6-handoff-plan.md` section 9; nothing from the file enters the repository |
 | Manual screen-reader pass | The procedure written under section 8.2 row 13 |
-| Tag and publish the release | Maintainer only (section 3 row 9) |
+| Tag and publish the release | Maintainer only (section 3 row 7) |
 | Confirm or change the provisional decisions | Ledger section 4 |
 
 Then idle. M8 and M9 need a new instruction.

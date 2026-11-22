@@ -222,15 +222,29 @@ final class Trash
      * every field of each table go, whatever $attachmentFields lists
      * (P180 item 4); $attachmentFields is checked only.
      *
+     * $check, when given, is called inside the write before anything is
+     * deleted, with the number of records then in the trash of the given
+     * tables; it may throw to refuse (the write rolls back, nothing
+     * changes). Core\App uses it to decide the confirmation on the count
+     * the write holds (P187).
+     *
      * @param list<TableDef> $tables
      * @param array<string, list<FieldDef>> $attachmentFields by table key
+     * @param (\Closure(int): void)|null $check
      */
-    public function empty(array $tables, array $attachmentFields, string $userKey): EmptiedTrash
+    public function empty(array $tables, array $attachmentFields, string $userKey, ?\Closure $check = null): EmptiedTrash
     {
         self::checkTargets($tables, $attachmentFields);
         self::person($userKey);
 
-        return $this->db->write(function (Database $db) use ($tables, $userKey): EmptiedTrash {
+        return $this->db->write(function (Database $db) use ($tables, $userKey, $check): EmptiedTrash {
+            if ($check !== null) {
+                $waiting = 0;
+                foreach ($tables as $table) {
+                    $waiting += $this->count($table);
+                }
+                $check($waiting);
+            }
             $deleted = 0;
             $held = [];
             foreach ($tables as $table) {

@@ -18,6 +18,7 @@ use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\M4Fixture;
+use TiffinDB\Tests\Support\M5Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
@@ -34,7 +35,9 @@ require_once __DIR__ . '/EndToEndTest.php';
  * section 12, testEveryM2ScreenInEveryState), T-SCR-3 (M3 spec part 2
  * section 10.1: m3Screens and testPluginScreensWithAddedPlugins), and
  * T-SCR-4 (M4 spec part 2 section 11.1: m4Screens and
- * testEveryM4ScreenInEveryState): every GET route of the real route
+ * testEveryM4ScreenInEveryState), and T-SCR-5 (M5 spec part 2 section
+ * 11.1: m5EditorScreens, m5SourceScreens, and
+ * testEveryM5ScreenInEveryState): every GET route of the real route
  * table, in each state its design document under docs/design/m1/ lists
  * that a GET can reach, served through the kernel with the real
  * CoreServices over a temporary installation built through the screens.
@@ -60,6 +63,12 @@ final class ScreenStructureTest extends TestCase
         \TiffinDB\Web\Controller\FileController::class,
         \TiffinDB\Web\Controller\CollectionController::class,
         \TiffinDB\Web\Controller\TrashController::class,
+    ];
+
+    /** The M5 controllers (M5-WP5, WP6); T-SCR-5 visits every GET route they handle. */
+    private const M5_CONTROLLERS = [
+        \TiffinDB\Web\Controller\FormController::class,
+        \TiffinDB\Web\Controller\FormSourceController::class,
     ];
 
     private const PASSWORD = 'example admin passphrase 1';
@@ -645,6 +654,116 @@ final class ScreenStructureTest extends TestCase
     }
 
     /**
+     * T-SCR-5 (M5 spec part 2 section 11.1): every GET route M5 added, in
+     * each state docs/design/m5/ lists that a GET can reach, over the M5
+     * synthetic data set (M5Fixture) with the real CoreServices, as the
+     * Admin: the editor with the edited Items form, the standard form
+     * (Rooms, no stored row), a stored generated form (Warranties), and a
+     * refused stored form (Loans); the reset confirmation in both states;
+     * the source view stored, generated, and refused; the upload page; the
+     * download of a stored and of a refused text; and the record screen
+     * with widths and a link. A Member gets 403 on every M5 route and a
+     * stale table key 404. States reached only by a POST (a change, a 422,
+     * a conflict, Check) are covered by KeyboardStructureTest and the
+     * screen packages' tests.
+     */
+    public function testEveryM5ScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $ops = $core->operations();
+            $fx = M5Fixture::build($core, $ops);
+            $m2 = $fx->m2;
+            $actor = $core->actor('admin');
+            $loans = $ops->schema()->createTable($actor, $m2->project, 'Loans', 'loan', true)->key;
+            $db = $core->projectDb($m2->project);
+            $db->write(static function ($db) use ($m2, $loans): void {
+                $db->run('DELETE FROM "_tiffin_forms" WHERE "table_key" = ?', [$m2->rooms]);
+                $db->run('UPDATE "_tiffin_forms" SET "html" = ?, "generated" = 0 WHERE "table_key" = ?', ['<div data-tiffin-form="1"><p onclick="x">Example</p></div>', $loans]);
+            });
+            self::assertSame(1, (int) $db->value('SELECT COUNT(*) FROM "_tiffin_forms" WHERE "table_key" = ? AND "generated" = 1', [$m2->warranties]), 'Warranties has a stored generated form.');
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m5-seed'), $core->hasher));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+            $items = $m2->tablePath($m2->items);
+            $rooms = $m2->tablePath($m2->rooms);
+            $warranties = $m2->tablePath($m2->warranties);
+            $loanPath = $m2->tablePath($loans);
+            $main = fn (EndToEndClient $client): string => (string) $client->xpath()->query('//main/@class')->item(0)?->nodeValue;
+            $note = fn (EndToEndClient $client): string => trim((string) preg_replace('/\s+/u', ' ', (string) $client->xpath()->query('//main//*[contains(@class, "notice-muted") or contains(@class, "notice-warn")][1]')->item(0)?->textContent));
+
+            // Editor (editor.md section 2): edited, standard (no row), stored generated, refused.
+            $this->screen($admin, $items . '/form', 'Form for Items', 'Form for Items');
+            self::assertSame('page page-form', $main($admin));
+            self::assertStringStartsWith('This form has been arranged by hand.', $note($admin));
+            self::assertSame(['Serial number'], $admin->texts('//section[@aria-labelledby="not-on-form-title"]//span[@class="form-row-name"]'));
+            self::assertSame(1, $admin->xpath()->query('//li[@class="form-row form-row-section"]//span[@class="form-row-name"][normalize-space(.)="Where it is"]')->length);
+            $this->screen($admin, $rooms . '/form', 'Form for Rooms', 'Form for Rooms');
+            self::assertStringStartsWith('This is the standard form.', $note($admin));
+            $this->screen($admin, $warranties . '/form', 'Form for Warranties', 'Form for Warranties');
+            self::assertStringStartsWith('This is the standard form.', $note($admin));
+            $this->screen($admin, $loanPath . '/form', 'Form for Loans', 'Form for Loans');
+            self::assertStringStartsWith('The saved form could not be read', $note($admin));
+
+            // Reset confirmation (reset.md): an edited form, and one that is the standard form already.
+            $this->screen($admin, $items . '/form/reset', 'Go back to the standard form?', 'Go back to the standard form?');
+            self::assertSame('page page-form page-form-narrow', $main($admin));
+            self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+            $this->screen($admin, $warranties . '/form/reset', 'Go back to the standard form?', 'Go back to the standard form?');
+            self::assertSame('The form for Warranties is already the standard form.', $note($admin));
+
+            // Source view (source.md section 2): stored, generated (no row), refused stored.
+            $this->screen($admin, $items . '/form/source', 'Form source for Items', 'Form source for Items');
+            self::assertSame('page page-form', $main($admin));
+            self::assertSame('', $note($admin), 'No state note for a stored form.');
+            self::assertStringContainsString('data-tiffin-span="8"', (string) $admin->xpath()->query('//textarea[@id="source"]')->item(0)?->textContent);
+            $this->screen($admin, $rooms . '/form/source', 'Form source for Rooms', 'Form source for Rooms');
+            self::assertStringStartsWith('This is the standard form, made from the table\'s fields.', $note($admin));
+            $this->screen($admin, $loanPath . '/form/source', 'Form source for Loans', 'Form source for Loans');
+            self::assertStringStartsWith('The saved text has a problem', $note($admin));
+            self::assertStringContainsString('onclick', (string) $admin->xpath()->query('//textarea[@id="source"]')->item(0)?->textContent, 'The refused text is shown to be fixed.');
+
+            // Download: a stored text and a refused one; upload page.
+            self::assertSame($fx->html, $this->visitFile($items . '/form/download', 200, $admin)->body());
+            self::assertSame('<div data-tiffin-form="1"><p onclick="x">Example</p></div>', $this->visitFile($loanPath . '/form/download', 200, $admin)->body());
+            $this->screen($admin, $items . '/form/upload', 'Upload a form file for Items', 'Upload a form file for Items');
+            self::assertSame('page page-form page-form-narrow', $main($admin));
+
+            // The record screen with widths and a link, for both people.
+            foreach ([$admin, $member] as $client) {
+                $this->screen($client, $m2->itemPath('Stand mixer'), 'Stand mixer', 'Stand mixer');
+                self::assertSame(['Name', 'Category', 'Purchased', 'Value (US dollars)', 'Condition', 'Under warranty', 'Manual', 'Notes', 'Model'], $client->texts('//form[@id="record-form"]/fieldset[1]//div[contains(concat(" ", @class, " "), " cell ")]/descendant::*[self::label or self::legend][1]'));
+                self::assertSame(['cell span-8', 'cell span-4', 'cell span-6', 'cell span-6', 'cell span-4', 'cell span-4', 'cell span-4', 'cell', 'cell', 'cell', 'cell'], $client->texts('//form[@id="record-form"]/fieldset[1]//div[contains(concat(" ", @class, " "), " cell ")]/@class'));
+                self::assertSame([M5Fixture::LINK_TEXT], $client->texts('//a[@class="form-link"][@href="' . M5Fixture::LINK . '"]'));
+                self::assertSame(0, $client->xpath()->query('//label[normalize-space(.)="Serial number"]')->length);
+            }
+
+            // A Member is refused every M5 route; a stale table key is not found.
+            foreach (['/form', '/form/reset', '/form/source', '/form/download', '/form/upload'] as $route) {
+                $this->visit($items . $route, 403, $member);
+                $this->visit($m2->projectPath() . '/tables/aaaaaaaaaaaa' . $route, 404, $admin);
+            }
+            $admin->cleanUp();
+        } finally {
+            $core->remove();
+        }
+
+        $m5Patterns = [];
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && in_array($route[2][0], self::M5_CONTROLLERS, true)) {
+                $m5Patterns[] = (string) $route[1];
+            }
+        }
+        self::assertCount(5, $m5Patterns, 'Five M5 GET routes.');
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m5Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
+    /**
      * The M4 screens inside testEveryScreenInEveryState, so that its
      * every-route check covers them (M4 spec part 2 section 12): on Home
      * Inventory as built through the screens, as the Admin, one visit of
@@ -855,7 +974,7 @@ final class ScreenStructureTest extends TestCase
     private function structure(string $html, string $title, string $h1, string $where): void
     {
         HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
-        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        HtmlAssertions::assertNoInlineCode(self::withoutFormLinks($html), Fixtures::SOURCE_URL);
         HtmlAssertions::assertForm($html);
         self::assertSame($title . ' - TiffinDB', HtmlAssertions::text($html, '//title'), "Title of {$where}");
         self::assertSame($h1, HtmlAssertions::text($html, '//h1'), "h1 of {$where}");
@@ -913,7 +1032,7 @@ final class ScreenStructureTest extends TestCase
         $response = $this->visit($uri, $status, $client);
         $html = $response->body;
         HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
-        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        HtmlAssertions::assertNoInlineCode(self::withoutFormLinks($html), Fixtures::SOURCE_URL);
         HtmlAssertions::assertForm($html);
         self::assertSame($title . ' - TiffinDB', HtmlAssertions::text($html, '//title'), "Title of {$uri}");
         self::assertSame($h1, HtmlAssertions::text($html, '//h1'), "h1 of {$uri}");
@@ -933,7 +1052,7 @@ final class ScreenStructureTest extends TestCase
         self::assertSame($status, $response->status, "GET {$uri}");
         if ($status !== 303) {
             HtmlAssertions::assertWellFormed($response->body);
-            HtmlAssertions::assertNoInlineCode($response->body, Fixtures::SOURCE_URL);
+            HtmlAssertions::assertNoInlineCode(self::withoutFormLinks($response->body), Fixtures::SOURCE_URL);
         }
         $path = (string) parse_url('http://tiffindb.example' . $uri, PHP_URL_PATH);
         foreach (Fixtures::applicationRoutes() as $route) {
@@ -944,6 +1063,23 @@ final class ScreenStructureTest extends TestCase
         }
 
         return $response;
+    }
+
+    /**
+     * The page with each form link (M5: `a.form-link`, an address an Admin
+     * wrote in a form) checked against the fixed markup of M5 spec part 2
+     * section 6.3 and its address then replaced by `/`, so assertNoInlineCode,
+     * which allows no external address but the source link, checks
+     * everything else (as RecordScreenTest does). Pages without form links
+     * are returned unchanged.
+     */
+    private static function withoutFormLinks(string $html): string
+    {
+        $count = preg_match_all('#<a\b[^>]*\bclass="form-link"#', $html);
+        $checked = preg_match_all('#<a class="form-link" href="https?://[\x21\x23-\x3B\x3D\x3F-\x7E]+" rel="noopener noreferrer">#', $html);
+        self::assertSame($count, $checked, 'Every form link has exactly the fixed markup and an http or https address.');
+
+        return (string) preg_replace('#<a class="form-link" href="https?://[^"]+" rel="noopener noreferrer">#', '<a class="form-link" href="/" rel="noopener noreferrer">', $html);
     }
 
     private static function routeRegex(string $pattern): string

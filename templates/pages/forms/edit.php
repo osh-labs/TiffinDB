@@ -53,7 +53,7 @@ declare(strict_types=1);
 <?= $this->partial('forms/row', ['row' => $item['row'], 'number' => $item['number']]) ?>
 <?php endforeach; ?>
 </ol>
-<div>
+<div class="form-actions-inline">
 <?php if ($data['focusAddSection'] === true) : ?>
 <button class="button" type="submit" name="do" value="add-section" autofocus="autofocus"><?= $this->t('forms.editor.add_section') ?></button>
 <?php else : ?>

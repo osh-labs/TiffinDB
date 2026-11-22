@@ -132,7 +132,7 @@ final class FormEditorScreenTest extends TestCase
         self::assertSame(['Move Brand up', 'Move Brand down', 'Hide Brand'], $this->values($x, '//li[@id="row-1-2"]/div[@class="form-row-actions"]/button/@aria-label'));
         self::assertNotSame('', $name);
 
-        self::assertSame(['add-section'], $this->values($x, $form . '/div[not(@class)]/button'));
+        self::assertSame(['add-section'], $this->values($x, $form . '/div[@class="form-actions-inline"]/button'));
         self::assertSame('Not on this form', HtmlAssertions::text($html, '//h2[@id="not-on-form-title"]'));
         self::assertSame('Every field of Items is on this form.', HtmlAssertions::text($html, '//section[@aria-labelledby="not-on-form-title"]/p'));
         self::assertSame(0, $x->query('//section[contains(@class, "form-report")]')->length, 'Nothing to report.');

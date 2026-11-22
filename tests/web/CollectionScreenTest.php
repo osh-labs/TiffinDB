@@ -348,6 +348,27 @@ final class CollectionScreenTest extends TestCase
         self::assertSame('The collection has been saved.', HtmlAssertions::text($html, '//main//div[contains(@class, "notice")]'));
     }
 
+    /** P188: a refused save of an existing collection keeps its stored title and breadcrumb. */
+    public function testARefusedSaveKeepsTheStoredTitleAndBreadcrumb(): void
+    {
+        $key = $this->save('Under warranty', [$this->rule('Under warranty', 'ticked')]);
+        foreach (['', 'Renamed draft'] as $name) {
+            $post = ['action' => 'save', 'name' => $name, 'rules' => [1 => ['field' => $this->f['Purchased'], 'test' => 'on', 'value' => $name === '' ? '2023-01-01' : 'not a date']]];
+            $response = $this->post(self::ADMIN, $this->c($key, '/edit'), $post);
+            self::assertSame(422, $response->status, $name);
+            $this->assertScreen($response->body);
+            $x = $this->xpath($response->body);
+            self::assertSame('Error: Under warranty - TiffinDB', HtmlAssertions::text($response->body, '//title'), $name);
+            self::assertSame('Under warranty', HtmlAssertions::text($response->body, '//main//h1'), $name);
+            self::assertSame(['Home Inventory', 'Items', 'Collection: Under warranty'], $this->crumbs($x), $name);
+            self::assertSame([$name], $this->values($x, '//input[@id="f-name"]'), 'The draft name is redisplayed in the box.');
+            self::assertSame($this->c($key, '/edit'), $this->attr($x, '//form[@id="collection-form"]', 'action'));
+        }
+        $response = $this->post(self::ADMIN, $this->c($key, '/edit'), ['action' => 'preview', 'name' => '', 'rules' => []]);
+        self::assertSame(200, $response->status);
+        self::assertSame('Under warranty', HtmlAssertions::text($response->body, '//main//h1'));
+    }
+
     public function testUpdateSavesOverTheCollection(): void
     {
         $key = $this->save('Under warranty', [$this->rule('Under warranty', 'ticked')]);

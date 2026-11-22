@@ -2418,12 +2418,12 @@ li.link-row .linked-main a {
 }
 
 .rule-control {
-  flex: 1 1 11.1111rem;
+  flex: 1 1 9rem;
   min-width: 0;
 }
 
 .rule-control.rule-control-wide {
-  flex: 1 1 10rem;
+  flex: 1 1 8rem;
 }
 
 .rule-problem {

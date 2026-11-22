@@ -13,6 +13,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use TiffinDB\Core\Schema\Cardinality;
+use TiffinDB\Core\Schema\FieldDef;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\Storage\SnapshotInfo;
@@ -21,17 +22,20 @@ use TiffinDB\Tests\Core\Schema\ProjectFixture;
 require_once __DIR__ . '/../schema/ProjectFixture.php';
 
 /**
- * T-FORM-8: every structural SchemaEditor method calls the after-change
- * hook once, inside its transaction, after its own changes and before the
- * project meta is touched, with exactly the table keys of M2 spec section
- * 5.6; an exception from the hook rolls the change back.
+ * T-FORM-8 and T-EDT-11: every structural SchemaEditor method calls the
+ * after-change hook once, inside its transaction, after its own changes
+ * and before the project meta is touched, with exactly the table keys of
+ * M2 spec section 5.6 and the added field keys of M5 spec section 7.2
+ * (addField: the new field; addRelation: both sides; otherwise none); a
+ * closure taking two arguments still works; an exception from the hook
+ * rolls the change back.
  */
 #[CoversClass(SchemaEditor::class)]
 final class SchemaEditorHookTest extends TestCase
 {
     use ProjectFixture;
 
-    /** @var list<array{keys: list<string>, inTransaction: bool, touched: bool}> */
+    /** @var list<array{keys: list<string>, added: list<string>, inTransaction: bool, touched: bool}> */
     private array $calls = [];
     private bool $fail = false;
 
@@ -58,9 +62,10 @@ final class SchemaEditorHookTest extends TestCase
             function (SnapshotInfo $info): void {
                 $this->taken[] = $info;
             },
-            function (Database $db, array $tableKeys): void {
+            function (Database $db, array $tableKeys, array $addedFieldKeys): void {
                 $this->calls[] = [
                     'keys' => $tableKeys,
+                    'added' => $addedFieldKeys,
                     'inTransaction' => $db->inTransaction(),
                     // The meta is touched after the hook: updated_at still holds the earlier time.
                     'touched' => $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'updated_at\'') !== self::START,
@@ -74,11 +79,14 @@ final class SchemaEditorHookTest extends TestCase
 
     /**
      * Runs $change and checks that the hook ran exactly once inside the
-     * transaction, before the meta touch, with $expected (in order unless $anyOrder).
+     * transaction, before the meta touch, with $expected (in order unless
+     * $anyOrder) and no added field keys unless $added gives them (a closure
+     * returning them, as they are known only after the change).
      *
      * @param list<string> $expected
+     * @param (Closure(): list<string>)|null $added
      */
-    private function assertHook(array $expected, Closure $change, bool $anyOrder = false): void
+    private function assertHook(array $expected, Closure $change, bool $anyOrder = false, ?Closure $added = null): void
     {
         $this->calls = [];
         $this->db->write(static fn (Database $db) => $db->run('UPDATE "_tiffin_meta" SET "value" = ? WHERE "key" = \'updated_at\'', [self::START]));
@@ -95,6 +103,7 @@ final class SchemaEditorHookTest extends TestCase
             sort($actual);
         }
         self::assertSame($expected, $actual);
+        self::assertSame($added === null ? [] : $added(), $this->calls[0]['added']);
         self::assertTrue($this->calls[0]['inTransaction']);
         self::assertFalse($this->calls[0]['touched']);
         self::assertNotSame(self::START, $this->db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'updated_at\''));
@@ -113,14 +122,21 @@ final class SchemaEditorHookTest extends TestCase
 
         $this->assertHook([$items->key], static function () use ($editor, $items, &$notes): void {
             $notes = $editor->addField($items->key, 'Notes', 'text', [], false, '');
+        }, false, static function () use (&$notes): array {
+            return [$notes->key];
         });
         $relation = null;
+        $sides = fn (?FieldDef $field): array => [$field->key, $this->schema()->relationOf($field)->otherField($field->key)];
         $this->assertHook([$items->key, $rooms->key], static function () use ($editor, $items, $rooms, &$relation): void {
             $relation = $editor->addRelation($items->key, 'Room', $rooms->key, Cardinality::One, Cardinality::Many, 'Items', false, '');
+        }, false, static function () use (&$relation, $sides): array {
+            return $sides($relation);
         });
         $self = null;
         $this->assertHook([$tags->key], static function () use ($editor, $tags, &$self): void {
             $self = $editor->addRelation($tags->key, 'Parent', $tags->key, Cardinality::One, Cardinality::Many, 'Children', false, '');
+        }, false, static function () use (&$self, $sides): array {
+            return $sides($self);
         });
         $this->assertHook([$items->key], static fn () => $editor->changeType($notes->key, 'long_text', [], 0));
         $this->assertHook([$items->key], static fn () => $editor->moveField($notes->key, -1));
@@ -183,6 +199,30 @@ final class SchemaEditorHookTest extends TestCase
             self::assertSame($before, $this->dump(), $name . ' changed the file.');
             self::assertFalse($this->db->inTransaction(), $name);
         }
+    }
+
+    public function testAHookTakingTwoArgumentsStillWorks(): void
+    {
+        $calls = [];
+        $editor = new SchemaEditor(
+            $this->db,
+            $this->folder,
+            $this->types,
+            $this->keys,
+            $this->clock,
+            $this->snapshots,
+            self::USER_KEY,
+            static function (SnapshotInfo $info): void {
+            },
+            static function (Database $db, array $tableKeys) use (&$calls): void {
+                $calls[] = $tableKeys;
+            },
+        );
+        $items = $editor->createTable('Items', 'item', true);
+        $editor->addField($items->key, 'Notes', 'text', [], false, '');
+        $editor->addRelation($items->key, 'Parent', $items->key, Cardinality::One, Cardinality::Many, 'Children', false, '');
+        self::assertSame([[$items->key], [$items->key], [$items->key]], $calls);
+        self::assertCount(4, $this->schema()->fields($items->key));
     }
 
     public function testWithoutAHookNothingIsCalled(): void

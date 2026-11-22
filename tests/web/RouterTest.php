@@ -224,8 +224,8 @@ final class RouterTest extends TestCase
 
     /**
      * The complete table, in order: M1 (spec part 2 section 2.3), M2 (spec
-     * part 2 section 2), M3 (spec part 2 section 3), and M4 (spec part 2
-     * section 3).
+     * part 2 section 2), M3 (spec part 2 section 3), M4 (spec part 2
+     * section 3), and M5 (spec part 2 section 2).
      *
      * @return list<array{string, string, string, string}>
      */
@@ -294,6 +294,15 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/tables/{table}/settings', 'TableController::update', 'user'],
             ['GET', '/projects/{project}/tables/{table}/delete', 'TableController::deleteForm', 'user'],
             ['POST', '/projects/{project}/tables/{table}/delete', 'TableController::delete', 'user'],
+            ['GET', $t . '/form', 'FormController::edit', 'user'],
+            ['POST', $t . '/form', 'FormController::change', 'user'],
+            ['GET', $t . '/form/reset', 'FormController::resetForm', 'user'],
+            ['POST', $t . '/form/reset', 'FormController::reset', 'user'],
+            ['GET', $t . '/form/source', 'FormSourceController::show', 'user'],
+            ['POST', $t . '/form/source', 'FormSourceController::submit', 'user'],
+            ['GET', $t . '/form/download', 'FormSourceController::download', 'user'],
+            ['GET', $t . '/form/upload', 'FormSourceController::uploadForm', 'user'],
+            ['POST', $t . '/form/upload', 'FormSourceController::upload', 'user'],
             ['GET', $t, 'RecordListController::index', 'user'],
             ['GET', $t . '/filter', 'RecordListController::filter', 'user'],
             ['GET', $t . '/collections/new', 'CollectionController::newForm', 'user'],
@@ -498,6 +507,59 @@ final class RouterTest extends TestCase
     }
 
     /**
+     * T-WEB-71, M5 spec part 2 section 2: the nine form routes, exactly as
+     * the table lists them, all for signed-in people, after the table
+     * routes and before the record list.
+     */
+    public function testM5RoutesAreTheSpecification(): void
+    {
+        $table = '/projects/{project}/tables/{table}';
+        $expected = [
+            ['GET', $table . '/form', 'FormController::edit'],
+            ['POST', $table . '/form', 'FormController::change'],
+            ['GET', $table . '/form/reset', 'FormController::resetForm'],
+            ['POST', $table . '/form/reset', 'FormController::reset'],
+            ['GET', $table . '/form/source', 'FormSourceController::show'],
+            ['POST', $table . '/form/source', 'FormSourceController::submit'],
+            ['GET', $table . '/form/download', 'FormSourceController::download'],
+            ['GET', $table . '/form/upload', 'FormSourceController::uploadForm'],
+            ['POST', $table . '/form/upload', 'FormSourceController::upload'],
+        ];
+
+        $actual = [];
+        $positions = [];
+        foreach (Router::applicationRoutes() as $n => $route) {
+            [$method, $pattern, [$class, $name], $access] = $route;
+            $short = substr($class, strlen('TiffinDB\\Web\\Controller\\'));
+            $positions["{$method} {$pattern}"] = $n;
+            if (in_array($short, ['FormController', 'FormSourceController'], true)) {
+                self::assertSame('user', $access, "{$method} {$pattern}");
+                $actual[] = [$method, $pattern, $short . '::' . $name];
+            }
+        }
+        self::assertSame($expected, $actual);
+        foreach ($expected as [$method, $pattern]) {
+            self::assertGreaterThan($positions["POST {$table}/delete"], $positions["{$method} {$pattern}"]);
+            self::assertLessThan($positions["GET {$table}"], $positions["{$method} {$pattern}"]);
+        }
+
+        $router = new Router(Router::applicationRoutes());
+        $base = '/projects/abcdefghijkl/tables/mnopqrstuvwx';
+        foreach (
+            [
+                ['GET', '/form', 'edit'], ['POST', '/form', 'change'], ['GET', '/form/reset', 'resetForm'], ['POST', '/form/reset', 'reset'],
+                ['GET', '/form/source', 'show'], ['POST', '/form/source', 'submit'], ['GET', '/form/download', 'download'],
+                ['GET', '/form/upload', 'uploadForm'], ['POST', '/form/upload', 'upload'],
+            ] as [$method, $path, $handler]
+        ) {
+            self::assertSame($handler, $router->match($method, $base . $path)->handler[1] ?? null, "{$method} {$path}");
+        }
+        self::assertTrue($router->match('POST', $base . '/form/download')->isMethodNotAllowed());
+        self::assertTrue($router->match('GET', $base . '/form/other')->isNotFound());
+        self::assertSame('index', $router->match('GET', $base)->handler[1] ?? null, 'The record list is unchanged.');
+    }
+
+    /**
      * Controllers of later work packages (WP9 to WP11) may not exist yet;
      * once a class exists, every method the table names must exist on it.
      */
@@ -512,6 +574,8 @@ final class RouterTest extends TestCase
             'ImportController', 'ExportController', 'ArchiveController', 'PluginController',
             // M4 spec part 2 section 3: created by M4-WP6 to WP8.
             'LinkController', 'FileController', 'CollectionController', 'TrashController',
+            // M5 spec part 2 section 2: created by M5-WP5 and WP6.
+            'FormController', 'FormSourceController',
         ];
         foreach (Router::applicationRoutes() as $route) {
             [, , [$class, $method]] = $route;

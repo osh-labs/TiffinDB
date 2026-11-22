@@ -15,8 +15,10 @@
  *   M3 spec part 2 section 4); `picker`, `collection`, and `trash` the
  *   M4 relation picker, collection editor and delete confirmation, and
  *   trash pages (`main.page.page-picker`, `.page-collection`,
- *   `.page-trash`, docs/design/m4/components.md; P184 to P186); then the
- *   footer.
+ *   `.page-trash`, docs/design/m4/components.md; P184 to P186); `form` and
+ *   `form-narrow` the M5 form editor and source pages and the upload and
+ *   reset pages (`main.page.page-form`, `.page-form.page-form-narrow`,
+ *   docs/design/m5/components.md section 8); then the footer.
  * - Plain shell (`shell` null): lockup header, `main.page.page-plain` (or
  *   `main.page` when `wide` is true), centred footer.
  *
@@ -84,6 +86,10 @@ declare(strict_types=1);
 <main id="main" class="page page-collection" tabindex="-1">
 <?php elseif (($data['layout'] ?? null) === 'trash') : ?>
 <main id="main" class="page page-trash" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'form') : ?>
+<main id="main" class="page page-form" tabindex="-1">
+<?php elseif (($data['layout'] ?? null) === 'form-narrow') : ?>
+<main id="main" class="page page-form page-form-narrow" tabindex="-1">
 <?php else : ?>
 <main id="main" class="page" tabindex="-1">
 <?php endif; ?>

@@ -13,7 +13,12 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Tests\Support\RepoFiles;
+use TiffinDB\Web\Appearance;
 use TiffinDB\Web\Ids;
+use TiffinDB\Web\Strings;
+use TiffinDB\Web\UrlGenerator;
+use TiffinDB\Web\View;
+use TiffinDB\Web\ViewScope;
 
 /**
  * T-WEB-11 and T-WEB-26: the escaping rule and the other template source
@@ -53,7 +58,10 @@ use TiffinDB\Web\Ids;
  *   `value`. id() only as the whole value of `id`, `for`, `form`, or
  *   `aria-labelledby`, or in `aria-describedby` as one or more id()
  *   separated by single literal spaces; those attributes take no other
- *   output. fieldFacts() returns data and is never printed. The layout
+ *   output. formLink() only in FORM_INLINE, as the whole value of `href`
+ *   of an `a` start tag that is exactly FORM_LINK_TAG (M5 spec part 2
+ *   section 3.2); no template has a `target` or `formtarget` attribute.
+ *   fieldFacts() returns data and is never printed. The layout
  *   accessor may sit in the `<html>` start tag. Never in a comment or
  *   elsewhere in a tag.
  * - Every literal string key passed to t(), or as a key parameter to a
@@ -67,7 +75,7 @@ use TiffinDB\Web\Ids;
 final class TemplateRulesTest extends TestCase
 {
     /** Helpers any template may call (ADR 0008 decision 4; M2 spec part 2 sections 4.2 and 5.2). */
-    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot', 'csrf', 'count', 'number', 'value', 'inputValue', 'id', 'fieldFacts'];
+    public const HELPERS = ['e', 't', 'url', 'asset', 'partial', 'slot', 'csrf', 'count', 'number', 'value', 'inputValue', 'id', 'fieldFacts', 'formLink'];
 
     /** Helpers that return data for decisions, never markup: not allowed after `<?=`. */
     public const DATA_HELPERS = ['fieldFacts'];
@@ -88,6 +96,16 @@ final class TemplateRulesTest extends TestCase
 
     /** The one template that may call csrf(). */
     public const CSRF_PARTIAL = 'templates/partials/csrf.php';
+
+    /** The one template that may call formLink() (M5 spec part 2 section 3.2). */
+    public const FORM_INLINE = 'templates/partials/form-inline.php';
+
+    /**
+     * The only start tag formLink() output may sit in, as the static markup
+     * has it (the output removed): the whole value of `href`, with exactly
+     * the literal class and rel (M5 spec part 2 section 6.3).
+     */
+    public const FORM_LINK_TAG = '<a class="form-link" href="" rel="noopener noreferrer">';
 
     /** The layout's fixed meta elements: the only meta elements any template may hold. */
     public const LAYOUT_METAS = [
@@ -271,6 +289,9 @@ final class TemplateRulesTest extends TestCase
         $allowedMethods = $file === self::LAYOUT ? [...self::HELPERS, ...self::LAYOUT_ACCESSORS] : self::HELPERS;
         if ($file !== self::CSRF_PARTIAL) {
             $allowedMethods = array_values(array_diff($allowedMethods, ['csrf']));
+        }
+        if ($file !== self::FORM_INLINE) {
+            $allowedMethods = array_values(array_diff($allowedMethods, ['formLink']));
         }
 
         // Header: SPDX block first, then strict types, then markup.
@@ -458,6 +479,7 @@ final class TemplateRulesTest extends TestCase
             '#[\s"\'/]style\s*=#i' => 'a style attribute',
             '#[\s"\'/]on[a-z]+\s*=#i' => 'an event-handler attribute',
             '/javascript\s*:/i' => 'a javascript: address',
+            '#[\s"\'/](?:form)?target\s*=#i' => 'a target attribute',
             '#https?:#i' => 'an external URL',
             '#["\'=]\s*//#' => 'a protocol-relative URL',
             '#["\'=]\s*/[\t\n\r]*[/\\\\]#' => 'a slash-backslash or protocol-relative URL',
@@ -538,6 +560,7 @@ final class TemplateRulesTest extends TestCase
         $length = strlen($html);
         $state = 'text';
         $tagName = '';
+        $tagStart = -1;
         $attribute = '';
         $valueStart = -1;
 
@@ -548,15 +571,18 @@ final class TemplateRulesTest extends TestCase
                         in_array($helper, self::LAYOUT_ACCESSORS, true) => 'a layout accessor outside the <html> start tag',
                         $helper === 'csrf' => 'csrf() output in element text',
                         $helper === 'id' => 'id() output in element text',
+                        $helper === 'formLink' => 'formLink() output in element text',
                         default => null,
                     },
                     'comment' => 'output inside a comment',
                     'tag' => $file === self::LAYOUT && $tagName === 'html' && $n === 0
                         && in_array($helper, self::LAYOUT_ACCESSORS, true)
                         ? null : 'output inside a tag, outside an attribute value',
-                    'dq' => $tagName === 'img' && $attribute === 'src' && $helper !== 'url'
-                        ? "{$helper}() output in the src of an img (only url())"
-                        : self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file, $byOffset),
+                    'dq' => match (true) {
+                        $helper === 'formLink' => self::formLinkProblem($html, $tagStart, $pos, $valueStart, $n, $attribute),
+                        $tagName === 'img' && $attribute === 'src' && $helper !== 'url' => "{$helper}() output in the src of an img (only url())",
+                        default => self::attributeOutputProblem($html, $pos, $valueStart, $n, $attribute, $helper, $file, $byOffset),
+                    },
                     default => 'output in a single-quoted or unquoted attribute value',
                 };
                 if ($where !== null) {
@@ -575,6 +601,7 @@ final class TemplateRulesTest extends TestCase
                 } elseif (preg_match('#\G<(/?)([A-Za-z!][A-Za-z0-9-]*)#', $html, $tm, 0, $pos) === 1) {
                     $state = 'tag';
                     $tagName = strtolower($tm[2]);
+                    $tagStart = $pos;
                     $attribute = '';
                     $pos += strlen($tm[0]) - 1;
                 }
@@ -617,6 +644,22 @@ final class TemplateRulesTest extends TestCase
         }
 
         return $problems;
+    }
+
+    /**
+     * Why formLink() output at this point is not allowed, or null: only as
+     * the whole `href` value of a start tag that is exactly FORM_LINK_TAG
+     * in the static markup (the file is checked by the allowed helpers).
+     */
+    private static function formLinkProblem(string $html, int $tagStart, int $pos, int $valueStart, int $index, string $attribute): ?string
+    {
+        $end = strpos($html, '>', $pos);
+        $tag = $end === false || $tagStart < 0 ? '' : substr($html, $tagStart, $end - $tagStart + 1);
+        if ($attribute !== 'href' || $pos !== $valueStart || $index !== 0 || $tag !== self::FORM_LINK_TAG) {
+            return 'formLink() output other than the whole href of ' . self::FORM_LINK_TAG;
+        }
+
+        return null;
     }
 
     /**
@@ -1568,6 +1611,102 @@ final class TemplateRulesTest extends TestCase
         yield 'img with height' => [$img($src . ' ' . $alt . ' height="20"'), $page];
         yield 'img in upper case with width' => ['<IMG ' . $src . ' ' . $alt . ' WIDTH="2" />', $page];
         yield 'srcset on a source' => ['<picture><source srcset="<?= $this->url($data[\'s\']) ?>" /></picture>', $page];
+
+        // formLink() (M5 spec part 2 section 3.2) and target.
+        $inline = self::FORM_INLINE;
+        $link = '<?= $this->formLink($node[\'href\']) ?>';
+        yield 'formLink in src' => ['<img src="' . $link . '" alt="" />', $inline];
+        yield 'formLink in action' => ['<form method="post" action="' . $link . '"></form>', $inline];
+        yield 'formLink in another partial' => ['<a class="form-link" href="' . $link . '" rel="noopener noreferrer">x</a>', 'templates/partials/record-form/static.php'];
+        yield 'formLink in a page' => ['<a class="form-link" href="' . $link . '" rel="noopener noreferrer">x</a>', $page];
+        yield 'formLink with target' => ['<a class="form-link" href="' . $link . '" rel="noopener noreferrer" target="_blank">x</a>', $inline];
+        yield 'formLink without rel' => ['<a class="form-link" href="' . $link . '">x</a>', $inline];
+        yield 'formLink with another rel' => ['<a class="form-link" href="' . $link . '" rel="noopener">x</a>', $inline];
+        yield 'formLink without the class' => ['<a href="' . $link . '" rel="noopener noreferrer">x</a>', $inline];
+        yield 'formLink with another attribute' => ['<a class="form-link" href="' . $link . '" rel="noopener noreferrer" title="x">x</a>', $inline];
+        yield 'formLink on an area' => ['<area class="form-link" href="' . $link . '" rel="noopener noreferrer" />', $inline];
+        yield 'formLink after static href text' => ['<a class="form-link" href="x' . $link . '" rel="noopener noreferrer">x</a>', $inline];
+        yield 'formLink in element text' => ['<p>' . $link . '</p>', $inline];
+        yield 'formLink in a title' => ['<a class="form-link" title="' . $link . '" rel="noopener noreferrer">x</a>', $inline];
+        yield 'url in a form link tag is still checked' => ['<a class="form-link" href="<?= $this->e($node[\'href\']) ?>" rel="noopener noreferrer">x</a>', $inline];
+        yield 'target on any element' => ['<a href="/x" target="_blank">x</a>', $page];
+        yield 'formtarget on a button' => ['<button type="submit" formtarget="_blank">x</button>', $page];
+    }
+
+    /** M5 spec part 2 sections 3.2 and 6.3: the form link, in the form-inline partial only. */
+    public function testScannerAcceptsTheM5FormLink(): void
+    {
+        $body = self::HEADER . '<?php foreach ($data[\'nodes\'] as $node) : ?>' . "\n"
+            . '<a class="form-link" href="<?= $this->formLink($node[\'href\']) ?>" rel="noopener noreferrer"><?= $this->partial(\'form-inline\', [\'nodes\' => $node[\'children\']]) ?></a><?php ?>' . "\n"
+            . '<?php endforeach; ?>';
+        self::assertSame([], self::violations($body, self::FORM_INLINE));
+        self::assertNotSame([], self::violations($body, self::PAGE));
+        self::assertSame([], self::violations(self::HEADER . '<button class="button" type="submit" name="do" value="apply" tabindex="-1" autofocus="autofocus">x</button>', self::PAGE));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function refusedFormLinks(): iterable
+    {
+        yield 'javascript' => ['javascript:alert(1)'];
+        yield 'javascript after a slash pair' => ['javascript://example.com/%0Aalert(1)'];
+        yield 'data' => ['data:text/html,x'];
+        yield 'vbscript' => ['vbscript:x'];
+        yield 'relative' => ['/projects'];
+        yield 'protocol-relative' => ['//example.com/'];
+        yield 'ftp' => ['ftp://example.com/'];
+        yield 'scheme only' => ['https://'];
+        yield 'space' => ['https://example.com/a b'];
+        yield 'leading space' => [' https://example.com/'];
+        yield 'newline' => ["https://example.com/\n"];
+        yield 'tab' => ["https://exa\tmple.com/"];
+        yield 'double quote' => ['https://example.com/"onmouseover="x'];
+        yield 'single quote' => ["https://example.com/'x"];
+        yield 'angle' => ['https://example.com/<script>'];
+        yield 'closing angle' => ['https://example.com/>'];
+        yield 'backtick' => ['https://example.com/`x'];
+        yield 'backslash' => ['https://example.com\\@evil.example/'];
+        yield 'non-ASCII' => ["https://ex\u{00E4}mple.com/"];
+        yield 'empty' => [''];
+    }
+
+    #[DataProvider('refusedFormLinks')]
+    public function testFormLinkRefusesAnythingButPlainHttpAddresses(string $href): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        self::scope()->formLink($href);
+    }
+
+    public function testFormLinkReturnsTheEscapedAddress(): void
+    {
+        $scope = self::scope();
+        self::assertSame('https://example.com/help?a=1&amp;b=2#top', $scope->formLink('https://example.com/help?a=1&b=2#top'));
+        self::assertSame('HTTP://EXAMPLE.COM/', $scope->formLink('HTTP://EXAMPLE.COM/'));
+        self::assertSame('http://192.0.2.1:8080/x', $scope->formLink('http://192.0.2.1:8080/x'));
+    }
+
+    public function testIdSplitsEditorPaths(): void
+    {
+        $scope = self::scope();
+        self::assertSame('label-3-2', $scope->id('label', '3-2'));
+        self::assertSame('row-12', $scope->id('row', '12'));
+        self::assertSame('legend-4', $scope->id('legend', 4));
+        foreach (['3--2', '-3', '3-', '3-"', '3-A'] as $bad) {
+            try {
+                $scope->id('label', $bad);
+                self::fail('Accepted ' . $bad);
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    private static function scope(): ViewScope
+    {
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        $urls = new UrlGenerator('', '1.0');
+        $view = new View(RepoFiles::path('templates'), $strings, $urls, Appearance::default(), ['source_url' => 'https://example.org/source', 'version' => '1.0']);
+
+        return new ViewScope($view, $strings, $urls, Appearance::default());
     }
 
     /** M4 spec part 2 section 6.2: the image form (the fourth script was removed, P185). */
@@ -1651,7 +1790,7 @@ final class TemplateRulesTest extends TestCase
     public function testTheComponentFixturesFollowTheRules(): void
     {
         $strings = self::strings();
-        foreach (['components', 'notices', 'form-actions', 'm2-components', 'm3-components', 'm4-components'] as $name) {
+        foreach (['components', 'notices', 'form-actions', 'm2-components', 'm3-components', 'm4-components', 'm5-components'] as $name) {
             $file = "tests/web/fixtures/templates/pages/{$name}.php";
             self::assertSame([], self::violations(RepoFiles::read($file), self::PAGE), $file);
             foreach (self::literalKeys(RepoFiles::read($file)) as $key) {

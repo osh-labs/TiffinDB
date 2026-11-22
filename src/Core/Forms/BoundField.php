@@ -35,11 +35,17 @@ final class BoundField implements BoundNode
         public readonly bool $spanFull,
         public readonly bool $labelHidden,
         public readonly bool $isNew,
+        public readonly ?string $span = null,
     ) {
     }
 
     public function kind(): string
     {
         return 'field';
+    }
+
+    public function span(): ?string
+    {
+        return $this->span;
     }
 }

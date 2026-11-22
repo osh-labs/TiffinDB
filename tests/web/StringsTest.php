@@ -371,6 +371,38 @@ final class StringsTest extends TestCase
         self::assertSame(20, count($m4), 'Every components.* key is listed above.');
     }
 
+    /**
+     * T-WEB-72, M5 spec part 2 section 7 and docs/design/m5/components.md
+     * sections 3 to 5 and 7: strings/en/forms.php holds exactly the
+     * `forms.*` keys of the design, with the design's texts (table rows
+     * `| `key` | text |` and inline `` `key` "text" ``).
+     */
+    public function testM5FormStringsAreTheDesign(): void
+    {
+        $design = RepoFiles::read('docs/design/m5/components.md');
+        $expected = [];
+        preg_match_all('/^\| `(forms\.[a-z0-9._-]+)` \| (.*) \|$/m', $design, $rows, PREG_SET_ORDER);
+        foreach ($rows as [, $key, $text]) {
+            $expected[$key] = str_replace('\|', '|', $text);
+        }
+        preg_match_all('/`(forms\.[a-z0-9._-]+)` "([^"]+)"/', $design, $inline, PREG_SET_ORDER);
+        foreach ($inline as [, $key, $text]) {
+            self::assertSame($expected[$key] ?? $text, $text, $key);
+            $expected[$key] = $text;
+        }
+        self::assertCount(50, $expected, 'The design was read.');
+
+        $forms = require RepoFiles::path('strings/en/forms.php');
+        self::assertIsArray($forms);
+        ksort($expected);
+        ksort($forms);
+        self::assertSame($expected, $forms);
+
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        self::assertSame('2 links have no text, so they are not shown.', $strings->get('forms.report.empty_links', ['count' => 2]));
+        self::assertSame('1 field element names a field that is not in Items. They show nothing.', $strings->get('forms.report.unknown', ['count' => 1, 'table' => 'Items']));
+    }
+
     /** M3 spec part 2 sections 2.3, 4, and 6, and docs/design/m3/import.md section 1. */
     public function testM3SharedStringsAreTheSpecification(): void
     {

@@ -534,6 +534,7 @@ async function addMember(page, browser, base, project, memberPassword, guard) {
 
   step('first sign-in of the Member: forced password change');
   const context = await browser.newContext();
+  context.setDefaultTimeout(20000);
   await guard(context);
   const memberPage = await context.newPage();
   await signIn(memberPage, base, MEMBER.username, temporary);
@@ -565,6 +566,11 @@ async function seed(args) {
   const { chromium } = require('playwright');
   const base = args.base.replace(/\/+$/, '');
   const out = path.resolve(args.out);
+  // state.json holds the generated passwords: never write it inside this checkout.
+  const repo = path.resolve(__dirname, '..', '..');
+  if (out === repo || out.startsWith(repo + path.sep)) {
+    throw new Error('OUT_IN_REPOSITORY');
+  }
   fs.mkdirSync(out, { recursive: true });
   const secrets = { admin: password(), member: password() };
 
@@ -592,7 +598,11 @@ async function seed(args) {
     const memberPath = await addMember(page, browser, base, inventory, secrets.member, guard);
 
     step('write state.json');
-    const imported = (await (await findRecord(page, inventory.tables.items, 'Television, 43 inch')).getAttribute('href')).split('?')[0];
+    const importedHref = await (await findRecord(page, inventory.tables.items, 'Television, 43 inch')).getAttribute('href');
+    if (!importedHref) {
+      throw new Error('the imported record "Television, 43 inch" has no link in the list');
+    }
+    const imported = importedHref.split('?')[0];
     const tables = (project) => Object.fromEntries(Object.entries(project.tables).map(([key, t]) =>
       [key, { name: t.name, item: t.item, path: t.path, fieldsPath: t.fieldsPath, newRecordPath: t.path + '/records/new' }]));
     const projectState = (project) => ({
@@ -620,7 +630,9 @@ async function seed(args) {
       files: Object.fromEntries(Object.entries(files).map(([key, file]) => [key, path.basename(file)])),
       counts: { rooms: ROOMS.length, items: ITEMS.length - TRASHED.length, itemsInTrash: TRASHED.length, warranties: WARRANTIES.length, recipes: RECIPES.length },
     };
-    fs.writeFileSync(path.join(out, 'state.json'), JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+    const statePath = path.join(out, 'state.json');
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n', { mode: 0o600 });
+    fs.chmodSync(statePath, 0o600); // the mode above applies only when the file is new
     console.log('Seeded. State written to ' + path.join(out, 'state.json'));
   } finally {
     await browser.close();
@@ -634,7 +646,9 @@ if (require.main === module) {
     process.exit(2);
   }
   seed(args).catch((error) => {
-    if (error.message === 'ALREADY_INSTALLED') {
+    if (error.message === 'OUT_IN_REPOSITORY') {
+      console.error('seed-demo: --out must be outside the repository, because state.json holds the generated passwords.');
+    } else if (error.message === 'ALREADY_INSTALLED') {
       console.error(`seed-demo: ${args.base} is already installed. This script only seeds a fresh instance: empty its data folder first.`);
     } else {
       console.error(`seed-demo: failed at step "${currentStep}": ${String(error.message).split('\n')[0]}`);

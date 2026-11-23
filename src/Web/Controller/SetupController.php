@@ -49,8 +49,13 @@ use TiffinDB\Web\Response;
  * there SERVER_PORT follows the client's Host port, so a client that names
  * a port in Host gets it accepted. Its only effect is to fail closed when
  * SERVER_PORT is not the default and the Host header names no port. The
- * probe's positive control (P75) keeps a forged port from giving `safe`;
- * an operator-configured probe port is planned for M7 (P80).
+ * probe's positive control (P75) keeps a forged port from giving `safe`.
+ *
+ * Operator-configured probe port (P80, M7 spec part 1 section 15.1 CF7-2):
+ * when config/local.php sets `probe_port` (checked by the kernel as an
+ * integer 1 to 65535), the probe connects to that port and neither the
+ * Host header's port nor SERVER_PORT is consulted; the port rule above
+ * applies only when it is not set.
  */
 final class SetupController
 {
@@ -160,22 +165,46 @@ final class SetupController
      */
     private function probeTarget(Request $request): ?ProbeTarget
     {
-        if ($request->host === null || $request->serverPort === null) {
+        if ($request->host === null) {
             return null;
         }
-        if (!self::portAcceptable($request->serverPort, $request->host, $request->secure)) {
-            return null;
+        $port = $this->configuredProbePort();
+        if ($port === null) {
+            if ($request->serverPort === null) {
+                return null;
+            }
+            if (!self::portAcceptable($request->serverPort, $request->host, $request->secure)) {
+                return null;
+            }
+            $port = $request->serverPort;
         }
 
         return ProbeTarget::tryCreate(
             $request->host,
             $request->serverAddress,
-            $request->serverPort,
+            $port,
             $request->secure,
             $request->documentRoot,
             // The percent-encoded base path, as it appears in a request line.
             substr($this->context->url('/'), 0, -1),
         );
+    }
+
+    /**
+     * config/local.php `probe_port` when set. The kernel refuses any other
+     * value than an integer 1 to 65535; anything else here fails closed.
+     */
+    private function configuredProbePort(): ?int
+    {
+        $port = $this->context->view()->config('probe_port');
+        if ($port === null) {
+            return null;
+        }
+        if (!is_int($port) || $port < 1 || $port > 65535) {
+            throw new \LogicException('Configuration not checked: probe_port.');
+        }
+
+        return $port;
     }
 
     /**

@@ -26,6 +26,12 @@ use InvalidArgumentException;
  * UploadedFile per well-formed single-file entry of PHP's upload array,
  * and the declared body length (CONTENT_LENGTH, digits only), which the
  * kernel compares with post_max_size.
+ *
+ * M7 (spec part 1 section 15.1, CF7-1) adds originMalformed: true when
+ * an Origin header was sent and failed the check of origin() (too long,
+ * a tab or other control character, or a non-ASCII byte). Such a header
+ * is not read as absent: the kernel refuses an unsafe-method request
+ * that carries one.
  */
 final class Request
 {
@@ -69,6 +75,7 @@ final class Request
         public readonly ?string $origin = null,
         public readonly array $files = [],
         public readonly ?int $contentLength = null,
+        public readonly bool $originMalformed = false,
     ) {
         if (!str_starts_with($path, '/')) {
             throw new InvalidArgumentException('A request path must start with "/".');
@@ -94,6 +101,9 @@ final class Request
         if ($origin !== null && self::origin($origin) === null) {
             throw new InvalidArgumentException('Invalid origin.');
         }
+        if ($originMalformed && $origin !== null) {
+            throw new InvalidArgumentException('A malformed origin is not kept.');
+        }
         foreach ($files as $field => $file) {
             if (!$file instanceof UploadedFile || $file->field !== $field) {
                 throw new InvalidArgumentException('Files map each field name to its UploadedFile.');
@@ -116,6 +126,8 @@ final class Request
     public static function fromGlobals(array $server, array $get, array $post, array $cookies, array $files = []): self
     {
         $base = self::fromServer($server, $get);
+        $origin = self::origin($server['HTTP_ORIGIN'] ?? null);
+        $originSent = array_key_exists('HTTP_ORIGIN', $server) && $server['HTTP_ORIGIN'] !== null;
 
         return new self(
             $base->method,
@@ -132,9 +144,10 @@ final class Request
             self::serverAddress($server['SERVER_ADDR'] ?? null),
             self::serverPort($server['SERVER_PORT'] ?? null),
             self::documentRoot($server['DOCUMENT_ROOT'] ?? null),
-            self::origin($server['HTTP_ORIGIN'] ?? null),
+            $origin,
             self::uploadedFiles($files),
             self::contentLength($server['CONTENT_LENGTH'] ?? null),
+            $originSent && $origin === null,
         );
     }
 

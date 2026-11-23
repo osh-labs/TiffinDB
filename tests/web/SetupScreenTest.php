@@ -131,6 +131,7 @@ final class SetupScreenTest extends TestCase
         string $base = '',
         bool $withCsrf = true,
         array $cookies = [],
+        array $config = [],
     ): Response {
         if ($method === 'POST' && $withCsrf) {
             $post = ['_csrf' => self::ANON] + $post;
@@ -141,7 +142,7 @@ final class SetupScreenTest extends TestCase
             $post,
             $cookies + ['tdb_csrf' => self::ANON],
         );
-        $kernel = new Kernel(Fixtures::config(false), Fixtures::appRoot(), Fixtures::applicationRoutes(), $services);
+        $kernel = new Kernel($config + Fixtures::config(false), Fixtures::appRoot(), Fixtures::applicationRoutes(), $services);
 
         return Fixtures::handle($kernel, $request)[0];
     }
@@ -548,6 +549,67 @@ final class SetupScreenTest extends TestCase
         self::assertSame(303, $response->status);
         self::assertSame(8080, $probe->targets[0]->serverPort);
         self::assertSame('example.test:8080', $probe->targets[0]->host);
+    }
+
+    /**
+     * T-CF7-2: with `probe_port` set, the probe connects to that port and
+     * neither SERVER_PORT nor the Host header's port is consulted, so the
+     * server values the port rule distrusts no longer stop the probe.
+     *
+     * @return iterable<string, array{array<string, string>}>
+     */
+    public static function serversWithAConfiguredPort(): iterable
+    {
+        yield 'default values' => [[]];
+        yield 'no server port' => [['SERVER_PORT' => '']];
+        yield 'a port the Host header does not name' => [['SERVER_PORT' => '22']];
+        yield 'a Host port that differs from SERVER_PORT' => [['HTTP_HOST' => 'example.test:8080', 'SERVER_PORT' => '8081']];
+        yield 'a Host port equal to SERVER_PORT' => [['HTTP_HOST' => 'example.test:9000', 'SERVER_PORT' => '9000']];
+        yield 'the TLS port on a plain request' => [['SERVER_PORT' => '443']];
+    }
+
+    /** @param array<string, string> $override */
+    #[DataProvider('serversWithAConfiguredPort')]
+    public function testAConfiguredProbePortIsUsedWhateverTheRequestSays(array $override): void
+    {
+        $probe = self::webServer($this->www(), 'deny');
+        $services = $this->services(InstallState::NeedsDataFolder, $probe);
+        $server = $override + self::server($this->www());
+        $response = self::send($services, 'POST', '/setup/data-folder', [], $server, '/app/public', config: ['probe_port' => 8443]);
+
+        self::assertSame(303, $response->status);
+        self::assertNotSame([], $probe->targets);
+        foreach ($probe->targets as $target) {
+            self::assertSame(8443, $target->serverPort);
+            self::assertSame($server['HTTP_HOST'], $target->host, 'The Host header is sent as received.');
+        }
+    }
+
+    /** T-CF7-2: a configured port does not make a missing Host or server address trustworthy. */
+    public function testAConfiguredProbePortStillNeedsTheHostAndAddress(): void
+    {
+        foreach ([['HTTP_HOST' => ''], ['SERVER_ADDR' => 'localhost']] as $override) {
+            $probe = self::spy();
+            $services = $this->services(InstallState::NeedsDataFolder, $probe);
+            $server = $override + self::server($this->www());
+            $html = self::assertPage(self::send($services, 'POST', '/setup/data-folder', [], $server, '/app/public', config: ['probe_port' => 8443]), 409, '/app/public');
+
+            $this->assertInconclusive($html);
+            self::assertSame(0, $probe->calls);
+        }
+    }
+
+    /** T-CF7-2: a probe_port the kernel would refuse never reaches the probe. */
+    public function testAnInvalidProbePortIsRefusedBeforeAnyProbe(): void
+    {
+        foreach ([0, 65536, '8443', -1] as $bad) {
+            $probe = self::spy();
+            $services = $this->services(InstallState::NeedsDataFolder, $probe);
+            $response = self::send($services, 'POST', '/setup/data-folder', [], self::server($this->www()), '/app/public', config: ['probe_port' => $bad]);
+
+            self::assertSame(500, $response->status);
+            self::assertSame(0, $probe->calls);
+        }
     }
 
     public function testASecureRequestIsProbedOverTlsOnItsPort(): void

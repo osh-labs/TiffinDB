@@ -42,7 +42,9 @@ use UnexpectedValueException;
  *  8. a person who must change their password, on any user route except
  *     the password form, its POST, and sign-out: 303 to /account/password;
  *  9. CSRF for every POST (section 2.5): 403 `error.csrf.*` on failure;
- *     first, when the POST carries no `Sec-Fetch-Site`, an `Origin` that
+ *     first, a POST whose Origin header was sent but malformed
+ *     (Request::originMalformed, M7 CF7-1) is refused with that page,
+ *     whatever Sec-Fetch-Site says; then, when the POST carries no `Sec-Fetch-Site`, an `Origin` that
  *     is present and is not the request's own origin (`null` included) is
  *     refused with the same page (T-CF-1, ADR 0013 9.11; see
  *     originAllowed()); then, before the token check, a POST whose
@@ -67,9 +69,11 @@ use UnexpectedValueException;
  * known (from step 6 on) and the plain shell before that.
  *
  * Configuration keys read: `version`, `source_url`, `appearance_preview`
- * (config/app.php), and the optional `timezone`, `secure_cookies`, and
- * `data_dir` (config/local.php, merged by public/index.php through
- * withLocalConfig()).
+ * (config/app.php), and the optional `timezone`, `secure_cookies`,
+ * `data_dir`, `probe_port` (an integer 1 to 65535, read by the setup
+ * screen's probe), and `admin_recovery` (bool, default true, passed to
+ * the web Context) (config/local.php, merged by public/index.php through
+ * withLocalConfig(); M7 CF7-2).
  */
 final class Kernel
 {
@@ -83,7 +87,16 @@ final class Kernel
     public const RETRY_AFTER = 5;
 
     /** Keys config/local.php may set, with their checks in withLocalConfig(). */
-    public const LOCAL_KEYS = ['data_dir', 'timezone', 'secure_cookies'];
+    public const LOCAL_KEYS = ['data_dir', 'timezone', 'secure_cookies', 'probe_port', 'admin_recovery'];
+
+    /** Unavailable reasons the kernel shows as a 503 page (`error.unavailable.<reason>.*`). */
+    private const SHOWN_UNAVAILABLE = [
+        Unavailable::MISSING,
+        Unavailable::NOT_PROJECT,
+        Unavailable::NEWER,
+        Unavailable::MISMATCH,
+        Unavailable::SYSTEM_NEWER,
+    ];
 
     /** Routes a person who must change their password may still use. */
     private const MUST_CHANGE_ALLOWED = [
@@ -120,7 +133,8 @@ final class Kernel
     /**
      * $config with the values of config/local.php merged in, after checking
      * them: an array holding only `data_dir` (absolute path), `timezone`
-     * (an identifier \DateTimeZone accepts), and `secure_cookies` (bool).
+     * (an identifier \DateTimeZone accepts), `secure_cookies` (bool),
+     * `probe_port` (int 1 to 65535), and `admin_recovery` (bool).
      *
      * @param array<string, mixed> $config
      * @return array<string, mixed>
@@ -226,7 +240,7 @@ final class Kernel
                 ->withHeader('Retry-After', (string) self::RETRY_AFTER);
         } catch (Unavailable $e) {
             $reason = $e->reason;
-            if (!in_array($reason, [Unavailable::MISSING, Unavailable::NOT_PROJECT, Unavailable::NEWER, Unavailable::MISMATCH], true)) {
+            if (!in_array($reason, self::SHOWN_UNAVAILABLE, true)) {
                 throw new LogicException('Unknown unavailable reason.', 0, $e);
             }
 
@@ -294,7 +308,17 @@ final class Kernel
         if ($csrfToken !== null) {
             $view = $view->withCsrfToken($csrfToken);
         }
-        $context = new Context($request, $view, $this->services, $signedIn, $urls, $csrfToken, $secure, $sessionToken);
+        $context = new Context(
+            $request,
+            $view,
+            $this->services,
+            $signedIn,
+            $urls,
+            $csrfToken,
+            $secure,
+            $sessionToken,
+            $this->adminRecovery(),
+        );
         $this->view = $view;
         $this->context = $context;
 
@@ -318,6 +342,9 @@ final class Kernel
 
         // Step 9.
         if ($request->isPost()) {
+            if ($request->originMalformed) {
+                return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
+            }
             if ($request->secFetchSite === null && !self::originAllowed($request)) {
                 return $this->errorPage(403, 'error.csrf.title', 'error.csrf.body');
             }
@@ -388,6 +415,12 @@ final class Kernel
         $configured = $this->config['secure_cookies'] ?? null;
 
         return is_bool($configured) ? $configured : $request->secure;
+    }
+
+    /** config/local.php `admin_recovery`; absent means true (checked by checkLocalConfig()). */
+    private function adminRecovery(): bool
+    {
+        return ($this->config['admin_recovery'] ?? true) !== false;
     }
 
     private function errorPage(int $status, ?string $titleKey = null, ?string $bodyKey = null): Response
@@ -573,6 +606,14 @@ final class Kernel
         $secure = $config['secure_cookies'] ?? null;
         if ($secure !== null && !is_bool($secure)) {
             throw new UnexpectedValueException('Configuration: secure_cookies must be true or false.');
+        }
+        $probePort = $config['probe_port'] ?? null;
+        if ($probePort !== null && (!is_int($probePort) || $probePort < 1 || $probePort > 65535)) {
+            throw new UnexpectedValueException('Configuration: probe_port must be a whole number from 1 to 65535.');
+        }
+        $recovery = $config['admin_recovery'] ?? null;
+        if ($recovery !== null && !is_bool($recovery)) {
+            throw new UnexpectedValueException('Configuration: admin_recovery must be true or false.');
         }
     }
 }

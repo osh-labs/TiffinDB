@@ -192,7 +192,7 @@ final class SystemDatabaseTest extends TestCase
             SystemDatabase::open($this->data);
             $this->fail('No exception.');
         } catch (Unavailable $error) {
-            $this->assertSame(Unavailable::NEWER, $error->reason);
+            $this->assertSame(Unavailable::SYSTEM_NEWER, $error->reason);
         }
     }
 

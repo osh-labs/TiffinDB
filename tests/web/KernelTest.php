@@ -16,6 +16,7 @@ use TiffinDB\Core\Auth\PasswordHasher;
 use TiffinDB\Core\Auth\Role;
 use TiffinDB\Core\Auth\Sessions;
 use TiffinDB\Core\Auth\Users;
+use TiffinDB\Core\Error\Unavailable;
 use TiffinDB\Core\Install\InstallState;
 use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\Storage\Keys;
@@ -27,9 +28,11 @@ use TiffinDB\Tests\Web\Fixtures\FakeServices;
 use TiffinDB\Tests\Web\Fixtures\FixtureController;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\Controller\HomeController;
+use TiffinDB\Web\Context;
 use TiffinDB\Web\CoreServices;
 use TiffinDB\Web\Fallback;
 use TiffinDB\Web\Kernel;
+use TiffinDB\Web\Request;
 use TiffinDB\Web\Response;
 use TiffinDB\Web\UploadLimits;
 
@@ -266,6 +269,9 @@ final class KernelTest extends TestCase
             'unknown time zone' => [['timezone' => 'Nowhere/Example'] + $good],
             'time zone not a string' => [['timezone' => 1] + $good],
             'secure_cookies not a bool' => [['secure_cookies' => 1] + $good],
+            'probe_port zero' => [['probe_port' => 0] + $good],
+            'probe_port as text' => [['probe_port' => '8080'] + $good],
+            'admin_recovery not a bool' => [['admin_recovery' => 0] + $good],
         ];
     }
 
@@ -294,6 +300,18 @@ final class KernelTest extends TestCase
         self::assertSame(Fixtures::config(), Kernel::withLocalConfig(Fixtures::config(), []));
     }
 
+    /** T-CF7-2: the two M7 keys are accepted with their checked values. */
+    public function testProbePortAndAdminRecoveryAreLocalKeys(): void
+    {
+        self::assertContains('probe_port', Kernel::LOCAL_KEYS);
+        self::assertContains('admin_recovery', Kernel::LOCAL_KEYS);
+        foreach ([1, 8080, 65535] as $port) {
+            self::assertSame($port, Kernel::withLocalConfig(Fixtures::config(), ['probe_port' => $port])['probe_port']);
+        }
+        self::assertFalse(Kernel::withLocalConfig(Fixtures::config(), ['admin_recovery' => false])['admin_recovery']);
+        self::assertTrue(Kernel::withLocalConfig(Fixtures::config(), ['admin_recovery' => true])['admin_recovery']);
+    }
+
     /** @return array<string, array{mixed}> */
     public static function badLocalConfigs(): array
     {
@@ -305,6 +323,15 @@ final class KernelTest extends TestCase
             'NUL in data_dir' => [["data_dir" => "/srv/\0x"]],
             'time zone' => [['timezone' => 'Mars/Base']],
             'secure_cookies' => [['secure_cookies' => 'true']],
+            'probe_port zero' => [['probe_port' => 0]],
+            'probe_port negative' => [['probe_port' => -80]],
+            'probe_port too high' => [['probe_port' => 65536]],
+            'probe_port as text' => [['probe_port' => '8080']],
+            'probe_port as float' => [['probe_port' => 8080.0]],
+            'probe_port as bool' => [['probe_port' => true]],
+            'probe_port as array' => [['probe_port' => [8080]]],
+            'admin_recovery as text' => [['admin_recovery' => 'false']],
+            'admin_recovery as int' => [['admin_recovery' => 0]],
         ];
     }
 
@@ -563,5 +590,189 @@ final class KernelTest extends TestCase
 
         [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/projects'));
         self::assertSame('/setup', $response->header('Location'));
+    }
+
+    // ------------------------------------------------ M7 carried-forward items
+
+    private const HOST = ['HTTP_HOST' => 'example.test'];
+
+    /** @return list<mixed> */
+    private static function m7Routes(): array
+    {
+        return [
+            ['GET', '/sign-in', [FixtureController::class, 'show'], 'guest'],
+            ['GET', '/projects', [FixtureController::class, 'show'], 'user'],
+            ['POST', '/projects', [FixtureController::class, 'show'], 'user'],
+            ['POST', '/sign-in', [FixtureController::class, 'show'], 'guest'],
+            ['GET', '/recovery-probe', [KernelRecoveryProbeController::class, 'show'], 'guest'],
+        ];
+    }
+
+    /**
+     * @param array<array-key, mixed> $post
+     * @param array<array-key, mixed> $cookies
+     * @param array<string, mixed>    $server
+     * @param array<string, mixed>    $config
+     * @return array{0: Response, 1: string}
+     */
+    private static function sendM7(
+        FakeServices $services,
+        string $method,
+        string $uri,
+        array $post = [],
+        array $cookies = [],
+        array $server = [],
+        array $config = [],
+    ): array {
+        $kernel = new Kernel($config + Fixtures::config(false), Fixtures::appRoot(), self::m7Routes(), $services);
+
+        return Fixtures::handle($kernel, Fixtures::fullRequest($method, $uri, $post, $cookies, $server));
+    }
+
+    private static function memberServices(): FakeServices
+    {
+        return (new FakeServices())->withSession(FakeServices::signedIn(false, false));
+    }
+
+    private static function assertCsrfPage(Response $response): void
+    {
+        self::assertSame(403, $response->status);
+        self::assertStringContainsString('<h1>This form has expired</h1>', $response->body);
+        self::assertStringNotContainsString('handled ', $response->body, 'The controller must not run.');
+    }
+
+    /** @return array<string, array{string}> */
+    public static function malformedOrigins(): array
+    {
+        return [
+            'over 2048 characters' => ['http://example.test/' . str_repeat('a', 2048)],
+            'exactly one character too long' => [str_repeat('h', Request::MAX_ORIGIN + 1)],
+            'tab' => ["http://example.test\t"],
+            'tab inside' => ["http://exa\tmple.test"],
+            'newline' => ["http://example.test\n"],
+            'DEL' => ["http://example.test\x7F"],
+            'non-ASCII UTF-8' => ["http://ex\u{00E4}mple.test"],
+            'invalid byte' => ["http://example.test\xFF"],
+            'NUL byte' => ["http://example.test\0"],
+        ];
+    }
+
+    /**
+     * T-CF7-1: a sent but malformed Origin is no longer read as absent: an
+     * unsafe-method request carrying one is refused with the CSRF page,
+     * before the token check (a right token does not help), whatever
+     * Sec-Fetch-Site says.
+     */
+    #[DataProvider('malformedOrigins')]
+    public function testMalformedOriginIsRefusedOnPost(string $origin): void
+    {
+        $request = Fixtures::fullRequest('POST', '/projects', [], [], self::HOST + ['HTTP_ORIGIN' => $origin]);
+        self::assertTrue($request->originMalformed);
+        self::assertNull($request->origin);
+
+        foreach ([null, 'same-origin', 'none'] as $site) {
+            $server = self::HOST + ['HTTP_ORIGIN' => $origin];
+            if ($site !== null) {
+                $server['HTTP_SEC_FETCH_SITE'] = $site;
+            }
+            $services = self::memberServices();
+            [$response] = self::sendM7($services, 'POST', '/projects', ['_csrf' => FakeServices::SESSION_CSRF], ['tdb_session' => FakeServices::TOKEN], $server);
+            self::assertCsrfPage($response);
+        }
+
+        // An anonymous form is refused too.
+        $token = str_repeat('a', 64);
+        [$response] = self::sendM7(new FakeServices(), 'POST', '/sign-in', ['_csrf' => $token], ['tdb_csrf' => $token], self::HOST + ['HTTP_ORIGIN' => $origin]);
+        self::assertCsrfPage($response);
+    }
+
+    /** T-CF7-1: safe methods never check the Origin, malformed or not. */
+    #[DataProvider('malformedOrigins')]
+    public function testMalformedOriginDoesNotAffectGetOrHead(string $origin): void
+    {
+        foreach (['GET', 'HEAD'] as $method) {
+            [$response] = self::sendM7(self::memberServices(), $method, '/projects', [], ['tdb_session' => FakeServices::TOKEN], self::HOST + ['HTTP_ORIGIN' => $origin]);
+            self::assertSame(200, $response->status, $method);
+        }
+    }
+
+    /** T-CF7-1: the as-built rules still hold for well-formed values. */
+    public function testWellFormedOriginsKeepTheirRules(): void
+    {
+        $cookies = ['tdb_session' => FakeServices::TOKEN];
+        $post = ['_csrf' => FakeServices::SESSION_CSRF];
+
+        [$foreign] = self::sendM7(self::memberServices(), 'POST', '/projects', $post, $cookies, self::HOST + ['HTTP_ORIGIN' => 'http://attacker.example']);
+        self::assertCsrfPage($foreign);
+        [$null] = self::sendM7(self::memberServices(), 'POST', '/projects', $post, $cookies, self::HOST + ['HTTP_ORIGIN' => 'null']);
+        self::assertCsrfPage($null);
+
+        [$own] = self::sendM7(self::memberServices(), 'POST', '/projects', $post, $cookies, self::HOST + ['HTTP_ORIGIN' => 'http://example.test']);
+        self::assertSame(200, $own->status);
+        [$absent] = self::sendM7(self::memberServices(), 'POST', '/projects', $post, $cookies, self::HOST);
+        self::assertSame(200, $absent->status);
+
+        // A malformed Origin with a cross-site fetch is still the plain 403 of step 4.
+        [$crossSite] = self::sendM7(self::memberServices(), 'POST', '/projects', $post, $cookies, self::HOST + ['HTTP_ORIGIN' => "x\t", 'HTTP_SEC_FETCH_SITE' => 'cross-site']);
+        self::assertSame(403, $crossSite->status);
+    }
+
+    /** T-CF7-2: the kernel passes admin_recovery to the web Context; absent means true. */
+    public function testAdminRecoveryReachesTheContext(): void
+    {
+        [$default] = self::sendM7(new FakeServices(), 'GET', '/recovery-probe');
+        self::assertSame('recovery=on', $default->body);
+
+        [$on] = self::sendM7(new FakeServices(), 'GET', '/recovery-probe', [], [], [], ['admin_recovery' => true]);
+        self::assertSame('recovery=on', $on->body);
+
+        [$off] = self::sendM7(new FakeServices(), 'GET', '/recovery-probe', [], [], [], ['admin_recovery' => false]);
+        self::assertSame('recovery=off', $off->body);
+    }
+
+    /** T-CF7-6: a newer system database gets its own 503 page, not the project wording. */
+    public function testSystemNewerIsShownAsItsOwnPage(): void
+    {
+        $services = new FakeServices();
+        $services->installStateThrows = new Unavailable(Unavailable::SYSTEM_NEWER);
+        [$response, $log] = self::sendM7($services, 'GET', '/sign-in');
+
+        self::assertSame(503, $response->status);
+        self::assertStringContainsString('<h1>This TiffinDB needs a newer version</h1>', $response->body);
+        self::assertStringContainsString('Its data folder was written by a newer version of TiffinDB. Nothing was changed.', $response->body);
+        self::assertStringNotContainsString('This project needs a newer TiffinDB', $response->body);
+        self::assertNull($response->header('Retry-After'));
+        self::assertSame('', $log);
+    }
+
+    /** T-CF7-6 end to end: a real system database at a higher version. */
+    public function testSystemNewerWithRealCoreServices(): void
+    {
+        $config = $this->dataConfig();
+        $this->install($config);
+        $system = SystemDatabase::open(new DataDirectory((string) $config['data_dir'], 'data'));
+        $system->db()->run("UPDATE meta SET value = '999' WHERE key = 'schema_version'");
+        $system->db()->close();
+        $before = hash_file('sha256', $config['data_dir'] . '/system.sqlite');
+
+        $kernel = new Kernel($config, Fixtures::appRoot(), self::m7Routes(), self::services($config));
+        [$response] = Fixtures::handle($kernel, Fixtures::request('GET', '/sign-in'));
+
+        self::assertSame(503, $response->status);
+        self::assertStringContainsString('<h1>This TiffinDB needs a newer version</h1>', $response->body);
+        self::assertSame($before, hash_file('sha256', $config['data_dir'] . '/system.sqlite'));
+    }
+}
+
+/** Prints Context::adminRecovery() (T-CF7-2). */
+final class KernelRecoveryProbeController
+{
+    public function __construct(private readonly Context $context)
+    {
+    }
+
+    public function show(Request $request): Response
+    {
+        return new Response(200, ['Content-Type' => 'text/plain; charset=utf-8'], 'recovery=' . ($this->context->adminRecovery() ? 'on' : 'off'));
     }
 }

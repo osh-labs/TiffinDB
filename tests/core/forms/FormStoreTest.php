@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\Forms\FieldSlot;
 use TiffinDB\Core\Forms\FormDocument;
+use TiffinDB\Core\Forms\FormFormat;
 use TiffinDB\Core\Forms\FormGenerator;
 use TiffinDB\Core\Forms\FormParser;
 use TiffinDB\Core\Forms\FormSerializer;
@@ -503,6 +504,70 @@ final class FormStoreTest extends TestCase
         $html = '<div data-tiffin-form="1"><p>Hi</p></div>';
         $this->insertForm($table->key, $html, 0);
         self::assertSame(hash('sha256', $html), FormStore::baseOf($this->store()->defaultFor($table->key)));
+    }
+
+    // ------------------------------------------------------------ P243 (M5 exit audit F-1)
+
+    /** A form text of exactly $bytes bytes: a slot for each of $keys, then one paragraph of padding (canonical text when $pad is 'x'). @param list<string> $keys */
+    private static function sized(int $bytes, array $keys, string $pad = 'x'): string
+    {
+        $head = '<div data-tiffin-form="1">' . "\n";
+        foreach ($keys as $key) {
+            $head = $head . '  <div data-tiffin-field="' . $key . '"></div>' . "\n";
+        }
+        $open = '  <p>';
+        $close = '</p>' . "\n" . '</div>' . "\n";
+        $room = $bytes - strlen($head) - strlen($open) - strlen($close);
+        self::assertGreaterThan(0, $room);
+
+        return $head . $open . str_repeat($pad, $room) . $close;
+    }
+
+    public function testRegenerationNeverStoresATextOverTheLimit(): void
+    {
+        $this->captureLog();
+        $editor = $this->formEditor();
+        $items = $editor->createTable('Items', 'item', true);
+        $name = $this->schema()->fields($items->key)[0]->key;
+        $near = self::sized(FormFormat::MAX_BYTES - 20, [$name]);
+        $document = (new FormParser($this->types))->parse($near);
+        self::assertSame($near, (new FormSerializer())->serialize($document), 'The fixture is canonical text.');
+        $this->db->write(fn (Database $db) => $this->store()->saveDefault($this->schema(), $items->key, $document));
+        $before = $this->db->one('SELECT "html", "updated_at" FROM "_tiffin_forms" WHERE "table_key" = ?', [$items->key]);
+
+        $this->clock->advance(60);
+        $added = $editor->addField($items->key, 'Added', 'text', [], false, '');
+
+        self::assertSame($before, $this->db->one('SELECT "html", "updated_at" FROM "_tiffin_forms" WHERE "table_key" = ?', [$items->key]));
+        self::assertSame([$name], (new FormParser($this->types))->parse($this->stored('html', $items->key))->fieldKeys());
+        self::assertNotContains($added->key, $this->store()->effective($this->schema(), $items->key)->fieldKeys());
+        $log = $this->log();
+        self::assertStringContainsString('stored form not regenerated; reason=too-large; table_key=' . $items->key, $log);
+        self::assertStringNotContainsString('xxxx', $log);
+
+        // Under the limit the field is still gained.
+        $this->db->write(fn (Database $db) => $this->store()->saveDefault($this->schema(), $items->key, new FormDocument([new FieldSlot($name)])));
+        $more = $editor->addField($items->key, 'More', 'text', [], false, '');
+        self::assertSame([$name, $more->key], (new FormParser($this->types))->parse($this->stored('html', $items->key))->fieldKeys());
+    }
+
+    public function testANonCanonicalTextWhoseCanonicalFormIsOverTheLimitIsKept(): void
+    {
+        $this->captureLog();
+        $editor = $this->formEditor();
+        $items = $editor->createTable('Items', 'item', true);
+        $name = $this->schema()->fields($items->key)[0]->key;
+        // Corpus Z9 shape: accepted at the limit, its canonical text about six times longer; the slot for a missing field makes regeneration rewrite it.
+        $text = self::sized(FormFormat::MAX_BYTES, [$name, 'qqqqqqqqqqqq'], '"');
+        self::assertSame(FormFormat::MAX_BYTES, strlen($text));
+        (new FormParser($this->types))->parse($text);
+        $this->db->write(fn (Database $db) => $db->run('UPDATE "_tiffin_forms" SET "html" = ?, "generated" = 0 WHERE "table_key" = ?', [$text, $items->key]));
+
+        $this->db->write(fn (Database $db) => $this->store()->regenerate($this->schema(), [$items->key]));
+
+        self::assertSame($text, $this->stored('html', $items->key));
+        self::assertSame([$name, 'qqqqqqqqqqqq'], $this->store()->effective($this->schema(), $items->key)->fieldKeys(), 'The stored form is still used.');
+        self::assertStringContainsString('reason=too-large; table_key=' . $items->key, $this->log());
     }
 
     private function stored(string $column, string $tableKey): string

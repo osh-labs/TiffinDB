@@ -111,7 +111,8 @@ final class HostileUploadTest extends TestCase
         yield 'right-to-left override' => ['Receipt', $pdf, "receipt\u{202E}fdp.exe", ['receiptfdp.exe', 'application/pdf', false]];
         yield 'zero-width and byte-order marks' => ['Receipt', $pdf, "\u{FEFF}re\u{200B}ceipt.pdf", ['receipt.pdf', 'application/pdf', false]];
         yield 'invalid UTF-8' => ['Receipt', $pdf, "receipt\xC3\x28.pdf", ['file', 'application/pdf', false]];
-        yield 'a 1,000-character name' => ['Receipt', $pdf, str_repeat('n', 996) . '.pdf', [str_repeat('n', 255), 'application/pdf', false]];
+        // The extension is kept when the name is cut (P187, M7 CF7-3).
+        yield 'a 1,000-character name' => ['Receipt', $pdf, str_repeat('n', 996) . '.pdf', [str_repeat('n', 251) . '.pdf', 'application/pdf', false]];
         yield 'a zero-byte file' => ['Receipt', '', 'empty.pdf', 'problem.upload.empty'];
         yield 'a file at the core cap' => ['Receipt', self::CAP, 'large.bin', ['large.bin', 'application/octet-stream', false]];
         yield 'one byte over the core cap' => ['Receipt', self::CAP + 1, 'larger.bin', 'problem.upload.too_large'];

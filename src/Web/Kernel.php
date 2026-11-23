@@ -44,7 +44,8 @@ use UnexpectedValueException;
  *  9. CSRF for every POST (section 2.5): 403 `error.csrf.*` on failure;
  *     first, a POST whose Origin header was sent but malformed
  *     (Request::originMalformed, M7 CF7-1) is refused with that page,
- *     whatever Sec-Fetch-Site says; then, when the POST carries no `Sec-Fetch-Site`, an `Origin` that
+ *     whatever Sec-Fetch-Site says; then, when the POST carries no
+ *     `Sec-Fetch-Site`, an `Origin` that
  *     is present and is not the request's own origin (`null` included) is
  *     refused with the same page (T-CF-1, ADR 0013 9.11; see
  *     originAllowed()); then, before the token check, a POST whose

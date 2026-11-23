@@ -12,6 +12,7 @@ use TiffinDB\Core\Error\Unavailable;
 use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\Storage\SnapshotReason;
 use TiffinDB\Core\Storage\Snapshots;
+use TiffinDB\Core\Storage\Sqlite;
 
 /**
  * Forward-only upgrades of the project file format (M1 spec section 7.2,
@@ -131,7 +132,8 @@ final class FormatMigrations
 
     /**
      * Brings a file from $from to ProjectFile::VERSION: a `format-upgrade`
-     * snapshot first, then each step in its own transaction, which also sets
+     * snapshot first (unless the newest snapshot already is one of this
+     * file at $from, P183), then each step in its own transaction, which also sets
      * `PRAGMA user_version` and meta `format_version`. A failing step rolls
      * back and is rethrown; earlier steps stay applied. Unavailable
      * ('not-project') when a needed step is missing (nothing is changed).
@@ -146,10 +148,41 @@ final class FormatMigrations
                 throw new Unavailable(Unavailable::NOT_PROJECT);
             }
         }
-        $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
+        if (!self::alreadySaved($db, $projectFolder, $snapshots, $from)) {
+            $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
+        }
         for ($version = $from + 1; $version <= ProjectFile::VERSION; $version++) {
             $step = $this->steps[$version];
             $db->write(static fn (Database $db) => self::apply($db, $step, $version));
+        }
+    }
+
+    /**
+     * Whether the newest snapshot is a `format-upgrade` snapshot of this
+     * file at $from (its `PRAGMA user_version` is $from and its meta
+     * `project_key` is the file's own): an earlier attempt from this
+     * version already saved this state, and a failed upgrade leaves the
+     * project unopenable, so nothing has changed it since (P183, M7 spec
+     * section 8). Any error while reading means no.
+     */
+    private static function alreadySaved(Database $db, string $projectFolder, Snapshots $snapshots, int $from): bool
+    {
+        $copy = null;
+        try {
+            $newest = $snapshots->list($projectFolder)[0] ?? null;
+            if ($newest === null || $newest->reason !== SnapshotReason::FormatUpgrade) {
+                return false;
+            }
+            $key = $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'project_key\'');
+            $copy = Sqlite::openUntrusted(Snapshots::path($projectFolder, $newest));
+            $version = $copy->value('PRAGMA user_version');
+            $copyKey = $copy->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'project_key\'');
+
+            return is_string($key) && $version === $from && $copyKey === $key;
+        } catch (\Throwable) {
+            return false;
+        } finally {
+            $copy?->close();
         }
     }
 

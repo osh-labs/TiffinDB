@@ -55,6 +55,14 @@ use TiffinDB\Tests\Support\TempDir;
  * (for example `use TiffinDB\Core as C;`), and `use function` of a
  * forbidden function, with or without an alias.
  *
+ * Opening rules (M7 spec section 4.5, T-ADM-33): the only file under
+ * src/ that calls `ProjectFile::open` is src/Core/App/ProjectOpener.php,
+ * so no path opens a project without its lock; and the files that may
+ * call `Sqlite::open` at all are exactly those of SQLITE_OPENERS. A call
+ * is a class name (resolved through the file's namespace, `use` imports,
+ * aliases, group uses, and `self`/`static` inside the class) followed by
+ * `::open(`. A new caller fails the test and needs a reviewed entry here.
+ *
  * Known limits: the rule reads tokens, not running code, so it cannot see
  * names built at run time (concatenated or interpolated strings, for
  * example `'TiffinDB\\Core\\' . $area`), string callables such as
@@ -93,6 +101,17 @@ final class CoreLayerRulesTest extends TestCase
 
     /** Files that may call the forbidden functions. */
     public const FUNCTION_EXEMPT = ['src/Core/Storage/SecureRandom.php', 'src/Core/Storage/SystemClock.php'];
+
+    /** Files under src/ that may call ProjectFile::open (M7 spec section 4.5). */
+    public const PROJECT_FILE_OPENERS = ['src/Core/App/ProjectOpener.php'];
+
+    /** Files under src/ that may call Sqlite::open (M7 spec section 4.5). */
+    public const SQLITE_OPENERS = [
+        'src/Core/App/ProjectOpener.php',  // openExclusive (restore)
+        'src/Core/Io/ImportJob.php',       // its own job database
+        'src/Core/Schema/ProjectFile.php',
+        'src/Core/System/SystemDatabase.php',
+    ];
 
     private ?TempDir $temp = null;
 
@@ -390,6 +409,194 @@ final class CoreLayerRulesTest extends TestCase
         foreach (self::FUNCTION_EXEMPT as $path) {
             self::assertFileExists(RepoFiles::path($path));
         }
+    }
+
+    // ------------------------------------------------------ opening rules
+
+    /**
+     * How often the source calls $class::$method( (names resolved through
+     * the namespace, imports, aliases, group uses, and self/static).
+     */
+    public static function staticCalls(string $source, string $class, string $method): int
+    {
+        $tokens = self::significantTokens($source);
+        $count = count($tokens);
+        $namespace = '';
+        $current = null;
+        $imports = [];
+        $calls = 0;
+        $target = strtolower(ltrim($class, '\\'));
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!is_array($token)) {
+                continue;
+            }
+            if ($token[0] === T_NAMESPACE && is_array($tokens[$i + 1] ?? null)) {
+                $namespace = ltrim($tokens[$i + 1][1], '\\');
+
+                continue;
+            }
+            if (in_array($token[0], [T_CLASS, T_TRAIT, T_ENUM], true) && is_array($tokens[$i + 1] ?? null) && $tokens[$i + 1][0] === T_STRING) {
+                $current = ltrim($namespace . '\\' . $tokens[$i + 1][1], '\\');
+
+                continue;
+            }
+            if ($token[0] === T_USE && ($i === 0 || !self::isToken($tokens[$i - 1], ')'))) {
+                $i = self::readImports($tokens, $i + 1, $imports);
+
+                continue;
+            }
+            if (!in_array($token[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_STATIC], true)) {
+                continue;
+            }
+            $colon = $tokens[$i + 1] ?? null;
+            $name = $tokens[$i + 2] ?? null;
+            $open = $tokens[$i + 3] ?? null;
+            if (!is_array($colon) || $colon[0] !== T_DOUBLE_COLON || !is_array($name) || strcasecmp($name[1], $method) !== 0 || $open !== '(') {
+                continue;
+            }
+            $written = $token[1];
+            if (in_array(strtolower($written), ['self', 'static'], true)) {
+                $resolved = $current ?? '';
+            } elseif ($token[0] === T_NAME_FULLY_QUALIFIED) {
+                $resolved = ltrim($written, '\\');
+            } else {
+                $first = strtolower(explode('\\', $written)[0]);
+                $rest = substr($written, strlen($first));
+                $resolved = isset($imports[$first]) ? $imports[$first] . $rest : ltrim($namespace . '\\' . $written, '\\');
+            }
+            if (strtolower($resolved) === $target) {
+                $calls++;
+            }
+        }
+
+        return $calls;
+    }
+
+    /**
+     * Reads a class `use` statement from $i, adding alias => full name;
+     * returns the index of its `;`. Function and const imports are skipped.
+     *
+     * @param list<array{int, string, int}|string> $tokens
+     * @param array<string, string> $imports
+     */
+    private static function readImports(array $tokens, int $i, array &$imports): int
+    {
+        $count = count($tokens);
+        $skip = is_array($tokens[$i] ?? null) && in_array($tokens[$i][0], [T_FUNCTION, T_CONST], true);
+        $found = [];
+        $prefix = '';
+        $name = null;
+        for (; $i < $count && $tokens[$i] !== ';'; $i++) {
+            $token = $tokens[$i];
+            if (is_array($token) && in_array($token[0], [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)) {
+                $previous = $tokens[$i - 1];
+                if (is_array($previous) && $previous[0] === T_AS && $name !== null) {
+                    $parts = explode('\\', $name);
+                    unset($found[strtolower(end($parts))]);
+                    $found[strtolower($token[1])] = $name;
+                    $name = null;
+                } elseif (self::isToken($tokens[$i + 1] ?? null, T_NS_SEPARATOR) && ($tokens[$i + 2] ?? null) === '{') {
+                    $prefix = ltrim($token[1], '\\') . '\\';
+                } else {
+                    $name = $prefix . ltrim($token[1], '\\');
+                    $parts = explode('\\', $name);
+                    $found[strtolower(end($parts))] = $name;
+                }
+            }
+            if ($token === '}') {
+                $prefix = '';
+            }
+        }
+        if (!$skip) {
+            // Only class imports resolve class names; function and const imports do not.
+            $imports = array_merge($imports, $found);
+        }
+
+        return $i;
+    }
+
+    private static function isToken(mixed $token, int|string $kind): bool
+    {
+        return is_string($kind) ? $token === $kind : is_array($token) && $token[0] === $kind;
+    }
+
+    /**
+     * Repository-relative paths of the PHP files under `<root>/src` that call $class::open(.
+     *
+     * @return list<string>
+     */
+    public static function openersBelow(string $root, string $class): array
+    {
+        $src = $root . '/src';
+        if (!is_dir($src)) {
+            return [];
+        }
+        $found = [];
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            /** @var SplFileInfo $file */
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+                if (self::staticCalls((string) file_get_contents($file->getPathname()), $class, 'open') > 0) {
+                    $found[] = $relative;
+                }
+            }
+        }
+        sort($found, SORT_STRING);
+
+        return $found;
+    }
+
+    public function testOnlyTheOpenerOpensProjectFiles(): void
+    {
+        self::assertSame(self::PROJECT_FILE_OPENERS, self::openersBelow(RepoFiles::root(), 'TiffinDB\\Core\\Schema\\ProjectFile'));
+    }
+
+    public function testOnlyTheListedFilesOpenSqliteFiles(): void
+    {
+        self::assertSame(self::SQLITE_OPENERS, self::openersBelow(RepoFiles::root(), 'TiffinDB\\Core\\Storage\\Sqlite'));
+    }
+
+    /** @return iterable<string, array{string, int}> */
+    public static function openCalls(): iterable
+    {
+        $head = "<?php\n\nnamespace TiffinDB\\Core\\App;\n\n";
+        yield 'imported' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\n\n\$db = ProjectFile::open(\$p, \$k, \$s);\n", 1];
+        yield 'fully qualified' => [$head . "\$db = \\TiffinDB\\Core\\Schema\\ProjectFile::open(\$p, \$k, \$s);\n", 1];
+        yield 'aliased' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile as PF;\n\n\$db = PF::open(\$p, \$k, \$s);\n", 1];
+        yield 'group use' => [$head . "use TiffinDB\\Core\\Schema\\{Schema, ProjectFile};\n\n\$db = ProjectFile::open(\$p, \$k, \$s);\n", 1];
+        yield 'group use aliased' => [$head . "use TiffinDB\\Core\\Schema\\{ProjectFile as F};\n\n\$db = F::open(\$p, \$k, \$s);\n", 1];
+        yield 'first-class callable' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\n\n\$f = ProjectFile::open(...);\n", 1];
+        yield 'lower case' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\n\n\$db = projectfile::OPEN(\$p);\n", 1];
+        yield 'self inside the class' => ["<?php\n\nnamespace TiffinDB\\Core\\Schema;\n\nfinal class ProjectFile { public static function again(): void { self::open('x', 'y', \$s); static::open('x', 'y', \$s); } }\n", 2];
+        yield 'relative to the namespace' => ["<?php\n\nnamespace TiffinDB\\Core;\n\n\$db = Schema\\ProjectFile::open(\$p);\n", 1];
+        yield 'another class of the same name' => [$head . "use Elsewhere\\ProjectFile;\n\n\$db = ProjectFile::open(\$p);\n", 0];
+        yield 'another method' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\n\n\$db = ProjectFile::create(\$p);\nProjectFile::touch(\$db);\n", 0];
+        yield 'a method named open' => [$head . "\$x->open(\$p);\nfunction open(): void {}\n", 0];
+        yield 'a function import does not hide a class import' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\nuse function strlen;\n\$db = ProjectFile::open(\$p);\n", 1];
+        yield 'an alias replaces the short name' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile as F;\n\$db = ProjectFile::open(\$p);\n", 0];
+        yield 'a closure use is not an import' => [$head . "use TiffinDB\\Core\\Schema\\ProjectFile;\n\$f = function () use (\$p) { return ProjectFile::open(\$p); };\n", 1];
+    }
+
+    #[DataProvider('openCalls')]
+    public function testTheOpeningRuleFindsCalls(string $source, int $expected): void
+    {
+        self::assertSame($expected, self::staticCalls($source, 'TiffinDB\\Core\\Schema\\ProjectFile', 'open'));
+    }
+
+    public function testAPlantedCallElsewhereFailsTheRule(): void
+    {
+        $this->temp = TempDir::create('tiffindb-core-open-');
+        $root = $this->temp->path();
+        self::write($root, 'src/Core/App/ProjectOpener.php', "<?php\n\nnamespace TiffinDB\\Core\\App;\n\nuse TiffinDB\\Core\\Schema\\ProjectFile;\nuse TiffinDB\\Core\\Storage\\Sqlite;\n\nProjectFile::open(\$a, \$b, \$c);\nSqlite::open(\$a);\n");
+        self::write($root, 'src/Core/App/Sneaky.php', "<?php\n\nnamespace TiffinDB\\Core\\App;\n\nuse TiffinDB\\Core\\Schema\\ProjectFile as P;\n\nP::open(\$a, \$b, \$c);\n");
+        self::write($root, 'src/Web/AlsoSneaky.php', "<?php\n\n\\TiffinDB\\Core\\Storage\\Sqlite::open(\$a);\n");
+        self::write($root, 'src/Core/Storage/Sqlite.php', "<?php\n\nnamespace TiffinDB\\Core\\Storage;\n\nfinal class Sqlite { public static function open(): void {} public static function memory(): void { Sqlite::openUntrusted(); } }\n");
+
+        self::assertSame(['src/Core/App/ProjectOpener.php', 'src/Core/App/Sneaky.php'], self::openersBelow($root, 'TiffinDB\\Core\\Schema\\ProjectFile'));
+        self::assertNotSame(self::PROJECT_FILE_OPENERS, self::openersBelow($root, 'TiffinDB\\Core\\Schema\\ProjectFile'));
+        self::assertSame(['src/Core/App/ProjectOpener.php', 'src/Web/AlsoSneaky.php'], self::openersBelow($root, 'TiffinDB\\Core\\Storage\\Sqlite'));
     }
 
     // ------------------------------------------------------------ fixtures

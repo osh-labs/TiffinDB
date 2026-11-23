@@ -167,7 +167,7 @@ Rendered through the kernel with real core objects as the synthetic Admin, for: 
 
 1. The editor's first submit button in tree order is the hidden Apply with `tabindex="-1"`; no other element has a `tabindex` other than `-1` or `0`.
 2. At most one element has `autofocus`, and only on the editor after a change; it is the control the core's `focusAfter` names (M5-forms section 6.3): a button or the name box of the row it names, or "Add a section".
-3. Every button's accessible name starts with its visible text and names its row ("Move Brand up", "Hide Serial number", "Remove section Where it is and keep what is in it", "Add Serial number to the form").
+3. Every button's accessible name starts with its visible text and names its row ("Move up: Brand", "Move down: Brand", "Hide Serial number", "Remove section Where it is and keep what is in it", "Add Serial number to the form"; a section's name box is "Section name, section {number}"; as built, M5-WP3b).
 4. Every input, select, and textarea has a label whose text starts its accessible name; the textarea's problem is in its description.
 5. Rows are `li` of labelled `ol` lists; a section's children are a nested `ol` inside its `li`.
 6. No form is nested; every editor control belongs to `form#form-editor`.
@@ -179,10 +179,10 @@ As K-3 (headless Chromium with Playwright in the scratchpad, key presses only af
 
 1. Sign in as the synthetic Admin; open "Home Inventory", Tables, Items (the Fields page) by keyboard; Tab to "Edit the form", Enter.
 2. Tab to the Width menu of Name; arrow keys to "Two thirds" (the menu does not submit); Tab to the Label box of Name; type "Item name"; press Enter (Apply). The page returns with the label and width applied and no autofocus.
-3. Tab to "Move Brand up", Enter; focus is on "Move Brand up" in its new place (read `document.activeElement`).
+3. Tab to "Move up: Brand", Enter; focus is on "Move up: Brand" in its new place (read `document.activeElement`).
 4. Tab to "Hide Serial number", Enter; "Serial number" is listed under "Not on this form" with its required note.
 5. Tab to "Add a section", Enter; focus is on the new section's name box; type "Where it is"; Enter.
-6. Move Room down repeatedly into "Where it is" (Enter on "Move Room down" until it is inside; focus follows).
+6. Move Room down repeatedly into "Where it is" (Enter on "Move down: Room" until it is inside; focus follows).
 7. Tab to "Save the form", Enter; the editor shows "The form for Items has been saved."
 8. Open "Stand mixer" from the Items list; the record shows Name two thirds wide at 1360 px, no Serial number, Room under "Where it is", and the manual link (`https://example.com/manual`) is focusable and named by its text.
 9. Back to the editor; Tab to "Source", Enter; in the text area press Control+End and type a new paragraph with an `onclick` attribute; Tab to "Check", Enter; the error summary is focused and reads "Line {n}: The element p cannot have the attribute onclick, or is missing one it needs."; Enter on its link puts focus in the text area.
@@ -280,4 +280,9 @@ When a screen package needs a change in a WP3 file, it reports it; the orchestra
 
 ## 14. As-built notes
 
-To be appended by the M5 exit audit (M5-X).
+Appended by the M5 exit audit (M5-X, `docs/build/reviews/M5-exit-audit.md`), from the merged code at `d8dc17d`.
+
+1. **Accessible names (M5-WP3b).** The move buttons are named "Move up: {name}" and "Move down: {name}", and a section's name box "Section name, section {number}", so that each name starts with the visible text (WCAG 2.5.3). Sections 9.1 and 9.2 above now use these names; `docs/design/m5/components.md` and `editor.md` were changed with the code.
+2. **Focus after Check (section 9.2 step 9).** The error summary is announced (`role="alert"`, `tabindex="-1"`) but not focused: no script focuses it and the page has no `autofocus` (section 5.4). The keyboard reaches its link by Tab (or Shift+Tab) and Enter on the link puts focus in the text area, with and without JavaScript.
+3. **Appearance matrix.** `AppearanceMatrix::rows()` gives 38 rows (all 185 required pairs covered; the five extremes included, one of which the greedy set already holds).
+4. **Downloads of a stored form over the limit.** A stored text longer than 262,144 bytes (only through finding F-1, M5-forms section 17 item 4) is shown whole in the source view's text area and offered whole by the download.

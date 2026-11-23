@@ -22,7 +22,7 @@ Shell: plain shell (lockup header, centred footer), as the sign-in page. Signed-
 Page title and `h1`: `recovery.title` "Get back into an Admin account".
 
 1. `p.lead` `recovery.lead` "If no Admin can sign in, someone who can open the files on the server can let you set a new Admin password. This works for Admin accounts only. Members: ask an Admin to set a new password for you."
-2. `h2` `recovery.step1.title` "1. Ask for a code"; `p` `recovery.step1.body` "TiffinDB writes a one-time code into a file named recovery-code.txt in its data folder. Open that file with your host's file manager, an SFTP program, or a shell. The code works once, for 30 minutes."; `form` POST `/recover/start` (`csrf`) with `button.button` `recovery.start` "Write a code".
+2. `h2` `recovery.step1.title` "1. Ask for a code"; `p` `recovery.step1.body` "TiffinDB writes a one-time code into a file named recovery-code.txt in its data folder. Open that file with your host's file manager, an SFTP program, or a shell. The code works once, for 30 minutes."; `form` POST `/recover/start` (`csrf`) with the `form-actions` partial: `submit` `recovery.start` "Write a code", `secondary` true (the page's one primary button is "Change the password"), `size` `normal`, no cancel.
    After starting (`?started=1`): above the button, `notice` (information) `recovery.started` "If recovery is allowed on this server, a code is now in recovery-code.txt in the data folder. If a code was already waiting there, it is still the one to use." (the same text whether or not a file was written).
 3. `h2` `recovery.step2.title` "2. Set a new password"; `form` POST `/recover` (`csrf`):
    - `username`: `label` `recovery.username` "Admin username"; `input type="text" autocomplete="username"`; the typed value kept after 422.
@@ -30,7 +30,7 @@ Page title and `h1`: `recovery.title` "Get back into an Admin account".
    - `password`: `label` `recovery.password` "New password"; `p.help` the password rules (the help text the change-password page shows, reused by key, as built); `input type="password" autocomplete="new-password"`.
    - `password_again`: `label` `recovery.password_again` "New password again"; `input type="password" autocomplete="new-password"`.
    - The show-password toggle (as built, `show-password` script, optional).
-   - `div.form-actions`: `button.button.button-primary.button-large` `recovery.submit` "Change the password"; `a.button.button-large` `recovery.back` "Back to sign in" to `/sign-in`.
+   - the `form-actions` partial with `submit` `recovery.submit` "Change the password" (primary), `cancel` `/sign-in`, and `cancelLabel` `recovery.back` "Back to sign in".
 4. `p.help` `recovery.other_ways` "Other ways back in: another Admin can set your password on the People page; with a shell, the host documentation describes a command that does it."
 
 ## 4. States and results

@@ -1,8 +1,8 @@
 # M7 design spec: web layer and screens
 
-Status: design spec for milestone M7, part 2 of 2 of the part 1 design (M7-D1), awaiting spec review (M7-R1) and reconciliation with the M5 as-built notes (M7-D2). Part 1, `docs/specs/M7-release.md`, has the core, the release tool, the test plan, the provisional decisions (P213 to P241), and the work-package list; this part has the web layer: headers and static files, routes, controllers, shell changes, templates, strings, the stylesheet, the keyboard procedure, the visual check, and the file ownership of the web packages. Screen-by-screen designs with every string are in `docs/design/m7/`.
+Status: design spec for milestone M7, part 2 of 2 of the part 1 design (M7-D1), reviewed (M7-R1) and reconciled with the M5 as-built code (M7-D2, P244). Part 1, `docs/specs/M7-release.md`, has the core, the release tool, the test plan, the provisional decisions (P213 to P241, P244), and the work-package list; this part has the web layer: headers and static files, routes, controllers, shell changes, templates, strings, the stylesheet, the keyboard procedure, the visual check, and the file ownership of the web packages. Screen-by-screen designs with every string are in `docs/design/m7/`.
 
-The M1 to M5 web layers (`docs/specs/M1-screens.md` to `docs/specs/M5-screens.md` and their as-built notes) are extended, not replaced. Statements about web classes are from the code at M4 close with the M5 design merged (`0c3ad18`), marked "(as built)"; M5's own additions (form routes, layouts, `Response::attachmentText`) are taken as designed and are checked by M7-D2.
+The M1 to M5 web layers (`docs/specs/M1-screens.md` to `docs/specs/M5-screens.md` and their as-built notes) are extended, not replaced. Statements about web classes are from the code at M5 close (`5bdab7d`), marked "(as built)". M5 added nine form routes after the record routes, the layouts `form` and `form-narrow`, `Response::attachmentText` (named through `contentDisposition`), `ViewScope::formLink`, the form partials and strings, and per-milestone methods in `RouterTest`, `ScreenStructureTest`, and `KeyboardStructureTest`; this part follows those conventions (sections 4, 10, 11, 13).
 
 ## 1. What changes from M5
 
@@ -45,7 +45,7 @@ The application's own responses keep their headers (as built); the files served 
 - `public/assets/icons/favicon.svg`: byte-identical copy of `docs/brand/tiffindb-mark-small.svg`. `public/assets/icons/app-icon.svg`: byte-identical copy of `docs/brand/tiffindb-app-icon.svg`. A design test (`tests/design/IconFilesTest.php`, new) compares the bytes, so the brand files stay the source.
 - `public/assets/app.webmanifest`: JSON, exactly `{"name": "TiffinDB", "short_name": "TiffinDB", "start_url": "../", "scope": "../", "display": "browser", "icons": [{"src": "icons/app-icon.svg", "sizes": "any", "type": "image/svg+xml"}]}` JSON has no comments, so the file gets an entry in `SpdxHeaderTest::EXEMPTIONS` (as built for `composer.json` and plugin manifests), added by WP6 together with the one for `config/notices.json` (WP6 owns that test; WP3 starts after WP6 is merged). `start_url` and `scope` are relative to the manifest's address, so both layouts and any base path work.
 - `layout.php` head, after the stylesheets: `<link rel="icon" href="<?= $this->asset('icons/favicon.svg') ?>" type="image/svg+xml" />` and `<link rel="manifest" href="<?= $this->asset('app.webmanifest') ?>" />`, on every page, signed in or not. `asset()` adds `?v=<version>` (as built), which is harmless on both.
-- `TemplateRulesTest` (as built: allows `link` only for stylesheets) allows exactly these two `rel` values with `href` from `asset()`.
+- `TemplateRulesTest` has no rule for `link` elements as built (the stylesheet links are checked on rendered pages by `HtmlAssertions::assertShell`, which counts exactly three stylesheet links and so is not affected). WP3 adds one: a `link` element appears only in `templates/layout.php`, and each is one of the three stylesheet links or one of the two links above, with `href` exactly an `asset()` call.
 
 ## 4. Routes (M7-WP3, with the controllers pending as in M4 and M5)
 
@@ -55,8 +55,8 @@ The application's own responses keep their headers (as built); the files served 
 | POST | `/projects/{project}/snapshots` | `SnapshotController::take` | user | WP4 |
 | GET | `/projects/{project}/snapshots/{snapshot}/restore` | `SnapshotController::restoreForm` | user | WP4 |
 | POST | `/projects/{project}/snapshots/{snapshot}/restore` | `SnapshotController::restore` | user | WP4 |
-| GET | `/projects/{project}/delete` | `ProjectController::deleteForm` | user | WP4 |
-| POST | `/projects/{project}/delete` | `ProjectController::delete` | user | WP4 |
+| GET | `/projects/{project}/delete` | `ProjectController::deleteForm` | user | WP4 (route added by WP4) |
+| POST | `/projects/{project}/delete` | `ProjectController::delete` | user | WP4 (route added by WP4) |
 | GET | `/admin/activity` | `AuditController::index` | user | WP5 |
 | GET | `/about` | `AboutController::show` | user | WP5 |
 | GET | `/about/licences/{licence}` | `AboutController::licence` | user | WP5 |
@@ -64,7 +64,7 @@ The application's own responses keep their headers (as built); the files served 
 | POST | `/recover/start` | `RecoveryController::start` | guest | WP5 |
 | POST | `/recover` | `RecoveryController::recover` | guest | WP5 |
 
-Order: the project routes after `/projects/{project}/sharing` (POST) and before the import routes; `/admin/activity` after the plugin routes; `/about` and `/recover` after `/settings/reset`. `{snapshot}` is the snapshot file name without `.tiffin` (it fits the router's `[A-Za-z0-9_-]+`, as built); the core decides whether it names a snapshot. URL shapes follow ADR 0008 decision 3; they are bookmarkable and costly to reverse.
+WP3 adds ten routes with their controllers pending (`RouterTest::testRealRouteTableHandlersExist` gains `SnapshotController`, `AuditController`, `AboutController`, `RecoveryController` in its pending list, as M5 did) and `RouterTest::testM7RoutesAreTheSpecification` (as `testM5RoutesAreTheSpecification` is built). The two `ProjectController` routes are added by WP4 with its controller methods, because `ProjectController` exists as built and that test requires every method a route names on an existing class (P244). Order: the project routes after `/projects/{project}/sharing` (POST) and before the import routes (M5's form routes sit after the record routes and are not moved); `/admin/activity` after the plugin routes; `/about` and `/recover` after `/settings/reset`. `{snapshot}` is the snapshot file name without `.tiffin` (it fits the router's `[A-Za-z0-9_-]+`, as built); the core decides whether it names a snapshot. URL shapes follow ADR 0008 decision 3; they are bookmarkable and costly to reverse.
 
 ## 5. Shell changes (M7-WP3)
 
@@ -76,7 +76,7 @@ Order: the project routes after `/projects/{project}/sharing` (POST) and before 
 
 ### 6.1 Shared parts (WP3)
 
-No new shared partial. The M7 pages use the existing `page-head`, `notice`, `facts`, `form-actions`, `field-label`, `field-error`, `pager`, `empty-state`, `csrf` partials (as built) and the `danger-zone` class (M4). Classes added to `app.css` are in section 8.
+No new shared partial. Every M7 form's actions go through `form-actions` (as built: the one template allowed to print `form.cancel`; `cancelLabel` for "Back to sign in" and "Show everything"). The M7 pages use the existing `page-head`, `notice`, `facts`, `form-actions`, `field-label`, `field-error`, `pager`, `empty-state`, `csrf` partials (as built) and the `danger-zone` class (M4). Classes added to `app.css` are in section 8.
 
 Layouts for each page (all exist as built; no `layout.php` branch is added, which is checked by T-WEB-80):
 
@@ -96,7 +96,7 @@ Layouts for each page (all exist as built; no `layout.php` branch is added, whic
 | Snapshots | 200 | `templates/pages/snapshots/index.php` |
 | Restore confirmation | 200; 422 (unreadable snapshot, locks unavailable) | `templates/pages/snapshots/restore.php` |
 | Delete a project | 200; 422 (wrong name, locks unavailable, move failed); 200 again when the counts grew | `templates/pages/projects/delete.php` |
-| Project settings (changed) | 200 | `templates/pages/projects/settings.php`: after the totals line, `h2` `projects.settings.more` "More for this project" and a `ul` with `a` `projects.settings.snapshots` "Snapshots" and `a.link-danger` `projects.settings.delete` "Delete this project" |
+| Project settings (changed) | 200 | `templates/pages/projects/settings.php`: after the totals line, `h2` `projects.settings.more` "More for this project" and a `ul.settings-links` with `a` `projects.settings.snapshots` "Snapshots" and `a.link-danger` `projects.settings.delete` "Delete this project" |
 
 ### 6.3 WP5 pages
 
@@ -145,6 +145,7 @@ Runtime prefixes (`TemplateRulesTest`, WP3): `snapshots.reason.`, `audit.action.
 - `.licence-text` (`pre`: `white-space: pre-wrap`, `overflow-wrap: anywhere`, `font-size: var(--text-small)` as built token, max-width the settings width; scrolls inside its own box only when a single line cannot wrap).
 - `.about-list` (definition list of components and plugins).
 - `.recovery-steps` (ordered list with 12 px between items).
+- `.settings-links` (the project settings list of links with help lines; no list class of that kind exists as built).
 - `.link-danger` (warning ink on a link, `--warn`; text underlined; no new colour).
 - Mid-word breaks (part 1 section 15.2): the nine `overflow-wrap: anywhere` rules are changed as listed there, with `min-width: 0` on the flex and grid children concerned. The record values, file names, and licence text keep `anywhere`.
 
@@ -174,7 +175,7 @@ The `admin_recovery` setting reaches the controllers through the web `Context`: 
 
 M1 section 7 to M5 section 9 apply.
 
-### 10.1 Structural checks (T-KBD-5; WP4 in `SnapshotScreenTest` and `ProjectDeleteScreenTest`, WP5 in `AuditScreenTest`, `AboutScreenTest`, `RecoveryScreenTest`, each with the `HtmlAssertions` helpers as built; `KeyboardStructureTest.php` is not changed in part 1, and the whole-application run is WP10's)
+### 10.1 Structural checks (T-KBD-5; `tests/web/KeyboardStructureTest.php` extended as M5's T-KBD-4 is: WP4 adds `testM7Snapshots*` and `testM7ProjectDelete*` methods, WP5 `testM7Activity*`, `testM7About*`, `testM7Recovery*`, each package only its own methods (P244); the whole-application run is WP10's)
 
 Every M7 page: one `h1`; every control has a label (`HtmlAssertions::assertForm`, as built); no positive `tabindex`; the primary button is the only `.button-primary` (restore and delete use `.button-danger` as the one filled button, as the trash confirmation does); the error summary's links point at existing ids; the delete page's name field has `autocomplete="off"`, `spellcheck="false"`, and `aria-describedby` naming the help and, after 422, the error.
 
@@ -203,7 +204,8 @@ Key presses only, JavaScript on and then off: as Admin, Project settings, Snapsh
 | T-WEB-92 | WP5 | Sign-in page: link present by default; notice after `?recovered=1` |
 | T-WEB-93 | WP3 | `app.css`: the classes of section 8 exist; the changed `overflow-wrap` rules; existing stylesheet rules pass |
 | T-WEB-94 | WP4 | Project settings shows the two links for Admins (the page is Admin-only, as built) |
-| T-WEB-95 | WP4, WP5 | T-KBD-5 (section 10.1), each package in its own screen tests |
+| T-WEB-95 | WP4, WP5 | T-KBD-5 (section 10.1), each package in its own `KeyboardStructureTest` methods |
+| T-SCR-6 | WP4, WP5 | `ScreenStructureTest` (extended as for T-SCR-5): every M7 GET route in each state its design lists that a GET can reach, well-formed, no inline code, shell assertions, `assertForm`, title, `h1`, the `main` class of its layout; a Member gets 403 on every Admin-only M7 route; the main test's "every GET route is visited" assertion (as built) holds with the M7 controllers present. WP4 adds `M7_SNAPSHOT_CONTROLLERS` (`SnapshotController`) with the delete routes of `ProjectController` visited in its method; WP5 adds `M7_ADMIN_CONTROLLERS` (`AuditController`, `AboutController`, `RecoveryController`; the recovery routes visited signed out, and with `adminRecovery` off giving 404) |
 
 ### 11.2 Visual check (V-35 to V-40, run by WP5 after WP4 is merged, or by WP10 in part 2 if WP5 runs first; screenshots in the scratchpad)
 
@@ -230,11 +232,11 @@ At 1360 px and 390 px in four themes, and at 320 px with Largest text, against `
 | Package | Files |
 |---|---|
 | WP0 | `src/Web/Request.php`, `Kernel.php`, `Context.php` (`adminRecovery`), `Response.php` (extension rule), `Controller/SetupController.php` (probe port), `strings/en/errors.php`, their tests (part 1 section 17) |
-| WP3 | `src/Web/routes.php`, `Shell.php`, `SecurityHeaders.php`; `templates/layout.php`, `templates/partials/footer.php`, `top-bar.php`; `public/assets/css/app.css`, `public/.htaccess`, `public/assets/icons/*`, `public/assets/app.webmanifest`; `strings/en/shell.php`; `tests/web/TemplateRulesTest.php`, `ShellTest.php`, `SecurityHeadersTest.php`, `RouterTest.php`, `StringsTest.php`; `tests/repo/HtaccessTest.php`; new `tests/design/IconFilesTest.php` |
-| WP4 | `src/Web/Controller/SnapshotController.php`, `ProjectController.php`; `templates/pages/snapshots/*`, `templates/pages/projects/delete.php`, `settings.php`; `strings/en/snapshots.php`, `projects.php`; `tests/web/SnapshotScreenTest.php`, `ProjectDeleteScreenTest.php` |
-| WP5 | `src/Web/Controller/AuditController.php`, `AboutController.php`, `RecoveryController.php`, `SignInController.php`; `templates/pages/audit/*`, `about/*`, `recover/*`, `sign-in.php`; `strings/en/audit.php`, `about.php`, `recovery.php`, `account.php`; `tests/web/AuditScreenTest.php`, `AboutScreenTest.php`, `RecoveryScreenTest.php`, `SignInScreenTest.php` |
+| WP3 | `src/Web/routes.php` (ten routes), `Shell.php`, `SecurityHeaders.php`; `templates/layout.php`, `templates/partials/footer.php`, `top-bar.php`; `public/assets/css/app.css`, `public/.htaccess`, `public/assets/icons/*`, `public/assets/app.webmanifest`; `strings/en/shell.php`; `tests/web/TemplateRulesTest.php`, `ShellTest.php`, `SecurityHeadersTest.php`, `RouterTest.php`, `StringsTest.php`, `KeyboardStructureTest.php` (the `ADMIN_TOP` and signed-in `FOOTER` lists only), and any other test listing the Admin top bar or the signed-in footer in full (those entries only); `tests/repo/HtaccessTest.php`; new `tests/design/IconFilesTest.php` |
+| WP4 | `src/Web/Controller/SnapshotController.php`, `ProjectController.php`; `src/Web/routes.php` and `tests/web/RouterTest.php` (the two delete routes, after WP3); `templates/pages/snapshots/*`, `templates/pages/projects/delete.php`, `settings.php`; `strings/en/snapshots.php`, `projects.php`; `tests/web/SnapshotScreenTest.php`, `ProjectDeleteScreenTest.php`; `ScreenStructureTest.php`, `KeyboardStructureTest.php` (own methods) |
+| WP5 | `src/Web/Controller/AuditController.php`, `AboutController.php`, `RecoveryController.php`, `SignInController.php`; `templates/pages/audit/*`, `about/*`, `recover/*`, `sign-in.php`; `strings/en/audit.php`, `about.php`, `recovery.php`, `account.php`; `tests/web/AuditScreenTest.php`, `AboutScreenTest.php`, `RecoveryScreenTest.php`, `SignInScreenTest.php`; `ScreenStructureTest.php`, `KeyboardStructureTest.php` (own methods, after WP4 is merged) |
 
-WP4 and WP5 share no file. `StringsTest.php` and `KeyboardStructureTest.php` are WP3's in part 1 (WP3 changes only `StringsTest.php`, for its own shell keys) and WP10's in part 2.
+WP4 and WP5 share only `ScreenStructureTest.php` and `KeyboardStructureTest.php`, each adding its own methods, constants, and one call line (P244, the M5 precedent of M5-WP5 and WP6); the orchestrator merges WP4 first and WP5 merges the integration branch before it reports. `StringsTest.php` is WP3's in part 1 (its own shell keys); WP4 and WP5 check their runtime-prefix keys in their own screen tests (section 7).
 
 ## 14. As-built notes
 

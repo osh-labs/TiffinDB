@@ -1,6 +1,6 @@
 # M7 screen designs
 
-Status: designs for milestone M7 part 1 (M7-D1), provisional until reviewed (M7-R1) and reconciled with the M5 as-built notes (M7-D2). They design the M7 screens that have no mock-up: the About page (ui-design-plan section 6.2), and, from P49 and P170, snapshots and restore, project deletion, the activity (audit) log, and Admin recovery; plus where the favicon, the app icon, and the new links appear in the shell.
+Status: designs for milestone M7 part 1 (M7-D1), reviewed (M7-R1) and reconciled with the M5 as-built code (M7-D2): every action row uses the `form-actions` partial, which alone prints `form.cancel` (as built). They design the M7 screens that have no mock-up: the About page (ui-design-plan section 6.2), and, from P49 and P170, snapshots and restore, project deletion, the activity (audit) log, and Admin recovery; plus where the favicon, the app icon, and the new links appear in the shell.
 
 | Document | Screens |
 |---|---|

@@ -1,0 +1,51 @@
+[
+    {
+        "id": "tiffindb",
+        "name": "TiffinDB",
+        "version": "",
+        "licence": "AGPL-3.0-or-later",
+        "files": ["LICENSE"]
+    },
+    {
+        "id": "openspout",
+        "name": "OpenSpout",
+        "version": "5.2.2",
+        "licence": "MIT AND Apache-2.0",
+        "files": ["vendor/openspout/openspout/LICENSE", "vendor/openspout/openspout/LICENSE-for-cc42c1d"]
+    },
+    {
+        "id": "composer-autoloader",
+        "name": "Composer class loader",
+        "version": "",
+        "licence": "MIT",
+        "files": ["vendor/composer/LICENSE"]
+    },
+    {
+        "id": "inter",
+        "name": "Inter",
+        "version": "v20",
+        "licence": "OFL-1.1",
+        "files": ["public/assets/fonts/inter/LICENSE.txt"]
+    },
+    {
+        "id": "atkinson-hyperlegible",
+        "name": "Atkinson Hyperlegible",
+        "version": "v12",
+        "licence": "OFL-1.1",
+        "files": ["public/assets/fonts/atkinson-hyperlegible/LICENSE.txt"]
+    },
+    {
+        "id": "lexend",
+        "name": "Lexend",
+        "version": "v26",
+        "licence": "OFL-1.1",
+        "files": ["public/assets/fonts/lexend/LICENSE.txt"]
+    },
+    {
+        "id": "source-serif-4",
+        "name": "Source Serif 4",
+        "version": "4.005",
+        "licence": "OFL-1.1",
+        "files": ["public/assets/fonts/source-serif-4/LICENSE.txt"]
+    }
+]

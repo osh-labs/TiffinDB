@@ -852,6 +852,7 @@ Files that do not carry a header:
 | Binary fonts (`*.woff2`) | Third-party assets under their own licence. Covered by the `LICENSE.txt` in the same directory and by `docs/dependencies.md`. Never given an AGPL header or sidecar |
 | Third-party licence texts (`public/assets/fonts/*/LICENSE.txt`) | Reproduced verbatim; never edited |
 | `LICENSE` | The canonical licence text; never edited (`CLAUDE.md`) |
+| Documentation screenshots (`docs/manual/img/*.png`) | Binary images of synthetic demo data for the HTML documentation set (ADR 0020, added after M4). PNG files anywhere else have no rule and no exemption, so they fail the test |
 | Markdown (`*.md`) | Documentation, not source; covered by the repository licence. No header required |
 | Git control files (`.gitignore`, `.gitattributes`) | No header required |
 | Generated or ignored paths (`vendor/`, `.phpunit.cache/`, `data/`, `local/`, `node_modules/`) | Not scanned |

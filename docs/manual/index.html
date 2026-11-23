@@ -1,0 +1,301 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TiffinDB Documentation</title>
+<meta name="description" content="User guide, install guide, and developer handoff for TiffinDB, a self-hosted personal database application.">
+<link rel="icon" href="../brand/tiffindb-mark-small.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/manual.css">
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="m-skip" href="#main">Skip to content</a>
+<div class="m-shell">
+
+<nav class="m-side" aria-label="Documentation">
+  <a class="m-brand" href="index.html" aria-label="TiffinDB documentation, home">
+    <svg viewBox="-4 -4 72 72" aria-hidden="true" focusable="false"><g fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/><rect x="23" y="2.5" width="18" height="6" rx="3" fill="#FFFFFF"/><rect x="15.5" y="17" width="33" height="4" rx="2" fill="#FFFFFF"/><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="#FFFFFF"/><rect x="17" y="34" width="30" height="10.5" rx="3" fill="#F2B441"/><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="#FFFFFF"/></g></svg>
+    <span>Tiffin<b>DB</b></span>
+  </a>
+  <details class="m-menu"><summary>Contents</summary></details>
+  <p class="m-side__doc">Documentation</p>
+  <ol class="m-toc">
+    <li><a href="#guides">The three guides</a></li>
+    <li><a href="#what">What TiffinDB is</a></li>
+    <li><a href="#status">Where the project stands</a></li>
+    <li><a href="#reading">How to read these pages</a></li>
+    <li><a href="#more">More reference material</a></li>
+  </ol>
+  <ul class="m-docs">
+    <li><a href="index.html" aria-current="page">Documentation home</a></li>
+    <li><a href="user-guide.html">User Guide</a></li>
+    <li><a href="install-guide.html">Install Guide</a></li>
+    <li><a href="handoff.html">Developer Handoff and Roadmap</a></li>
+  </ul>
+</nav>
+
+<main id="main" class="m-main">
+
+<header class="m-hero">
+  <p class="m-kicker">TiffinDB documentation</p>
+  <h1>Your own small databases, on your own server</h1>
+  <p class="m-lede">TiffinDB is a free, self-hosted personal database application. These pages show how to use it, how to install it, and how to continue its development.</p>
+  <dl class="m-meta">
+    <div><dt>Application version</dt><dd>0.1.0-dev</dd></div>
+    <div><dt>Build state</dt><dd>Milestones M0 to M4 complete</dd></div>
+    <div><dt>Licence</dt><dd>AGPL-3.0-or-later</dd></div>
+  </dl>
+</header>
+
+<figure class="m-fig m-fig--shot m-wide">
+  <img src="img/index-hero.png" width="1920" height="1200" alt="The Items list of the Home Inventory example project in TiffinDB: a teal sidebar with tables and saved collections, and a table of household items with columns for name, room, value, and purchase date.">
+  <figcaption><b>The list view.</b> A project holds tables, each table holds records, and saved collections keep the filters that you use frequently. All data in these pages is synthetic example data.</figcaption>
+</figure>
+
+<section id="guides">
+  <h2><span class="m-num">Start here</span>The three guides</h2>
+  <p>Each guide is written for a different reader. Choose the one that agrees with what you must do.</p>
+
+  <ul class="m-cards m-wide">
+    <li><a class="m-card" href="user-guide.html">
+      <svg class="m-card__icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><rect class="d-soft" x="2" y="2" width="44" height="44" rx="10"/><rect class="d-accent" x="11" y="12" width="26" height="5" rx="2.5"/><rect class="d-brand2" x="11" y="21.5" width="26" height="5" rx="2.5"/><rect class="d-accent" x="11" y="31" width="16" height="5" rx="2.5"/></svg>
+      <p class="m-card__meta">For everyone who uses TiffinDB</p>
+      <h3>User Guide</h3>
+      <p>Sign in, add and find records, link records, attach files, import and export data, and change how the screen looks.</p>
+      <p>Written in Simplified Technical English. No technical knowledge is necessary.</p>
+    </a></li>
+    <li><a class="m-card" href="install-guide.html">
+      <svg class="m-card__icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><rect class="d-soft" x="2" y="2" width="44" height="44" rx="10"/><rect class="d-accent" x="10" y="11" width="28" height="9" rx="3"/><rect class="d-accent" x="10" y="23" width="28" height="9" rx="3"/><circle class="d-brand2" cx="15" cy="15.5" r="2"/><circle class="d-brand2" cx="15" cy="27.5" r="2"/><rect class="d-accent" x="22" y="32" width="4" height="6"/><rect class="d-accent" x="14" y="37" width="20" height="3" rx="1.5"/></svg>
+      <p class="m-card__meta">For the person who runs the server</p>
+      <h3>Install Guide</h3>
+      <p>Put TiffinDB on shared PHP web hosting or on your own Apache server, complete the setup page, and keep the installation healthy.</p>
+      <p>Also shows how to start a development server in a few minutes.</p>
+    </a></li>
+    <li><a class="m-card" href="handoff.html">
+      <svg class="m-card__icon" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><rect class="d-soft" x="2" y="2" width="44" height="44" rx="10"/><circle class="d-accent" cx="12" cy="24" r="4"/><circle class="d-brand2" cx="24" cy="24" r="4"/><circle class="d-none d-s-accent" cx="36" cy="24" r="3.25" stroke-width="1.5"/><rect class="d-accent" x="15" y="23" width="6" height="2"/><rect class="d-accent" x="27" y="23" width="6" height="2"/><rect class="d-accent" x="10" y="33" width="28" height="3" rx="1.5"/><rect class="d-accent" x="10" y="12" width="14" height="3" rx="1.5"/></svg>
+      <p class="m-card__meta">For the next developer</p>
+      <h3>Developer Handoff and Roadmap</h3>
+      <p>The architecture, the code layout, the rules of the repository, what is built, what is not, and the order of the work that remains.</p>
+      <p>Assumes no earlier knowledge of the project.</p>
+    </a></li>
+  </ul>
+</section>
+
+<section id="what">
+  <h2><span class="m-num">Overview</span>What TiffinDB is</h2>
+  <p>TiffinDB is a web application for small personal databases: a home inventory, a recipe collection, a list of books, the records of a club. One person in a household or small group installs it on ordinary web hosting. The other people use it in a web browser.</p>
+  <p>It was started as a free replacement for a discontinued personal database product for desktop computers. The data stays in files that the owner controls, in an open and documented format.</p>
+
+  <figure class="m-fig m-fig--diagram m-wide">
+    <svg viewBox="0 0 960 330" role="img" aria-labelledby="ix-how-t ix-how-d">
+      <title id="ix-how-t">How TiffinDB is put together</title>
+      <desc id="ix-how-d">People use a web browser on a computer, tablet, or phone. The browser talks to one web server that runs TiffinDB with PHP and Apache. TiffinDB keeps one system database for accounts and one folder with a SQLite file for each project. Data leaves as CSV, XLSX, JSON, or a project archive.</desc>
+      <defs>
+        <marker id="ix-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <!-- people -->
+      <text class="d-th" x="30" y="34">People</text>
+      <g>
+        <rect class="d-surface d-s-ctl" x="30" y="52" width="190" height="62" rx="10" stroke-width="1.5"/>
+        <circle class="d-accent" cx="60" cy="83" r="13"/>
+        <text class="d-ton d-mid" x="60" y="88">A</text>
+        <text class="d-th" x="84" y="79">Admin</text>
+        <text class="d-t2" x="84" y="98">installs, designs, shares</text>
+      </g>
+      <g>
+        <rect class="d-surface d-s-ctl" x="30" y="128" width="190" height="62" rx="10" stroke-width="1.5"/>
+        <circle class="d-brand2" cx="60" cy="159" r="13"/>
+        <text class="d-ton d-mid" x="60" y="164">M</text>
+        <text class="d-th" x="84" y="155">Member</text>
+        <text class="d-t2" x="84" y="174">uses shared projects</text>
+      </g>
+      <text class="d-t2" x="30" y="216">A web browser on a computer,</text>
+      <text class="d-t2" x="30" y="233">a tablet, or a phone.</text>
+
+      <path class="d-none d-s-ink2" d="M228 121H318" stroke-width="2" marker-end="url(#ix-arrow)" marker-start="url(#ix-arrow)"/>
+      <text class="d-t2 d-mid" x="273" y="110">HTTPS</text>
+
+      <!-- server -->
+      <rect class="d-soft d-s-accent" x="326" y="20" width="300" height="290" rx="14" stroke-width="1.5"/>
+      <text class="d-taccent" x="346" y="48">One web server</text>
+      <rect class="d-surface d-s-line" x="346" y="62" width="260" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="362" y="90">Apache and PHP 8.3 or later</text>
+      <rect class="d-side" x="346" y="120" width="260" height="170" rx="10"/>
+      <text class="d-tside" x="362" y="146">TiffinDB</text>
+      <rect class="d-surface" x="362" y="158" width="228" height="34" rx="7"/>
+      <text class="d-t" x="376" y="180">Screens (server-made HTML)</text>
+      <rect class="d-surface" x="362" y="200" width="228" height="34" rx="7"/>
+      <text class="d-t" x="376" y="222">Core (rules, permissions)</text>
+      <rect class="d-surface" x="362" y="242" width="228" height="34" rx="7"/>
+      <text class="d-t" x="376" y="264">Import and export plugins</text>
+
+      <path class="d-none d-s-ink2" d="M634 165H712" stroke-width="2" marker-end="url(#ix-arrow)" marker-start="url(#ix-arrow)"/>
+
+      <!-- data -->
+      <text class="d-th" x="722" y="34">The data folder</text>
+      <rect class="d-surface d-s-ctl" x="722" y="52" width="208" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="738" y="79">System database</text>
+      <text class="d-t2" x="738" y="98">people, sessions, sharing</text>
+      <g>
+        <rect class="d-surface d-s-ctl" x="734" y="140" width="208" height="62" rx="10" stroke-width="1.5"/>
+        <rect class="d-surface d-s-ctl" x="728" y="134" width="208" height="62" rx="10" stroke-width="1.5"/>
+        <rect class="d-surface d-s-ctl" x="722" y="128" width="208" height="62" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="738" y="155">One folder for each project</text>
+        <text class="d-t2" x="738" y="174">a SQLite file, files, snapshots</text>
+      </g>
+      <path class="d-none d-s-brand2" d="M826 208V236" stroke-width="2" marker-end="url(#ix-arrow)"/>
+      <rect class="d-warn-soft d-s-brand2" x="722" y="244" width="208" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="738" y="271">Your data can leave</text>
+      <text class="d-t2" x="738" y="290">CSV, XLSX, JSON, archive</text>
+    </svg>
+    <figcaption><b>The whole system.</b> There is no separate database server and no build step. The data folder holds everything that belongs to the installation.</figcaption>
+  </figure>
+
+  <div class="m-cols">
+    <div>
+      <h3>What it does today</h3>
+      <ul>
+        <li>Projects, tables, and 17 types of field, with links between tables.</li>
+        <li>Lists with search, sort, and filter, and saved collections.</li>
+        <li>A form for each record, with attached files.</li>
+        <li>Import from CSV and XLSX. Export to CSV, XLSX, and JSON. Project archives for backup and transfer.</li>
+        <li>Accounts with two roles, and sharing for each project.</li>
+        <li>A trash for records, automatic snapshots, and an audit log.</li>
+        <li>Four colour themes, six typefaces, and five text sizes for each person.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What is not built yet</h3>
+      <ul>
+        <li>The form editor (milestone M5).</li>
+        <li>Import of files from the discontinued product (milestone M6).</li>
+        <li>The release archive and the upgrade path (milestone M7).</li>
+        <li>After version 1: a drag-and-drop form editor and an MCP server.</li>
+      </ul>
+      <p class="m-small">The <a href="handoff.html#roadmap">roadmap</a> gives the details.</p>
+    </div>
+  </div>
+</section>
+
+<section id="status">
+  <h2><span class="m-num">Status</span>Where the project stands</h2>
+  <p>TiffinDB is in development. Version 1 is planned as eight milestones, M0 to M7. Five are complete. Two more milestones, M8 and M9, come after version 1.</p>
+
+  <figure class="m-fig m-fig--diagram m-wide">
+    <svg viewBox="0 0 960 190" role="img" aria-labelledby="ix-ms-t ix-ms-d">
+      <title id="ix-ms-t">Milestone progress</title>
+      <desc id="ix-ms-d">Milestones M0 to M4 are complete. M5, the form editor, is next. M6, the legacy import plugin, waits for information from the maintainer. M7 is packaging and release. M8 and M9 come after version 1.</desc>
+      <path class="d-none d-s-line" d="M60 70H900" stroke-width="4"/>
+      <path class="d-none d-s-ok" d="M60 70H432" stroke-width="4"/>
+      <g>
+        <circle class="d-ok" cx="60" cy="70" r="15"/><path d="M53 70l5 5 9-10" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text class="d-th d-mid" x="60" y="112">M0</text><text class="d-t2 d-mid" x="60" y="130">Scaffolding</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="153" cy="70" r="15"/><path d="M146 70l5 5 9-10" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text class="d-th d-mid" x="153" y="112">M1</text><text class="d-t2 d-mid" x="153" y="130">Foundation</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="246" cy="70" r="15"/><path d="M239 70l5 5 9-10" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text class="d-th d-mid" x="246" y="112">M2</text><text class="d-t2 d-mid" x="246" y="130">Records</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="339" cy="70" r="15"/><path d="M332 70l5 5 9-10" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text class="d-th d-mid" x="339" y="112">M3</text><text class="d-t2 d-mid" x="339" y="130">Import, export</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="432" cy="70" r="15"/><path d="M425 70l5 5 9-10" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text class="d-th d-mid" x="432" y="112">M4</text><text class="d-t2 d-mid" x="432" y="130">Links, files</text>
+        <text class="d-t2 d-mid" x="432" y="146">collections</text>
+      </g>
+      <g>
+        <circle class="d-brand2" cx="525" cy="70" r="15"/><circle class="d-none d-s-brand2" cx="525" cy="70" r="21" stroke-width="2"/>
+        <text class="d-th d-mid" x="525" y="112">M5</text><text class="d-t2 d-mid" x="525" y="130">Form editor</text>
+        <text class="d-twarn d-mid" x="525" y="36">NEXT</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-ctl d-dash" cx="618" cy="70" r="14" stroke-width="2.5"/>
+        <text class="d-th d-mid" x="618" y="112">M6</text><text class="d-t2 d-mid" x="618" y="130">Legacy import</text>
+        <text class="d-t2 d-mid" x="618" y="146">(waits for input)</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-ctl" cx="711" cy="70" r="14" stroke-width="2.5"/>
+        <text class="d-th d-mid" x="711" y="112">M7</text><text class="d-t2 d-mid" x="711" y="130">Release 1.0</text>
+      </g>
+      <path class="d-none d-s-ctl d-dash" d="M758 30V160" stroke-width="1.5"/>
+      <text class="d-t2" x="768" y="36">After version 1</text>
+      <g>
+        <circle class="d-surface d-s-line" cx="810" cy="70" r="12" stroke-width="2.5"/>
+        <text class="d-th d-mid" x="810" y="112">M8</text><text class="d-t2 d-mid" x="810" y="130">Visual editor</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-line" cx="900" cy="70" r="12" stroke-width="2.5"/>
+        <text class="d-th d-mid" x="900" y="112">M9</text><text class="d-t2 d-mid" x="900" y="130">MCP server</text>
+      </g>
+    </svg>
+    <figcaption><b>Milestones.</b> The build ledger (<code>docs/build/ledger.md</code>) is the record of the exact state. The <a href="handoff.html">Developer Handoff</a> explains each milestone.</figcaption>
+  </figure>
+
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>There is no release yet. Until milestone M7 is complete, there is no release archive and no tested upgrade path. Make a project archive of all important data before you update an installation.</p>
+  </div>
+</section>
+
+<section id="reading">
+  <h2><span class="m-num">Conventions</span>How to read these pages</h2>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>You see</th><th>It means</th></tr></thead>
+      <tbody>
+        <tr><td><span class="m-ui">Save changes</span></td><td>The name of a button, a link, or a field, written as it shows on the screen.</td></tr>
+        <tr><td><kbd>Tab</kbd></td><td>A key on the keyboard.</td></tr>
+        <tr><td><code>config/local.php</code></td><td>A file name, a command, or text that you type.</td></tr>
+        <tr><td><span class="m-badge m-badge--admin">Admin</span></td><td>Only a person with the Admin role can do the task.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="m-note">
+    <p class="m-note__label">Note</p>
+    <p>A note gives information that helps you do a task.</p>
+  </div>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>A caution tells you about a risk to your data.</p>
+  </div>
+  <div class="m-note m-note--warning">
+    <p class="m-note__label">Warning</p>
+    <p>A warning tells you about a risk to the security of the installation or of the people who use it.</p>
+  </div>
+  <p>All screenshots show the example project <strong>Home Inventory</strong>. All names, items, and values in it are invented. The pages follow the light or dark setting of your device, and you can print them.</p>
+</section>
+
+<section id="more">
+  <h2><span class="m-num">Reference</span>More reference material</h2>
+  <p>These pages are the entry point. The repository holds more detailed records, written in Markdown.</p>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Location</th><th>Content</th></tr></thead>
+      <tbody>
+        <tr><td><code>docs/plan.md</code></td><td>The project plan: goals, architecture, milestones, and risks.</td></tr>
+        <tr><td><code>docs/decisions/</code></td><td>The architecture decision records (ADRs). Each decision is recorded there before it is implemented.</td></tr>
+        <tr><td><code>docs/specs/</code></td><td>The specification of each milestone, with notes on what was built.</td></tr>
+        <tr><td><code>docs/formats/</code></td><td>The project file format and the JSON export format.</td></tr>
+        <tr><td><code>docs/build/ledger.md</code></td><td>The build ledger: the state of each milestone, work package, and open decision.</td></tr>
+        <tr><td><code>docs/design/</code> and <code>docs/brand/</code></td><td>The design tokens, the model screens, the design notes for each milestone, and the logo rules.</td></tr>
+        <tr><td><code>docs/dependencies.md</code></td><td>Each dependency and its licence.</td></tr>
+        <tr><td><code>tools/docs/</code></td><td>The scripts that make the example data and the screenshots for these pages.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-foot">TiffinDB is free software under the GNU Affero General Public License, version 3 or later. Source code: <a href="https://github.com/osh-labs/tiffindb">github.com/osh-labs/tiffindb</a>.</p>
+</section>
+
+</main>
+</div>
+</body>
+</html>

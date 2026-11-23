@@ -20,7 +20,7 @@ Page title and `h1`: `snapshots.title` "Snapshots".
 1. Breadcrumb; flash.
 2. `p.lead` `snapshots.lead` "A snapshot is a saved copy of this project's records, tables, forms, and collections. TiffinDB saves one before every risky change and keeps the 20 newest of those. Snapshots you take yourself are kept until someone removes them from the data folder."
 3. `p.help` `snapshots.files_note` "Snapshots do not hold the stored files. Files that a snapshot names but that were removed since will be missing after a restore."
-4. `form` POST `/projects/{p}/snapshots` (`csrf`) with `button.button.button-primary` `snapshots.take` "Take a snapshot now".
+4. `form` POST `/projects/{p}/snapshots` (`csrf`) with the `form-actions` partial: `submit` `snapshots.take` "Take a snapshot now" (the primary button), `size` `normal`, no cancel.
 5. With no snapshots: `empty-state` with `snapshots.empty` "No snapshots yet."
 6. Otherwise `div.table-scroll` > `table.data-table.snapshot-table` with `caption.visually-hidden` `snapshots.table.caption` "Snapshots, newest first":
    - Head: `snapshots.col.when` "Saved", `snapshots.col.reason` "Why", `snapshots.col.size` "Size", `snapshots.col.action` (visually hidden) "Action".
@@ -54,7 +54,7 @@ Page title and `h1`: `snapshots.restore.title` "Restore this snapshot?".
 5. When `filesMissing` is over 0: `p` `snapshots.restore.files_missing` "{count|# file this snapshot names is|# files this snapshot names are} no longer stored and will show as missing."
 6. When the snapshot's format version is older: `p.help` `snapshots.restore.older` "This snapshot was saved by an earlier version of TiffinDB. It will be brought up to date after the restore."
 7. `p.help` `snapshots.restore.others` "People using this project now may need to reload their page. If someone is saving a change at this moment, you will be asked to try again."
-8. `div.danger-zone` > `form` POST (`csrf`); `div.form-actions`: `button.button.button-danger.button-large` `snapshots.restore.submit` "Restore this snapshot"; `a.button.button-large` `form.cancel` to the list.
+8. `div.danger-zone` > `form` POST (`csrf`); the `form-actions` partial with `submit` `snapshots.restore.submit` "Restore this snapshot", `danger` true, and `cancel` the list path (it prints `a.form-cancel` with `form.cancel` "Cancel") through the `form-actions` partial (as built; it is the only template that may print `form.cancel`, `TemplateRulesTest`).
 
 422: the same page with the error summary (`problem.snapshot.unreadable` or `problem.lock.unavailable`, no field) and without the form.
 

@@ -19,8 +19,7 @@ Page title and `h1`: `audit.title` "Activity".
    - `label` for `filter-person` `audit.filter.person` "Person"; `select#filter-person` `name="person"`: `option value=""` `audit.filter.anyone` "Anyone", then every person by display name (a deactivated person's option text is `audit.filter.inactive` "{name} (no longer active)").
    - `label` for `filter-project` `audit.filter.project` "Project"; `select#filter-project` `name="project"`: `audit.filter.any_project` "Any project", every active project by name, then `option value="deleted"` `audit.filter.deleted` "Deleted projects".
    - `label` for `filter-action` `audit.filter.action` "What"; `select#filter-action` `name="action"`: `audit.filter.anything` "Anything", then one option per action with the short words of `audit.action.<action>.short` (below).
-   - `button.button` `audit.filter.apply` "Show" (the one button; not filled: this page has no primary action).
-   - When any filter is on: `a` `audit.filter.clear` "Show everything" to `/admin/activity`.
+   - the `form-actions` partial with `submit` `audit.filter.apply` "Show", `secondary` true (not filled: this page has no primary action), `size` `normal`, and, when any filter is on, `cancel` `/admin/activity` with `cancelLabel` `audit.filter.clear` "Show everything" (no cancel otherwise).
 3. `p.help` `audit.count` "{total|# entry|# entries}" (with the filters applied).
 4. With no entries: `empty-state` `audit.empty` "Nothing matches these choices."
 5. `ol.audit-list`, one `li.audit-entry` per entry:
@@ -75,7 +74,7 @@ Each `audit.action.<action>` has a sentence and a `.short` form for the menu. Th
 | `form.saved` | {who} saved a form in {project}. | Form saved |
 | `form.reset` | {who} put a form back to the standard one in {project}. | Form reset |
 
-The `form.*` rows are the M5 design's actions (`docs/specs/M5-forms.md` section 9.6); M7-D2 confirms them against the M5 as-built list. When a sentence names `{project}` and the entry has no project (system-wide entries), `audit.project.unknown` is used.
+The `form.*` rows are M5's actions, confirmed in `AuditAction::ALL` as built at M5 close (M7-D2). When a sentence names `{project}` and the entry has no project (system-wide entries), `audit.project.unknown` is used.
 
 ## 4. Keyboard and screen reader
 

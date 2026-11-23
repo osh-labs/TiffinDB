@@ -24,7 +24,7 @@ Signed-in shell only. Order: licence line `shell.footer.licence` (as built), the
 Admins only (the page is Admin-only, as built). After the stored-files line:
 
 1. `h2` `projects.settings.more` "More for this project".
-2. `ul.plain-list`:
+2. `ul.settings-links` (new class, section 5):
    - `a` `projects.settings.snapshots` "Snapshots" to `/projects/{p}/snapshots`, with `span.help` `projects.settings.snapshots_help` "Saved copies of the project, and going back to one."
    - `a.link-danger` `projects.settings.delete` "Delete this project" to `/projects/{p}/delete`, with `span.help` `projects.settings.delete_help` "Removes the project, its files, and its snapshots for good."
 
@@ -35,7 +35,7 @@ All values from the tokens; sizes in `rem` (px only where the M0 rules allow it)
 | Class | Rule |
 |---|---|
 | `.snapshot-table` | On a `table.data-table` (as built); columns time, reason, size, action; the size cell `.num` right-aligned; the action cell holds a link, no wrap; inside `div.table-scroll` (as built) |
-| `.audit-filters` | `form` laid out as a wrapping flex row, gap 16 px; each `div.field` at least 14 rem wide; the Apply button aligned to the bottom of the selects; under 40em one column |
+| `.audit-filters` | `form` laid out as a wrapping flex row, gap 16 px; each `div.field` at least 14 rem wide; the `form-actions` block ("Show", "Show everything") aligned to the bottom of the selects; under 40em one column |
 | `.audit-list` | `ol` with no markers; each `li.audit-entry` separated by a 1 px `--line` rule and 12 px padding above and below |
 | `.audit-entry .audit-when` | small text (`--text-small` as built), `--ink2` |
 | `.audit-entry .audit-what` | body text (strings hold no markup, so the sentence is plain) |
@@ -43,6 +43,7 @@ All values from the tokens; sizes in `rem` (px only where the M0 rules allow it)
 | `.licence-text` | `pre`: `white-space: pre-wrap`, `overflow-wrap: anywhere`, small text, `--sunk` ground, 1 px `--line` border, 12 px radius, 16 px padding, max width 56 rem; the page never scrolls sideways |
 | `.about-list` | `dl` of components and plugins: `dt` bold, `dd` with name facts in `--ink2`, 8 px between pairs |
 | `.recovery-steps` | `ol` with numbers, 12 px between items, max width 40 rem |
+| `.settings-links` | `ul` with no markers; each `li` a link with its `span.help` on the next line, 12 px between items (no such list class exists as built) |
 | `.link-danger` | link text in `--warn`, underlined; focus ring as every link |
 | `.danger-zone` | As built (M4 trash); reused by the restore and delete pages |
 

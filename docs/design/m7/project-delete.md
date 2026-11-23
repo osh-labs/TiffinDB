@@ -23,7 +23,7 @@ When the project's folder is missing from the data folder (`folderMissing`, P239
 5. `div.notice` (information) `projects.delete.archive` "Keep a copy first: download a project archive from the export page. A project archive can be imported again later." with `a` `projects.delete.archive_link` "Go to Export" to `/projects/{p}/export`.
 6. `div.danger-zone` > `form` POST (`csrf`, hidden `expected` = records plus trashed as shown):
    - `div.field`: `label` for `confirm-name` `projects.delete.name_label` "Type the project's name to confirm"; `p.help#confirm-name-help` `projects.delete.name_help` "Type {project}."; after a refusal `p.error-text#confirm-name-error` with `problem.project.delete_name`; `input.input#confirm-name` `type="text"` `name="confirm_name"` `autocomplete="off"` `spellcheck="false"` `autocapitalize="off"` `aria-describedby` (help, and the error when present), the typed value kept after a refusal.
-   - `div.form-actions`: `button.button.button-danger.button-large` `projects.delete.submit` "Delete for good"; `a.button.button-large` `form.cancel` to Project settings.
+   - the `form-actions` partial with `submit` `projects.delete.submit` "Delete for good", `danger` true, and `cancel` the Project settings path through the `form-actions` partial (as built; it is the only template that may print `form.cancel`, `TemplateRulesTest`).
 
 The name check is in the core; the button is never disabled (no script), and an empty or wrong name gives 422.
 

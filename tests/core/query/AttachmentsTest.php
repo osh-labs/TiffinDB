@@ -230,6 +230,22 @@ final class AttachmentsTest extends TestCase
         yield 'only controls and spaces' => ["\u{200B} \x01 ", 'file'];
         yield 'invalid UTF-8' => ["bad\xC3\x28.txt", 'file'];
         yield 'letters kept' => ['Küche 台所 مطبخ.png', 'Küche 台所 مطبخ.png'];
+        // T-CF7-3 (P187): an overlong name keeps an extension of 1 to 16 letters or digits.
+        yield '1,000 characters with .pdf' => [str_repeat('a', 1000) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield 'exactly 255 with .pdf' => [str_repeat('a', 251) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield '256 with .pdf' => [str_repeat('a', 252) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield '20-character "extension" is cut whole' => [str_repeat('a', 300) . '.' . str_repeat('b', 20), str_repeat('a', 255)];
+        yield '16-character extension is kept' => [str_repeat('a', 300) . '.' . str_repeat('b', 16), str_repeat('a', 238) . '.' . str_repeat('b', 16)];
+        yield '17-character extension is not' => [str_repeat('a', 300) . '.' . str_repeat('b', 17), str_repeat('a', 255)];
+        yield 'only an extension' => ['.pdf', '.pdf'];
+        yield 'only dots and an extension' => [str_repeat('.', 400) . 'pdf', str_repeat('.', 252) . 'pdf'];
+        yield 'stem trimmed before the extension' => [str_repeat('a', 240) . str_repeat(' ', 100) . '.pdf', str_repeat('a', 240) . '.pdf'];
+        yield 'extension with a space is not one' => [str_repeat('a', 300) . '.p df', str_repeat('a', 255)];
+        yield 'only the last extension is kept' => [str_repeat('a', 300) . '.tar.gz', str_repeat('a', 252) . '.gz'];
+        yield 'non-ASCII extension' => [str_repeat('é', 400) . '.файл', str_repeat('é', 250) . '.файл'];
+        yield 'hidden characters removed before the cut' => [str_repeat("a\u{200B}", 400) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield 'override cannot fake an extension' => [str_repeat('a', 300) . ".exe\u{202E}fdp", str_repeat('a', 248) . '.exefdp'];
+        yield 'extension with a slash is not one' => [str_repeat('a', 300) . '.p/df', str_repeat('a', 255)];
     }
 
     #[DataProvider('names')]

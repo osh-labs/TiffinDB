@@ -273,7 +273,10 @@ final class Response
      * paragraph separators (NAME_HIDDEN: a right-to-left override cannot
      * disguise the name's extension) and is cut to MAX_NAME_LENGTH code
      * points, so the header stays bounded; a name left empty becomes
-     * `file` (P181).
+     * `file` (P181). The cut keeps the extension (P187, M7 CF7-3): when
+     * the name is too long and its last `.` is followed by 1 to 16
+     * letters or digits, the stem is cut instead, trimmed, and followed
+     * by `.` and the extension.
      *
      * @throws InvalidArgumentException for an empty name or one that is not valid UTF-8
      */
@@ -282,13 +285,31 @@ final class Response
         if ($fileName === '' || preg_match('//u', $fileName) !== 1) {
             throw new InvalidArgumentException('A download name is non-empty UTF-8 text.');
         }
-        $fileName = mb_substr((string) preg_replace(self::NAME_HIDDEN, '', $fileName), 0, self::MAX_NAME_LENGTH, 'UTF-8');
+        $fileName = self::cutName((string) preg_replace(self::NAME_HIDDEN, '', $fileName));
         if ($fileName === '') {
             $fileName = 'file';
         }
         $ascii = (string) preg_replace('/[^\x20-\x7E]|["\\\\\/;]/', '_', $fileName);
 
         return ($inline ? 'inline' : 'attachment') . '; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($fileName);
+    }
+
+    /**
+     * $name cut to MAX_NAME_LENGTH code points, keeping an extension of 1
+     * to 16 letters or digits after the last `.` (contentDisposition()).
+     */
+    private static function cutName(string $name): string
+    {
+        if (mb_strlen($name, 'UTF-8') <= self::MAX_NAME_LENGTH) {
+            return $name;
+        }
+        if (preg_match('/^(.*)\.([\p{L}\p{N}]{1,16})\z/su', $name, $parts) === 1) {
+            $stem = mb_substr($parts[1], 0, self::MAX_NAME_LENGTH - 1 - mb_strlen($parts[2], 'UTF-8'), 'UTF-8');
+
+            return (string) preg_replace('/^\s+|\s+\z/u', '', $stem) . '.' . $parts[2];
+        }
+
+        return mb_substr($name, 0, self::MAX_NAME_LENGTH, 'UTF-8');
     }
 
     /**

@@ -578,7 +578,7 @@ function parse_arguments(array $argv): Options
 
 function read_head(string $path, int $bytes): string
 {
-    $h = @fopen($path, 'rb');
+    $h = quietly(static fn () => fopen($path, 'rb'));
     if ($h === false) {
         return '';
     }
@@ -652,7 +652,7 @@ function walk(string $root): array
 {
     $entries = [];
     $visit = static function (string $abs, string $rel) use (&$visit, &$entries): void {
-        $names = @scandir($abs);
+        $names = quietly(static fn () => scandir($abs));
         if ($names === false) {
             $entries[] = ['rel' => $rel . '/', 'abs' => $abs, 'type' => 'unreadable-dir', 'size' => null];
             return;
@@ -668,7 +668,7 @@ function walk(string $root): array
                 $entries[] = ['rel' => $childRel . '/', 'abs' => $childAbs, 'type' => 'dir', 'size' => null];
                 $visit($childAbs, $childRel);
             } elseif (is_file($childAbs)) {
-                $size = @filesize($childAbs);
+                $size = quietly(static fn () => filesize($childAbs));
                 $entries[] = [
                     'rel' => $childRel,
                     'abs' => $childAbs,
@@ -688,7 +688,7 @@ function temp_dir(Run $run): string
 {
     if ($run->tempDir === null) {
         $dir = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'tiffindb-discovery-' . bin2hex(random_bytes(8));
-        if (!@mkdir($dir, 0700)) {
+        if (!quietly(static fn () => mkdir($dir, 0700))) {
             throw new ToolError('Cannot create a private temporary directory.');
         }
         $run->tempDir = $dir;
@@ -703,10 +703,10 @@ function remove_temp_dir(?string $dir): void
     }
     foreach (scandir($dir) ?: [] as $name) {
         if ($name !== '.' && $name !== '..') {
-            @unlink($dir . DIRECTORY_SEPARATOR . $name);
+            quietly(static fn () => unlink($dir . DIRECTORY_SEPARATOR . $name));
         }
     }
-    @rmdir($dir);
+    quietly(static fn () => rmdir($dir));
 }
 
 function temp_file(Run $run): string
@@ -766,8 +766,8 @@ function process_zip(Run $run, string $abs, string $shownPath, int $depth): void
         }
         // By index where possible, so that duplicate entry names are read correctly.
         $stream = method_exists($zip, 'getStreamIndex')
-            ? @$zip->getStreamIndex($item['index'])
-            : @$zip->getStream($item['name']);
+            ? quietly(static fn () => $zip->getStreamIndex($item['index']))
+            : quietly(static fn () => $zip->getStream($item['name']));
         if ($stream === false) {
             $run->layout[] = [
                 'path' => $inner, 'type' => 'file', 'size' => $item['size'], 'kind' => 'unreadable',
@@ -804,7 +804,7 @@ function process_zip(Run $run, string $abs, string $shownPath, int $depth): void
         try {
             process_file($run, $tmp, $inner, $item['size'], $depth + 1, false);
         } finally {
-            @unlink($tmp);
+            quietly(static fn () => unlink($tmp));
         }
     }
     $zip->close();
@@ -888,7 +888,7 @@ function analyse_database(Run $run, string $abs, string $shownPath, bool $onDisk
         if ($walBytes > 0 && $run->options->applyWal) {
             $openPath = temp_file($run);
             $copies = [$openPath, $openPath . '-wal', $openPath . '-shm'];
-            if (!@copy($abs, $openPath) || !@copy($abs . '-wal', $openPath . '-wal')) {
+            if (!quietly(static fn () => copy($abs, $openPath)) || !quietly(static fn () => copy($abs . '-wal', $openPath . '-wal'))) {
                 throw new ToolError('Cannot copy the database to the private temporary directory.');
             }
             $immutable = false;
@@ -913,7 +913,7 @@ function analyse_database(Run $run, string $abs, string $shownPath, bool $onDisk
         $run->problem("Database $shownPath could not be read completely: " . $db['error'] . '.');
     } finally {
         foreach ($copies as $copy) {
-            @unlink($copy);
+            quietly(static fn () => unlink($copy));
         }
     }
     $db['flagged_identifiers'] = $run->idents->takeFlagged();
@@ -1423,9 +1423,29 @@ final class Cleanup
             remove_temp_dir(self::$run->tempDir);
         }
         if (self::$outPath !== null && !self::$finished) {
-            @unlink(self::$outPath);
+            quietly(static fn () => unlink(self::$outPath));
             self::$outPath = null;
         }
+    }
+}
+
+/**
+ * Calls $call with PHP warnings and notices trapped (an error handler set
+ * around the call, restored after), so that a failure shows only in the
+ * return value and PHP's text, which contains absolute paths, is never
+ * printed. Used instead of the error-suppression operator (M7 CF7-4).
+ *
+ * @template T
+ * @param Closure(): T $call
+ * @return T
+ */
+function quietly(Closure $call): mixed
+{
+    set_error_handler(static fn (): bool => true);
+    try {
+        return $call();
+    } finally {
+        restore_error_handler();
     }
 }
 
@@ -1500,13 +1520,13 @@ function main(array $argv): int
         }
         // Exclusive create: fails if anything, including a dangling link, is at the path.
         $previousMask = umask(0077);
-        $outHandle = @fopen($outPath, 'x');
+        $outHandle = quietly(static fn () => fopen($outPath, 'x'));
         umask($previousMask);
         if ($outHandle === false) {
             fwrite(STDERR, "The --out file could not be created.\n");
             return EXIT_IO;
         }
-        @chmod($outPath, 0600);
+        quietly(static fn () => chmod($outPath, 0600));
         Cleanup::$outPath = $outPath;
     }
 

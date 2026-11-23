@@ -307,6 +307,30 @@ final class RequestTest extends TestCase
         self::assertSame($expected, self::globals($server)->origin);
     }
 
+    /**
+     * T-CF7-1: an Origin header that was sent and failed the check is
+     * marked malformed rather than read as absent; an absent or kept
+     * header is not.
+     */
+    #[DataProvider('originCases')]
+    public function testOriginMalformedMarksASentHeaderThatFailedTheCheck(mixed $value, ?string $expected): void
+    {
+        $server = $value === null ? [] : ['HTTP_ORIGIN' => $value];
+        $request = self::globals($server);
+
+        self::assertSame($value !== null && $expected === null, $request->originMalformed);
+        if ($request->originMalformed) {
+            self::assertNull($request->origin);
+        }
+    }
+
+    public function testOriginMalformedDefaultsToFalse(): void
+    {
+        self::assertFalse((new Request('POST', '/'))->originMalformed);
+        self::assertTrue((new Request('POST', '/', originMalformed: true))->originMalformed);
+        self::assertFalse(Request::fromServer(['REQUEST_METHOD' => 'POST', 'HTTP_ORIGIN' => "x	"], [])->originMalformed);
+    }
+
     /** @return array<string, array{mixed, string|null}> */
     public static function hostCases(): array
     {
@@ -446,6 +470,7 @@ final class RequestTest extends TestCase
             'client address too long' => [['clientAddress' => str_repeat('a', 65)]],
             'origin with a newline' => [['origin' => "https://example.test\n"]],
             'origin too long' => [['origin' => str_repeat('a', Request::MAX_ORIGIN + 1)]],
+            'malformed flag with a kept origin' => [['origin' => 'https://example.test', 'originMalformed' => true]],
         ];
     }
 

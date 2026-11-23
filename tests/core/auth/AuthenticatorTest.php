@@ -400,6 +400,76 @@ final class AuthenticatorTest extends TestCase
         );
     }
 
+    /**
+     * T-CF7-7: a wrong attempt on the same username, counted while the
+     * right password is being checked, stays counted: the success takes
+     * back only its own advance count instead of clearing the user bucket.
+     */
+    public function testAnInterleavedWrongAttemptDuringARightOneStaysCounted(): void
+    {
+        $nested = false;
+        $auth = null;
+        $inner = null;
+        $auth = $this->authWith(function () use (&$nested, &$auth, &$inner): void {
+            if ($nested) {
+                return;
+            }
+            $nested = true;
+            $this->clock->advance(1);
+            $inner = $auth->signIn('admin', 'wrong horse 1', '198.51.100.7')->outcome;
+        });
+        $this->assertSame(SignInOutcome::Success, $auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+        $this->assertSame(SignInOutcome::Invalid, $inner);
+
+        $userBucket = LoginThrottle::userBucket($this->system, 'admin');
+        $this->assertSame(
+            1,
+            $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$userBucket]),
+            'The interleaved wrong attempt is still counted.',
+        );
+        $this->assertSame(['bad-password' => 1], $this->failureReasons());
+    }
+
+    /** T-CF7-7: earlier failures plus interleaved ones: only the success's own count is taken back. */
+    public function testInterleavedWrongAttemptsKeepTheUserBucketsBlock(): void
+    {
+        $nested = false;
+        $auth = null;
+        $auth = $this->authWith(function () use (&$nested, &$auth): void {
+            if ($nested) {
+                return;
+            }
+            $nested = true;
+            for ($i = 0; $i < LoginThrottle::USER_LIMIT; $i++) {
+                $this->clock->advance(1);
+                $auth->signIn('admin', 'wrong horse ' . $i, '198.51.100.' . (10 + $i));
+            }
+        });
+        $this->assertSame(SignInOutcome::Success, $auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+
+        $throttle = new LoginThrottle($this->system, $this->clock);
+        $userBucket = LoginThrottle::userBucket($this->system, 'admin');
+        $state = $throttle->state($userBucket);
+        $this->assertSame(['bad-password' => 4, 'throttled' => 1], $this->failureReasons());
+        $this->assertSame(4, $state?->failures, 'Every wrong attempt that was checked stays counted.');
+        // One more wrong attempt reaches the limit and blocks the username again.
+        $this->auth->signIn('admin', 'wrong horse 9', '198.51.100.99');
+        $this->assertGreaterThan(0, $this->system->db()->write(fn (): int => $throttle->wait([$userBucket])));
+    }
+
+    /** T-CF7-7: with no interleaved attempt the user bucket is still cleared outright. */
+    public function testAPlainSuccessStillClearsTheUserBucket(): void
+    {
+        $this->auth->signIn('admin', 'wrong horse 1', self::ADDRESS);
+        $this->auth->signIn('admin', 'wrong horse 2', self::ADDRESS);
+        $userBucket = LoginThrottle::userBucket($this->system, 'admin');
+        $this->assertSame(2, $this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$userBucket]));
+        $this->clock->advance(LoginThrottle::MAX_WAIT);
+
+        $this->assertSame(SignInOutcome::Success, $this->auth->signIn('admin', self::PASSWORD, self::ADDRESS)->outcome);
+        $this->assertNull($this->system->db()->value('SELECT failures FROM login_throttle WHERE bucket = ?', [$userBucket]));
+    }
+
     /** Twenty wrong guesses from ADDRESS under different usernames, then the 30 s block waited out. */
     private function addressAtItsLimitWithTheBlockRunOut(LoginThrottle $throttle): string
     {

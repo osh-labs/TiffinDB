@@ -49,6 +49,8 @@ final class Context
      * @param string|null $sessionToken The request's `tdb_session` token when it resolved to $signedIn.
      * @param string|null $csrfToken    The token forms print: the session's, or the anonymous cookie's.
      * @param bool        $secureCookies Whether cookies carry the Secure attribute.
+     * @param bool        $adminRecovery Whether Admin recovery is enabled (config/local.php
+     *                                   `admin_recovery`, default true; M7 CF7-2).
      */
     public function __construct(
         private readonly Request $request,
@@ -59,6 +61,7 @@ final class Context
         #[\SensitiveParameter] private readonly ?string $csrfToken,
         private readonly bool $secureCookies,
         #[\SensitiveParameter] private readonly ?string $sessionToken,
+        private readonly bool $adminRecovery = true,
     ) {
         if (($signedIn === null) !== ($sessionToken === null)) {
             throw new InvalidArgumentException('A session token is given exactly when someone is signed in.');
@@ -69,6 +72,12 @@ final class Context
     public function request(): Request
     {
         return $this->request;
+    }
+
+    /** Whether Admin recovery is enabled for this installation (config/local.php `admin_recovery`). */
+    public function adminRecovery(): bool
+    {
+        return $this->adminRecovery;
     }
 
     public function services(): Services

@@ -6,7 +6,8 @@
  * Error page strings (M0 spec section 9.4; M1 spec part 2 section 5.2).
  * The kernel builds the keys at run time: error.<status>.title and .body,
  * error.csrf.*, error.busy.*, error.unavailable.<reason>.*, and the 413
- * page's error.too_large.* (M3 spec part 2 section 2.3).
+ * page's error.too_large.* (M3 spec part 2 section 2.3). The system-newer
+ * reason is M7 spec part 1 section 12.2.
  */
 
 declare(strict_types=1);
@@ -35,6 +36,8 @@ return [
     'error.unavailable.newer.body' => 'It was saved by a newer version of TiffinDB. Update TiffinDB to open it.',
     'error.unavailable.mismatch.title' => 'This project\'s file does not match',
     'error.unavailable.mismatch.body' => 'The file in the project folder belongs to a different project. The person who looks after this TiffinDB should check the data folder.',
+    'error.unavailable.system-newer.title' => 'This TiffinDB needs a newer version',
+    'error.unavailable.system-newer.body' => 'Its data folder was written by a newer version of TiffinDB. Nothing was changed. Upload that newer version, or the one you upgraded from, to open it again.',
     'error.too_large.title' => 'That file is too large',
     'error.too_large.body' => 'The largest file this installation accepts is {max}.',
 ];

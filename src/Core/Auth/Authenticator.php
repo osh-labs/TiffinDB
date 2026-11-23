@@ -67,21 +67,24 @@ final class Authenticator
         $userBucket = LoginThrottle::userBucket($this->s, Usernames::normalise($username));
         $addressBucket = LoginThrottle::addressBucket($this->s, $clientAddress);
 
-        // (a) Check the throttle and count a failure in advance, keeping the address row's
-        // state from before, so that a success can put it back exactly.
-        /** @var array{0: int, 1: ?ThrottleState, 2: ?ThrottleState} $advance */
+        // (a) Check the throttle and count a failure in advance, keeping each row's state
+        // from before and as counted, so that a success can put it back exactly (the
+        // address row) or tell whether another failure arrived meanwhile (the user row,
+        // M7 CF7-7).
+        /** @var array{0: int, 1: ?ThrottleState, 2: ?ThrottleState, 3: ?ThrottleState, 4: ?ThrottleState} $advance */
         $advance = $this->s->db()->write(function () use ($userBucket, $addressBucket): array {
             $wait = $this->throttle->wait([$userBucket, $addressBucket]);
             if ($wait > 0) {
-                return [$wait, null, null];
+                return [$wait, null, null, null, null];
             }
-            $this->throttle->failure($userBucket, LoginThrottle::USER_LIMIT);
+            $userBefore = $this->throttle->state($userBucket);
+            $userCounted = $this->throttle->failure($userBucket, LoginThrottle::USER_LIMIT);
             $before = $this->throttle->state($addressBucket);
             $counted = $this->throttle->failure($addressBucket, LoginThrottle::ADDRESS_LIMIT);
 
-            return [0, $before, $counted];
+            return [0, $before, $counted, $userBefore, $userCounted];
         });
-        [$wait, $addressBefore, $addressCounted] = $advance;
+        [$wait, $addressBefore, $addressCounted, $userBefore, $userCounted] = $advance;
         if ($wait > 0) {
             $person = $this->users->byUsername($username);
             $this->recordFailure($person, AuditAction::REASON_THROTTLED);
@@ -116,7 +119,17 @@ final class Authenticator
         // (c) Re-check and complete the sign-in.
         $id = $person->id;
         /** @var array{0: ?UserRecord, 1: ?IssuedSession, 2: string} $outcome */
-        $outcome = $this->s->db()->write(function () use ($id, $hash, $newHash, $userBucket, $addressBucket, $addressBefore, $addressCounted): array {
+        $outcome = $this->s->db()->write(function () use (
+            $id,
+            $hash,
+            $newHash,
+            $userBucket,
+            $addressBucket,
+            $addressBefore,
+            $addressCounted,
+            $userBefore,
+            $userCounted,
+        ): array {
             $current = $this->users->byId($id);
             if ($current === null || !$current->active) {
                 return [$current, null, AuditAction::REASON_INACTIVE];
@@ -125,7 +138,9 @@ final class Authenticator
                 // The password was changed while it was being checked.
                 return [$current, null, AuditAction::REASON_BAD_PASSWORD];
             }
-            $this->throttle->clear($userBucket);
+            if ($userCounted !== null) {
+                $this->settleUserBucket($userBucket, $userBefore, $userCounted);
+            }
             if ($addressCounted !== null) {
                 $this->throttle->takeBack($addressBucket, LoginThrottle::ADDRESS_LIMIT, $addressBefore, $addressCounted);
             }
@@ -207,6 +222,25 @@ final class Authenticator
         if ($person !== null) {
             $this->audit->record(AuditAction::SIGN_OUT, $person->id, null, 'user', $person->key);
         }
+    }
+
+    /**
+     * The user bucket after a success (M7 CF7-7): cleared when its row is
+     * unchanged since step (a) counted (same failures and last failure
+     * time); otherwise another failure was counted on it while the
+     * password was being checked, and only the one failure step (a)
+     * counted is taken back, so that failure stays counted. Runs inside
+     * step (c)'s write.
+     */
+    private function settleUserBucket(string $userBucket, ?ThrottleState $before, ThrottleState $counted): void
+    {
+        $now = $this->throttle->state($userBucket);
+        if ($now !== null && $now->failures === $counted->failures && $now->lastFailureAt === $counted->lastFailureAt) {
+            $this->throttle->clear($userBucket);
+
+            return;
+        }
+        $this->throttle->takeBack($userBucket, LoginThrottle::USER_LIMIT, $before, $counted);
     }
 
     private static function signedIn(UserRecord $person, SessionRecord $session): SignedIn

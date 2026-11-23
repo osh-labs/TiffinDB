@@ -168,8 +168,10 @@ final class SystemSchemaTest extends TestCase
             SystemSchema::migrate($db);
             $this->fail('No exception.');
         } catch (Unavailable $error) {
-            $this->assertSame(Unavailable::NEWER, $error->reason);
+            // T-CF7-6: the system reason, not the project one.
+            $this->assertSame(Unavailable::SYSTEM_NEWER, $error->reason);
         }
+        $this->assertSame(self::NEXT, SystemSchema::currentVersion($db));
     }
 
     public function testMigrateRefusesToRunInsideATransaction(): void

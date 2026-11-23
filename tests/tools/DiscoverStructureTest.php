@@ -389,6 +389,74 @@ final class DiscoverStructureTest extends TestCase
         self::assertSame('sqlite_autoindex_things_1', $result[3]);
     }
 
+    /** Runs $code in a child process that loads the script, and returns its JSON output. */
+    private static function inScript(string $code): mixed
+    {
+        $process = proc_open([PHP_BINARY, '-r', 'require $argv[1];' . $code, self::SCRIPT], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        self::assertIsResource($process);
+        $stdout = (string) stream_get_contents($pipes[1]);
+        $stderr = (string) stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        self::assertSame(0, proc_close($process), $stderr);
+
+        return json_decode($stdout, true, 8, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * T-CF7-8: only SQLite's own object names are exempt, from an
+     * allowlist; any other `sqlite_` name is treated as user-chosen.
+     */
+    public function testOnlyAllowlistedSqliteNamesAreInternal(): void
+    {
+        $result = self::inScript(
+            '$r = new IdentifierRedactor("all", "synthetic-key");'
+            . '$names = ["sqlite_sequence", "sqlite_stat1", "sqlite_stat2", "sqlite_stat3", "sqlite_stat4",'
+            . ' "sqlite_master", "sqlite_schema", "sqlite_temp_master", "sqlite_temp_schema", "SQLITE_MASTER",'
+            . ' "sqlite_ExamplePerson", "sqlite_stat5", "sqlite_", "sqlite_sequence2", "sqlite_master_notes", "sqlite_autoindex_things_1"];'
+            . '$out = [];'
+            . 'foreach ($names as $n) { $out[$n] = [IdentifierRedactor::internal($n), $r->ident($n)]; }'
+            . '$f = new IdentifierRedactor("flagged", "synthetic-key");'
+            . '$out["flagged:sqlite_Example12"] = [IdentifierRedactor::flags("sqlite_Example12"), $f->ident("sqlite_Example12")];'
+            . 'echo json_encode($out);',
+        );
+
+        foreach (['sqlite_sequence', 'sqlite_stat1', 'sqlite_stat2', 'sqlite_stat3', 'sqlite_stat4', 'sqlite_master', 'sqlite_schema', 'sqlite_temp_master', 'sqlite_temp_schema', 'SQLITE_MASTER'] as $name) {
+            self::assertSame([true, $name], $result[$name], $name);
+        }
+        foreach (['sqlite_ExamplePerson', 'sqlite_stat5', 'sqlite_', 'sqlite_sequence2', 'sqlite_master_notes'] as $name) {
+            self::assertFalse($result[$name][0], $name);
+            self::assertMatchesRegularExpression('/^id_[0-9a-f]{10}$/D', $result[$name][1], "{$name} is hashed under --redact-identifiers=all");
+        }
+        self::assertMatchesRegularExpression('/^sqlite_autoindex_id_[0-9a-f]{10}_1$/D', $result['sqlite_autoindex_things_1'][1]);
+        // In the default mode the prefix no longer exempts a name from the digit rule.
+        self::assertSame(['digit-run'], $result['flagged:sqlite_Example12'][0]);
+        self::assertMatchesRegularExpression('/^id_[0-9a-f]{10}$/D', $result['flagged:sqlite_Example12'][1]);
+    }
+
+    /** T-CF7-8: NameRedactor::extension() fails closed for values that are not an extension. */
+    public function testExtensionFailsClosed(): void
+    {
+        $result = self::inScript(
+            '$r = new NameRedactor(false);'
+            . '$shown = new NameRedactor(true);'
+            . '$out = [];'
+            . 'foreach (["", ".db", ".sqlite-wal", ".tiffin", "Example Person", ".ab cd", "..x", ".x/../y", ".x\n"] as $e) {'
+            . ' $out[] = [$r->extension($e), $shown->extension($e)]; }'
+            . 'echo json_encode($out);',
+        );
+
+        self::assertSame(['', ''], $result[0]);
+        self::assertSame(['.db', '.db'], $result[1]);
+        self::assertSame(['.sqlite-wal', '.sqlite-wal'], $result[2]);
+        self::assertMatchesRegularExpression('/^\.<ext-\d+>$/D', $result[3][0]);
+        foreach ([4, 5, 6, 7, 8] as $i) {
+            self::assertMatchesRegularExpression('/^\.<ext-\d+>$/D', $result[$i][0], "case {$i} is a placeholder");
+        }
+        self::assertSame('Example Person', $result[4][1], 'With --show-names the value is shown.');
+        self::assertNotSame($result[4][0], $result[5][0], 'Different values get different placeholders.');
+    }
+
     public function testFileNamesAndUnknownExtensionsAreRedactedByDefault(): void
     {
         [, $out] = $this->discover([$this->package]);

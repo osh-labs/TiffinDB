@@ -56,6 +56,12 @@ final class Attachments
     /** Cc, Cf, Zl, and Zp, all of them (P61; zero-width joiners go too in a file name). */
     private const NAME_CONTROL = '/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u';
 
+    /** Longest extension cleanName() keeps when it cuts a name (P187), in code points. */
+    public const MAX_EXTENSION_LENGTH = 16;
+
+    /** Stem and extension: the last `.`, followed by 1 to 16 letters or digits to the end. */
+    private const NAME_EXTENSION = '/^(.*)\.([\p{L}\p{N}]{1,16})\z/su';
+
     public function __construct(
         private readonly Database $db,
         private readonly Schema $schema,
@@ -307,6 +313,12 @@ final class Attachments
      * gives `file`; Unicode categories Cc, Cf, Zl, and Zp are removed (so
      * bidirectional and zero-width characters go too); `/` and `\` become
      * `_`; trimmed; cut to MAX_NAME_LENGTH code points; `file` when empty.
+     *
+     * The cut keeps the extension (P187, M7 CF7-3): when the name is too
+     * long and its last `.` is followed by 1 to MAX_EXTENSION_LENGTH
+     * letters or digits, the stem is cut to make room and the result is
+     * the trimmed stem, `.`, and the extension. Otherwise the whole name
+     * is cut and trimmed.
      */
     public static function cleanName(string $name): string
     {
@@ -317,8 +329,14 @@ final class Attachments
         $name = (string) preg_replace('#[/\\\\]#', '_', $name);
         $name = Text::trim($name);
         if (Text::length($name) > self::MAX_NAME_LENGTH) {
-            preg_match('/^.{' . self::MAX_NAME_LENGTH . '}/su', $name, $match);
-            $name = Text::trim($match[0] ?? '');
+            if (preg_match(self::NAME_EXTENSION, $name, $parts) === 1) {
+                $keep = self::MAX_NAME_LENGTH - 1 - Text::length($parts[2]);
+                preg_match('/^.{0,' . $keep . '}/su', $parts[1], $match);
+                $name = Text::trim($match[0] ?? '') . '.' . $parts[2];
+            } else {
+                preg_match('/^.{' . self::MAX_NAME_LENGTH . '}/su', $name, $match);
+                $name = Text::trim($match[0] ?? '');
+            }
         }
 
         return $name === '' ? 'file' : $name;

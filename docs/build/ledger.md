@@ -17,7 +17,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M2 | CLOSED 2026-11-19 (independent exit audit; no blocking findings) | See M2 exit results below |
 | M3 | CLOSED 2026-11-19 (independent exit audit; no blocking findings; MEDIUM repository-rule finding fixed) | See M3 exit results below |
 | M4 | CLOSED 2026-11-22 (independent exit audit; no blocking findings; one flaky-test cause and one scanner gap fixed) | See M4 exit results below |
-| M5 | IN PROGRESS: design (M5-D1) and spec review (M5-R1) merged; G-spec open 2026-11-22; wave 1 (WP1, WP2, WP3) merged; WP4 merged; WP1 and WP3 security reviews done (blocking href-apostrophe finding fixed, P242); WP5 and WP6 dispatched. Provisional decisions P189 to P212 and P242 are recorded in `docs/specs/M5-forms.md` section 15 and ADR 0020 (P197 reverses the M3 import behaviour that restored hidden required fields; P208 to P212 are the review rulings) | Specs: `docs/specs/M5-forms.md`, `M5-screens.md`; designs `docs/design/m5/` |
+| M5 | CLOSED 2026-11-23 (independent exit audit PASS; F-1 fixed, P243; manual screen-reader pass not verified) | Report: `docs/build/reviews/M5-exit-audit.md`; specs `docs/specs/M5-forms.md`, `M5-screens.md`; provisional decisions P189 to P212, P242, P243 |
 | M6 | deferred to near the end (maintainer instruction); awaiting maintainer discovery output | Plan: `docs/build/M6-handoff-plan.md` |
 | M7 | not started | |
 | M8 | post-v1, gated | |
@@ -524,3 +524,19 @@ Independent design-tier exit audit on the integration branch (all M4 packages an
 Fixes made by M4-X: F-1 `Listings::count` SQL moved to `Records::countMatching` with a new scanner test; F-2 and F-3 test determinism; as-built notes in M4-core section 17 and M4-screens section 13.3.
 
 Not verified in M4: manual screen-reader pass; `.htaccess` behaviour on a real Apache server and the host's upload limits (host check); native file dialog; browsers other than Chromium.
+
+### M5 exit results
+
+Independent design-tier exit audit on the integration branch; full report `docs/build/reviews/M5-exit-audit.md`. Suite: `composer test` OK (10810 tests, 1 skipped: no comma-decimal locale; in order and in random order); `composer lint` 846 files, 0 failed.
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| Editor output equals hand-editable HTML | PASS | Fixed point on 12,000 mutated and 3,000 generated forms (auditor seeds); editor to source to file to upload byte-identical; archive round trip identical |
+| Sanitizer corpus passes | PASS | 142 hostile cases through hidden draft, source save, upload: all 422, nothing stored; 57 of 66 parser, link-rule and formLink mutations killed, 9 survivors are unreachable backup checks |
+| Output renders under every appearance setting | PASS | 38 matrix rows, 162 states, 1360 and 390 px plus 320 px Largest |
+| Editor works by keyboard only | PASS | 25 of 25 with JavaScript on and off (auditor); WP7 K-4 43 of 43 both ways |
+| Member refused in core | PASS | 11 of 11 FormOperations calls, 77 of 77 cases |
+| Version 4 file from M4 code | PASS | Opens, forms edit, save, download, re-save; no upgrade snapshot |
+| Repository rules | PASS | SPDX, no names or model names, dependencies unchanged |
+
+Findings: F-1 oversized regenerated form (fixed, P243); F-2 doc wording (fixed). Review findings fixed during the milestone: href apostrophe (P242), WCAG names and row clipping, flaky XLSX hash test. Not verified: manual screen-reader pass; `.htaccess` on a real Apache host.

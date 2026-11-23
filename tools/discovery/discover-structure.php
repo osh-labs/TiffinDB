@@ -68,6 +68,12 @@ const TYPE_WORDS = 'int integer tinyint smallint mediumint bigint int2 int8 unsi
  varchar varying nchar native nvarchar char clob decimal numeric float double precision real number varbinary binary
  bit bool boolean text blob string date datetime timestamp time any';
 
+/** SQLite's own object names, shown as they are (IdentifierRedactor::internal()). */
+const INTERNAL_NAMES = [
+    'sqlite_sequence', 'sqlite_stat1', 'sqlite_stat2', 'sqlite_stat3', 'sqlite_stat4',
+    'sqlite_master', 'sqlite_schema', 'sqlite_temp_master', 'sqlite_temp_schema',
+];
+
 /** File extensions shown as they are. Any other extension becomes a placeholder. */
 const KNOWN_EXTENSIONS = 'db db3 sqlite sqlite3 sqlitedb zip plist xml json txt csv tsv rtf rtfd pdf html htm css js
  jpg jpeg png gif tif tiff bmp heic heif webp svg ico icns mov mp4 m4a m4v mp3 wav aiff aif caf dat bin log bak
@@ -148,11 +154,21 @@ final class NameRedactor
         return [$name, ''];
     }
 
-    /** Shows a known extension; replaces any other by a stable placeholder. */
+    /**
+     * Shows a known extension; replaces any other by a stable placeholder.
+     * Fails closed: a value that is not of the form split() returns is never
+     * printed either, but becomes a placeholder too (unless names are shown).
+     */
     public function extension(string $ext): string
     {
-        if ($this->showNames || preg_match('/^\.([A-Za-z0-9]+)(-(?:wal|shm|journal))?$/D', $ext, $m) !== 1) {
+        if ($this->showNames) {
             return printable($ext);
+        }
+        if ($ext === '') {
+            return '';
+        }
+        if (preg_match('/^\.([A-Za-z0-9]+)(-(?:wal|shm|journal))?$/D', $ext, $m) !== 1) {
+            return '.' . $this->placeholder('ext', $ext);
         }
         $suffix = $m[2] ?? '';
         if (isset($this->extensions[strtolower($m[1])])) {
@@ -245,12 +261,15 @@ final class IdentifierRedactor
     }
 
     /**
-     * SQLite's own objects (sqlite_sequence, sqlite_stat1, ...). Only a plain
-     * identifier qualifies, so a crafted name cannot use the prefix to be shown.
+     * SQLite's own objects, by an allowlist of their exact names (compared
+     * ignoring ASCII case, as SQLite does). Any other name starting with
+     * `sqlite_` is treated as user-chosen. Automatic indexes
+     * (`sqlite_autoindex_<table>_<n>`) are handled by ident(), which redacts
+     * the table part as an identifier of its own.
      */
     public static function internal(string $name): bool
     {
-        return stripos($name, 'sqlite_') === 0 && preg_match('/^[A-Za-z0-9_]{1,63}$/D', $name) === 1;
+        return in_array(strtolower($name), INTERNAL_NAMES, true);
     }
 
     /** @return list<string> */

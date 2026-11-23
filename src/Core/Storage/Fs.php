@@ -205,6 +205,60 @@ final class Fs
     }
 
     /**
+     * Copies the regular file $from to a new file $to, which must not exist
+     * (anything there, a dangling link included, is \RuntimeException), and
+     * sets mode 0640. $from must be a regular file, never a symbolic link
+     * (\RuntimeException otherwise). A partial copy is removed. Used to take
+     * a working copy of a snapshot (M7 spec section 5.3 step 1).
+     */
+    public static function copyIn(string $from, string $to): void
+    {
+        self::refuseNul($from);
+        self::refuseNul($to);
+        if (!self::isFile($from)) {
+            throw new \RuntimeException('Cannot copy: the source is not a regular file.');
+        }
+        if (self::exists($to)) {
+            throw new \RuntimeException('Cannot copy: the target already exists.');
+        }
+        self::copyNew($from, $to);
+        try {
+            $changed = ErrorTrap::run(static fn (): bool => chmod($to, self::FILE_MODE), 'Cannot set the file mode.');
+            if (!$changed) {
+                throw new \RuntimeException('Cannot set the file mode.');
+            }
+        } catch (\Throwable $error) {
+            self::remove($to);
+
+            throw $error;
+        }
+    }
+
+    /**
+     * Renames the regular file $from over the existing regular file $to in
+     * the same folder (one `rename`, so $to is either the old file or the
+     * new one; M7 spec section 5.3 step 6). Refused (\RuntimeException,
+     * nothing changed) when either path is a symbolic link or anything but
+     * a regular file, or the two are in different folders; \RuntimeException
+     * when the rename fails, leaving $to as it was.
+     */
+    public static function replace(string $from, string $to): void
+    {
+        self::refuseNul($from);
+        self::refuseNul($to);
+        if (dirname($from) !== dirname($to) || basename($from) === basename($to)) {
+            throw new \RuntimeException('Cannot replace: the two files must be different files in the same folder.');
+        }
+        if (!self::isFile($from) || !self::isFile($to)) {
+            throw new \RuntimeException('Cannot replace: both paths must be regular files.');
+        }
+        $renamed = ErrorTrap::run(static fn (): bool => rename($from, $to), 'Cannot rename.');
+        if (!$renamed) {
+            throw new \RuntimeException('Cannot replace the file.');
+        }
+    }
+
+    /**
      * The names in a directory, sorted by byte value, without `.` and `..`
      * (T-CF-4). Names of symbolic links inside are listed but not followed.
      * Throws \RuntimeException when nothing is at the path, when the path

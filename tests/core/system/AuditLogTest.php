@@ -14,15 +14,17 @@ use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditEntry;
 use TiffinDB\Core\System\AuditLog;
+use TiffinDB\Core\System\AuditQuery;
 use TiffinDB\Core\System\SystemDatabase;
 use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 
-/** T-AUD-1: the audit log. */
+/** T-AUD-1: the audit log; T-ADM-20 (storage part): search and count (M7 spec section 7.2). */
 #[CoversClass(AuditLog::class)]
 #[CoversClass(AuditEntry::class)]
 #[CoversClass(AuditAction::class)]
+#[CoversClass(AuditQuery::class)]
 final class AuditLogTest extends TestCase
 {
     private TempDir $temp;
@@ -159,5 +161,85 @@ final class AuditLogTest extends TestCase
     private function countAction(string $action): int
     {
         return (int) $this->system->db()->value('SELECT COUNT(*) FROM audit_log WHERE action = ?', [$action]);
+    }
+
+    /** @return array{0: int, 1: int, 2: int, 3: int} two people and two projects, by id */
+    private function scene(): array
+    {
+        $db = $this->system->db();
+        $ids = [];
+        foreach (['ann' => 'adminaaaaaaa', 'bea' => 'memberaaaaaa'] as $name => $key) {
+            $db->run(
+                "INSERT INTO users (key, username, username_norm, display_name, role, password_hash, created_at, updated_at, password_changed_at)
+                 VALUES (?, ?, ?, 'Example Person', 'admin', 'x', ?, ?, ?)",
+                [$key, $name, $name, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'],
+            );
+            $ids[] = $db->lastInsertId();
+        }
+        foreach (['recipesaaaaa' => 'Recipes', 'gardenaaaaaa' => 'Garden'] as $key => $name) {
+            $db->run("INSERT INTO projects (key, name, state, created_at) VALUES (?, ?, 'active', '2026-01-01T00:00:00Z')", [$key, $name]);
+            $ids[] = $db->lastInsertId();
+        }
+
+        return $ids;
+    }
+
+    /** @return list<int> ids of the matches, newest first */
+    private function ids(AuditQuery $q, int $limit = 100, int $offset = 0): array
+    {
+        return array_map(static fn (AuditEntry $e): int => $e->id, $this->audit->search($q, $limit, $offset));
+    }
+
+    public function testSearchFiltersAloneAndTogetherAndCounts(): void
+    {
+        [$ann, $bea, $recipes, $garden] = $this->scene();
+        $rows = [
+            [AuditAction::PROJECT_CREATED, $ann, $recipes],
+            [AuditAction::PROJECT_RENAMED, $ann, $recipes],
+            [AuditAction::PROJECT_CREATED, $bea, $garden],
+            [AuditAction::SIGN_IN, $bea, null],
+            [AuditAction::PROJECT_DELETED, $ann, null],
+            [AuditAction::PROJECT_RENAMED, null, $garden],
+            [AuditAction::SIGN_IN, null, null],
+        ];
+        foreach ($rows as [$action, $actor, $project]) {
+            $this->audit->record($action, $actor, $project, null, null, $action === AuditAction::PROJECT_DELETED ? ['name' => 'Example Attic'] : []);
+            $this->clock->advance(1);
+        }
+        $all = $this->ids(new AuditQuery());
+        $this->assertCount(7, $all);
+        $this->assertSame([7, 6, 5, 4, 3, 2, 1], $all, 'Newest first.');
+        $cases = [
+            'nothing' => [new AuditQuery(), [7, 6, 5, 4, 3, 2, 1]],
+            'person' => [new AuditQuery($ann), [5, 2, 1]],
+            'project' => [new AuditQuery(null, $garden), [6, 3]],
+            'action' => [new AuditQuery(null, null, AuditAction::PROJECT_CREATED), [3, 1]],
+            'person and project' => [new AuditQuery($bea, $garden), [3]],
+            'person and action' => [new AuditQuery($ann, null, AuditAction::PROJECT_RENAMED), [2]],
+            'project and action' => [new AuditQuery(null, $recipes, AuditAction::PROJECT_CREATED), [1]],
+            'all three' => [new AuditQuery($bea, $recipes, AuditAction::PROJECT_CREATED), []],
+            'deleted projects' => [new AuditQuery(null, null, null, true), [5]],
+            'deleted projects by a person' => [new AuditQuery($bea, null, null, true), []],
+            'deleted projects with another action' => [new AuditQuery(null, null, AuditAction::SIGN_IN, true), []],
+        ];
+        foreach ($cases as $label => [$query, $expected]) {
+            $this->assertSame($expected, $this->ids($query), $label);
+            $this->assertSame(count($expected), $this->audit->count($query), $label);
+        }
+        $this->assertSame([6, 5], $this->ids(new AuditQuery(), 2, 1));
+        $this->assertSame([], $this->ids(new AuditQuery(), 2, 50));
+        $this->assertSame(['name' => 'Example Attic'], $this->audit->search(new AuditQuery(null, null, null, true), 1, 0)[0]->detail);
+    }
+
+    public function testSearchOrdersTiesByIdAndRefusesNegativeBounds(): void
+    {
+        foreach ([AuditAction::SIGN_IN, AuditAction::SIGN_OUT, AuditAction::SIGN_IN] as $action) {
+            $this->audit->record($action, null);
+        }
+        $this->assertSame([3, 2, 1], $this->ids(new AuditQuery()), 'The same time: by id, descending.');
+        $this->assertSame(0, $this->audit->count(new AuditQuery(999)));
+        $this->assertSame(0, $this->audit->count(new AuditQuery(null, null, "auth.sign_in' OR 1=1 --")), 'A value is bound, never joined.');
+        $this->expectException(\InvalidArgumentException::class);
+        $this->audit->search(new AuditQuery(), -1, 0);
     }
 }

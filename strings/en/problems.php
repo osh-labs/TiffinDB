@@ -165,4 +165,8 @@ return [
     'problem.form.legend' => 'Use 1 to {max} characters, with no line breaks, or leave it empty for no name.',
     'problem.form.action' => 'That change could not be made. The form is shown as it was.',
     'problem.form.empty_file' => 'That file is empty. Choose a form file.',
+    'problem.snapshot.unreadable' => 'This snapshot cannot be used. It is damaged, or it belongs to another project.',
+    'problem.project.delete_name' => 'Type the project\'s name exactly as it is shown above.',
+    'problem.project.delete_failed' => 'TiffinDB could not move the project folder, so nothing was deleted. The person who looks after this TiffinDB can check the data folder.',
+    'problem.lock.unavailable' => 'This server cannot lock files, so TiffinDB cannot do this safely here. Nothing was changed. The host documentation describes how to do it by hand.',
 ];

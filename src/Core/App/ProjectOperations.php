@@ -11,23 +11,30 @@ namespace TiffinDB\Core\App;
 use TiffinDB\Core\Auth\Actor;
 use TiffinDB\Core\Auth\Permission;
 use TiffinDB\Core\Auth\Role;
+use TiffinDB\Core\Error\Busy;
+use TiffinDB\Core\Error\ConfirmationRequired;
+use TiffinDB\Core\Error\NotFound;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Error\Text;
 use TiffinDB\Core\Error\Unavailable;
 use TiffinDB\Core\Error\ValidationFailed;
+use TiffinDB\Core\Io\StagingArea;
 use TiffinDB\Core\Schema\ProjectFile;
 use TiffinDB\Core\Schema\Schema;
 use TiffinDB\Core\Schema\SchemaEditor;
 use TiffinDB\Core\Schema\TableDef;
 use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\Storage\Fs;
+use TiffinDB\Core\Storage\LocksUnavailable;
+use TiffinDB\Core\Storage\ProjectLock;
 use TiffinDB\Core\Storage\Snapshots;
 use TiffinDB\Core\Storage\Timestamp;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\ProjectRecord;
 
 /**
- * Projects: the list, creating, renaming, and sharing (M1 spec section 9.4).
+ * Projects: the list, creating, renaming, and sharing (M1 spec section
+ * 9.4), and deleting (M7 spec section 6, ADR 0022 decision 3).
  */
 final class ProjectOperations
 {
@@ -259,6 +266,219 @@ final class ProjectOperations
         return new ProjectSummary($project, true, $names, $records, $schema->meta('updated_at'), $person?->displayName, $members);
     }
 
+    /**
+     * What deleting the project would remove (M7 spec section 6.2). When
+     * nothing at all is at the project folder's path the project is not
+     * opened: every count is 0 and folderMissing is true (P239). A file
+     * that cannot be opened counts no records and no files.
+     */
+    public function deleteScreen(Actor $actor, string $projectKey): ProjectDeleteScreen
+    {
+        $project = $this->c->project($actor, Permission::ManageProject, $projectKey);
+        $this->c->requireCurrentActor($actor);
+        $members = $this->grantedMembers($project);
+        $folder = $this->c->opener->folder($project->key);
+        if (!Fs::exists($folder)) {
+            return new ProjectDeleteScreen($project, 0, 0, 0, 0, 0, $members, true);
+        }
+        $counts = $this->deletionCounts($project, $actor, true);
+
+        return new ProjectDeleteScreen($project, $counts['records'], $counts['trashed'], $counts['files'], $counts['bytes'], $counts['snapshots'], $members, false);
+    }
+
+    /**
+     * Deletes a project (M7 spec section 6.2): the typed name must be the
+     * project's name (ignoring ASCII case and surrounding white space);
+     * ConfirmationRequired when it holds more records than $expected. The
+     * folder is moved to `staging/deleted/<key>` under the exclusive lock
+     * and removed there; the registry row and its grants go.
+     */
+    public function delete(Actor $actor, string $projectKey, string $typedName, int $expected): ProjectDeleted
+    {
+        $project = $this->c->project($actor, Permission::ManageProject, $projectKey);
+        $this->c->requireCurrentActor($actor);
+
+        // 1. Name.
+        $typed = Text::isUtf8($typedName) ? Text::trim($typedName) : '';
+        if ($typed === '' || strcasecmp($typed, Text::trim($project->name)) !== 0) {
+            throw new ValidationFailed([new Problem('confirm-name', 'problem.project.delete_name')]);
+        }
+
+        // 2. Counts (none for a missing folder, P239).
+        $folder = $this->c->opener->folder($project->key);
+        $counts = ['records' => 0, 'trashed' => 0, 'files' => 0, 'bytes' => 0, 'snapshots' => 0];
+        if (Fs::exists($folder)) {
+            $counts = $this->deletionCounts($project, $actor, false);
+            if ($counts['records'] + $counts['trashed'] > $expected) {
+                throw new ConfirmationRequired($counts['records'] + $counts['trashed'], 0);
+            }
+        }
+
+        // 3. Mark: from here on no operation finds the project.
+        $missing = $this->c->db()->write(function () use ($actor, $project, $folder): bool {
+            $this->c->seam('delete.mark');
+            $this->c->requireCurrentAdmin($actor);
+            $current = $this->c->registry->byKey($project->key);
+            if ($current === null || !$current->isActive()) {
+                throw new NotFound('No such project.');
+            }
+            $this->c->registry->setState($project->id, ProjectRecord::STATE_DELETING);
+
+            return !Fs::exists($folder);
+        });
+        $this->c->seam('delete.marked');
+
+        if ($missing) {
+            // P239: nothing to lock, move, or remove.
+            $this->forgetRow($project);
+            $counts = ['records' => 0, 'trashed' => 0, 'files' => 0, 'bytes' => 0, 'snapshots' => 0];
+
+            return $this->recordDeletion($project, $actor, $counts);
+        }
+
+        // 4. Lock (the folder must be a real directory first: a link is never locked through).
+        if (!Fs::isDir($folder)) {
+            $this->setActive($project);
+
+            throw self::deleteFailed();
+        }
+        try {
+            $lock = $this->c->opener->lockExclusive($project->key);
+        } catch (Busy $busy) {
+            $this->setActive($project);
+
+            throw $busy;
+        } catch (LocksUnavailable) {
+            $this->setActive($project);
+
+            throw new ValidationFailed([new Problem(null, 'problem.lock.unavailable')]);
+        }
+
+        try {
+            // An interrupted-deletion sweep may have finished it while this request waited for the lock.
+            if ($this->c->registry->byKey($project->key) === null) {
+                return $this->recordDeletion($project, $actor, $counts);
+            }
+
+            // 5. Move.
+            try {
+                if (!Fs::isDir($folder)) {
+                    throw new \RuntimeException('The project folder is not a directory.');
+                }
+                $target = $this->c->staging()->reserve(StagingArea::DELETED, $project->key);
+                $this->c->seam('delete.move');
+                Fs::moveIn($folder, $target);
+            } catch (\RuntimeException) {
+                $this->setActive($project);
+
+                throw self::deleteFailed();
+            }
+            $this->c->seam('delete.moved');
+
+            // 6. Forget.
+            $this->forgetRow($project);
+
+            // 7. Remove, still holding the lock; the staging sweep finishes what fails here.
+            try {
+                Fs::removeTree($target, $this->c->staging()->root());
+            } catch (\Throwable $error) {
+                error_log('TiffinDB: a deleted project folder could not be removed yet; the staging sweep will retry (' . $error::class . ').');
+            }
+        } finally {
+            // 8. Release.
+            $lock->release();
+        }
+
+        // 9. Audit.
+        return $this->recordDeletion($project, $actor, $counts);
+    }
+
+    /**
+     * @return array{records: int, trashed: int, files: int, bytes: int, snapshots: int}
+     */
+    private function deletionCounts(ProjectRecord $project, Actor $actor, bool $withBytes): array
+    {
+        $records = 0;
+        $all = 0;
+        $files = 0;
+        $bytes = 0;
+        if (!Fs::isDir($this->c->opener->folder($project->key))) {
+            // A link or a file at the folder's path: never opened through; the deletion refuses it.
+            return ['records' => 0, 'trashed' => 0, 'files' => 0, 'bytes' => 0, 'snapshots' => 0];
+        }
+        try {
+            $db = $this->c->opener->open($project);
+            $schema = new Schema($db, $this->c->types);
+            $editor = $this->c->editor($project, $db, $actor);
+            foreach ($schema->tables() as $table) {
+                $records += $editor->recordCount($table->key, false);
+                $all += $editor->recordCount($table->key, true);
+            }
+            $totals = $this->c->attachments($project, $db, $schema)->totals();
+            $files = $totals['files'];
+            $bytes = $withBytes ? $totals['bytes'] : 0;
+        } catch (Unavailable) {
+            // A file that cannot be opened (damaged, missing) can still be deleted.
+        }
+
+        return [
+            'records' => $records,
+            'trashed' => $all - $records,
+            'files' => $files,
+            'bytes' => $bytes,
+            'snapshots' => count($this->c->snapshots->list($this->c->opener->folder($project->key))),
+        ];
+    }
+
+    /** Granted Members, active or not. */
+    private function grantedMembers(ProjectRecord $project): int
+    {
+        $granted = array_flip($this->c->grants->usersFor($project->id));
+        $members = 0;
+        foreach ($this->c->users->all() as $person) {
+            if ($person->role === Role::Member && isset($granted[$person->id])) {
+                $members++;
+            }
+        }
+
+        return $members;
+    }
+
+    private function setActive(ProjectRecord $project): void
+    {
+        $this->c->db()->write(function () use ($project): void {
+            if ($this->c->registry->byKey($project->key)?->state === ProjectRecord::STATE_DELETING) {
+                $this->c->registry->setState($project->id, ProjectRecord::STATE_ACTIVE);
+            }
+        });
+    }
+
+    private function forgetRow(ProjectRecord $project): void
+    {
+        $this->c->db()->write(function () use ($project): void {
+            $this->c->registry->remove($project->id);
+        });
+    }
+
+    /** @param array{records: int, trashed: int, files: int, snapshots: int} $counts */
+    private function recordDeletion(ProjectRecord $project, Actor $actor, array $counts): ProjectDeleted
+    {
+        $this->c->audit->record(AuditAction::PROJECT_DELETED, $actor->userId, null, 'project', $project->key, [
+            'name' => $project->name,
+            'records' => $counts['records'],
+            'trashed' => $counts['trashed'],
+            'files' => $counts['files'],
+            'snapshots' => $counts['snapshots'],
+        ]);
+
+        return new ProjectDeleted($project->name, $counts['records'], $counts['trashed'], $counts['files'], $counts['snapshots']);
+    }
+
+    private static function deleteFailed(): ValidationFailed
+    {
+        return new ValidationFailed([new Problem(null, 'problem.project.delete_failed')]);
+    }
+
     /** @return list<Problem> */
     private function nameProblems(string $name, ?int $exceptId): array
     {
@@ -285,6 +505,7 @@ final class ProjectOperations
                     Fs::remove($path . $suffix);
                 }
             }
+            Fs::remove($this->c->opener->folder($project->key) . '/' . ProjectLock::FILE);
             foreach (array_reverse($made) as $folder) {
                 Fs::removeDir($folder);
             }
@@ -297,15 +518,25 @@ final class ProjectOperations
     }
 
     /**
-     * Step 0 of create (P57, T-CF-4): every `creating` row older than an
-     * hour is removed; its folder too when it holds nothing but what a
-     * creation makes (empty `attachments/` and `snapshots/`, `project.tiffin`
-     * and its `-wal` and `-shm`). A folder holding anything else is left in
-     * place, and a line naming the project key goes to the server error log.
-     * File-system access goes through Fs and registry access through
-     * ProjectRegistry (P78); neither follows symbolic links.
+     * Step 0 of create (P57, T-CF-4), and of every staging sweep (P238,
+     * Context::sweepStaging): every `creating` row older than an hour is
+     * removed; its folder too when it holds nothing but what a creation
+     * makes (empty `attachments/` and `snapshots/`, `project.tiffin` and its
+     * `-wal` and `-shm`, `project.lock`). A folder holding anything else is
+     * left in place, and a line naming the project key goes to the server
+     * error log. Every `deleting` row, whatever its age, is finished (M7
+     * spec section 6.2): its folder, when still a directory, is moved to
+     * `staging/deleted/` under the exclusive lock (skipped, and retried
+     * next time, when the lock cannot be had at once), the row is removed,
+     * and the folder moved here removed; one the interrupted request had
+     * already moved is removed by StagingArea::sweep. A failure on one row is logged without
+     * a key or path and never stops the others. File-system access goes
+     * through Fs and registry access through ProjectRegistry (P78); neither
+     * follows symbolic links. Writes no audit row.
+     *
+     * @internal Called by create and Context::sweepStaging only.
      */
-    private function clearAbandoned(): void
+    public function clearAbandoned(): void
     {
         $cutoff = Timestamp::format($this->c->clock->now()->modify('-' . self::ABANDONED_SECONDS . ' seconds'));
         foreach ($this->c->registry->abandoned($cutoff) as $project) {
@@ -325,6 +556,48 @@ final class ProjectOperations
                 $this->removeAbandonedFolder($project->key);
             }
         }
+        foreach ($this->c->registry->deleting() as $project) {
+            try {
+                $this->finishDeletion($project);
+            } catch (\Throwable $error) {
+                error_log('TiffinDB: an interrupted project deletion could not be finished yet (' . $error::class . ').');
+            }
+        }
+    }
+
+    /** One `deleting` row of clearAbandoned. */
+    private function finishDeletion(ProjectRecord $project): void
+    {
+        $folder = $this->c->opener->folder($project->key);
+        $lock = null;
+        try {
+            if (Fs::isDir($folder)) {
+                $lock = $this->c->opener->tryLockExclusive($project->key);
+                if ($lock === null) {
+                    return;
+                }
+            }
+            $target = null;
+            $still = $this->c->registry->byKey($project->key);
+            if ($still === null || $still->state !== ProjectRecord::STATE_DELETING) {
+                return;
+            }
+            if (Fs::isDir($folder)) {
+                $target = $this->c->staging()->reserve(StagingArea::DELETED, $project->key);
+                Fs::moveIn($folder, $target);
+            }
+            $this->c->db()->write(function () use ($project): void {
+                if ($this->c->registry->byKey($project->key)?->state === ProjectRecord::STATE_DELETING) {
+                    $this->c->registry->remove($project->id);
+                }
+            });
+            // A folder moved by the interrupted request is left to StagingArea::sweep, which checks its lock.
+            if ($target !== null) {
+                Fs::removeTree($target, $this->c->staging()->root());
+            }
+        } finally {
+            $lock?->release();
+        }
     }
 
     private function removeAbandonedFolder(string $key): void
@@ -332,7 +605,7 @@ final class ProjectOperations
         $folder = $this->c->opener->folder($key);
         $file = ProjectOpener::FILE;
         $dirs = [self::ATTACHMENTS, Snapshots::FOLDER];
-        $files = [$file, $file . '-wal', $file . '-shm'];
+        $files = [$file, $file . '-wal', $file . '-shm', ProjectLock::FILE];
         if (!Fs::exists($folder)) {
             return;
         }

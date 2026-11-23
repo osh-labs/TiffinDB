@@ -42,6 +42,9 @@ final class MessageKeysTest extends TestCase
      */
     private const PENDING_SPEC_KEYS = [];
 
+    /** The M7 packages whose rows of M7 spec section 11.3 are built (each package adds its own). */
+    private const M7_PACKAGES = ['WP1'];
+
     /** Keys FormOperations produces itself (M5 spec section 9). */
     private const M5_APP_KEYS = [
         'problem.form.draft',
@@ -54,13 +57,55 @@ final class MessageKeysTest extends TestCase
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {
         // M1 spec section 12, M2 spec section 8, M3 spec section 14, M4 spec section 11, and M5 spec section 10 (its section 4.3).
-        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::m4Keys(), ...self::m5Keys(), ...self::PENDING_SPEC_KEYS];
+        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::m4Keys(), ...self::m5Keys(), ...self::m7Keys(), ...self::PENDING_SPEC_KEYS];
         foreach (self::PENDING_SPEC_KEYS as $pending) {
             self::assertNotContains($pending, [...self::m3Keys(), ...self::m4Keys(), ...self::m5Keys()], $pending . ' is listed now: remove it from PENDING_SPEC_KEYS.');
         }
         $used = self::coreKeys('src/Core');
         self::assertNotEmpty($used);
         self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, M3 spec section 14, M4 spec section 11, and M5 spec section 10.');
+    }
+
+    /** @return list<string> problem keys listed in `docs/specs/M7-release.md` section 11.3 */
+    private static function m7Keys(): array
+    {
+        return array_keys(self::m7Rows());
+    }
+
+    /** @return array<string, array{0: string, 1: string}> key => [package, English] of `docs/specs/M7-release.md` section 11.3 */
+    private static function m7Rows(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M7-release.md'));
+        $start = strpos($spec, "\n### 11.3 Message keys produced by the core");
+        $end = strpos($spec, "\n## 12.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        $section = substr($spec, $start, $end - $start);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', $section, $matches);
+        self::assertGreaterThanOrEqual(4, count($matches[1]));
+        self::assertContains('problem.snapshot.unreadable', $matches[1]);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \| (WP\d+) \| (.+?) \|[^|]*\|$/m', $section, $rows, PREG_SET_ORDER);
+        self::assertCount(count($matches[1]), $rows, 'Every row has a package and its English.');
+        $found = [];
+        foreach ($rows as [, $key, $package, $english]) {
+            $found[$key] = [$package, $english];
+        }
+
+        return $found;
+    }
+
+    public function testEveryM7KeyOfAMergedPackageHasItsTextAndTheOperationsProduceTheirs(): void
+    {
+        $strings = require RepoFiles::path('strings/en/problems.php');
+        self::assertIsArray($strings);
+        $app = self::coreKeys('src/Core/App');
+        foreach (self::m7Rows() as $key => [$package, $english]) {
+            if (!in_array($package, self::M7_PACKAGES, true)) {
+                continue;
+            }
+            self::assertSame($english, $strings[$key] ?? null, $key . ' has the text of M7 spec section 11.3.');
+            self::assertArrayHasKey($key, $app, $key . ' is produced by Core\App.');
+        }
     }
 
     /** @return list<string> problem keys listed in `docs/specs/M5-forms.md` section 4.3 (section 10 refers to it) */

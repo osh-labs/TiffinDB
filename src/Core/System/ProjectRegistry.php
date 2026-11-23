@@ -52,7 +52,20 @@ final class ProjectRegistry
         $this->system->db()->run('UPDATE projects SET state = ? WHERE id = ?', [ProjectRecord::STATE_ACTIVE, $id]);
     }
 
-    /** Only used to undo a failed create. */
+    /**
+     * Sets a project's state (M7 spec section 6.2: `active` to `deleting`,
+     * and back when a deletion cannot go on).
+     */
+    public function setState(int $id, string $state): void
+    {
+        $this->system->requireTransaction();
+        if (!in_array($state, ProjectRecord::STATES, true)) {
+            throw new \InvalidArgumentException('Unknown project state.');
+        }
+        $this->system->db()->run('UPDATE projects SET state = ? WHERE id = ?', [$state, $id]);
+    }
+
+    /** Removes the row: to undo a failed create, and to finish a deletion (grants cascade, audit rows keep a null project). */
     public function remove(int $id): void
     {
         $this->system->requireTransaction();
@@ -66,6 +79,14 @@ final class ProjectRegistry
             return null;
         }
         $row = $this->system->db()->one('SELECT ' . self::COLUMNS . ' FROM projects WHERE key = ?', [$key]);
+
+        return $row === null ? null : self::record($row);
+    }
+
+    /** The project with this id in any state, or null. */
+    public function byId(int $id): ?ProjectRecord
+    {
+        $row = $this->system->db()->one('SELECT ' . self::COLUMNS . ' FROM projects WHERE id = ?', [$id]);
 
         return $row === null ? null : self::record($row);
     }
@@ -134,6 +155,23 @@ final class ProjectRegistry
         $rows = $this->system->db()->all(
             'SELECT ' . self::COLUMNS . ' FROM projects WHERE state = ? AND created_at < ? ORDER BY id',
             [ProjectRecord::STATE_CREATING, $before],
+        );
+
+        return array_map(self::record(...), $rows);
+    }
+
+    /**
+     * Projects in state 'deleting', by id: deletions not yet finished
+     * (M7 spec section 6.2, P238). Read-only; a caller that acts on a row
+     * checks it again inside its own write() transaction.
+     *
+     * @return list<ProjectRecord>
+     */
+    public function deleting(): array
+    {
+        $rows = $this->system->db()->all(
+            'SELECT ' . self::COLUMNS . ' FROM projects WHERE state = ? ORDER BY id',
+            [ProjectRecord::STATE_DELETING],
         );
 
         return array_map(self::record(...), $rows);

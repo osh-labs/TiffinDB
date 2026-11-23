@@ -91,22 +91,77 @@ final class AuditLog
                FROM audit_log ORDER BY at DESC, id DESC LIMIT ? OFFSET ?',
             [$limit, $offset],
         );
-        $entries = [];
-        foreach ($rows as $row) {
-            $detail = json_decode((string) $row['detail'], true);
-            $entries[] = new AuditEntry(
-                (int) $row['id'],
-                (string) $row['at'],
-                $row['actor_user_id'] === null ? null : (int) $row['actor_user_id'],
-                (string) $row['action'],
-                $row['project_id'] === null ? null : (int) $row['project_id'],
-                $row['target_kind'] === null ? null : (string) $row['target_kind'],
-                $row['target_key'] === null ? null : (string) $row['target_key'],
-                is_array($detail) ? $detail : [],
-            );
-        }
+        return array_map(self::entry(...), $rows);
+    }
 
-        return $entries;
+    /**
+     * Entries matching the query, newest first (`at DESC, id DESC`, as
+     * recent). The statement is one literal: each filter is a bound pair
+     * `(? IS NULL OR column = ?)` that is off when its value is null, and
+     * deletedProjects adds `project_id IS NULL AND action = 'project.deleted'`
+     * (M7 spec sections 2.2 and 7.2). No text from a request reaches SQL.
+     *
+     * @return list<AuditEntry>
+     */
+    public function search(AuditQuery $q, int $limit, int $offset): array
+    {
+        if ($limit < 0 || $offset < 0) {
+            throw new \InvalidArgumentException('Limit and offset must be 0 or more.');
+        }
+        $rows = $this->system->db()->all(
+            'SELECT id, at, actor_user_id, action, project_id, target_kind, target_key, detail
+               FROM audit_log
+              WHERE (? IS NULL OR actor_user_id = ?)
+                AND (? IS NULL OR project_id = ?)
+                AND (? IS NULL OR action = ?)
+                AND (? = 0 OR (project_id IS NULL AND action = ?))
+              ORDER BY at DESC, id DESC LIMIT ? OFFSET ?',
+            [...self::filters($q), $limit, $offset],
+        );
+
+        return array_map(self::entry(...), $rows);
+    }
+
+    /** How many entries match the query. */
+    public function count(AuditQuery $q): int
+    {
+        return (int) $this->system->db()->value(
+            'SELECT COUNT(*)
+               FROM audit_log
+              WHERE (? IS NULL OR actor_user_id = ?)
+                AND (? IS NULL OR project_id = ?)
+                AND (? IS NULL OR action = ?)
+                AND (? = 0 OR (project_id IS NULL AND action = ?))',
+            self::filters($q),
+        );
+    }
+
+    /** @return list<int|string|null> the bound values of the filter part, in order */
+    private static function filters(AuditQuery $q): array
+    {
+        return [
+            $q->actorUserId, $q->actorUserId,
+            $q->projectId, $q->projectId,
+            $q->action, $q->action,
+            $q->deletedProjects ? 1 : 0, AuditAction::PROJECT_DELETED,
+        ];
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function entry(array $row): AuditEntry
+    {
+        $detail = json_decode((string) $row['detail'], true);
+
+        return new AuditEntry(
+            (int) $row['id'],
+            (string) $row['at'],
+            $row['actor_user_id'] === null ? null : (int) $row['actor_user_id'],
+            (string) $row['action'],
+            $row['project_id'] === null ? null : (int) $row['project_id'],
+            $row['target_kind'] === null ? null : (string) $row['target_kind'],
+            $row['target_key'] === null ? null : (string) $row['target_key'],
+            is_array($detail) ? $detail : [],
+        );
     }
 
     /** @param array<mixed> $detail */

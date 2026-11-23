@@ -165,6 +165,15 @@ final class AuditTrailTest extends AppTestCase
         self::assertTrue($forms->reset($this->admin, $p, $plants->key));
         $expect(AuditAction::FORM_RESET, $admin, $project->id, 'form', $formKey, ['table' => $plants->key]);
 
+        // M7 (spec section 11.2): file names and counts; project.deleted alone keeps a name (the project's).
+        $restored = $this->ops->snapshots()->restore($this->admin, $p, substr($snapshot->file, 0, -strlen('.tiffin')));
+        $expect(AuditAction::SNAPSHOT_RESTORED, $admin, $project->id, 'snapshot', $snapshot->file, [
+            'pre_restore' => $restored->preRestore->file, 'files_missing' => $restored->filesMissing, 'files_removed' => $restored->filesRemoved, 'from_version' => 4,
+        ]);
+        $shed = $projects->create($this->admin, 'Example Shed', null);
+        $projects->delete($this->admin, $shed->key, 'example shed', 0);
+        $expect(AuditAction::PROJECT_DELETED, $admin, null, 'project', $shed->key, ['name' => 'Example Shed', 'records' => 0, 'trashed' => 0, 'files' => 0, 'snapshots' => 0]);
+
         $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
         foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987', 'Synthetic form note'] as $text) {
             self::assertStringNotContainsString($text, $all);

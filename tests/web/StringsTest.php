@@ -26,6 +26,9 @@ use UnexpectedValueException;
 #[CoversClass(Strings::class)]
 final class StringsTest extends TestCase
 {
+    /** The M7 packages whose problem rows (M7 spec section 11.3) are built; each adds its own. */
+    private const M7_PROBLEM_PACKAGES = ['WP1'];
+
     private static function strings(): Strings
     {
         return new Strings(__DIR__ . '/fixtures/strings/en.php');
@@ -322,8 +325,19 @@ final class StringsTest extends TestCase
         self::assertCount(30, $m5, 'The M5 specification table was read.');
         self::assertSame([], array_intersect_key($m1 + $m2 + $m3 + $m4, $m5), 'The M5 table adds keys only.');
 
+        // M7 spec section 11.3 has a package column: the rows of the packages built so far.
+        $m7 = [];
+        foreach (self::problemRows('docs/specs/M7-release.md', "\n### 11.3 Message keys produced by the core", "\n## 12. ") as $key => $cells) {
+            self::assertSame(1, preg_match('/^(WP\d+) \| (.+) \|\s*$/', $cells, $cell), $key);
+            if (in_array($cell[1], self::M7_PROBLEM_PACKAGES, true)) {
+                $m7[$key] = $cell[2];
+            }
+        }
+        self::assertCount(4, $m7, 'The M7 specification table was read.');
+        self::assertSame([], array_intersect_key($m1 + $m2 + $m3 + $m4 + $m5, $m7), 'The M7 table adds keys only.');
+
         $problems = require RepoFiles::path('strings/en/problems.php');
-        self::assertSame($m1 + $m2 + $m3 + $m4 + $m5, $problems);
+        self::assertSame($m1 + $m2 + $m3 + $m4 + $m5 + $m7, $problems);
     }
 
     /**

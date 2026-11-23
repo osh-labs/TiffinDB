@@ -569,10 +569,127 @@ final class FormatUpgradeTest extends TestCase
         self::assertNull($this->db->value('SELECT 1 FROM "sqlite_master" WHERE "name" LIKE \'\\_tiffin\\_collections%\' ESCAPE \'\\\''));
         self::assertCount(1, $this->snapshots->list($this->folder));
 
-        // Opened again normally, the step runs once more (after a new snapshot) and completes.
+        // Opened again normally, the step runs once more and completes; the earlier
+        // format-upgrade snapshot already holds this state, so no new one is taken (P183).
         $this->db->close();
         $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
         self::assertSame(4, $this->db->value('PRAGMA user_version'));
-        self::assertCount(2, $this->snapshots->list($this->folder));
+        self::assertCount(1, $this->snapshots->list($this->folder));
+    }
+
+    // ------------------------------------------------------------ T-ADM-21 (P183, M7 spec section 8)
+
+    /** A step 4 that always fails after doing its work. */
+    private static function failingStepFour(): FormatMigrations
+    {
+        return new FormatMigrations([
+            4 => static function (Database $db): void {
+                foreach (FormatMigrations::STEPS[4] as $statement) {
+                    $db->run($statement);
+                }
+                $db->run('INSERT INTO "_tiffin_missing" VALUES (1)');
+            },
+        ]);
+    }
+
+    private function openFailing(): void
+    {
+        try {
+            ProjectFile::open($this->path(), self::PROJECT, $this->snapshots, self::failingStepFour());
+            self::fail('The failing step was not reported.');
+        } catch (PDOException) {
+            $this->addToAssertionCount(1);
+        }
+    }
+
+    /** @return array<string, int> snapshots by reason */
+    private function reasons(): array
+    {
+        $count = [];
+        foreach ($this->snapshots->list($this->folder) as $snapshot) {
+            $count[$snapshot->reason->value] = ($count[$snapshot->reason->value] ?? 0) + 1;
+        }
+        ksort($count);
+
+        return $count;
+    }
+
+    public function testRepeatedFailedUpgradesTakeOneSnapshotAndPruneNothing(): void
+    {
+        $this->buildVersionThree();
+        $db = Sqlite::open($this->path());
+        $manual = $this->snapshots->take($db, $this->folder, SnapshotReason::Manual);
+        $older = [];
+        for ($i = 0; $i < 19; $i++) {
+            $this->clock->advance(60);
+            $older[] = $this->snapshots->take($db, $this->folder, SnapshotReason::FieldDelete)->file;
+        }
+        $db->close();
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $this->clock->advance(3600);
+            $this->openFailing();
+        }
+
+        self::assertSame(['field-delete' => 19, 'format-upgrade' => 1, 'manual' => 1], $this->reasons());
+        $names = array_map(static fn ($s): string => $s->file, $this->snapshots->list($this->folder));
+        foreach ([$manual->file, ...$older] as $kept) {
+            self::assertContains($kept, $names, 'Every older snapshot survives.');
+        }
+        $upgrade = $this->snapshots->list($this->folder)[0];
+        self::assertSame(SnapshotReason::FormatUpgrade, $upgrade->reason);
+        $copy = Sqlite::openUntrusted($this->folder . '/snapshots/' . $upgrade->file);
+        self::assertSame(3, $copy->value('PRAGMA user_version'), 'The one snapshot holds the version 3 state.');
+        $copy->close();
+
+        // A normal open finally upgrades, still without another snapshot.
+        $this->db = ProjectFile::open($this->path(), self::PROJECT, $this->snapshots);
+        self::assertSame(4, $this->db->value('PRAGMA user_version'));
+        self::assertSame(['field-delete' => 19, 'format-upgrade' => 1, 'manual' => 1], $this->reasons());
+    }
+
+    public function testAnUpgradeSnapshotOfAnotherVersionKeyOrADamagedOneDoesNotCount(): void
+    {
+        $this->buildVersionThree();
+        $this->openFailing();
+        $first = $this->snapshots->list($this->folder)[0];
+        self::assertSame(SnapshotReason::FormatUpgrade, $first->reason);
+        $path = $this->folder . '/snapshots/' . $first->file;
+
+        // Another starting version.
+        $pdo = new \PDO('sqlite:' . $path);
+        $pdo->exec('PRAGMA user_version = 2');
+        $pdo = null;
+        $this->clock->advance(60);
+        $this->openFailing();
+        self::assertSame(['format-upgrade' => 2], $this->reasons());
+
+        // Another project's key.
+        $newest = $this->folder . '/snapshots/' . $this->snapshots->list($this->folder)[0]->file;
+        $pdo = new \PDO('sqlite:' . $newest);
+        $pdo->exec('UPDATE "_tiffin_meta" SET "value" = \'b7xk2mq4nz3p\' WHERE "key" = \'project_key\'');
+        $pdo = null;
+        $this->clock->advance(60);
+        $this->openFailing();
+        self::assertSame(['format-upgrade' => 3], $this->reasons());
+
+        // A damaged file.
+        $newest = $this->folder . '/snapshots/' . $this->snapshots->list($this->folder)[0]->file;
+        file_put_contents($newest, 'synthetic damage');
+        $this->clock->advance(60);
+        $this->openFailing();
+        self::assertSame(['format-upgrade' => 4], $this->reasons());
+
+        // A newer snapshot of another reason: the next attempt takes its own.
+        $db = Sqlite::open($this->path());
+        $this->clock->advance(60);
+        $this->snapshots->take($db, $this->folder, SnapshotReason::Manual);
+        $db->close();
+        $this->clock->advance(60);
+        $this->openFailing();
+        self::assertSame(['format-upgrade' => 5, 'manual' => 1], $this->reasons());
+        $this->clock->advance(60);
+        $this->openFailing();
+        self::assertSame(['format-upgrade' => 5, 'manual' => 1], $this->reasons(), 'And then no more.');
     }
 }

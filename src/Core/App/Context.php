@@ -301,13 +301,20 @@ final class Context
     }
 
     /**
-     * The staging sweep (M3) and, for an opened and authorised project,
-     * the orphan-file part of the attachment sweep (P175, ADR 0018
-     * decision 6). A failure of the file sweep is logged without a path
-     * or hash and never stops the caller: the next sweep tries again.
+     * Finishing interrupted project creations and deletions
+     * (ProjectOperations::clearAbandoned, P238), the staging sweep (M3),
+     * and, for an opened and authorised project, the orphan-file part of
+     * the attachment sweep (P175, ADR 0018 decision 6). Called outside any
+     * write. A failure of the first or the last is logged without a key,
+     * path, or hash and never stops the caller: the next sweep tries again.
      */
     public function sweepStaging(?ProjectRecord $project = null, ?Database $db = null): void
     {
+        try {
+            (new ProjectOperations($this))->clearAbandoned();
+        } catch (\Throwable $error) {
+            error_log('TiffinDB: finishing interrupted project changes failed (' . $error::class . ').');
+        }
         $this->staging()->sweep();
         if ($project === null || $db === null) {
             return;

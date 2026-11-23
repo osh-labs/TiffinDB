@@ -119,6 +119,31 @@ final class Snapshots
         return $found;
     }
 
+    /**
+     * The snapshot with exactly this file name, when list() would list it;
+     * else null. Nothing but a name that matches NAME is looked up, so a
+     * path, `..`, or a name with an unknown reason is never found.
+     */
+    public function find(string $projectFolder, string $file): ?SnapshotInfo
+    {
+        if (preg_match(self::NAME, $file) !== 1) {
+            return null;
+        }
+        foreach ($this->list($projectFolder) as $snapshot) {
+            if ($snapshot->file === $file) {
+                return $snapshot;
+            }
+        }
+
+        return null;
+    }
+
+    /** The absolute path of a snapshot file in the project folder. */
+    public static function path(string $projectFolder, SnapshotInfo $snapshot): string
+    {
+        return self::folder($projectFolder) . '/' . $snapshot->file;
+    }
+
     private static function size(string $path): int
     {
         clearstatcache(true, $path);

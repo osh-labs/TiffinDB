@@ -19,7 +19,7 @@ use TiffinDB\Tests\Support\FixedClock;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 
-/** T-SYS-4: the project registry. */
+/** T-SYS-4: the project registry, with the M7 state `deleting` (M7 spec section 6.2). */
 #[CoversClass(ProjectRegistry::class)]
 #[CoversClass(ProjectRecord::class)]
 final class ProjectRegistryTest extends TestCase
@@ -158,5 +158,56 @@ final class ProjectRegistryTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->add('Not-A-Key', 'Recipes');
+    }
+
+    public function testSetStateByIdAndDeleting(): void
+    {
+        $recipes = $this->add('recipesaaaaa', 'Recipes');
+        $garden = $this->add('gardenaaaaaa', 'Garden');
+        $this->grant($recipes, $this->member);
+        $this->assertSame([], $this->registry->deleting());
+
+        $this->system->db()->write(fn () => $this->registry->setState($recipes->id, ProjectRecord::STATE_DELETING));
+        $deleting = $this->registry->byKey('recipesaaaaa');
+        $this->assertSame('deleting', $deleting?->state);
+        $this->assertFalse($deleting?->isActive());
+        $this->assertSame(['recipesaaaaa'], self::keys($this->registry->deleting()));
+        $this->assertSame(['gardenaaaaaa'], self::keys($this->registry->all()), 'No list shows a project being deleted.');
+        $this->assertSame([], $this->registry->forMember($this->member));
+        $this->assertTrue($this->registry->nameTaken('recipes'), 'Its name stays taken until the row goes.');
+        $this->assertSame([], $this->registry->abandoned('2099-01-01T00:00:00Z'), 'A deletion is not an abandoned creation.');
+
+        $this->assertSame('Recipes', $this->registry->byId($recipes->id)?->name);
+        $this->assertSame('deleting', $this->registry->byId($recipes->id)?->state);
+        $this->assertSame('Garden', $this->registry->byId($garden->id)?->name);
+        $this->assertNull($this->registry->byId(999));
+
+        $this->system->db()->write(fn () => $this->registry->setState($recipes->id, ProjectRecord::STATE_ACTIVE));
+        $this->assertSame(['gardenaaaaaa', 'recipesaaaaa'], self::keys($this->registry->all()));
+        $this->assertSame(['recipesaaaaa'], self::keys($this->registry->forMember($this->member)));
+
+        $this->system->db()->write(fn () => $this->registry->remove($recipes->id));
+        $this->assertNull($this->registry->byId($recipes->id));
+        $this->assertSame(0, (int) $this->system->db()->value('SELECT COUNT(*) FROM project_grants WHERE project_id = ?', [$recipes->id]), 'Grants cascade.');
+    }
+
+    public function testSetStateRefusesAnUnknownStateAndNeedsATransaction(): void
+    {
+        $record = $this->add('recipesaaaaa', 'Recipes');
+        try {
+            $this->system->db()->write(fn () => $this->registry->setState($record->id, 'gone'));
+            $this->fail('An unknown state was stored.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame('active', $this->registry->byKey('recipesaaaaa')?->state);
+        }
+        $this->expectException(LogicException::class);
+        $this->registry->setState($record->id, ProjectRecord::STATE_DELETING);
+    }
+
+    public function testARecordRefusesAnUnknownState(): void
+    {
+        $this->assertSame(['creating', 'active', 'deleting'], ProjectRecord::STATES);
+        $this->expectException(\UnexpectedValueException::class);
+        new ProjectRecord(1, 'recipesaaaaa', 'Recipes', 'gone', self::NOW, null);
     }
 }

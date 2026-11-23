@@ -454,4 +454,103 @@ final class FsTest extends TestCase
         self::assertNull(Fs::freeBytes(''));
         self::assertNull(Fs::freeBytes($this->temp->path() . "\0"));
     }
+
+    // ------------------------------------------------------------ copyIn and replace (M7 spec section 5.3)
+
+    public function testCopyInCopiesARegularFileToANewFileWithMode0640(): void
+    {
+        $from = $this->temp->path('snapshot.tiffin');
+        file_put_contents($from, 'synthetic snapshot');
+        chmod($from, 0600);
+        $to = $this->temp->path('candidate.tiffin');
+        Fs::copyIn($from, $to);
+        self::assertSame('synthetic snapshot', file_get_contents($to));
+        clearstatcache();
+        self::assertSame(Fs::FILE_MODE, fileperms($to) & 0777);
+        self::assertSame('synthetic snapshot', file_get_contents($from), 'The source stays.');
+    }
+
+    public function testCopyInRefusesLinksFoldersMissingSourcesAndExistingTargets(): void
+    {
+        $real = $this->temp->path('real.tiffin');
+        file_put_contents($real, 'synthetic');
+        $link = $this->temp->path('link.tiffin');
+        $this->symlinkOrSkip($real, $link);
+        mkdir($this->temp->path('folder'));
+        $taken = $this->temp->path('taken.tiffin');
+        file_put_contents($taken, 'keep');
+        $dangling = $this->temp->path('dangling.tiffin');
+        symlink($this->temp->path('nowhere'), $dangling);
+
+        $cases = [
+            'a link as source' => [$link, $this->temp->path('a')],
+            'a folder as source' => [$this->temp->path('folder'), $this->temp->path('b')],
+            'a missing source' => [$this->temp->path('missing'), $this->temp->path('c')],
+            'an existing target' => [$real, $taken],
+            'a dangling link as target' => [$real, $dangling],
+        ];
+        foreach ($cases as $label => [$from, $to]) {
+            try {
+                Fs::copyIn($from, $to);
+                self::fail($label . ' was copied.');
+            } catch (RuntimeException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame('keep', file_get_contents($taken));
+        self::assertFalse(file_exists($this->temp->path('nowhere')), 'Nothing is written through the dangling link.');
+        foreach (['a', 'b', 'c'] as $name) {
+            self::assertFalse(Fs::exists($this->temp->path($name)), $name);
+        }
+    }
+
+    public function testReplaceRenamesOverAnExistingFileInTheSameFolder(): void
+    {
+        $from = $this->temp->path('project.tiffin.restoring');
+        $to = $this->temp->path('project.tiffin');
+        file_put_contents($from, 'new');
+        file_put_contents($to, 'old');
+        Fs::replace($from, $to);
+        self::assertSame('new', file_get_contents($to));
+        self::assertFalse(Fs::exists($from));
+    }
+
+    public function testReplaceRefusesLinksFoldersMissingFilesAndOtherFolders(): void
+    {
+        $outside = $this->temp->path('outside');
+        mkdir($outside);
+        file_put_contents($outside . '/target', 'outside');
+        $from = $this->temp->path('from');
+        file_put_contents($from, 'new');
+        $to = $this->temp->path('to');
+        file_put_contents($to, 'old');
+        $linkTo = $this->temp->path('link-to');
+        $this->symlinkOrSkip($outside . '/target', $linkTo);
+        $linkFrom = $this->temp->path('link-from');
+        symlink($from, $linkFrom);
+        mkdir($this->temp->path('dir'));
+
+        $cases = [
+            'a link as target' => [$from, $linkTo],
+            'a link as source' => [$linkFrom, $to],
+            'a folder as target' => [$from, $this->temp->path('dir')],
+            'a missing target' => [$from, $this->temp->path('missing')],
+            'a missing source' => [$this->temp->path('missing'), $to],
+            'another folder' => [$from, $outside . '/target'],
+            'the same path' => [$to, $to],
+        ];
+        foreach ($cases as $label => [$a, $b]) {
+            try {
+                Fs::replace($a, $b);
+                self::fail($label . ' was replaced.');
+            } catch (RuntimeException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame('outside', file_get_contents($outside . '/target'));
+        self::assertTrue(is_link($linkTo));
+        self::assertSame('old', file_get_contents($to));
+        self::assertSame('new', file_get_contents($from));
+        self::assertDirectoryExists($this->temp->path('dir'));
+    }
 }

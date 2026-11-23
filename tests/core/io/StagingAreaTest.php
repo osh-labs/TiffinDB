@@ -15,10 +15,14 @@ use TiffinDB\Core\Storage\DataDirectory;
 use TiffinDB\Core\Storage\Fs;
 use TiffinDB\Core\Storage\Keys;
 use TiffinDB\Tests\Support\FixedClock;
+use TiffinDB\Tests\Support\LockHolder;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Support\TempDir;
 
-/** T-IO-2 (StagingArea part; the Fs part is tests/core/storage/FsTreeTest.php), T-STO-15 (kind `uploads`). */
+/**
+ * T-IO-2 (StagingArea part; the Fs part is tests/core/storage/FsTreeTest.php), T-STO-15 (kind `uploads`),
+ * and the M7 kinds `restores` and `deleted` (M7 spec sections 5.3 and 6.2; T-ADM-18, sweep part).
+ */
 #[CoversClass(StagingArea::class)]
 final class StagingAreaTest extends TestCase
 {
@@ -141,7 +145,7 @@ final class StagingAreaTest extends TestCase
         }
         self::assertNotNull($this->staging->folder('imports', $hourImport));
         self::assertDirectoryExists($this->temp->path('staging/imports/not-a-key'), 'Entries that are not job keys are left alone.');
-        self::assertSame(['imports' => 86400, 'exports' => 3600, 'archives' => 3600, 'uploads' => 3600], StagingArea::MAX_AGE);
+        self::assertSame(['imports' => 86400, 'exports' => 3600, 'archives' => 3600, 'uploads' => 3600, 'restores' => 3600, 'deleted' => 3600], StagingArea::MAX_AGE);
 
         // Sweeping a data folder with no staging area does nothing.
         $empty = TempDir::create();
@@ -179,5 +183,103 @@ final class StagingAreaTest extends TestCase
         file_put_contents($secondPath . '/upload.bin', 'synthetic');
         $this->staging->remove('uploads', $second);
         self::assertFalse(Fs::exists($secondPath));
+    }
+
+    public function testReserveNamesAFreePathWithoutCreatingIt(): void
+    {
+        $path = $this->staging->reserve('deleted', 'q7mzk2wbx4ae');
+        self::assertSame($this->temp->path('staging/deleted/q7mzk2wbx4ae'), $path);
+        self::assertFalse(Fs::exists($path));
+        self::assertTrue(Fs::isDir($this->temp->path('staging/deleted')));
+
+        mkdir($path);
+        try {
+            $this->staging->reserve('deleted', 'q7mzk2wbx4ae');
+            self::fail('An existing entry was reserved again.');
+        } catch (\RuntimeException) {
+            $this->addToAssertionCount(1);
+        }
+        symlink($this->temp->path('nothing-here'), $this->temp->path('staging/deleted/b7xk2mq4nz3p'));
+        $this->expectException(\RuntimeException::class);
+        $this->staging->reserve('deleted', 'b7xk2mq4nz3p');
+    }
+
+    public function testReserveRefusesBadKeysKindsAndALinkedKindFolder(): void
+    {
+        foreach (['../x', '', 'ABCDEFGHIJKL', "q7mzk2wbx4a\0"] as $bad) {
+            try {
+                $this->staging->reserve('deleted', $bad);
+                self::fail('A bad key was reserved: ' . $bad);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        try {
+            $this->staging->reserve('projects', 'q7mzk2wbx4ae');
+            self::fail('An unknown kind was reserved.');
+        } catch (\InvalidArgumentException) {
+            $this->addToAssertionCount(1);
+        }
+        $outside = $this->temp->path('outside');
+        mkdir($outside);
+        mkdir($this->temp->path('staging'));
+        symlink($outside, $this->temp->path('staging/deleted'));
+        try {
+            $this->staging->reserve('deleted', 'q7mzk2wbx4ae');
+            self::fail('A linked kind folder was used.');
+        } catch (\RuntimeException) {
+            self::assertSame(['.', '..'], scandir($outside));
+        }
+    }
+
+    public function testRestoresJobsAreMadeLikeImports(): void
+    {
+        [$key, $path] = $this->staging->create('restores');
+        self::assertSame($this->temp->path('staging/restores/' . $key), $path);
+        self::assertTrue(Fs::isFile($path . '/job.lock'));
+        $this->staging->remove('restores', $key);
+        self::assertFalse(Fs::exists($path));
+    }
+
+    public function testADeletedEntryWhoseLockIsHeldIsKeptUntilReleased(): void
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $entry = $this->staging->reserve('deleted', 'q7mzk2wbx4ae');
+        mkdir($entry . '/attachments/9f', 0750, true);
+        file_put_contents($entry . '/attachments/9f/synthetic', 'synthetic');
+        file_put_contents($entry . '/project.lock', '');
+        $holder = LockHolder::start('flock', $entry . '/project.lock');
+        try {
+            self::assertSame('held', $holder->answer);
+            $this->staging->sweep();
+            self::assertDirectoryExists($entry, 'A deletion still holds the lock: the entry is kept, however young.');
+            touch($entry, $now - 999999);
+            $this->staging->sweep();
+            self::assertDirectoryExists($entry, 'Nor however old.');
+        } finally {
+            $holder->stop();
+        }
+        $this->staging->sweep();
+        self::assertFalse(Fs::exists($entry), 'Once the lock is released the entry goes at once, whatever its age.');
+    }
+
+    public function testADeletedEntryWithoutALockGoesByItsAge(): void
+    {
+        $now = $this->clock->now()->getTimestamp();
+        $young = $this->staging->reserve('deleted', 'q7mzk2wbx4ae');
+        mkdir($young . '/snapshots', 0750, true);
+        touch($young, $now - 60);
+        $old = $this->staging->reserve('deleted', 'b7xk2mq4nz3p');
+        mkdir($old . '/snapshots', 0750, true);
+        $outside = $this->temp->path('outside');
+        mkdir($outside);
+        file_put_contents($outside . '/keep', 'synthetic');
+        symlink($outside, $old . '/link');
+        touch($old, $now - StagingArea::MAX_AGE['deleted'] - 1);
+
+        $this->staging->sweep();
+        self::assertDirectoryExists($young, 'A removal may still be running.');
+        self::assertFalse(Fs::exists($old));
+        self::assertFileExists($outside . '/keep', 'A link inside is removed, never followed.');
     }
 }

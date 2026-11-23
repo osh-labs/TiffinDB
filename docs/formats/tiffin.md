@@ -14,6 +14,7 @@ projects/
     project.tiffin                      the database: a SQLite 3 file
     project.tiffin-wal                  present only while the project is in use (SQLite WAL mode)
     project.tiffin-shm                  present only while the project is in use
+    project.lock                        an empty file used as a lock (see below)
     attachments/
       9f/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
     snapshots/
@@ -23,6 +24,7 @@ projects/
 - `project.tiffin` is a standard SQLite 3 database. Open it with any SQLite tool (for example `sqlite3 project.tiffin`). Open it read-only, or work on a copy, unless you know TiffinDB is not running.
 - `attachments/` holds files added to records, named by the SHA-256 of their content (section 8).
 - `snapshots/` holds complete, self-contained copies of `project.tiffin` taken before risky changes (section 10).
+- `project.lock` is an empty file TiffinDB uses to keep other requests out while it restores or deletes the project; safe to delete when nobody is using TiffinDB.
 - Users, passwords, sharing, and the audit log are **not** in the project folder. They are in the installation's system database. A project folder can be copied, zipped, or handed to someone else without carrying anyone's account.
 
 ## 2. Identifying the file
@@ -465,11 +467,12 @@ File name: `<UTC time as YYYYMMDDTHHMMSSZ>-<reason>-<4 random characters from th
 | `field-options` | Changing field options in a way that clears or rewrites stored values |
 | `empty-trash` | Emptying the trash |
 | `import` | Saving the rows of an import into the project (version 3; the snapshot is taken by the application before the import transaction, so older versions of TiffinDB simply never write this reason) |
+| `pre-restore` | Restoring a snapshot (a copy of the project as it was just before) |
 | `manual` | An Admin asked for one |
 
 The 20 newest snapshots other than `manual` ones are kept; older ones are deleted when a new one is taken. Manual snapshots are kept until removed by hand.
 
-**Restoring by hand.** TiffinDB does not yet restore snapshots itself. With nobody using TiffinDB: rename `project.tiffin` (to keep it), copy the chosen snapshot to `project.tiffin` in the same folder, and delete `project.tiffin-wal` and `project.tiffin-shm` if they exist (they belong to the old file). If the snapshot has an older format version, TiffinDB upgrades it the next time the project is opened.
+**Restoring by hand.** An Admin can restore a snapshot in TiffinDB (Project settings, Snapshots). To restore by hand instead, with nobody using TiffinDB: rename `project.tiffin` (to keep it), copy the chosen snapshot to `project.tiffin` in the same folder, and delete `project.tiffin-wal` and `project.tiffin-shm` if they exist (they belong to the old file). If the snapshot has an older format version, TiffinDB upgrades it the next time the project is opened.
 
 ## 11. Versions and upgrades
 

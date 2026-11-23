@@ -11,6 +11,7 @@ namespace TiffinDB\Tests\Core\Io\Archive;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use TiffinDB\Core\App\ListRequest;
+use TiffinDB\Core\Forms\FormFormat;
 use TiffinDB\Core\Forms\FormGenerator;
 use TiffinDB\Core\Forms\FormSerializer;
 use TiffinDB\Core\Io\Archive\ProjectRebuilder;
@@ -126,6 +127,39 @@ final class RebuildFormsTest extends TestCase
         } finally {
             $core->remove();
         }
+    }
+
+    /**
+     * P243 (M5 exit audit F-1): an accepted archive form of corpus Z9 shape
+     * (262,144 bytes whose canonical text is about six times longer) with a
+     * slot for a missing field is kept as the archive holds it (P209): the
+     * regenerated text would be over the limit, so it is not stored.
+     */
+    public function testAnArchiveFormWhoseRegeneratedTextIsOverTheLimitIsKeptAsGiven(): void
+    {
+        $roomsDefault = (string) $this->db->value('SELECT "key" FROM "_tiffin_forms" WHERE "table_key" = ? AND "is_default" = 1', [$this->rooms->key]);
+        $head = '<div data-tiffin-form="1"><div data-tiffin-field="' . $this->roomName->key . '"></div><div data-tiffin-field="' . self::GONE_KEY . '"></div><p>';
+        $tail = '</p></div>';
+        $text = $head . str_repeat('"', FormFormat::MAX_BYTES - strlen($head) - strlen($tail)) . $tail;
+        self::assertSame(FormFormat::MAX_BYTES, strlen($text));
+        $copy = $this->copyOfSource();
+        self::rawEdit($copy, "UPDATE _tiffin_forms SET html = '" . $text . "', generated = 0 WHERE key = '" . $roomsDefault . "'");
+
+        $logFile = $this->jobFolder() . '/php-error.log';
+        $previous = ini_set('error_log', $logFile);
+        try {
+            [$report, $db] = $this->import($this->zipFor($copy));
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+
+        self::assertSame([0, 0], [$report->formsDropped, $report->formsExtended]);
+        $log = (string) file_get_contents($logFile);
+        self::assertStringContainsString('stored form not regenerated; reason=too-large; table_key=' . $this->rooms->key, $log);
+        self::assertStringNotContainsString('""', $log);
+        $stored = (string) $db->value('SELECT "html" FROM "_tiffin_forms" WHERE "key" = ?', [$roomsDefault]);
+        self::assertSame($text, $stored);
+        self::assertLessThanOrEqual(FormFormat::MAX_BYTES, max(array_map('intval', array_column($db->all('SELECT length(CAST("html" AS BLOB)) AS "n" FROM "_tiffin_forms"'), 'n'))));
     }
 
     public function testVersionOneFileGetsGeneratedForms(): void

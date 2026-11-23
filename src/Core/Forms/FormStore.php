@@ -175,7 +175,10 @@ final class FormStore
      * default form whose format is not 1 is left as it is. An edited form
      * loses the slots of keys that are not fields of its table and gains a
      * slot only for each field in $addedFieldKeys that no slot names, so a
-     * field a person hid stays hidden.
+     * field a person hid stays hidden. When the new text of a stored form
+     * would be longer than FormFormat::MAX_BYTES, nothing is written: the
+     * form keeps its stored text, and a log line names the table key and
+     * the reason only (P243).
      *
      * @param list<string> $tableKeys
      * @param list<string> $addedFieldKeys fields the change has just added
@@ -234,9 +237,16 @@ final class FormStore
             }
             $html = $this->serializer->serialize($adjusted);
         }
-        if ($html !== $stored->html) {
-            $this->db->run('UPDATE "_tiffin_forms" SET "html" = ?, "updated_at" = ? WHERE "key" = ?', [$html, $now, $stored->key]);
+        if ($html === $stored->html) {
+            return;
         }
+        if (strlen($html) > FormFormat::MAX_BYTES) {
+            // P243: a text over the limit of form format 1 is never stored; the form keeps its stored text.
+            error_log('TiffinDB: stored form not regenerated; reason=' . FormRejected::TOO_LARGE . '; table_key=' . $tableKey);
+
+            return;
+        }
+        $this->db->run('UPDATE "_tiffin_forms" SET "html" = ?, "updated_at" = ? WHERE "key" = ?', [$html, $now, $stored->key]);
     }
 
     /**

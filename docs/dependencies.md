@@ -20,6 +20,14 @@ Pinned exactly in `composer.json` `require`; there is no `composer.lock` (ADR 00
 
 OpenSpout's package metadata declares only `MIT`. Its README states that code up to and directly descending from upstream commit `cc42c1d` is under the Apache License 2.0, which is the second licence file; both files ship in the package directory, and no `NOTICE` file exists at this commit. The package requires no other packages. `zip` and `xmlreader` are installer requirements; `dom`, `filter`, and `libxml` are installer warnings, and without them the XLSX plugins report themselves unavailable (ADR 0016 decision 3).
 
+## Composer class loader (shipped)
+
+What ships from `vendor/` in the release archive (ADR 0021 decision 2; M7 release spec section 3.2): `vendor/autoload.php`, Composer's class loader in `vendor/composer/` except `installed.json` (it holds package authors' names and email addresses and nothing reads it at run time), and the folder of each package in the runtime table above, without its test, example, continuous-integration, and documentation folders; licence files always ship. The class loader is third-party code that Composer writes when `vendor/` is prepared; it is not a package, so T-DEP-1 and the release rule R6 do not treat it as one, and its licence column is headed differently so that the package checks skip this table. The release rule R7 (`tools/release/ReleaseRules.php`) requires a component for this row in `config/notices.json`.
+
+| Component | Version | Purpose | Licence (SPDX) | Licence file (SHA-256) | Verified from | Licence file shipped |
+|---|---|---|---|---|---|---|
+| Composer class loader | Written by the Composer that prepares `vendor/` (2.8.12 at the last check) | Loads TiffinDB's and OpenSpout's classes (PSR-4 map, no authoritative class map) | MIT | `LICENSE` `c8cce4b6b9729f264ffdf9296d505d63432497feeed1f586d1902b942197e024` | `vendor/composer/LICENSE` as written by Composer 2.8.12, 2026-11-23 | `vendor/composer/LICENSE` |
+
 ## Bundled font assets (shipped)
 
 Four families, upright only, weights 400 and 700, WOFF2. Inter, Atkinson Hyperlegible, and Lexend are Latin subsets obtained through an npm package channel used only as a download channel (it is not a project dependency). Source Serif 4 is the complete, unmodified upstream file from the copyright holder's repository. The font files are never modified by the project.

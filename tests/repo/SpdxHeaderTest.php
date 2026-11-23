@@ -17,6 +17,9 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 use SplFileInfo;
 use TiffinDB\Tests\Support\RepoFiles;
+use TiffinDB\Tools\Release\ReleaseRules;
+
+require_once __DIR__ . '/../../tools/release/ReleaseRules.php';
 
 /**
  * T-REPO-4: SPDX header convention (M0 spec section 13), closed-world.
@@ -33,34 +36,25 @@ use TiffinDB\Tests\Support\RepoFiles;
  * the `<meta charset>` line, so for HTML in that directory only the checked
  * rule is "starts with a doctype, header within the first six lines".
  * Every other HTML file must have the header immediately after the doctype.
+ *
+ * The rule itself and the exemption register are in
+ * tools/release/ReleaseRules.php (release rule R5), moved there unchanged so
+ * the release build and this test can never differ.
  */
 #[CoversNothing]
 final class SpdxHeaderTest extends TestCase
 {
     private const SPDX = 'SPDX-License-Identifier: AGPL-3.0-or-later';
     private const COPYRIGHT = 'Copyright (C) TiffinDB contributors';
-    private const WINDOW = 6;
-    private const HTML_RELAXED_DIRECTORY = 'docs/design/model-ui/canvas-source/';
 
     /**
-     * The register of exceptions: exactly the entries of spec section 13.
-     * Kinds: `path` is an exact repository path; `glob` is matched against
-     * the whole path (`*` does not cross `/`); `name` is matched against the
-     * file name in any directory.
+     * The register of exceptions. It lives in tools/release/ReleaseRules.php
+     * (release rule R5, M7 release spec section 3.5), so the build tool and
+     * this test apply the same rule; the pinned list below stays here.
      *
      * @var list<array{string, string, string}>
      */
-    public const EXEMPTIONS = [
-        ['path', 'composer.json', 'JSON has no comments; the licence is in its license field (T-REPO-2).'],
-        ['path', 'docs/design/model-ui/canvas-source/canvas.json', 'JSON has no comments; design canvas data.'],
-        ['glob', 'plugins/*/*/plugin.json', 'JSON has no comments and a plugin manifest allows no other members; the licence is in its licence member (M3 spec section 4.1).'],
-        ['name', '*.woff2', 'Binary third-party font; covered by the LICENSE.txt beside it and docs/dependencies.md.'],
-        ['glob', 'public/assets/fonts/*/LICENSE.txt', 'Third-party licence text, reproduced verbatim.'],
-        ['path', 'LICENSE', 'Canonical licence text; never edited.'],
-        ['name', '*.md', 'Documentation, not source; covered by the repository licence.'],
-        ['name', '.gitignore', 'Git control file.'],
-        ['name', '.gitattributes', 'Git control file.'],
-    ];
+    public const EXEMPTIONS = ReleaseRules::SPDX_EXEMPTIONS;
 
     private ?string $temp = null;
 
@@ -77,111 +71,19 @@ final class SpdxHeaderTest extends TestCase
     /** The header rule that applies to a path, or null when no rule applies. */
     public static function ruleFor(string $path): ?string
     {
-        $name = basename($path);
-        if ($name === '.htaccess') {
-            return 'htaccess';
-        }
-        $lower = strtolower($name);
-        if (str_ends_with($lower, '.xml.dist') || str_ends_with($lower, '.xml')) {
-            return 'xml';
-        }
-
-        return match (strtolower(pathinfo($name, PATHINFO_EXTENSION))) {
-            'php' => 'php',
-            'css' => 'css',
-            'js' => 'js',
-            'html' => 'html',
-            'svg' => 'svg',
-            'sh' => 'shell',
-            'yml', 'yaml' => 'yaml',
-            default => null,
-        };
+        return ReleaseRules::spdxRuleFor($path);
     }
 
     /** The exemption-register reason for a path, or null if it is not exempt. */
     public static function exemptionFor(string $path): ?string
     {
-        foreach (self::EXEMPTIONS as [$kind, $pattern, $reason]) {
-            $matches = match ($kind) {
-                'path' => $path === $pattern,
-                'glob' => fnmatch($pattern, $path, FNM_PATHNAME),
-                'name' => fnmatch($pattern, basename($path)),
-                default => throw new RuntimeException("Unknown exemption kind: {$kind}"),
-            };
-            if ($matches) {
-                return $reason;
-            }
-        }
-
-        return null;
+        return ReleaseRules::spdxExemptionFor($path);
     }
 
     /** Why a file breaks the convention, or null if it complies. */
     public static function problem(string $path, string $contents): ?string
     {
-        if (self::exemptionFor($path) !== null) {
-            return null;
-        }
-        $rule = self::ruleFor($path);
-        if ($rule === null) {
-            return 'no header rule and no exemption covers this file type (add a rule or an exemption with a reason)';
-        }
-
-        $lines = array_slice(preg_split('/\r\n|\n|\r/', $contents) ?: [], 0, self::WINDOW + 1);
-        $line = static fn (int $i): string => $lines[$i] ?? '';
-
-        if ($rule === 'php') {
-            $start = str_starts_with($line(0), '#!') ? 1 : 0;
-            if ($line($start) !== '<?php') {
-                return $start === 1
-                    ? 'the line after "#!" must be exactly "<?php"'
-                    : 'must start with a line that is exactly "<?php" (or "#!" then "<?php")';
-            }
-            $expected = ['/*', ' * ' . self::SPDX, ' * ' . self::COPYRIGHT];
-            foreach ($expected as $offset => $text) {
-                if ($line($start + 1 + $offset) !== $text) {
-                    return 'the block comment "/*", " * ' . self::SPDX . '", " * ' . self::COPYRIGHT
-                        . '" must follow "<?php" immediately';
-                }
-            }
-
-            return null;
-        }
-
-        $wrap = match ($rule) {
-            'css' => static fn (string $s): string => "/* {$s} */",
-            'js' => static fn (string $s): string => "// {$s}",
-            'html', 'svg', 'xml' => static fn (string $s): string => "<!-- {$s} -->",
-            'htaccess', 'shell', 'yaml' => static fn (string $s): string => "# {$s}",
-        };
-
-        $at = null;
-        for ($i = 0; $i + 1 < self::WINDOW; $i++) {
-            if ($line($i) === $wrap(self::SPDX) && $line($i + 1) === $wrap(self::COPYRIGHT)) {
-                $at = $i;
-                break;
-            }
-        }
-        if ($at === null) {
-            return 'the lines "' . $wrap(self::SPDX) . '" and "' . $wrap(self::COPYRIGHT)
-                . '" must appear, consecutively, within the first ' . self::WINDOW . ' lines';
-        }
-
-        $xmlDeclaration = str_starts_with($line(0), '<?xml');
-
-        return match ($rule) {
-            'css', 'js', 'htaccess', 'yaml' => $at === 0 ? null : 'the header must be the first two lines',
-            'svg' => ($at === 0 || ($at === 1 && $xmlDeclaration))
-                ? null
-                : 'the header must be the first two lines, or follow the XML declaration immediately',
-            'xml' => ($at === 1 && $xmlDeclaration) ? null : 'the header must follow the XML declaration immediately',
-            'shell' => ($at === 1 && str_starts_with($line(0), '#!')) ? null : 'the header must follow the "#!" line immediately',
-            'html' => match (true) {
-                preg_match('/^<!doctype html>$/i', $line(0)) !== 1 => 'the file must start with the doctype line',
-                $at === 1, str_starts_with($path, self::HTML_RELAXED_DIRECTORY) => null,
-                default => 'the header must follow the doctype line immediately',
-            },
-        };
+        return ReleaseRules::spdxProblem($path, $contents);
     }
 
     /**
@@ -243,6 +145,8 @@ final class SpdxHeaderTest extends TestCase
             'name:*.md',
             'name:.gitignore',
             'name:.gitattributes',
+            'path:config/notices.json',
+            'path:public/assets/app.webmanifest',
         ], $patterns);
         foreach (self::EXEMPTIONS as [, $pattern, $reason]) {
             self::assertNotSame('', trim($reason), "Exemption {$pattern} needs a reason.");

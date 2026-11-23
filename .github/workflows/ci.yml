@@ -49,7 +49,8 @@ jobs:
             exit 1
           fi
 
-      # The only step that uses the network. Lint and tests run offline.
+      # One of the two steps that use the network (the other prepares the
+      # release vendor/ below). Lint and tests run offline.
       - name: Install development dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
@@ -62,3 +63,21 @@ jobs:
         env:
           COMPOSER_PROCESS_TIMEOUT: "0"
         run: composer test
+
+      # The second step that uses the network: a production vendor/ for the
+      # release build (M7 release spec sections 3.3 and 3.8), installed in a
+      # folder that holds only a copy of composer.json. build/ is git-ignored.
+      - name: Prepare a production vendor folder
+        run: |
+          mkdir -p build/release-prep
+          cp composer.json build/release-prep/composer.json
+          composer install --working-dir=build/release-prep --no-dev --prefer-dist --no-interaction --no-progress --no-scripts
+          mv build/release-prep/vendor build/release-vendor
+
+      # Two test builds, the second in another time zone, must give the same
+      # archive (ADR 0021 decision 3).
+      - name: Build the release archive twice and compare
+        run: |
+          php tools/release/build.php --test-build --vendor=build/release-vendor --out=build/out-1
+          TZ=America/New_York php tools/release/build.php --test-build --vendor=build/release-vendor --out=build/out-2
+          cmp build/out-1/*.zip.sha256 build/out-2/*.zip.sha256

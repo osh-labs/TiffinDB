@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) TiffinDB contributors */
+
+/*
+ * Page-specific rules for install-guide.html. The flow diagrams (class
+ * in-fig) are 520 to 560 units wide. On a phone they would shrink to about
+ * 60 percent, so their small text would fall to about 8 px. Below 40rem
+ * they keep a minimum width that holds the text near its drawn size, and
+ * the figure scrolls sideways instead; the page itself does not.
+ */
+
+@media (max-width: 40rem) {
+  .in-fig {
+    overflow-x: auto;
+  }
+
+  .in-fig > svg {
+    min-width: 30rem;
+  }
+}

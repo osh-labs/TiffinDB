@@ -1,0 +1,960 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TiffinDB Install Guide</title>
+<meta name="description" content="How to install TiffinDB on shared PHP hosting or an Apache server, complete the setup page, start a development server, and run the installation: requirements, configuration, security, backups, and troubleshooting.">
+<link rel="icon" href="../brand/tiffindb-mark-small.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/manual.css">
+<link rel="stylesheet" href="assets/install-guide.css">
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="m-skip" href="#main">Skip to content</a>
+<div class="m-shell">
+
+<nav class="m-side" aria-label="Documentation">
+  <a class="m-brand" href="index.html" aria-label="TiffinDB documentation, home">
+    <svg viewBox="-4 -4 72 72" aria-hidden="true" focusable="false"><g fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/><rect x="23" y="2.5" width="18" height="6" rx="3" fill="#FFFFFF"/><rect x="15.5" y="17" width="33" height="4" rx="2" fill="#FFFFFF"/><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="#FFFFFF"/><rect x="17" y="34" width="30" height="10.5" rx="3" fill="#F2B441"/><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="#FFFFFF"/></g></svg>
+    <span>Tiffin<b>DB</b></span>
+  </a>
+  <details class="m-menu"><summary>Contents</summary></details>
+  <p class="m-side__doc">Install Guide</p>
+  <ol class="m-toc">
+    <li><a href="#before">Before you start</a></li>
+    <li><a href="#requirements">Requirements</a></li>
+    <li><a href="#host-check">Check the host first</a></li>
+    <li><a href="#files">Get and prepare the files</a></li>
+    <li><a href="#deploy">Deploy</a>
+      <ol>
+        <li><a href="#deploy-shared-a">Shared hosting, document root set to public/</a></li>
+        <li><a href="#deploy-shared-b">Shared hosting, fixed document root</a></li>
+        <li><a href="#deploy-own">Your own Apache server</a></li>
+      </ol>
+    </li>
+    <li><a href="#setup">The setup page</a></li>
+    <li><a href="#config">Configuration reference</a></li>
+    <li><a href="#security">Security checklist</a></li>
+    <li><a href="#dev">Development server</a></li>
+    <li><a href="#operations">Operations</a>
+      <ol>
+        <li><a href="#ops-backup">Backups and restore</a></li>
+        <li><a href="#ops-password">Password reset</a></li>
+        <li><a href="#ops-move">Moving an installation</a></li>
+        <li><a href="#ops-update">Updating</a></li>
+        <li><a href="#ops-uninstall">Uninstalling</a></li>
+      </ol>
+    </li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#reference">Quick reference</a></li>
+  </ol>
+  <ul class="m-docs">
+    <li><a href="index.html">Documentation home</a></li>
+    <li><a href="user-guide.html">User Guide</a></li>
+    <li><a href="install-guide.html" aria-current="page">Install Guide</a></li>
+    <li><a href="handoff.html">Developer Handoff and Roadmap</a></li>
+  </ul>
+</nav>
+
+<main id="main" class="m-main">
+
+<header class="m-hero">
+  <p class="m-kicker">Install Guide</p>
+  <h1>Install and run TiffinDB</h1>
+  <p class="m-lede">For the person who puts TiffinDB on shared PHP hosting or on an Apache server, or who starts a development server. Every requirement, path, and setting below is taken from the code.</p>
+  <dl class="m-meta">
+    <div><dt>Applies to</dt><dd>0.1.0-dev (milestones M0 to M4)</dd></div>
+    <div><dt>Run here on</dt><dd>PHP 8.3.6 built-in server</dd></div>
+    <div><dt>Not run on</dt><dd>Apache, the reference shared host</dd></div>
+  </dl>
+</header>
+
+<section id="before">
+  <h2><span class="m-num">Part 1</span>Before you start</h2>
+
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Verification status</p>
+    <p><strong>Apache was never available in the environment where TiffinDB was built and where this guide was checked, and the reference shared host has not been checked yet.</strong> The host check is a deferred maintainer task (build ledger, section 5). Every Apache and shared-hosting step in this guide is derived from the code and from the two <code>.htaccess</code> files. None of them comes from a run on Apache.</p>
+    <p>What was run: the setup page, the requirement check, the exposure probe outcomes, the host check script, the password reset tool, and the <code>composer</code> scripts, all with the PHP 8.3 built-in server.</p>
+  </div>
+
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">No release yet</p>
+    <p>There is no release archive. It is part of milestone M7, together with a tested upgrade path. Until then you install from the source code and run <code>composer install --no-dev</code> to get the one runtime library. Treat an installation as a test installation, and keep backups (<a href="#ops-backup">Part 10</a>).</p>
+  </div>
+
+  <p>A TiffinDB installation has two parts:</p>
+  <ul>
+    <li><strong>The application folder</strong>: the source code, the <code>vendor/</code> folder made by Composer, and an optional <code>config/local.php</code>. Only its <code>public/</code> folder must be reachable from the web.</li>
+    <li><strong>The data folder</strong>: the system database (<code>system.sqlite</code>) and one folder for each project. The setup page makes it. It must never be reachable from the web.</li>
+  </ul>
+  <p>There is no database server, no cron job, and no background process. TiffinDB makes no network calls, with one exception: during setup it may send a few HTTP requests to its own server to test that the data folder cannot be downloaded (<a href="#setup">Part 6</a>).</p>
+
+  <h3>Choose a deployment path</h3>
+  <figure class="m-fig m-fig--diagram m-fig--half in-fig">
+    <svg viewBox="0 0 520 590" role="img" aria-labelledby="in-path-t in-path-d">
+      <title id="in-path-t">Which deployment path to choose</title>
+      <desc id="in-path-d">A decision chart with four questions. First: will TiffinDB run only on your own computer, to try it or to develop it? If yes, use the development server, Part 9. If no, second: can you edit the Apache configuration of the server? If yes, use your own Apache server, Part 5.3. If no, you are on shared hosting. Third: can the hosting panel set the site's document root to a folder you choose? If yes, use shared hosting arrangement A, with the document root set to the public folder, Part 5.1. If no, use arrangement B, Part 5.2, where the whole TiffinDB folder sits inside the fixed document root. Fourth question for arrangement B: is the TiffinDB folder itself the document root? If yes, the folder above it is outside the site, and the data goes to the tiffindb-data folder beside the TiffinDB folder. If no, set data_dir in config/local.php to a folder outside the site, or let TiffinDB use its data folder inside the tree, which is protected by .htaccess and is used only if the exposure probe passes.</desc>
+      <defs>
+        <marker id="in-path-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-surface d-s-ctl" x="16" y="16" width="272" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="43">Only on your own computer,</text>
+      <text class="d-t" x="32" y="63">to try it or to develop it?</text>
+      <path class="d-none d-s-ink2" d="M288 48H328" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="294" y="40">Yes</text>
+      <rect class="d-soft d-s-accent" x="332" y="16" width="182" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="346" y="43">Development server</text>
+      <text class="d-t2" x="346" y="63">Part 9</text>
+      <path class="d-none d-s-ink2" d="M152 80V120" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="162" y="105">No</text>
+      <rect class="d-surface d-s-ctl" x="16" y="124" width="272" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="151">Can you edit the Apache</text>
+      <text class="d-t" x="32" y="171">configuration of the server?</text>
+      <path class="d-none d-s-ink2" d="M288 156H328" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="294" y="148">Yes</text>
+      <rect class="d-soft d-s-accent" x="332" y="124" width="182" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="346" y="151">Own Apache server</text>
+      <text class="d-t2" x="346" y="171">Part 5.3</text>
+      <path class="d-none d-s-ink2" d="M152 188V228" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="162" y="213">No: shared hosting</text>
+      <rect class="d-surface d-s-ctl" x="16" y="232" width="272" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="259">Can the hosting panel set the</text>
+      <text class="d-t" x="32" y="279">site's document root to a folder?</text>
+      <path class="d-none d-s-ink2" d="M288 264H328" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="294" y="256">Yes</text>
+      <rect class="d-soft d-s-accent" x="332" y="232" width="182" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="346" y="259">Shared hosting A</text>
+      <text class="d-t2" x="346" y="279">root = public/, Part 5.1</text>
+      <path class="d-none d-s-ink2" d="M152 296V336" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="162" y="321">No: fixed document root</text>
+      <rect class="d-surface d-s-ctl" x="16" y="340" width="272" height="84" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="367">Shared hosting B, Part 5.2</text>
+      <text class="d-t" x="32" y="390">Is the TiffinDB folder itself</text>
+      <text class="d-t" x="32" y="410">the document root?</text>
+      <path class="d-none d-s-ink2" d="M288 382H328" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="294" y="374">Yes</text>
+      <rect class="d-ok-soft d-s-ok" x="332" y="350" width="182" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="346" y="377">Data outside</text>
+      <text class="d-t2" x="346" y="397">../tiffindb-data</text>
+      <path class="d-none d-s-ink2" d="M152 424V464" stroke-width="2" marker-end="url(#in-path-arrow)"/>
+      <text class="d-t2" x="162" y="449">No</text>
+      <rect class="d-warn-soft d-s-warn" x="16" y="468" width="498" height="104" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="495">Data inside the site</text>
+      <text class="d-t" x="32" y="519">Best: set data_dir in config/local.php to a folder</text>
+      <text class="d-t" x="32" y="539">outside the site. Otherwise TiffinDB uses data/,</text>
+      <text class="d-t" x="32" y="559">behind .htaccess, and only if the exposure probe passes.</text>
+    </svg>
+    <figcaption><b>Deployment path.</b> Arrangement A is the safest shared-hosting layout: the data folder is outside the web site and the setup page needs no exposure probe.</figcaption>
+  </figure>
+</section>
+
+<section id="requirements">
+  <h2><span class="m-num">Part 2</span>Requirements</h2>
+  <p>The setup page checks the running PHP before it writes anything (<code>src/Core/Install/Installer.php</code>, method <code>requirements()</code>). This table lists the eleven checks in the order the page shows them. A row marked <strong>Needs fixing</strong> stops setup. A row marked <strong>Works, with a note</strong> lets setup continue.</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Check on the page</th><th>What is tested</th><th>If it fails</th></tr></thead>
+      <tbody>
+        <tr><td>PHP version</td><td>PHP 8.3 or later (<code>PHP_VERSION_ID &gt;= 80300</code>)</td><td>Needs fixing. See the note below this table.</td></tr>
+        <tr><td>SQLite database support</td><td><code>pdo_sqlite</code> loaded, SQLite library 3.35.5 or later</td><td>Needs fixing</td></tr>
+        <tr><td>Zip archives</td><td><code>zip</code> extension</td><td>Needs fixing (project archives)</td></tr>
+        <tr><td>Reading spreadsheet files</td><td><code>xmlreader</code> extension</td><td>Needs fixing (XLSX import)</td></tr>
+        <tr><td>XML documents</td><td><code>dom</code> extension</td><td>Works, with a note: XLSX import and export are unavailable</td></tr>
+        <tr><td>Data filtering</td><td><code>filter</code> extension</td><td>Works, with a note: as above</td></tr>
+        <tr><td>XML library</td><td><code>libxml</code> extension</td><td>Works, with a note: as above</td></tr>
+        <tr><td>Secure random numbers</td><td><code>random_bytes(16)</code> works</td><td>Needs fixing</td></tr>
+        <tr><td>Password protection</td><td>Argon2id available to <code>password_hash</code></td><td>Works, with a note: bcrypt is used instead</td></tr>
+        <tr><td>Secure connection (HTTPS)</td><td>The setup page itself was loaded over HTTPS (<code>HTTPS</code> set and not <code>off</code>, or <code>REQUEST_SCHEME</code> is <code>https</code>)</td><td>Works, with a note</td></tr>
+        <tr><td>A place for the data folder</td><td>A usable data folder exists or can be made (<a href="#deploy">Part 5</a>)</td><td>Needs fixing</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="m-note">
+    <p class="m-note__label">Note: very old PHP</p>
+    <p>The PHP row can show "too old" only if PHP gets that far. The Composer autoloader in <code>vendor/</code> normally contains a platform check that stops on PHP older than 8.3, and <code>public/index.php</code> then shows the plain message "Something went wrong. TiffinDB could not show this page." This is derived from the code and from Composer's default behaviour; it was not run on an old PHP.</p>
+  </div>
+
+  <h3>Other requirements</h3>
+  <ul>
+    <li><strong>Web server</strong>: Apache with <code>.htaccess</code> files enabled and <code>mod_rewrite</code> (ADR 0001). <code>mod_headers</code> and <code>mod_mime</code> are used when present. Other web servers are an open question (plan, section 11, item 7) and are not covered here.</li>
+    <li><strong>Upper PHP limit</strong>: the pinned spreadsheet library, OpenSpout 5.2.2, declares PHP <code>~8.3.0 || ~8.4.0 || ~8.5.0</code> and the extensions <code>dom</code>, <code>filter</code>, <code>libxml</code>, <code>xmlreader</code>, and <code>zip</code>. Composer refuses to install it on a machine that lacks them.</li>
+    <li><strong>HTTPS</strong>: not enforced, but a live site must use it (<a href="#security">Part 8</a>).</li>
+    <li><strong>A writable folder</strong> for the data folder, preferably outside the web site.</li>
+    <li><strong>On the machine where you prepare the files</strong>: PHP 8.3 or later with the extensions above, and <a href="https://getcomposer.org/">Composer</a>.</li>
+    <li><strong>Upload limits</strong>: TiffinDB accepts files up to 64 MiB (<code>IoLimits::MAX_UPLOAD_BYTES</code>), or less when PHP's <code>upload_max_filesize</code> or <code>post_max_size</code> is lower (<a href="#config-php">Part 7</a>).</li>
+  </ul>
+  <p>No MySQL or MariaDB database is needed.</p>
+</section>
+
+<section id="host-check">
+  <h2><span class="m-num">Part 3</span>Check the host first</h2>
+  <p><code>tools/host-check/host-check.php</code> is one self-contained PHP file. It tells you, before you upload TiffinDB, whether a host meets TiffinDB's assumptions, including the Apache checks that the setup page cannot make: whether <code>.htaccess</code> deny rules and rewrite rules work. It runs on PHP 7.4 and later, so an old PHP still gets a report. The full procedure is in <code>tools/host-check/README.md</code>.</p>
+
+  <ol class="m-steps">
+    <li>
+      <p>Open <code>host-check.php</code> in a text editor. Set <code>HOST_CHECK_TOKEN</code> near the top to a random value of at least 16 letters and digits.</p>
+      <pre class="m-code" data-label="PHP"><code>const HOST_CHECK_TOKEN = 'ReplaceWithYourOwnRandomLettersAndDigits';</code></pre>
+      <p>Only the letters A to Z, a to z and the digits 0 to 9 are accepted. While the token is empty or invalid, the script answers every web request with 403.</p>
+    </li>
+    <li><p>Upload the file to the web root of the hosting account.</p></li>
+    <li>
+      <p>Open <code>https://&lt;your site&gt;/host-check.php?token=&lt;your token&gt;</code>.</p>
+      <p class="m-result">A plain-text report with PASS, WARN, FAIL, and INFO lines, a summary, and a JSON block.</p>
+    </li>
+    <li><p>Save the report. It is designed to contain no host names, addresses, user names, or absolute paths, but read it before you post it anywhere.</p></li>
+    <li><p><strong>Delete <code>host-check.php</code> from the host.</strong> Also delete any folder named <code>tiffindb-hostcheck-</code> followed by 16 hexadecimal characters; such a folder exists only after an interrupted run.</p></li>
+  </ol>
+
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-host-check.png" width="1920" height="824" alt="Host check report in plain text. The PHP section passes. In the Web server section, five lines warn because the PHP built-in server is not Apache and does not read .htaccess files; the Authorization header line passes. Summary: 31 PASS, 5 WARN, 0 FAIL, 5 INFO, no blocking problems found.">
+    <figcaption><b>Host check over HTTP.</b> Run on the PHP built-in server, so the web-server lines warn as expected. The extension, SQLite, limit, and file-system sections are cut out of this image. On Apache, <code>web.htaccess_deny</code> and <code>web.htaccess_rewrite</code> must pass.</figcaption>
+  </figure>
+
+  <p>With shell access you can also run it from the command line. The command-line run skips the Apache and HTTP checks, and PHP limits can differ from those of the web server, so the HTTP run is the one that counts.</p>
+  <pre class="m-code" data-label="Shell"><code>php host-check.php          # exit code 0: no FAIL lines; 1: at least one FAIL
+php host-check.php --help</code></pre>
+
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Result</th><th>Meaning for TiffinDB</th></tr></thead>
+      <tbody>
+        <tr><td>FAIL</td><td>TiffinDB cannot run as designed: for example PHP older than 8.3, a missing <code>pdo_sqlite</code>, <code>zip</code>, or <code>xmlreader</code>, <code>flock</code> not working, or, on Apache, <code>web.htaccess_deny</code> or <code>web.htaccess_rewrite</code> failing.</td></tr>
+        <tr><td>WARN</td><td>Works with limits. Examples: <code>fs.outside_webroot_writable</code> (the data folder must then live inside the site, behind <code>.htaccess</code>, and pass the exposure probe), <code>web.https</code>, a low <code>upload_max_filesize</code>.</td></tr>
+        <tr><td>PASS, INFO</td><td>Meets the assumption, or context only.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-small">The limit thresholds in the script (128M memory, 30 s execution time, 8M upload and post size) are provisional values chosen for the check, not decisions recorded elsewhere (<code>tools/host-check/README.md</code>).</p>
+</section>
+
+<section id="files">
+  <h2><span class="m-num">Part 4</span>Get and prepare the files</h2>
+  <p>Prepare the files on your own computer, then upload them. The host needs no Composer and no shell access.</p>
+  <ol class="m-steps">
+    <li>
+      <p>Get the source code from the <a href="https://github.com/osh-labs/tiffindb">project repository</a>, as a clone or as a downloaded zip file of the branch you want.</p>
+      <pre class="m-code" data-label="Shell"><code>git clone https://github.com/osh-labs/tiffindb.git tiffindb
+cd tiffindb</code></pre>
+    </li>
+    <li>
+      <p>Install the runtime dependency without the development tools.</p>
+      <pre class="m-code" data-label="Shell"><code>composer install --no-dev</code></pre>
+      <p class="m-result">A <code>vendor/</code> folder with <code>vendor/autoload.php</code> and OpenSpout. The repository does not commit <code>composer.lock</code> (<code>"lock": false</code> in <code>composer.json</code>); OpenSpout is pinned to an exact version there.</p>
+    </li>
+    <li><p>Optional: write <code>config/local.php</code> (<a href="#config">Part 7</a>). Most installations need none.</p></li>
+    <li>
+      <p>Upload the whole folder, including the dot-file <code>.htaccess</code> at its top and in <code>public/</code>. Some FTP programs hide dot-files: make sure they are uploaded.</p>
+    </li>
+  </ol>
+  <p>At run time TiffinDB reads <code>public/</code>, <code>src/</code>, <code>templates/</code>, <code>strings/</code>, <code>plugins/</code>, <code>config/</code>, and <code>vendor/</code>. <code>tools/admin/reset-password.php</code> is needed for the command-line password reset. <code>docs/</code> and <code>tests/</code> are not read at run time; the file list of the future release archive is an M7 decision.</p>
+  <div class="m-note">
+    <p class="m-note__label">Not run here</p>
+    <p>The clone and <code>composer install --no-dev</code> were not run while this guide was written (no network access to other hosts in the build environment). The application copies used for the screenshots were made from the repository with a <code>vendor/</code> folder from an earlier <code>composer install</code>.</p>
+  </div>
+</section>
+
+<section id="deploy">
+  <h2><span class="m-num">Part 5</span>Deploy</h2>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Not verified on Apache</p>
+    <p>The three arrangements below are derived from <code>.htaccess</code>, <code>public/.htaccess</code>, <code>public/index.php</code>, and the data-folder code. They have not been run on Apache or on the reference shared host.</p>
+  </div>
+
+  <h3>Where the data folder goes</h3>
+  <p>The setup page chooses the data folder by this rule (<code>src/Core/Install/DataFolder.php</code>, <code>src/Core/Storage/DataDirectory.php</code>):</p>
+  <ol>
+    <li>If <code>data_dir</code> is set in <code>config/local.php</code>, that absolute path and nothing else.</li>
+    <li>Otherwise the first of <code>../tiffindb-data</code> (beside the application folder) and <code>data/</code> (inside it) that can be written and lies outside the document root. In arrangement A both lie outside <code>public/</code>, so <code>data/</code> is used when <code>../tiffindb-data</code> cannot be made.</li>
+    <li>Otherwise <code>data/</code> inside the document root, if it can be written. Setup then runs the exposure probe and stops unless the probe proves that the folder cannot be downloaded. <code>../tiffindb-data</code> inside the document root is never used.</li>
+  </ol>
+  <p>Step 1 names the chosen folder in its row "A place for the data folder", for example "TiffinDB will keep its data in ../tiffindb-data, outside the web site" or "... in data, outside the web site". <strong>Write down which folder it is</strong>: a data folder named <code>data</code> lives inside the application folder, and an update or move that replaces the application folder would delete it.</p>
+  <p>"Can be written" means the folder exists and is writable, or it does not exist and its parent folder is writable. An existing folder is used only if it is empty or holds only what an earlier setup attempt left. A location is "outside" only if the document root is known and both paths resolve; anything uncertain counts as inside.</p>
+
+  <div class="m-figrow m-wide">
+    <figure class="m-fig m-fig--diagram">
+      <svg viewBox="0 0 340 360" role="img" aria-labelledby="in-lay-a-t in-lay-a-d">
+        <title id="in-lay-a-t">Layout A: document root set to public</title>
+        <desc id="in-lay-a-d">The home folder of the hosting account holds two folders. The tiffindb folder is the application. Inside it, the public folder is the document root of the site and holds .htaccess, index.php, and assets. The other application folders, src, templates, vendor, config and the rest, are outside the document root. Beside the tiffindb folder, the tiffindb-data folder holds the data, outside the web site; setup makes it.</desc>
+        <text class="d-th" x="16" y="28">A: shared, root = public/</text>
+        <rect class="d-surface d-s-ctl" x="16" y="44" width="308" height="300" rx="10" stroke-width="1.5"/>
+        <text class="d-tmono" x="30" y="70">~/</text>
+        <text class="d-t2" x="70" y="70">your hosting account</text>
+        <text class="d-tmono" x="46" y="98">tiffindb/</text>
+        <text class="d-t2" x="128" y="98">application</text>
+        <rect class="d-soft d-s-accent" x="56" y="110" width="256" height="84" rx="8" stroke-width="2"/>
+        <text class="d-tmono" x="66" y="132">public/</text>
+        <text class="d-taccent" x="302" y="132" text-anchor="end">document root</text>
+        <text class="d-tmono" x="82" y="156">.htaccess</text>
+        <text class="d-tmono" x="82" y="178">index.php  assets/</text>
+        <text class="d-tmono" x="66" y="220">src/ templates/ strings/</text>
+        <text class="d-tmono" x="66" y="242">plugins/ vendor/ tools/</text>
+        <text class="d-tmono" x="66" y="264">config/ .htaccess</text>
+        <rect class="d-ok-soft d-s-ok" x="40" y="282" width="272" height="48" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="52" y="302">tiffindb-data/</text>
+        <text class="d-t2" x="52" y="320">data folder, outside the site</text>
+      </svg>
+      <figcaption><b>Arrangement A.</b> Only <code>public/</code> is on the web. The root <code>.htaccess</code> is not used.</figcaption>
+    </figure>
+    <figure class="m-fig m-fig--diagram">
+      <svg viewBox="0 0 340 360" role="img" aria-labelledby="in-lay-b-t in-lay-b-d">
+        <title id="in-lay-b-t">Layout B: fixed document root</title>
+        <desc id="in-lay-b-d">The home folder of the hosting account holds the site folder, here example.com, which is the fixed document root. The whole tiffindb folder sits inside it, so the site address is /tiffindb/. The root .htaccess of tiffindb passes every request into public. The data folder is data inside tiffindb, behind its own .htaccess deny rule, and setup accepts it only if the exposure probe passes. Better: a folder outside the site, for example tiffindb-data in the home folder, set as data_dir in config/local.php.</desc>
+        <text class="d-th" x="16" y="28">B: shared, fixed root</text>
+        <rect class="d-surface d-s-ctl" x="16" y="44" width="308" height="300" rx="10" stroke-width="1.5"/>
+        <text class="d-tmono" x="30" y="70">~/</text>
+        <rect class="d-soft d-s-accent" x="40" y="80" width="272" height="196" rx="8" stroke-width="2"/>
+        <text class="d-tmono" x="50" y="102">example.com/</text>
+        <text class="d-taccent" x="302" y="102" text-anchor="end">doc. root</text>
+        <text class="d-tmono" x="66" y="128">tiffindb/</text>
+        <text class="d-t2" x="148" y="128">site at /tiffindb/</text>
+        <text class="d-tmono" x="82" y="152">.htaccess</text>
+        <text class="d-t2" x="166" y="152">into public/</text>
+        <text class="d-tmono" x="82" y="176">public/ src/ vendor/ ...</text>
+        <rect class="d-warn-soft d-s-warn" x="76" y="190" width="226" height="74" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="86" y="210">data/</text>
+        <text class="d-t2" x="134" y="210">if nothing better</text>
+        <text class="d-t2" x="86" y="230">.htaccess: Require all denied</text>
+        <text class="d-t2" x="86" y="250">setup runs the exposure probe</text>
+        <rect class="d-ok-soft d-s-ok d-dash" x="40" y="286" width="272" height="48" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="52" y="306">tiffindb-data/</text>
+        <text class="d-t2" x="52" y="324">better: set as data_dir</text>
+      </svg>
+      <figcaption><b>Arrangement B.</b> If the <code>tiffindb</code> folder is itself the document root, <code>../tiffindb-data</code> is outside the site and is chosen automatically.</figcaption>
+    </figure>
+    <figure class="m-fig m-fig--diagram">
+      <svg viewBox="0 0 340 360" role="img" aria-labelledby="in-lay-c-t in-lay-c-d">
+        <title id="in-lay-c-t">Layout on your own Apache server</title>
+        <desc id="in-lay-c-d">On your own server, for example under /srv, the tiffindb application folder is owned by your account and only readable by the web server. Its public folder is the Apache DocumentRoot. Beside it, the tiffindb-data folder is owned by the web server user with mode 0750; you may create it in advance, empty. A data_dir setting in config/local.php is needed only for another location.</desc>
+        <text class="d-th" x="16" y="28">Own Apache server</text>
+        <rect class="d-surface d-s-ctl" x="16" y="44" width="308" height="300" rx="10" stroke-width="1.5"/>
+        <text class="d-tmono" x="30" y="70">/srv/</text>
+        <text class="d-t2" x="80" y="70">for example</text>
+        <text class="d-tmono" x="46" y="98">tiffindb/</text>
+        <text class="d-t2" x="128" y="98">read-only for Apache</text>
+        <rect class="d-soft d-s-accent" x="56" y="110" width="256" height="62" rx="8" stroke-width="2"/>
+        <text class="d-tmono" x="66" y="132">public/</text>
+        <text class="d-taccent" x="302" y="132" text-anchor="end">DocumentRoot</text>
+        <text class="d-t2" x="66" y="156">AllowOverride for .htaccess</text>
+        <text class="d-tmono" x="66" y="198">src/ vendor/ ...</text>
+        <text class="d-tmono" x="66" y="222">config/local.php</text>
+        <text class="d-t2" x="66" y="242">optional: data_dir, timezone,</text>
+        <text class="d-t2" x="66" y="258">secure_cookies</text>
+        <rect class="d-ok-soft d-s-ok" x="40" y="276" width="272" height="56" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="52" y="298">tiffindb-data/</text>
+        <text class="d-t2" x="52" y="318">web server user, mode 0750</text>
+      </svg>
+      <figcaption><b>Own server.</b> The same shape as arrangement A, with permissions you control.</figcaption>
+    </figure>
+  </div>
+
+  <h3>How a request reaches TiffinDB</h3>
+  <figure class="m-fig m-fig--diagram m-fig--half in-fig">
+    <svg viewBox="0 0 520 640" role="img" aria-labelledby="in-req-t in-req-d">
+      <title id="in-req-t">A request's path through the two .htaccess files</title>
+      <desc id="in-req-d">A request from the browser reaches Apache. In arrangement B, where the whole TiffinDB folder is inside the document root, it first meets the .htaccess file at the top of the TiffinDB folder. With mod_rewrite, every path is rewritten to the same path under public. Without mod_rewrite, every request is refused with Require all denied. In arrangement A and on your own server, the document root is public, so the request goes straight to the next step. In public, the second .htaccess serves an existing file, such as a stylesheet, font, or script, directly, with the header X-Content-Type-Options nosniff. Any other path is rewritten to index.php, the front controller, which loads vendor autoload, config/app.php and config/local.php and hands the request to the kernel. The kernel answers with a page or an error page, always with its security headers. Example: in arrangement B a request for /tiffindb/data/system.sqlite becomes public/data/system.sqlite, which is not a file, so the front controller answers 404. The data folder also has its own .htaccess with Require all denied.</desc>
+      <defs>
+        <marker id="in-req-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-side" x="140" y="16" width="240" height="44" rx="22"/>
+      <text class="d-tside d-mid" x="260" y="43">Browser request</text>
+
+      <path class="d-none d-s-ink2" d="M200 60V96" stroke-width="2" marker-end="url(#in-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M330 60V84H440V250" stroke-width="2" marker-end="url(#in-req-arrow)"/>
+      <text class="d-t2" x="338" y="78">A, own server</text>
+
+      <rect class="d-surface d-s-ctl" x="16" y="100" width="380" height="132" rx="12" stroke-width="1.5"/>
+      <text class="d-t2" x="32" y="124">Arrangement B only</text>
+      <text class="d-tmono" x="32" y="146">&lt;tiffindb&gt;/.htaccess</text>
+      <rect class="d-ok-soft" x="32" y="158" width="348" height="30" rx="7"/>
+      <text class="d-t" x="44" y="178">mod_rewrite: path to public/&lt;path&gt;</text>
+      <rect class="d-danger-soft" x="32" y="194" width="348" height="30" rx="7"/>
+      <text class="d-t" x="44" y="214">no mod_rewrite: Require all denied, 403</text>
+
+      <path class="d-none d-s-ink2" d="M200 232V258" stroke-width="2" marker-end="url(#in-req-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="16" y="262" width="488" height="134" rx="12" stroke-width="1.5"/>
+      <text class="d-tmono" x="32" y="288">public/.htaccess</text>
+      <text class="d-t" x="32" y="316">Is the path an existing file?</text>
+      <rect class="d-ok-soft" x="32" y="328" width="216" height="54" rx="7"/>
+      <text class="d-th" x="44" y="350">Yes: served as is</text>
+      <text class="d-t2" x="44" y="370">CSS, fonts, scripts; nosniff</text>
+      <rect class="d-soft" x="272" y="328" width="216" height="54" rx="7"/>
+      <text class="d-th" x="284" y="350">No: index.php</text>
+      <text class="d-t2" x="284" y="370">RewriteRule ^ index.php</text>
+
+      <path class="d-none d-s-ink2" d="M380 382V418" stroke-width="2" marker-end="url(#in-req-arrow)"/>
+
+      <rect class="d-side" x="16" y="422" width="488" height="110" rx="12"/>
+      <text class="d-tside" x="32" y="448">public/index.php (front controller)</text>
+      <rect class="d-surface" x="32" y="460" width="456" height="28" rx="6"/>
+      <text class="d-t2" x="44" y="479">vendor/autoload.php, config/app.php, config/local.php</text>
+      <rect class="d-surface" x="32" y="494" width="456" height="28" rx="6"/>
+      <text class="d-t2" x="44" y="513">Kernel: route, install state, session, CSRF, page</text>
+
+      <path class="d-none d-s-ink2" d="M260 532V556" stroke-width="2" marker-end="url(#in-req-arrow)"/>
+      <rect class="d-surface d-s-accent" x="16" y="560" width="488" height="64" rx="12" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="586">Response with security headers (CSP and others)</text>
+      <text class="d-t2" x="32" y="608">B: /tiffindb/data/... is not a file in public/, so 404</text>
+    </svg>
+    <figcaption><b>Request path.</b> The root <code>.htaccess</code> is a guard for arrangement B: no file outside <code>public/</code> can be fetched. The data folder's own <code>.htaccess</code> (<code>Require all denied</code>) is a second barrier.</figcaption>
+  </figure>
+
+  <h3 id="deploy-shared-a">5.1 Shared hosting, document root set to public/</h3>
+  <p>Use this arrangement when the hosting control panel lets you choose the folder that a domain or subdomain serves. Control panels call it the document root or web directory.</p>
+  <ol class="m-steps">
+    <li><p>Upload the prepared <code>tiffindb</code> folder to your home folder, beside (not inside) the folder of any existing site, for example <code>~/tiffindb/</code>.</p></li>
+    <li><p>In the control panel, set the document root of the domain or subdomain to <code>~/tiffindb/public</code>.</p></li>
+    <li><p>Turn on HTTPS for the domain in the control panel.</p></li>
+    <li>
+      <p>Open <code>https://&lt;your domain&gt;/</code>.</p>
+      <p class="m-result">TiffinDB redirects to <code>/setup</code>. The row "A place for the data folder" reads "TiffinDB will keep its data in ../tiffindb-data, outside the web site."</p>
+    </li>
+    <li><p>Complete the setup page (<a href="#setup">Part 6</a>).</p></li>
+  </ol>
+  <p>If PHP cannot write to the account's home folder, step 1 reports "TiffinDB will keep its data in data, outside the web site". The data then lives in <code>~/tiffindb/data/</code>, inside the application folder: it is not on the web, but it is deleted with the application folder. To avoid that, create <code>~/tiffindb-data/</code> yourself, empty, with write access for PHP, or set <code>data_dir</code> (<a href="#config">Part 7</a>), then reload step 1.</p>
+
+  <h3 id="deploy-shared-b">5.2 Shared hosting, fixed document root</h3>
+  <p>Use this arrangement when the document root cannot be changed, for example <code>~/example.com/</code>.</p>
+  <ol class="m-steps">
+    <li><p>Upload the whole <code>tiffindb</code> folder into the document root, for example to <code>~/example.com/tiffindb/</code>. The site is then at <code>https://example.com/tiffindb/</code>. TiffinDB detects that base path from <code>SCRIPT_NAME</code> and leaves <code>/public</code> out of its own links.</p></li>
+    <li>
+      <p>Best: create a folder outside the document root, for example <code>~/tiffindb-data/</code>, and name it in <code>config/local.php</code>:</p>
+      <pre class="m-code" data-label="PHP"><code>&lt;?php return ['data_dir' =&gt; '/home/example/tiffindb-data'];</code></pre>
+      <p>The path must be absolute. Your host's file manager or support shows the absolute path of your home folder.</p>
+    </li>
+    <li><p>Turn on HTTPS for the domain.</p></li>
+    <li>
+      <p>Open <code>https://example.com/tiffindb/</code> and complete the setup page.</p>
+      <p class="m-result">With <code>data_dir</code> outside the site, step 1 reads "... in the folder set as data_dir in config/local.php, outside the web site." Without it, step 1 says the data will be in <code>data</code> inside the TiffinDB folder, "protected by a server rule. Step 2 tests that the rule works."</p>
+    </li>
+  </ol>
+  <p>The root <code>.htaccess</code> passes every request into <code>public/</code>. Without <code>mod_rewrite</code> it refuses every request (403), so the site does not work at all rather than exposing files. When the data folder is inside the document root, step 2 of the setup page runs the exposure probe and stops on any result other than a proven refusal.</p>
+
+  <h3 id="deploy-own">5.3 Your own Apache server</h3>
+  <p>The shape is that of arrangement A. These steps assume a Linux server with Apache and PHP 8.3 installed. The Apache directives below are given from the Apache documentation and have not been run against TiffinDB.</p>
+  <ol class="m-steps">
+    <li><p>Put the prepared folder at, for example, <code>/srv/tiffindb</code>, owned by your account and readable by the web server user.</p></li>
+    <li><p>Create the data folder beside it, empty, owned by the web server user, mode 0750: <code>/srv/tiffindb-data</code>. TiffinDB itself makes folders with mode 0750 and files with mode 0640.</p></li>
+    <li>
+      <p>Point the virtual host at <code>public/</code> and let its <code>.htaccess</code> work. The <code>.htaccess</code> files use <code>RewriteEngine</code>, <code>RewriteCond</code>, <code>RewriteRule</code>, <code>Header</code>, and <code>AddType</code> (allowed by <code>AllowOverride FileInfo</code>) and, in the data folder, <code>Require</code> (allowed by <code>AllowOverride AuthConfig</code>).</p>
+      <pre class="m-code" data-label="Apache (not tested)"><code>&lt;VirtualHost *:443&gt;
+    ServerName tiffindb.example.com
+    DocumentRoot /srv/tiffindb/public
+    &lt;Directory /srv/tiffindb/public&gt;
+        AllowOverride FileInfo AuthConfig
+        Options SymLinksIfOwnerMatch
+        Require all granted
+    &lt;/Directory&gt;
+    # TLS settings for your certificate go here.
+&lt;/VirtualHost&gt;</code></pre>
+      <p>Apache applies <code>RewriteRule</code> in a <code>.htaccess</code> file only when <code>Options FollowSymLinks</code> or <code>SymLinksIfOwnerMatch</code> is on for the folder; the example sets the second. Enable <code>mod_rewrite</code> (and <code>mod_headers</code>). See the <a href="https://httpd.apache.org/docs/2.4/">Apache HTTP Server documentation</a> for TLS and for your distribution's way of enabling modules.</p>
+    </li>
+    <li><p>Reload Apache, open the site over HTTPS, and complete the setup page.</p></li>
+  </ol>
+  <div class="m-note">
+    <p class="m-note__label">Behind a reverse proxy</p>
+    <p>TiffinDB never reads <code>X-Forwarded-*</code> or <code>Forwarded</code> headers. If TLS ends at a proxy and PHP sees plain HTTP, the HTTPS row warns and session cookies lose the <code>Secure</code> flag. Set <code>'secure_cookies' =&gt; true</code> in <code>config/local.php</code> in that case.</p>
+    <p>A second effect: for a form sent by a browser that does not send the <code>Sec-Fetch-Site</code> header, TiffinDB compares the browser's <code>Origin</code> header with the scheme and <code>Host</code> that PHP sees (<code>Kernel::originAllowed()</code>). If the proxy ends TLS or rewrites <code>Host</code>, the two differ and every form is refused with the page "This form has expired". Pass the original <code>Host</code> through and let PHP see HTTPS (for example, TLS on Apache itself) if you use such browsers. Derived from the code; not run behind a proxy.</p>
+  </div>
+</section>
+
+<section id="setup">
+  <h2><span class="m-num">Part 6</span>The setup page</h2>
+  <p>Until the first Admin exists, every page redirects to <code>/setup</code>. The page has three steps; nothing is saved until step 2 makes the data folder. After setup, <code>/setup</code> answers 404.</p>
+
+  <figure class="m-fig m-fig--diagram m-fig--half in-fig">
+    <svg viewBox="0 0 560 960" role="img" aria-labelledby="in-flow-t in-flow-d">
+      <title id="in-flow-t">Installer flow, including the exposure probe</title>
+      <desc id="in-flow-d">Open /setup. Step 1 checks the server; a check that needs fixing stops setup until it is fixed and checked again. Make the data folder sends a POST. TiffinDB chooses the folder: data_dir if set; else the first of ../tiffindb-data and data that can be written and lies outside the document root; else data inside the document root. If no folder can be written, setup fails with no place. If the folder holds other files, setup fails with not empty. TiffinDB writes the folder's .htaccess with Require all denied. If the folder is outside the document root, the probe is skipped and the result is safe. Otherwise the exposure probe runs: if the server address, port, or Host header cannot be used, the result is inconclusive. A control file written into public must be served, otherwise the result is inconclusive. Then a probe file in the data folder is requested at every path where it could be served: if any request returns it, the result is exposed; if every request is refused, the result is safe; any other answer is inconclusive. Inconclusive and exposed show step 2 with how to fix it and a Test again button. Safe writes setup-code.txt, the projects folder, and system.sqlite, then shows step 3. Step 3 needs the setup code, a name, a username, and a password; a wrong code gives an error, and after five wrong codes a wait. When it succeeds, the code file is deleted, the Admin is signed in and sent to /projects, and /setup answers 404 from then on.</desc>
+      <defs>
+        <marker id="in-flow-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-side" x="40" y="16" width="290" height="40" rx="20"/>
+      <text class="d-tside d-mid" x="185" y="41">Open /setup</text>
+      <path class="d-none d-s-ink2" d="M185 56V76" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="80" width="290" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="102">Step 1: check this server</text>
+      <text class="d-t2" x="54" y="121">eleven checks (Part 2)</text>
+      <path class="d-none d-s-ink2" d="M330 106H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <rect class="d-warn-soft d-s-warn" x="360" y="80" width="184" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="372" y="102">Needs fixing: fix,</text>
+      <text class="d-t2" x="372" y="121">then Check again</text>
+      <path class="d-none d-s-ink2" d="M185 132V152" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-soft d-s-accent" x="40" y="156" width="290" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="54" y="181">Make the data folder (POST)</text>
+      <path class="d-none d-s-ink2" d="M185 196V216" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="220" width="290" height="78" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="240">Choose the folder</text>
+      <text class="d-t2" x="54" y="258">data_dir; else ../tiffindb-data or data/,</text>
+      <text class="d-t2" x="54" y="273">first writable one outside the root;</text>
+      <text class="d-t2" x="54" y="288">else data/ inside the root</text>
+      <path class="d-none d-s-ink2" d="M330 259H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <rect class="d-danger-soft d-s-danger" x="360" y="233" width="184" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="372" y="255">Failed: no folder</text>
+      <text class="d-t2" x="372" y="274">can be written</text>
+      <path class="d-none d-s-ink2" d="M185 298V310" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="314" width="290" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="54" y="339">Folder holds other files?</text>
+      <path class="d-none d-s-ink2" d="M330 334H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2 d-mid" x="343" y="326">yes</text>
+      <rect class="d-danger-soft d-s-danger" x="360" y="314" width="184" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="372" y="339">Failed: not empty</text>
+      <path class="d-none d-s-ink2" d="M185 354V374" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="378" width="290" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="54" y="400">Write &lt;data&gt;/.htaccess</text>
+      <text class="d-t2" x="54" y="419">Require all denied</text>
+      <path class="d-none d-s-ink2" d="M185 430V450" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="454" width="290" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="54" y="479">Inside the document root?</text>
+      <path class="d-none d-s-ok" d="M40 474H22V774H36" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2" x="13" y="512" transform="rotate(-90 13 512)" text-anchor="end">no: no probe</text>
+      <path class="d-none d-s-ink2" d="M185 494V514" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2" x="193" y="509">yes</text>
+
+      <rect class="d-sunk d-s-line" x="34" y="518" width="512" height="230" rx="12" stroke-width="1.5"/>
+      <text class="d-taccent" x="50" y="542">Exposure probe</text>
+      <rect class="d-surface d-s-ctl" x="50" y="554" width="280" height="40" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="62" y="579">Address, port, Host usable?</text>
+      <path class="d-none d-s-ink2" d="M330 574H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2 d-mid" x="343" y="566">no</text>
+      <path class="d-none d-s-ink2" d="M190 594V610" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="50" y="614" width="280" height="52" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="62" y="636">Control file in public/</text>
+      <text class="d-t2" x="62" y="655">served with its nonce?</text>
+      <path class="d-none d-s-ink2" d="M330 636H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2 d-mid" x="343" y="628">no</text>
+      <path class="d-none d-s-ink2" d="M190 666V682" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="50" y="686" width="280" height="52" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="62" y="708">Probe file in data folder</text>
+      <text class="d-t2" x="62" y="727">served at any path?</text>
+      <path class="d-none d-s-ink2" d="M330 712H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2 d-mid" x="343" y="704">yes</text>
+
+      <rect class="d-warn-soft d-s-warn" x="360" y="554" width="176" height="112" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="372" y="578">Inconclusive</text>
+      <text class="d-t2" x="372" y="600">also: no clear answer</text>
+      <text class="d-t2" x="372" y="618">(timeout, 3xx, 5xx)</text>
+      <text class="d-t2" x="372" y="642">Step 2 page,</text>
+      <text class="d-t2" x="372" y="658">Test again</text>
+      <rect class="d-danger-soft d-s-danger" x="360" y="686" width="176" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="372" y="708">Exposed</text>
+      <text class="d-t2" x="372" y="727">Step 2 page, Test again</text>
+
+      <path class="d-none d-s-ink2" d="M190 738V770" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <text class="d-t2" x="198" y="760">no: every path refused</text>
+
+      <rect class="d-ok-soft d-s-ok" x="40" y="774" width="290" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="796">Safe: setup-code.txt,</text>
+      <text class="d-t2" x="54" y="815">projects/, system.sqlite</text>
+      <path class="d-none d-s-ink2" d="M185 826V846" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="850" width="290" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="54" y="875">Step 3: code and first Admin</text>
+      <path class="d-none d-s-ink2" d="M330 870H356" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+      <rect class="d-warn-soft d-s-warn" x="360" y="844" width="184" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="372" y="866">Wrong code: error</text>
+      <text class="d-t2" x="372" y="885">5 tries, then a wait</text>
+      <path class="d-none d-s-ink2" d="M185 890V906" stroke-width="2" marker-end="url(#in-flow-arrow)"/>
+
+      <rect class="d-ok d-s-ok" x="40" y="910" width="504" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-ton" x="54" y="935">Installed: code file deleted, signed in, /setup now 404</text>
+    </svg>
+    <figcaption><b>Installer flow.</b> Only "safe" continues. The probe is skipped when the data folder is outside the document root (<code>src/Core/Install/ExposureProbe.php</code>, M1 spec section 10.4).</figcaption>
+  </figure>
+
+  <h3>Step 1: Check this server</h3>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-setup-check.png" width="1920" height="2420" alt="Setup step 1, Check this server: a table of eleven checks. Ten read Ready; Secure connection (HTTPS) reads Works, with a note, because the page was loaded over plain HTTP. The data folder row says TiffinDB will keep its data in ../tiffindb-data, outside the web site. The button Make the data folder is at the bottom. Numbered badges 1 to 4 mark the step indicator, the HTTPS row, the data folder row, and the button.">
+    <figcaption><b>Step 1 on a server that is ready.</b> Taken on the development server, so HTTPS gives a note.</figcaption>
+  </figure>
+  <ol>
+    <li>The step indicator. Steps that are done read "done".</li>
+    <li>The HTTPS row. On a live site this must read <span class="m-ui">Ready</span>: open the page with <code>https://</code>.</li>
+    <li>Where the data folder will be, as a relative path, never an absolute one.</li>
+    <li><span class="m-ui">Make the data folder</span> starts step 2.</li>
+  </ol>
+  <p>If a check fails, the button is replaced by <span class="m-ui">Check again</span>:</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-setup-check-failed.png" width="1920" height="2553" alt="Setup step 1 with failures. Zip archives and Reading spreadsheet files read Needs fixing, with the text that PHP's support is not turned on and the host should turn it on. XML documents reads Works, with a note. A box says: Fix the checks marked Needs fixing, then check again. The button Check again is at the bottom. Badges 1 to 3 mark the zip row, the XML documents row, and the button.">
+    <figcaption><b>Step 1 with missing extensions.</b> Produced by starting PHP without the <code>zip</code>, <code>xmlreader</code>, and <code>dom</code> extensions. (1) a check that stops setup; (2) a check that only limits XLSX import and export; (3) <span class="m-ui">Check again</span> reloads the page.</figcaption>
+  </figure>
+
+  <h3>Step 2: Make the data folder safe</h3>
+  <p>When the data folder is outside the document root, step 2 has no page of its own: step 3 follows at once with the message "Step 2 is done: the data folder is ready, and it cannot be opened from the web." Otherwise TiffinDB runs the exposure probe:</p>
+  <ol>
+    <li>It writes a file with a random value into the data folder, and a control file with another random value into <code>public/</code>.</li>
+    <li>It connects to its own server, at <code>SERVER_ADDR</code> and <code>SERVER_PORT</code> (never to a name), and asks for the control file. That file must come back; this proves that the request reached this installation and not another site on the same server.</li>
+    <li>It asks for the data-folder file at every path where it could be served. The folder is safe only if every request is refused (4xx, or 2xx without the value).</li>
+    <li>It deletes both files.</li>
+  </ol>
+  <p>The probe also gives "inconclusive" when the server port is neither the scheme's default (80, or 443 for HTTPS) nor the port in the <code>Host</code> header, and when an HTTPS certificate does not verify. The probe cannot see an exposure through another virtual host, alias, or proxy that maps to the folder by a different path. This is why a data folder outside the web site is the better choice.</p>
+  <div class="m-figrow m-wide">
+    <figure class="m-fig m-fig--shot">
+      <img src="img/install-setup-inconclusive.png" width="1920" height="1343" alt="Setup step 2: TiffinDB could not test the data folder. It asked the web server for a test file but did not get a clear answer, so setup stops. How to fix it lists three options: make the public folder the document root, make sure the server reads .htaccess files, or put the data folder outside the web site and set data_dir. A Test again button follows.">
+      <figcaption><b>Inconclusive.</b> On the PHP built-in server <code>SERVER_ADDR</code> is not set, so a data folder inside the document root always gives this result.</figcaption>
+    </figure>
+    <figure class="m-fig m-fig--shot">
+      <img src="img/install-setup-exposed.png" width="1920" height="1302" alt="Setup step 2: Your data folder can be opened from the web. Anyone could download TiffinDB's data from the folder set in config/local.php. Setup stops here until this is fixed. The same three fixes and a Test again button follow.">
+      <figcaption><b>Exposed.</b> Produced with a development server set up to ignore <code>.htaccess</code> and serve the data folder, as Apache would with <code>AllowOverride None</code>.</figcaption>
+    </figure>
+  </div>
+  <p>Fix the cause, then select <span class="m-ui">Test again</span>. The folder stays in place between attempts; it holds nothing sensitive yet.</p>
+
+  <h3>Step 3: Create the first Admin</h3>
+  <p>Only someone who can read the server's files can finish setup: step 3 asks for a one-time setup code that TiffinDB wrote to <code>setup-code.txt</code> in the data folder. The help text under the field names the file, for example <code>../tiffindb-data/setup-code.txt</code>. The code has 16 characters in four groups, <code>XXXX-XXXX-XXXX-XXXX</code>; case, spaces, and hyphens do not matter when you type it.</p>
+  <ol class="m-steps">
+    <li>
+      <p>Open <code>setup-code.txt</code> with your hosting file manager, an FTP program, or a shell, and copy the code.</p>
+      <figure class="m-fig m-fig--shot">
+        <img src="img/install-setup-admin.png" width="1920" height="2330" alt="Setup step 3, Create the first Admin. A notice says step 2 is done. The form has the fields Setup code, with help text naming ../tiffindb-data/setup-code.txt, Your name, Username, Password, Type the password again, a Show passwords box, and the button Create Admin and finish. Badges 1 to 4 mark the notice, the setup code field, the name field, and the button.">
+        <figcaption><b>Step 3.</b> (1) step 2 is done; (2) the setup code, with the file to open; (3) the name shown to others; (4) the button that finishes setup.</figcaption>
+      </figure>
+    </li>
+    <li>
+      <p>Paste the code into <span class="m-ui">Setup code</span>. Fill in <span class="m-ui">Your name</span>, <span class="m-ui">Username</span> (letters, numbers, dots, dashes, and underscores), and a password of at least 10 characters twice. The password must not be the username and must fit in 72 bytes.</p>
+      <figure class="m-fig m-fig--shot m-fig--half">
+        <img src="img/install-setup-admin-filled.png" width="1202" height="1476" alt="The step 3 form filled in: the setup code field shows only bullet characters, Your name is Example Admin, Username is admin, and both password fields show bullets.">
+        <figcaption><b>Ready to submit.</b> The code value is masked in this picture.</figcaption>
+      </figure>
+    </li>
+    <li>
+      <p>Select <span class="m-ui">Create Admin and finish</span>.</p>
+      <p class="m-result">TiffinDB deletes <code>setup-code.txt</code>, signs you in, and shows the project list with "TiffinDB is ready. Select New project to make your first project."</p>
+    </li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-setup-admin-error.png" width="1920" height="1472" alt="Step 3 after a wrong setup code: a box at the top titled There is a problem says That setup code is not right. Open the file again and copy the code exactly. The same message appears above the empty setup code field.">
+    <figcaption><b>Wrong setup code.</b> The code is never printed back. After five wrong codes TiffinDB asks you to wait (30 seconds at first, doubling up to 15 minutes); the count is shared by all visitors.</figcaption>
+  </figure>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-setup-done.png" width="1920" height="1200" alt="The project list after setup, signed in as Example Admin. A notice says TiffinDB is ready. Select New project to make your first project. The page shows Your projects with the buttons New project and Import a project archive, and a note that there are no projects yet.">
+    <figcaption><b>Setup is complete.</b> The top bar has <span class="m-ui">Projects</span>, <span class="m-ui">People</span>, and <span class="m-ui">Plugins</span>; the footer links to the source code.</figcaption>
+  </figure>
+  <p>Every later visit starts at <code>/sign-in</code>. The <a href="user-guide.html">User Guide</a> continues from there.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/install-sign-in.png" width="1920" height="1275" alt="The Sign in page after signing out: a notice You have signed out, the fields Username, filled with admin, and Password, a Show password box, the Sign in button, and the text Forgotten your password? Ask the person who looks after this TiffinDB to reset it.">
+    <figcaption><b>Sign in.</b> A forgotten password is reset by an Admin or from the command line (<a href="#ops-password">Part 10</a>).</figcaption>
+  </figure>
+</section>
+
+<section id="config">
+  <h2><span class="m-num">Part 7</span>Configuration reference</h2>
+  <h3><code>config/local.php</code></h3>
+  <p>Optional, ignored by git, and never meant to hold a secret. It returns a PHP array with any of three keys (<code>Kernel::LOCAL_KEYS</code>). An unknown key or a wrong type makes every page show the plain message "Something went wrong. TiffinDB could not show this page." and writes the reason to the PHP error log.</p>
+  <dl class="m-gloss">
+    <dt><code>data_dir</code></dt>
+    <dd>An absolute path. The data folder, and the only candidate when set. Also read by the password reset tool. Not set: <code>../tiffindb-data</code>, then <code>data/</code>.</dd>
+    <dt><code>timezone</code></dt>
+    <dd>A time zone identifier, for example <code>Europe/Berlin</code>. Dates and times are shown in this zone. Not set: PHP's <code>date.timezone</code>.</dd>
+    <dt><code>secure_cookies</code></dt>
+    <dd><code>true</code> or <code>false</code>. Forces the <code>Secure</code> flag of the session and form cookies on or off. Not set: the flag follows the request (on for HTTPS).</dd>
+  </dl>
+  <pre class="m-code" data-label="config/local.php"><code>&lt;?php
+return [
+    'data_dir' =&gt; '/home/example/tiffindb-data',
+    'timezone' =&gt; 'Europe/Berlin',
+    'secure_cookies' =&gt; true,
+];</code></pre>
+
+  <h3><code>config/app.php</code></h3>
+  <p>Committed defaults. Do not change it for an installation; use <code>config/local.php</code>.</p>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Key</th><th>Value</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td><code>version</code></td><td><code>0.1.0-dev</code></td><td>Application version, added to asset URLs</td></tr>
+        <tr><td><code>source_url</code></td><td><code>https://github.com/osh-labs/tiffindb</code></td><td>Target of the footer "Source code" link (AGPL section 13). If you run a modified copy, point it at your modified source.</td></tr>
+        <tr><td><code>appearance_preview</code></td><td><code>false</code></td><td>Development only</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="config-php">PHP settings</h3>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Setting</th><th>How TiffinDB uses it</th></tr></thead>
+      <tbody>
+        <tr><td><code>upload_max_filesize</code>, <code>post_max_size</code></td><td>Upload screens state the smallest of these and 64 MiB. A request larger than <code>post_max_size</code> gets the page "That file is too large" (413). A file larger than <code>upload_max_filesize</code> in a smaller request comes back as an error on the form.</td></tr>
+        <tr><td><code>display_errors</code></td><td>Turned off by <code>public/index.php</code> itself. Errors go to the PHP error log.</td></tr>
+        <tr><td><code>date.timezone</code></td><td>Used when <code>timezone</code> is not set in <code>config/local.php</code>.</td></tr>
+        <tr><td><code>memory_limit</code>, <code>max_execution_time</code></td><td>Not checked by TiffinDB. Imports and exports run in chunks. The host check reports both against provisional thresholds.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="security">
+  <h2><span class="m-num">Part 8</span>Security checklist</h2>
+  <p>For a site that is reachable from the internet. Items about Apache are derived from the code and have not been checked on Apache.</p>
+  <ul class="m-checklist">
+    <li>The site is served over HTTPS, and step 1 showed <span class="m-ui">Ready</span> for "Secure connection (HTTPS)". Behind a TLS proxy, <code>secure_cookies</code> is <code>true</code>.</li>
+    <li>The data folder is outside the document root (arrangement A or own server), or <code>data_dir</code> points outside it.</li>
+    <li>If the data folder is inside the site: step 2 gave "safe", and a request for <code>&lt;site&gt;/data/system.sqlite</code> gets 404 or 403.</li>
+    <li>Requests for <code>/config/local.php</code>, <code>/src/</code>, and <code>/vendor/</code> do not return files (they are outside the site, or arrangement B's root <code>.htaccess</code> sends them to the front controller).</li>
+    <li><code>setup-code.txt</code> is gone from the data folder. TiffinDB deletes it after setup, and again on a later request if the first deletion failed.</li>
+    <li><code>host-check.php</code> and any <code>tiffindb-hostcheck-*</code> folders are deleted from the host.</li>
+    <li>The data folder is writable only by the account PHP runs as (TiffinDB uses modes 0750 and 0640).</li>
+    <li>There is a second Admin, so that one Admin can set a temporary password for the other.</li>
+    <li>Backups of the data folder exist and have been restored once as a test (<a href="#ops-backup">Part 10</a>).</li>
+    <li>PHP and the operating system get security updates from the host or from you.</li>
+  </ul>
+  <p>What TiffinDB does by itself: passwords are stored with Argon2id (bcrypt where Argon2id is missing); only hashes of session tokens are stored; sign-in is throttled (five failures for a username or twenty from one address within 15 minutes start a wait); every response carries a Content Security Policy, <code>X-Frame-Options: DENY</code>, and other security headers. TiffinDB does not send <code>Strict-Transport-Security</code>; set it on the web server if you want it.</p>
+</section>
+
+<section id="dev">
+  <h2><span class="m-num">Part 9</span>Development server</h2>
+  <p>For trying TiffinDB or working on it. PHP's built-in server does not read <code>.htaccess</code> files; <code>public/index.php</code> does the static-file routing itself under it.</p>
+  <ol class="m-steps">
+    <li>
+      <p>Get the source and install all dependencies, including the test tools:</p>
+      <pre class="m-code" data-label="Shell"><code>git clone https://github.com/osh-labs/tiffindb.git TiffinDB
+cd TiffinDB
+composer install</code></pre>
+    </li>
+    <li>
+      <p>Start the server:</p>
+      <pre class="m-code" data-label="Shell"><code>composer serve</code></pre>
+      <p class="m-result">The script runs <code>php -S 127.0.0.1:8080 -t public public/index.php</code> with no time-out. Open <code>http://127.0.0.1:8080/</code>.</p>
+    </li>
+    <li><p>Complete the setup page. Without <code>config/local.php</code>, the data folder is <code>../tiffindb-data</code>, beside your checkout. The document root is <code>public/</code>, so the folder is outside it and no exposure probe runs.</p></li>
+  </ol>
+  <div class="m-note m-note--tip">
+    <p class="m-note__label">Tip: several copies</p>
+    <p>Copies of the application that sit in the same parent folder share <code>../tiffindb-data</code>. Give each copy its own <code>config/local.php</code> with its own <code>data_dir</code>, or keep each copy in its own parent folder, and start each on its own port: <code>php -S 127.0.0.1:8081 -t public public/index.php</code>.</p>
+  </div>
+  <p>On the built-in server the exposure probe can only give "inconclusive" (no <code>SERVER_ADDR</code>, and a single worker cannot answer its own request). Keep the data folder outside <code>public/</code> in development.</p>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Command</th><th>What it does</th><th>Result here</th></tr></thead>
+      <tbody>
+        <tr><td><code>composer lint</code></td><td><code>php -l</code> on every PHP file (<code>tools/dev/lint.php</code>)</td><td>786 files, 0 failed</td></tr>
+        <tr><td><code>composer test</code></td><td>The offline PHPUnit suite; no network, synthetic fixtures</td><td>OK: 9503 tests, 1 skipped, about 3 minutes</td></tr>
+        <tr><td><code>composer check</code></td><td><code>lint</code>, then <code>test</code>. This is what CI runs.</td><td>The two above</td></tr>
+        <tr><td><code>composer serve</code></td><td>The development server on port 8080</td><td>Not run as such; the same <code>php -S</code> command was run on other ports</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-small">Run on PHP 8.3.6 in a copy of the application, as root with <code>COMPOSER_ALLOW_SUPERUSER=1</code> because the build container runs as root. Do not run Composer as root on a real machine.</p>
+</section>
+
+<section id="operations">
+  <h2><span class="m-num">Part 10</span>Operations</h2>
+
+  <h3 id="ops-backup">Backups and restore</h3>
+  <p>The data folder holds everything that belongs to the installation (ADR 0011). A copy of it, made while nobody uses TiffinDB, is a complete backup. The databases run in SQLite's WAL mode: while a database is in use, recent changes can be in its <code>-wal</code> file, so a copy made during use can be incomplete or inconsistent.</p>
+  <figure class="m-fig m-fig--diagram m-fig--half in-fig">
+    <svg viewBox="0 0 520 470" role="img" aria-labelledby="in-bak-t in-bak-d">
+      <title id="in-bak-t">What to copy for a backup</title>
+      <desc id="in-bak-d">Copy the whole data folder while TiffinDB is idle. It holds .htaccess, the deny rule written by setup; system.sqlite with its -wal and -shm files, which hold people, passwords, sessions, sharing, and the audit log; the projects folder with one folder per project key, each with project.tiffin and its -wal and -shm files for tables and records, attachments for the attached files, and snapshots for automatic copies made before risky changes; and staging, with temporary import and export jobs. Also copy config/local.php from the application folder if it exists. The rest of the application folder is not needed: get it again from the source and run composer install --no-dev.</desc>
+      <rect class="d-ok-soft d-s-ok" x="16" y="16" width="488" height="330" rx="12" stroke-width="1.5"/>
+      <text class="d-tmono" x="32" y="44">tiffindb-data/</text>
+      <text class="d-taccent" x="488" y="44" text-anchor="end">copy all, while idle</text>
+      <text class="d-tmono" x="52" y="76">.htaccess</text>
+      <text class="d-t2" x="240" y="76">deny rule written by setup</text>
+      <text class="d-tmono" x="52" y="104">system.sqlite</text>
+      <text class="d-t2" x="240" y="104">people, passwords, sessions,</text>
+      <text class="d-t2" x="240" y="121">sharing, audit log; -wal, -shm</text>
+      <text class="d-tmono" x="52" y="152">projects/</text>
+      <rect class="d-surface d-s-line" x="68" y="164" width="420" height="124" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="80" y="186">&lt;project key&gt;/</text>
+      <text class="d-tmono" x="96" y="212">project.tiffin</text>
+      <text class="d-t2" x="256" y="212">tables, records; -wal, -shm</text>
+      <text class="d-tmono" x="96" y="238">attachments/</text>
+      <text class="d-t2" x="256" y="238">attached files</text>
+      <text class="d-tmono" x="96" y="264">snapshots/</text>
+      <text class="d-t2" x="256" y="264">copies before risky changes</text>
+      <text class="d-tmono" x="52" y="320">staging/</text>
+      <text class="d-t2" x="240" y="320">temporary import, export jobs</text>
+
+      <rect class="d-ok-soft d-s-ok" x="16" y="362" width="488" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-tmono" x="32" y="387">config/local.php</text>
+      <text class="d-t2" x="240" y="387">copy, if it exists</text>
+      <rect class="d-surface d-s-ctl d-dash" x="16" y="414" width="488" height="40" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="439">Application code, vendor/</text>
+      <text class="d-t2" x="240" y="439">not needed: reinstall</text>
+    </svg>
+    <figcaption><b>Backup contents.</b> Project file layout: <code>docs/formats/tiffin.md</code>, section 1.</figcaption>
+  </figure>
+  <ul>
+    <li><strong>Full backup</strong>: copy the data folder and <code>config/local.php</code>. On a shell: <code>tar -czf tiffindb-backup.tar.gz tiffindb-data</code>, run from the folder that holds the data folder.</li>
+    <li><strong>One project</strong>: an Admin downloads a project archive from the project's Export page. It holds every table, record, form, and attached file, including records in the trash, but no accounts or sharing.</li>
+    <li>CSV, XLSX, and JSON exports are for using the data elsewhere. They are not complete backups (<code>docs/formats/json-export.md</code>).</li>
+  </ul>
+  <figure class="m-fig m-fig--shot m-fig--half">
+    <img src="img/install-export-archive.png" width="1610" height="396" alt="The project archive section of a project's Export page: The whole project, for TiffinDB. A project archive holds every table, record, form, and attached file, including records in the trash. Use it as a backup, or to move the project to another TiffinDB installation. About 191 KB. Button: Download the project archive.">
+    <figcaption><b>Project archive.</b> On the Export page of the example project Home Inventory.</figcaption>
+  </figure>
+  <p><strong>Restore</strong> a full backup: stop use of the site (for example, take it offline in the control panel), check where the data folder is (the folder that holds <code>system.sqlite</code>), replace it with the copy, including its <code>.htaccess</code>, make the copy writable for the user PHP runs as, and open the site. Restore a project archive with <span class="m-ui">Import a project archive</span> on the project list; it always makes a new project, shared with nobody. An archive too large to upload can be restored by hand (<code>docs/formats/tiffin.md</code>, section 13.4). There is no screen yet for restoring a snapshot or for deleting a project; both are planned for M7.</p>
+
+  <h3 id="ops-password">Password reset</h3>
+  <p>An Admin can set a temporary password for anyone on that person's page under <span class="m-ui">People</span>. The person is signed out everywhere and chooses a new password at the next sign-in.</p>
+  <figure class="m-fig m-fig--shot m-fig--half">
+    <img src="img/install-person-password.png" width="1610" height="516" alt="The Password section of the page for Example Member: If Example Member has forgotten their password, set a temporary one. They will be signed out everywhere and will choose a new password when they next sign in. Field: Temporary password, shown empty here. Button: Set temporary password.">
+    <figcaption><b>Set a temporary password.</b> The page suggests a random temporary password in the field; it is blanked in this picture.</figcaption>
+  </figure>
+  <p>If the only Admin has forgotten the password, use the command-line tool. It needs shell access to the server. Without a shell and without a second Admin, there is no way to recover in this version; recovery without a shell is planned for M7.</p>
+  <pre class="m-code" data-label="Shell"><code>cd /path/to/tiffindb
+php tools/admin/reset-password.php &lt;username&gt;
+php tools/admin/reset-password.php &lt;username&gt; --data-dir=/path/to/tiffindb-data</code></pre>
+  <ul>
+    <li>It finds the data folder as the application does (<code>data_dir</code> in <code>config/local.php</code>, then <code>../tiffindb-data</code>, then <code>data/</code>), or uses <code>--data-dir</code>.</li>
+    <li>It reads the new password twice from standard input, with echo off where the terminal allows it, applies the password rules, ends all sessions of that person, clears the sign-in wait for that username, and writes <code>people.password_set</code> to the audit log.</li>
+    <li>The new password does not have to be changed at the next sign-in. A deactivated person must still be reactivated by an Admin.</li>
+    <li>Run it as the user that owns the data folder (on your own server, the web server user), so that the database files it touches stay writable for PHP.</li>
+  </ul>
+  <div class="m-table-wrap">
+    <table class="m-table">
+      <thead><tr><th>Message</th><th>Exit code</th></tr></thead>
+      <tbody>
+        <tr><td>The password has been reset, and every session of that person has ended.</td><td>0</td></tr>
+        <tr><td>Usage: php tools/admin/reset-password.php &lt;username&gt; [--data-dir=&lt;path&gt;]</td><td>1</td></tr>
+        <tr><td>No TiffinDB data folder was found. Give its location with --data-dir=&lt;path&gt;.</td><td>1</td></tr>
+        <tr><td>No person has that username.</td><td>1</td></tr>
+        <tr><td>The two passwords are not the same.</td><td>1</td></tr>
+        <tr><td>The password must have at least 10 characters.</td><td>1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-small">Each message above was produced by running the tool against a copy of the demo data. Not run from a web server: there it exits with code 2.</p>
+
+  <h3 id="ops-move">Moving an installation</h3>
+  <ol class="m-steps">
+    <li><p>Stop use of the old site and copy the data folder and <code>config/local.php</code> (as for a backup).</p></li>
+    <li><p>Install the application on the new host (<a href="#files">Part 4</a>, <a href="#deploy">Part 5</a>), but do not open the setup page yet.</p></li>
+    <li>
+      <p>Put the data folder outside the new site's document root:</p>
+      <ul>
+        <li>beside the application folder as <code>tiffindb-data</code>, but only where that place is outside the document root (arrangement A, own server);</li>
+        <li>otherwise anywhere outside the site, with <code>data_dir</code> in <code>config/local.php</code> set to its new absolute path.</li>
+      </ul>
+      <p>Copy the whole folder, including its <code>.htaccess</code>, and check that dot-files survived the transfer.</p>
+    </li>
+    <li>
+      <p>Make it writable for PHP on the new host and open the site.</p>
+      <p class="m-result">The sign-in page, not the setup page. People, passwords, sharing, and projects come along, because they are all in the data folder. Everyone signs in again if the site address changed.</p>
+    </li>
+  </ol>
+  <div class="m-note m-note--warning">
+    <p class="m-note__label">Warning</p>
+    <p>An installed site does not run the setup page again, so nothing checks the new place of the data folder. TiffinDB uses the first of <code>data_dir</code>, <code>../tiffindb-data</code>, and <code>data/</code> that holds <code>system.sqlite</code>, wherever it is (<code>DataDirectory::locate()</code>). A data folder copied into the document root, for example beside the application in arrangement B, is protected only by its copied <code>.htaccess</code>, which nothing has tested on the new server. Keep it outside the document root.</p>
+  </div>
+  <p class="m-small">Derived from the data-folder search order; not run as a move between two hosts.</p>
+
+  <h3 id="ops-update">Updating</h3>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>There is no tested upgrade path before M7. Make a full backup first. Before you replace anything, check where the data folder is (the folder that holds <code>system.sqlite</code>). If it is <code>data/</code> inside the application folder, move it out first and set <code>data_dir</code>, or keep that folder when you replace the application files.</p>
+  </div>
+  <ol class="m-steps">
+    <li><p>Make a full backup while the site is idle, and check where the data folder is.</p></li>
+    <li><p>Replace the application files with the new version, and run <code>composer install --no-dev</code> for it. Keep <code>config/local.php</code>.</p></li>
+    <li>
+      <p>Open the site.</p>
+      <p class="m-result">On first use, the system database is migrated forward, and each project file is upgraded when it is next opened, after an automatic <code>format-upgrade</code> snapshot (<code>docs/formats/tiffin.md</code>, section 11).</p>
+    </li>
+  </ol>
+  <p>Upgrades are forward only. An older version refuses a system database or project file that a newer version has upgraded. To go back, restore the backup.</p>
+
+  <h3 id="ops-uninstall">Uninstalling</h3>
+  <p>Export anything you want to keep, then delete the application folder and the data folder, and remove the domain or virtual host configuration. TiffinDB creates nothing else: no database server, no scheduled tasks, no files outside these two folders except PHP's own temporary upload files and log lines.</p>
+</section>
+
+<section id="troubleshooting">
+  <h2><span class="m-num">Part 11</span>Troubleshooting</h2>
+  <p>TiffinDB writes the cause of an unexpected error to the PHP error log, as one line starting with <code>TiffinDB:</code>. Error pages never show a file path or the PHP version.</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Symptom</th><th>Likely cause</th><th>What to do</th></tr></thead>
+      <tbody>
+        <tr><td>Plain text: "TiffinDB cannot start because its dependencies are not installed."</td><td><code>vendor/autoload.php</code> is missing</td><td>Run <code>composer install --no-dev</code> and upload <code>vendor/</code>.</td></tr>
+        <tr><td>Plain text: "Something went wrong. TiffinDB could not show this page." on every page</td><td>A bad <code>config/local.php</code> (unknown key, relative <code>data_dir</code>, unknown time zone), PHP older than 8.3, or missing <code>templates/</code> or <code>strings/</code></td><td>Read the PHP error log line that starts with <code>TiffinDB:</code>. Fix the file or the PHP version.</td></tr>
+        <tr><td>403 for every request (arrangement B)</td><td><code>mod_rewrite</code> is not available, so the root <code>.htaccess</code> denies everything (derived, not run)</td><td>Ask the host to enable <code>mod_rewrite</code>, or use arrangement A.</td></tr>
+        <tr><td>404 for every page except the start page, or 500 from Apache</td><td><code>.htaccess</code> files are ignored or a directive is not allowed (<code>AllowOverride</code>) (derived, not run)</td><td><strong>Warning:</strong> if <code>.htaccess</code> is ignored in arrangement B, the whole TiffinDB folder, including <code>data/</code>, <code>config/</code>, and <code>vendor/</code>, may be downloadable. Stop, take the site offline, and run the host check. Check that the <code>.htaccess</code> files were uploaded.</td></tr>
+        <tr><td>Pages without styles</td><td>Static files under <code>public/assets/</code> are not served</td><td>Check the upload of <code>public/assets/</code> and the document root.</td></tr>
+        <tr><td>Step 1: "Needs fixing" for an extension</td><td>The PHP extension is not enabled</td><td>Enable it in the hosting panel's PHP settings, then <span class="m-ui">Check again</span>.</td></tr>
+        <tr><td>Step 1: "TiffinDB cannot make its data folder at ../tiffindb-data"</td><td>PHP cannot write to the folder that holds the application folder, and <code>data/</code> cannot be written either</td><td>Create the folder empty with write access for PHP, or set <code>data_dir</code>.</td></tr>
+        <tr><td>Step 2: "TiffinDB found files that it did not put there"</td><td>The chosen folder is not empty</td><td>Empty it, or set <code>data_dir</code> to another folder.</td></tr>
+        <tr><td>Step 2: "TiffinDB could not test the data folder"</td><td>Data folder inside the site and the probe got no clear answer: built-in server, a host that blocks connections to itself, a certificate that does not verify, a non-default port</td><td>Move the data folder out of the site (arrangement A or <code>data_dir</code>), then <span class="m-ui">Test again</span>.</td></tr>
+        <tr><td>Step 2: "Your data folder can be opened from the web"</td><td><code>.htaccess</code> is ignored where the data folder is</td><td>Same fixes as above. Do not continue with the folder inside the site.</td></tr>
+        <tr><td><code>setup-code.txt</code> cannot be opened with FTP</td><td>The file has mode 0640 and belongs to the user PHP runs as; on some hosts that is not your FTP user (not verified on the reference host)</td><td>Use the hosting file manager or a shell as the right user, or ask the host.</td></tr>
+        <tr><td>"Too many tries. Wait ..." on step 3</td><td>Five wrong setup codes</td><td>Wait, then copy the code again exactly.</td></tr>
+        <tr><td>Sign-in works, but you are signed out at once on HTTP</td><td><code>secure_cookies</code> is <code>true</code> on a plain-HTTP site, so the browser may not keep the session cookie (derived, not run)</td><td>Use HTTPS, or remove the setting in development.</td></tr>
+        <tr><td>A page "That file is too large"</td><td>The whole request is larger than <code>post_max_size</code>; PHP drops the form, and TiffinDB answers 413</td><td>Raise <code>post_max_size</code> (and <code>upload_max_filesize</code>). TiffinDB's own cap is 64 MiB.</td></tr>
+        <tr><td>The form comes back with "That file is larger than ..., the largest this installation accepts."</td><td>The file is larger than <code>upload_max_filesize</code> (or TiffinDB's 64 MiB cap), but the request fits in <code>post_max_size</code></td><td>Raise <code>upload_max_filesize</code>, keeping <code>post_max_size</code> larger.</td></tr>
+        <tr><td>The only Admin forgot the password</td><td></td><td>Use <code>tools/admin/reset-password.php</code> (shell needed).</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="reference">
+  <h2><span class="m-num">Part 12</span>Quick reference</h2>
+  <div class="m-cols">
+    <div>
+      <h3>Paths</h3>
+      <div class="m-tree">tiffindb/                 <i>application</i>
+  .htaccess               <i>guard, arrangement B</i>
+  public/                 <i>document root</i>
+    .htaccess             <i>routing</i>
+    index.php             <i>front controller</i>
+  config/app.php          <i>defaults</i>
+  config/local.php        <i>optional</i>
+  tools/admin/reset-password.php
+  tools/host-check/host-check.php
+tiffindb-data/            <i>data folder</i>
+  .htaccess               <i>Require all denied</i>
+  setup-code.txt          <i>until setup ends</i>
+  system.sqlite
+  projects/&lt;key&gt;/
+  staging/</div>
+    </div>
+    <div>
+      <h3>Addresses</h3>
+      <dl class="m-gloss">
+        <dt><code>/setup</code></dt><dd>Setup page; 404 once installed</dd>
+        <dt><code>/sign-in</code></dt><dd>Sign in</dd>
+        <dt><code>/projects</code></dt><dd>Project list</dd>
+        <dt><code>/admin/people</code></dt><dd>People (Admin)</dd>
+      </dl>
+      <h3>Limits</h3>
+      <ul>
+        <li>PHP 8.3 or later; SQLite 3.35.5 or later</li>
+        <li>Upload cap 64 MiB, or PHP's lower limit</li>
+        <li>Passwords: 10 characters to 72 bytes</li>
+        <li>Setup code: 5 tries, then a wait</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Commands</h3>
+  <pre class="m-code" data-label="Shell"><code>composer install --no-dev                           # runtime dependency for a site
+composer install                                    # development, with test tools
+composer serve                                      # http://127.0.0.1:8080/
+composer lint                                       # php -l on every file
+composer test                                       # offline test suite
+composer check                                      # lint, then test
+php tools/host-check/host-check.php                 # host check, command line
+php tools/admin/reset-password.php &lt;username&gt; [--data-dir=&lt;path&gt;]</code></pre>
+  <p class="m-foot">TiffinDB is free software under the GNU Affero General Public License, version 3 or later. Source code: <a href="https://github.com/osh-labs/tiffindb">github.com/osh-labs/tiffindb</a>. Screenshots: <code>tools/docs/shots-install-guide.js</code>.</p>
+</section>
+
+<nav class="m-pager" aria-label="Other guides">
+  <a href="user-guide.html"><small>Previous guide</small>User Guide</a>
+  <a href="handoff.html"><small>Next guide</small>Developer Handoff and Roadmap</a>
+</nav>
+
+</main>
+</div>
+</body>
+</html>

@@ -1,7 +1,8 @@
 <?php
-
-// SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (C) TiffinDB contributors
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Copyright (C) TiffinDB contributors
+ */
 
 /*
  * Reduces documentation screenshots to an indexed palette (ADR 0020

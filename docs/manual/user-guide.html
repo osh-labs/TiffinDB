@@ -1,0 +1,1112 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TiffinDB User Guide</title>
+<meta name="description" content="How to use TiffinDB: sign in, find, add, and change records, link records, attach files, use collections and the trash, import and export data, change the display, and do the Admin tasks. Written to the rules of Simplified Technical English.">
+<link rel="icon" href="../brand/tiffindb-mark-small.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/manual.css">
+<link rel="stylesheet" href="assets/user-guide.css">
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="m-skip" href="#main">Skip to content</a>
+<div class="m-shell">
+
+<nav class="m-side" aria-label="Documentation">
+  <a class="m-brand" href="index.html" aria-label="TiffinDB documentation, home">
+    <svg viewBox="-4 -4 72 72" aria-hidden="true" focusable="false"><g fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/><rect x="23" y="2.5" width="18" height="6" rx="3" fill="#FFFFFF"/><rect x="15.5" y="17" width="33" height="4" rx="2" fill="#FFFFFF"/><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="#FFFFFF"/><rect x="17" y="34" width="30" height="10.5" rx="3" fill="#F2B441"/><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="#FFFFFF"/></g></svg>
+    <span>Tiffin<b>DB</b></span>
+  </a>
+  <details class="m-menu"><summary>Contents</summary></details>
+  <p class="m-side__doc">User Guide</p>
+  <ol class="m-toc">
+    <li><a href="#about">About TiffinDB and its words</a>
+      <ol>
+        <li><a href="#roles">Admin and Member</a></li>
+      </ol>
+    </li>
+    <li><a href="#sign-in">Sign in and passwords</a></li>
+    <li><a href="#tour">A tour of the screen</a></li>
+    <li><a href="#projects">Projects</a></li>
+    <li><a href="#find">Look at records</a>
+      <ol>
+        <li><a href="#sort-search">Sort and search</a></li>
+        <li><a href="#filter">Filter</a></li>
+        <li><a href="#search-all">Search all tables</a></li>
+      </ol>
+    </li>
+    <li><a href="#records">Add and change records</a>
+      <ol>
+        <li><a href="#field-types">The 17 field types</a></li>
+      </ol>
+    </li>
+    <li><a href="#links">Links between records</a></li>
+    <li><a href="#files">Attached files</a></li>
+    <li><a href="#collections">Saved collections</a></li>
+    <li><a href="#trash">Trash and restore</a></li>
+    <li><a href="#import">Import from CSV and XLSX</a></li>
+    <li><a href="#export">Export and project archives</a></li>
+    <li><a href="#settings">Reading and display settings</a></li>
+    <li><a href="#admin">Admin tasks</a>
+      <ol>
+        <li><a href="#admin-projects">Projects</a></li>
+        <li><a href="#admin-tables">Tables and fields</a></li>
+        <li><a href="#admin-people">People</a></li>
+        <li><a href="#admin-sharing">Sharing</a></li>
+        <li><a href="#admin-plugins">Plugins</a></li>
+      </ol>
+    </li>
+    <li><a href="#help">Keyboard, problems, and answers</a></li>
+  </ol>
+  <ul class="m-docs">
+    <li><a href="index.html">Documentation home</a></li>
+    <li><a href="user-guide.html" aria-current="page">User Guide</a></li>
+    <li><a href="install-guide.html">Install Guide</a></li>
+    <li><a href="handoff.html">Developer Handoff and Roadmap</a></li>
+  </ul>
+</nav>
+
+<main id="main" class="m-main">
+
+<header class="m-hero">
+  <p class="m-kicker">User guide</p>
+  <h1>Keep your records in TiffinDB</h1>
+  <p class="m-lede">This guide tells you how to find, add, and change records. It also tells you how to link records, attach files, and keep your data safe. It is for the people who use TiffinDB every day. You do not need technical knowledge.</p>
+  <dl class="m-meta">
+    <div><dt>For</dt><dd>Members and Admins</dd></div>
+    <div><dt>Language</dt><dd>Written to the rules of ASD-STE100</dd></div>
+    <div><dt>Application version</dt><dd>0.1.0-dev</dd></div>
+    <div><dt>Examples</dt><dd>Home Inventory (invented data)</dd></div>
+  </dl>
+</header>
+
+<div class="m-note">
+  <p class="m-note__label">Note</p>
+  <p>The text in a box, for example <span class="m-ui">Save</span>, is the text that you see on the screen. Some tasks are for Admins only. These tasks have the mark <span class="m-badge m-badge--admin">Admin</span>. All the screenshots show the example project Home Inventory. All names and values in it are invented.</p>
+</div>
+
+<!-- ============================================================ Part 1 -->
+<section id="about">
+  <h2><span class="m-num">Part 1</span>About TiffinDB and the words it uses</h2>
+  <p>TiffinDB is a program for small personal databases. Examples are a home inventory, a recipe collection, or a list of books. TiffinDB runs on a web server. You use it in a web browser on a computer, a tablet, or a phone.</p>
+  <p>One person installs TiffinDB and manages it. The screens call this person <span class="m-ui">the person who looks after this TiffinDB</span>. This guide calls this person "the Admin who manages TiffinDB".</p>
+
+  <h3>The words</h3>
+  <p>TiffinDB uses a small set of words. This guide uses each word with one meaning only.</p>
+  <dl class="m-gloss">
+    <dt>Project</dt><dd>One database, for example Home Inventory. A project holds tables, forms, and files.</dd>
+    <dt>Table</dt><dd>One kind of thing in a project, for example Items, Rooms, or Warranties.</dd>
+    <dt>Record</dt><dd>One thing in a table, for example the item "Stand mixer". Each table has its own word for one record, for example "item" or "room". You see this word on buttons, for example <span class="m-ui">Add item</span>.</dd>
+    <dt>Field</dt><dd>One piece of information in each record of a table, for example Name, Purchased, or Value. Each field has a type, for example Text, Date, or Currency.</dd>
+    <dt>Title</dt><dd>The field that gives each record its name in lists and links. In Items, the title is the Name field.</dd>
+    <dt>Link</dt><dd>A connection between two records, for example between the item "Stand mixer" and the room "Kitchen".</dd>
+    <dt>Collection</dt><dd>A saved search on one table. It updates by itself when records change.</dd>
+    <dt>Trash</dt><dd>The place for the records that you move to the trash. You can restore a record from the trash.</dd>
+    <dt>Snapshot</dt><dd>A copy of the project that TiffinDB saves before a large change.</dd>
+  </dl>
+
+  <figure class="m-fig m-fig--diagram u-fig">
+    <svg viewBox="0 0 360 596" role="img" aria-labelledby="us-nest-t us-nest-d">
+      <title id="us-nest-t">How a project, tables, records, fields, and a collection fit together</title>
+      <desc id="us-nest-d">The project Home Inventory holds three tables: Rooms, Items, and Warranties. The Items table holds 24 records. One record, Stand mixer, is shown open. It has fields with values: Name is Stand mixer, Room is Kitchen, Value is 329 dollars, and Purchased is 14 March 2025. Two more records, Cordless drill and Desk lamp, are shown closed, and 21 more records are in the table. Below the table is the collection Kitchen. It is a saved search on the Items table with the rule "Room links to Kitchen". It shows 5 of the 24 records and updates by itself.</desc>
+      <defs>
+        <marker id="us-nest-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-soft d-s-accent" x="6" y="6" width="348" height="584" rx="14" stroke-width="1.5"/>
+      <text class="d-taccent" x="20" y="34">Project: Home Inventory</text>
+      <text class="d-t2" x="20" y="54">One database with tables, forms, and files.</text>
+
+      <rect class="d-surface d-s-ctl" x="18" y="70" width="104" height="46" rx="10" stroke-width="1.5"/>
+      <text class="d-t2" x="28" y="89">Table</text>
+      <text class="d-t" x="28" y="108">Rooms</text>
+      <rect class="d-side" x="128" y="70" width="104" height="46" rx="10"/>
+      <text class="d-tside" x="138" y="89">Table</text>
+      <text class="d-tside" x="138" y="108">Items</text>
+      <rect class="d-surface d-s-ctl" x="238" y="70" width="104" height="46" rx="10" stroke-width="1.5"/>
+      <text class="d-t2" x="248" y="89">Table</text>
+      <text class="d-t" x="248" y="108">Warranties</text>
+
+      <path class="d-none d-s-accent" d="M180 116V136" stroke-width="2"/>
+
+      <rect class="d-surface d-s-accent" x="18" y="136" width="324" height="294" rx="12" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="160">Table: Items</text>
+      <text class="d-t2 d-end" x="328" y="160">24 records</text>
+
+      <rect class="d-bg d-s-ctl" x="30" y="172" width="300" height="144" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="44" y="196">Record: Stand mixer</text>
+      <rect class="d-surface d-s-line" x="44" y="208" width="134" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="52" y="226">Field: Name</text>
+      <text class="d-t" x="52" y="244">Stand mixer</text>
+      <rect class="d-surface d-s-line" x="186" y="208" width="134" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="194" y="226">Field: Room</text>
+      <text class="d-t" x="194" y="244">Kitchen</text>
+      <rect class="d-surface d-s-line" x="44" y="260" width="134" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="52" y="278">Field: Value</text>
+      <text class="d-t" x="52" y="296">$329.00</text>
+      <rect class="d-surface d-s-line" x="186" y="260" width="134" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="194" y="278">Field: Purchased</text>
+      <text class="d-t" x="194" y="296">14 Mar 2025</text>
+
+      <rect class="d-bg d-s-line" x="30" y="326" width="300" height="32" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="44" y="347">Record: Cordless drill</text>
+      <rect class="d-bg d-s-line" x="30" y="366" width="300" height="32" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="44" y="387">Record: Desk lamp</text>
+      <text class="d-t2" x="44" y="418">And 21 more records.</text>
+
+      <path class="d-none d-s-ink2" d="M180 458V436" stroke-width="2" marker-end="url(#us-nest-arrow)"/>
+      <text class="d-t2" x="192" y="451">looks in the table</text>
+
+      <rect class="d-warn-soft d-s-brand2 d-dash" x="18" y="458" width="324" height="120" rx="12" stroke-width="2"/>
+      <text class="d-th" x="32" y="484">Collection: Kitchen</text>
+      <text class="d-t2" x="32" y="506">A saved search on the Items table.</text>
+      <text class="d-t2" x="32" y="526">Rule: Room links to Kitchen.</text>
+      <text class="d-t2" x="32" y="546">It shows 5 of the 24 records.</text>
+      <text class="d-t2" x="32" y="566">It updates by itself.</text>
+    </svg>
+    <figcaption><b>Project, table, record, field, collection.</b> A project holds tables. A table holds records. Each record has the same fields. A collection shows some records of one table. It does not hold copies of the records.</figcaption>
+  </figure>
+
+  <h3 id="roles">Admin and Member</h3>
+  <p>Each person has one of two roles. An Admin can do all tasks. A Member can use only the projects that an Admin shares with them.</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Task</th><th>Admin</th><th>Member</th></tr></thead>
+      <tbody>
+        <tr><td>See projects</td><td>All projects</td><td>Only the projects that an Admin shares with them</td></tr>
+        <tr><td>Look at, add, and change records, links, and files</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>Move records to the trash, and restore them</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>Empty the trash</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Make, change, and delete collections</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>Search a project, change the display settings, change their own password</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td>Import and export</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Make projects, change tables and fields, share projects</td><td>Yes</td><td>No</td></tr>
+        <tr><td>Add people, set temporary passwords, turn plugins on and off</td><td>Yes</td><td>No</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>When a Member opens a page that only an Admin can use, TiffinDB shows <span class="m-ui">You cannot do that here</span>. When a Member opens a project that is not shared with them, TiffinDB shows <span class="m-ui">Page not found</span>.</p>
+</section>
+
+<!-- ============================================================ Part 2 -->
+<section id="sign-in">
+  <h2><span class="m-num">Part 2</span>Sign in, sign out, and change your password</h2>
+
+  <h3>Sign in</h3>
+  <p>The Admin who manages TiffinDB gives you the web address, your username, and a temporary password.</p>
+  <ol class="m-steps">
+    <li><p>Open the web address of your TiffinDB in a web browser.</p><p class="m-result">The <span class="m-ui">Sign in</span> page opens.</p></li>
+    <li><p>Type your username in <span class="m-ui">Username</span>.</p></li>
+    <li><p>Type your password in <span class="m-ui">Password</span>.</p><p>To see the password as you type it, tick <span class="m-ui">Show password</span>.</p></li>
+    <li><p>Select <span class="m-ui">Sign in</span>.</p><p>You can also push <kbd>Enter</kbd>.</p><p class="m-result">The page <span class="m-ui">Your projects</span> opens. If this is your first sign-in, the page <span class="m-ui">Change your password</span> opens. Do the procedure in <a href="#first-sign-in">First sign-in</a>.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-fig--half">
+    <img src="img/user-sign-in.png" width="1920" height="1014" alt="The Sign in page: the TiffinDB logo, the fields Username and Password, both empty, a Show password box, a Sign in button, and the text Forgotten your password? Ask the person who looks after this TiffinDB to reset it.">
+    <figcaption><b>The Sign in page.</b> If you forget your password, ask the Admin who manages TiffinDB. You cannot reset it yourself.</figcaption>
+  </figure>
+  <p>If the username or the password is not correct, TiffinDB shows <span class="m-ui">That username and password do not match. Check them and try again.</span> After many incorrect tries, TiffinDB shows <span class="m-ui">Too many tries. Wait 30 seconds, then try again.</span> The time in the message can be different. Wait for that time. Then try again.</p>
+
+  <h3 id="first-sign-in">First sign-in: choose your own password</h3>
+  <p>The first time that you sign in, TiffinDB asks for a new password. This also occurs after an Admin sets a temporary password for you. You cannot open other pages until you change the password.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-password-forced.png" width="1920" height="1278" alt="The Change your password page at the first sign-in of Example Member. A notice at the top says: Before you go on, choose your own password. The one you were given was only for signing in the first time. The fields Current password, New password, and Type the new password again are empty. There is a Show passwords box and a Change password button.">
+    <figcaption><b>Change your password at the first sign-in.</b> There is no <span class="m-ui">Cancel</span> link on this page.</figcaption>
+  </figure>
+  <ol class="m-steps">
+    <li><p>Type the temporary password in <span class="m-ui">Current password</span>.</p></li>
+    <li><p>Type a new password in <span class="m-ui">New password</span>.</p><p>Use at least 10 characters. Do not use your username. Some unrelated words together make a good password.</p></li>
+    <li><p>Type the new password again in <span class="m-ui">Type the new password again</span>.</p></li>
+    <li><p>Select <span class="m-ui">Change password</span>.</p><p class="m-result">The page <span class="m-ui">Your projects</span> opens with the message <span class="m-ui">Your password has been changed.</span></p></li>
+  </ol>
+  <div class="m-note">
+    <p class="m-note__label">Note</p>
+    <p>If the two new passwords are different, TiffinDB shows only that problem. It does not show other problems at the same time, for example a password that is too short. Correct the problem. Then select <span class="m-ui">Change password</span> again. Do this again for each problem.</p>
+  </div>
+
+  <h3>Change your password at a different time</h3>
+  <ol class="m-steps">
+    <li><p>Select your name in the top bar, for example <span class="m-ui">Example Member</span>.</p><p class="m-result">The page <span class="m-ui">Change your password</span> opens.</p></li>
+    <li><p>Do steps 1 to 4 of the procedure above. Type your current password in step 1.</p></li>
+  </ol>
+  <p>To stop without a change, select <span class="m-ui">Cancel</span>.</p>
+
+  <h3>Sign out</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Sign out</span> at the right end of the top bar.</p><p class="m-result">The <span class="m-ui">Sign in</span> page opens with the message <span class="m-ui">You have signed out.</span></p></li>
+  </ol>
+  <div class="m-note m-note--warning">
+    <p class="m-note__label">Warning</p>
+    <p>Always sign out on a computer that other people also use. If you do not sign out, the next person can see and change your records.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 3 -->
+<section id="tour">
+  <h2><span class="m-num">Part 3</span>A tour of the screen</h2>
+  <p>This is the list of a table, as an Admin sees it. The numbers show the parts of the screen. The list below the figure tells you what each part does.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-tour.png" width="1920" height="2720" alt="The Items list of Home Inventory with eleven numbered marks: 1 the links Projects, People, Plugins; 2 the search box Search Home Inventory; 3 the Display link; 4 the name Example Admin; 5 the Tables group in the sidebar; 6 the Collections group; 7 the Data group with Import a file and Export; 8 the links Tables and fields and In the trash; 9 the Add item button; 10 the box with Find in Items, Sort by, Apply, and Filter; 11 the table of records with the columns Name, Room, Category, Purchased, Value, Condition, and Quantity.">
+    <figcaption><b>The parts of the screen.</b> The project sidebar (numbers 5 to 8) shows on the list pages of tables and collections. Other pages do not have it.</figcaption>
+  </figure>
+  <ol class="u-keys">
+    <li><span class="m-ui">Projects</span> opens the list of your projects. Admins also see <span class="m-ui">People</span> and <span class="m-ui">Plugins</span>. The TiffinDB logo also opens the list of your projects.</li>
+    <li>The search box looks in all the tables of the project. Refer to <a href="#search-all">Search all tables</a>.</li>
+    <li><span class="m-ui">Display</span> opens the page <span class="m-ui">Reading and display</span>. Refer to <a href="#settings">Part 13</a>.</li>
+    <li>Your name opens the page <span class="m-ui">Change your password</span>. <span class="m-ui">Sign out</span> is to the right of your name.</li>
+    <li><span class="m-ui">Tables</span>: the tables of the project, with the number of records in each table. Select a table to see its list.</li>
+    <li><span class="m-ui">Collections</span>: your saved collections, with the number of records that match. <span class="m-ui">New collection</span> makes a new collection.</li>
+    <li><span class="m-ui">Data</span>: <span class="m-ui">Import a file</span> and <span class="m-ui">Export</span>. Only Admins see this group.</li>
+    <li><span class="m-ui">Tables and fields</span> shows the tables of the project. <span class="m-ui">In the trash</span> opens the trash, with the number of records in it.</li>
+    <li><span class="m-ui">Add item</span> adds a new record to the table. The word "item" changes with the table.</li>
+    <li>The controls for search, sort, and filter in this table. Refer to <a href="#find">Part 5</a>.</li>
+    <li>The records. The first column is the title of each record. Select a title to open the record.</li>
+  </ol>
+  <p>At the bottom of each page is the line <span class="m-ui">TiffinDB, free software under AGPL-3.0-or-later</span> and the link <span class="m-ui">Source code</span>.</p>
+
+  <h3>Messages</h3>
+  <p>After a change, TiffinDB shows a message in a box at the top of the page, for example <span class="m-ui">Your changes have been saved.</span> If there is a problem, TiffinDB shows a box with the title <span class="m-ui">There is a problem</span> or <span class="m-ui">There are 2 problems</span>. Each problem in the box is a link. Select the link to go to the field with the problem. The same text also shows below the field.</p>
+
+  <h3>On a phone</h3>
+  <p>TiffinDB also works on a phone. On a narrow screen, the top bar uses more than one line. The project sidebar is above the list of records. Scroll down to see the records. A wide table of records scrolls to the side in its own box.</p>
+  <div class="u-phones">
+    <figure class="m-fig m-fig--shot m-fig--phone">
+      <img src="img/user-phone-list.png" width="780" height="1560" alt="The Items page on a phone. The top bar uses five lines: the logo, the links Projects, People, Plugins, the search box, Display and Example Admin, and Sign out. Below it the teal project sidebar fills the rest of the screen with the tables Rooms, Items, Warranties and the collections.">
+      <figcaption><b>A table on a phone.</b> The records are below the sidebar.</figcaption>
+    </figure>
+    <figure class="m-fig m-fig--shot m-fig--phone">
+      <img src="img/user-phone-record.png" width="780" height="1560" alt="The Stand mixer record on a phone: the top bar, the breadcrumb Home Inventory / Items / Stand mixer, the title, the Previous and Next buttons, and the start of the Details group with the Name field and the Room link Kitchen.">
+      <figcaption><b>A record on a phone.</b> The fields are in one column.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================================================ Part 4 -->
+<section id="projects">
+  <h2><span class="m-num">Part 4</span>Projects</h2>
+  <p>After you sign in, the page <span class="m-ui">Your projects</span> opens. It shows one card for each project that you can use. Each card shows the tables, the number of records, and the last change. The number of records does not include records in the trash.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-projects.png" width="1920" height="1200" alt="Your projects, as an Admin sees it: the buttons New project and Import a project archive, and two cards. Home Inventory has the tables Rooms, Items, Warranties, 36 records, last changed today by Example Admin, shared with 1 person, and the links Open and Sharing. Recipe Box has the table Recipes, 5 records, and is shared with Admins only. A note at the bottom says that Members see only the projects shared with them.">
+    <figcaption><b>Your projects, as an Admin sees it.</b> <span class="m-ui">New project</span>, <span class="m-ui">Import a project archive</span>, and <span class="m-ui">Sharing</span> are for Admins only.</figcaption>
+  </figure>
+  <figure class="m-fig m-fig--shot m-fig--half">
+    <img src="img/user-projects-member.png" width="1920" height="941" alt="Your projects, as Example Member sees it: one card, Home Inventory, with its tables, records, last change, and an Open link. There are no Admin buttons.">
+    <figcaption><b>Your projects, as a Member sees it.</b> A Member sees only the projects that an Admin shares with them.</figcaption>
+  </figure>
+
+  <h3>Open a project</h3>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">Your projects</span>, select the name of the project or <span class="m-ui">Open</span>.</p><p class="m-result">The list of the first table of the project opens. If the project has no tables, the tables page of the project opens.</p></li>
+  </ol>
+  <p>To go to a different project, select <span class="m-ui">Switch project</span> in the sidebar. You can also select <span class="m-ui">Projects</span> in the top bar.</p>
+  <p>If you see <span class="m-ui">No projects have been shared with you yet.</span>, ask an Admin to share a project with you.</p>
+
+  <h3>The tables page</h3>
+  <p>The link <span class="m-ui">Tables and fields</span> in the sidebar opens a page with the tables of the project. It shows the number of fields and records in each table. For a Member, this page only gives information. The table names are not links. The page has no sidebar. To return to the records, select <span class="m-ui">Projects</span> in the top bar. Then select <span class="m-ui">Open</span>. An Admin can change the tables and fields on this page (refer to <a href="#admin-tables">Tables and fields</a>).</p>
+</section>
+
+<!-- ============================================================ Part 5 -->
+<section id="find">
+  <h2><span class="m-num">Part 5</span>Look at records: list, sort, search, and filter</h2>
+  <p>Select a table in the sidebar to see its list. The line below the table name tells you the number of records and the sort order, for example <span class="m-ui">24 records, sorted by Name, A to Z</span>. The list shows 50 records on each page. Use <span class="m-ui">Previous</span> and <span class="m-ui">Next</span> below the list to see more.</p>
+  <p>The list shows the title and up to six more fields. Long text fields do not show in the list. A link field shows the titles of the linked records. A file field shows the number of files, or <span class="m-ui">None</span>.</p>
+
+  <h3 id="sort-search">Sort and search in one table</h3>
+  <ol class="m-steps">
+    <li><p>To search, type a word or part of a word in <span class="m-ui">Find in Items</span>.</p><p>TiffinDB looks for the text in all the fields of each record.</p></li>
+    <li><p>To sort, select an order in <span class="m-ui">Sort by</span>, for example <span class="m-ui">Value, highest first</span>.</p></li>
+    <li><p>Select <span class="m-ui">Apply</span>.</p><p>You can also push <kbd>Enter</kbd> in the search box.</p><p class="m-result">The list shows only the records that match. The line below the table name tells you how many match, for example <span class="m-ui">2 records match out of 24</span>.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-list-search.png" width="1920" height="738" alt="The Items list after a search: Find in Items contains lamp and Sort by is Value, highest first. The line under the heading reads 2 records match out of 24, sorted by Value, highest first. The list shows Floor lamp at 89 dollars and Desk lamp at 42 dollars. The Value column heading reads Value (highest first).">
+    <figcaption><b>Search and sort together.</b> The heading of the sorted column shows the order, for example <span class="m-ui">Value (highest first)</span>.</figcaption>
+  </figure>
+  <p>Each type of field has its own sort words. For example, text sorts <span class="m-ui">A to Z</span>, numbers sort <span class="m-ui">lowest first</span>, and dates sort <span class="m-ui">oldest first</span>. At the end of the list are <span class="m-ui">Newest added first</span>, <span class="m-ui">Oldest added first</span>, and <span class="m-ui">Recently changed first</span>.</p>
+  <p>To see all records again, clear the search box. Then select <span class="m-ui">Apply</span>.</p>
+
+  <h3 id="filter">Filter</h3>
+  <p>A filter shows only the records that agree with one condition. A filter works on fields of these types: Choice, Checkbox, Link to another table, Date, and Date and time.</p>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Filter</span> above the list.</p><p class="m-result">The page <span class="m-ui">Filter Items</span> opens.</p></li>
+    <li><p>Select a field in <span class="m-ui">Field</span>, for example <span class="m-ui">Category (Choice)</span>.</p></li>
+    <li><p>Select <span class="m-ui">Next</span>.</p></li>
+    <li><p>Select the condition, for example <span class="m-ui">is</span>.</p></li>
+    <li><p>Select the value, for example <span class="m-ui">Appliance</span>.</p><p>To use a different field, select <span class="m-ui">Choose another field</span>.</p></li>
+    <li><p>Select <span class="m-ui">Show matching records</span>.</p><p class="m-result">The list shows only the records that match, with the message <span class="m-ui">Showing only records where Category is Appliance.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-filter.png" width="1920" height="1046" alt="The Filter Items page, step 2. The group Show records where Category has the option is selected, with Appliance chosen in the Choice list. The option is empty is not selected. Below are the button Show matching records, the link Cancel, and the link Choose another field.">
+    <figcaption><b>Step 2 of a filter.</b> The conditions are different for each type of field. For a date, you give a range with <span class="m-ui">From</span> and <span class="m-ui">To</span>. You can leave one of them empty.</figcaption>
+  </figure>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-filter-result.png" width="1920" height="1200" alt="The Items list with a filter: the line reads 5 records match out of 24, and a message box says Showing only records where Category is Appliance, with the link Remove the filter. The list shows Air purifier, Espresso machine, Robot vacuum, Sewing machine, and Stand mixer.">
+    <figcaption><b>The list with a filter.</b> Select <span class="m-ui">Remove the filter</span> to see all records again.</figcaption>
+  </figure>
+  <p>You can use one filter at a time. To use more than one condition, make a collection (refer to <a href="#collections">Part 9</a>). If the filter has a problem, TiffinDB shows all records and the message <span class="m-ui">The filter could not be used, so every record is shown.</span> with the reason.</p>
+
+  <h3 id="search-all">Search all tables of a project</h3>
+  <ol class="m-steps">
+    <li><p>Type a word in the search box in the top bar, for example <code>garage</code>.</p><p>The search box shows on the list pages of tables and collections.</p></li>
+    <li><p>Push <kbd>Enter</kbd>.</p><p class="m-result">The page <span class="m-ui">Search results</span> opens. The results are in groups, one group for each table.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-search.png" width="1920" height="1200" alt="Search results for garage: the line 5 records match garage, the group Rooms: 1 match with the room Garage, and the group Items: 4 matches with Cordless drill, Lawn mower, Step ladder, and Tent, 4-person, each with the text Room: Garage below it.">
+    <figcaption><b>Search results.</b> The search also finds the titles of linked records. Here it finds four items because their room is Garage.</figcaption>
+  </figure>
+  <p>Below each result, TiffinDB shows the field that matches. This is the first field that matches. It is not always the title. For example, a search for "drill" shows the Manual field of the item "Cordless drill".</p>
+</section>
+
+<!-- ============================================================ Part 6 -->
+<section id="records">
+  <h2><span class="m-num">Part 6</span>Add and change a record</h2>
+  <p>Select the title of a record in a list to open it. The record page is also the form that you use to change it. There is no separate "edit" mode.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-record.png" width="1920" height="3755" alt="The Stand mixer record with eight numbered marks: 1 the breadcrumb Home Inventory / Items / Stand mixer; 2 the Previous and Next buttons; 3 the Details group with the fields Name, Room, Category, Purchased, Value, Condition, Quantity, Serial number, Under warranty, Manual, Notes, and Item number; 4 the Room link Kitchen with the button Choose a different room; 5 the Files group with a receipt file and a photo; 6 the Warranties group with one linked warranty; 7 the Save and Back to list buttons; 8 the Move to trash button. The last line says Added today by Example Admin.">
+    <figcaption><b>A record.</b> The line at the bottom tells you who added the record and who changed it last.</figcaption>
+  </figure>
+  <ol class="u-keys">
+    <li>The breadcrumb. Select the name of the project or the table to open it.</li>
+    <li><span class="m-ui">Previous</span> and <span class="m-ui">Next</span> open the record before or after this one, in the order of the list that you came from.</li>
+    <li><span class="m-ui">Details</span>: the usual fields of the record.</li>
+    <li>A link to one record (here, the room). Refer to <a href="#links">Part 7</a>.</li>
+    <li><span class="m-ui">Files</span>: the attached files and pictures. Refer to <a href="#files">Part 8</a>.</li>
+    <li>A link to more than one record (here, the warranties). Each field of this kind has its own group.</li>
+    <li><span class="m-ui">Save</span> saves your changes. <span class="m-ui">Back to list</span> opens the list again.</li>
+    <li><span class="m-ui">Move to trash</span>. Refer to <a href="#trash">Part 10</a>.</li>
+  </ol>
+
+  <h3>Change a record</h3>
+  <ol class="m-steps">
+    <li><p>Open the record.</p></li>
+    <li><p>Change the values in the fields.</p></li>
+    <li><p>Select <span class="m-ui">Save</span>.</p><p class="m-result">The message <span class="m-ui">Your changes have been saved.</span> shows. The record stays open.</p></li>
+  </ol>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>The buttons for links and files open a different page. Below these buttons is the text <span class="m-ui">Save your changes first: the buttons here leave this page.</span> Select <span class="m-ui">Save</span> before you use them. If you do not, you lose the changes that you typed.</p>
+  </div>
+
+  <h3>Add a record</h3>
+  <ol class="m-steps">
+    <li><p>Open the list of the table.</p></li>
+    <li><p>Select <span class="m-ui">Add item</span>. The word changes with the table, for example <span class="m-ui">Add room</span>.</p><p class="m-result">The page <span class="m-ui">New item</span> opens.</p></li>
+    <li><p>Type the values that you know. You can add more later.</p></li>
+    <li><p>Select <span class="m-ui">Save</span>.</p><p class="m-result">The new record opens with the message <span class="m-ui">The item has been added.</span></p></li>
+  </ol>
+  <p>On a new record, you cannot add links or files yet. TiffinDB shows, for example, <span class="m-ui">You can choose one once this record is saved.</span> Save the record first. Then add the links and files. An Auto-number field shows <span class="m-ui">Given when you save</span>.</p>
+
+  <h3>When a value is not correct</h3>
+  <p>If a value does not agree with its field, TiffinDB does not save the record. It shows the problems at the top of the page and below each field.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-record-error.png" width="1920" height="1524" alt="A New item page after Save with two problems. The box at the top has the title There are 2 problems and the links Enter an amount, for example 12.50. and Enter a number, for example 12 or 3.5. Below, the field Value (US dollars) contains the word twelve and shows the message Enter an amount, for example 12.50. The field Quantity contains the word two and shows the message Enter a number, for example 12 or 3.5.">
+    <figcaption><b>Two problems.</b> Select a problem in the box to go to its field. Correct the value. Then select <span class="m-ui">Save</span> again.</figcaption>
+  </figure>
+  <p>A field with <span class="m-ui">(required)</span> after its name must have a value. If it is empty, TiffinDB shows <span class="m-ui">Fill this in.</span></p>
+
+  <h3>When another person changed the same record</h3>
+  <p>Two people can open the same record at the same time. If the other person saves first, TiffinDB does not save your changes. It shows the page <span class="m-ui">This item was changed while you were editing it</span>. A table shows the fields that are different: <span class="m-ui">Saved version</span> and <span class="m-ui">Your version</span>.</p>
+  <ul>
+    <li>To keep the other person's change, select <span class="m-ui">Keep the saved version</span>.</li>
+    <li>To save your values, select <span class="m-ui">Save my version anyway</span>.</li>
+  </ul>
+  <p>If the other person changed different fields, TiffinDB tells you <span class="m-ui">The other change was to fields you did not change here, so saving keeps both.</span></p>
+
+  <h3 id="field-types">The 17 field types</h3>
+  <p>An Admin selects the type of each field. The type controls what you can type in the field and how TiffinDB shows it.</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Type</th><th>What it holds</th><th>How you give a value</th><th>How it shows</th></tr></thead>
+      <tbody>
+        <tr><td><span class="m-ui">Text</span></td><td>A short text on one line, for example a name</td><td>Type it</td><td>As you typed it</td></tr>
+        <tr><td><span class="m-ui">Long text</span></td><td>Several lines of text, for example notes</td><td>Type it in a large box</td><td>On the record only, not in lists</td></tr>
+        <tr><td><span class="m-ui">Number</span></td><td>A number, for example a quantity</td><td>Type it, for example <code>12</code> or <code>3.5</code></td><td>12, 3.5</td></tr>
+        <tr><td><span class="m-ui">Currency</span></td><td>An amount of money</td><td>Type it, for example <code>12.50</code>. The field name tells you the currency.</td><td>$329.00</td></tr>
+        <tr><td><span class="m-ui">Rating</span></td><td>A score from 1 to 5, or to a different top score</td><td>Select a number, or <span class="m-ui">Not rated</span></td><td>4 of 5</td></tr>
+        <tr><td><span class="m-ui">Auto-number</span></td><td>A number that TiffinDB gives each new record</td><td>You cannot type it</td><td>27</td></tr>
+        <tr><td><span class="m-ui">Date</span></td><td>A day</td><td>Use the date picker of your browser</td><td>14 Mar 2025</td></tr>
+        <tr><td><span class="m-ui">Time</span></td><td>A time of day</td><td>Use the time picker of your browser</td><td>14:30</td></tr>
+        <tr><td><span class="m-ui">Date and time</span></td><td>A day and a time, for example an appointment</td><td>Use the date and time picker of your browser</td><td>The date, then the time</td></tr>
+        <tr><td><span class="m-ui">Duration</span></td><td>A length of time</td><td>Type hours and minutes, for example <code>1:30</code>. A single number is minutes: <code>90</code> becomes 1:30.</td><td>1:15</td></tr>
+        <tr><td><span class="m-ui">Checkbox</span></td><td>Yes or no</td><td>Tick the box, or leave it empty</td><td>Yes or No</td></tr>
+        <tr><td><span class="m-ui">Choice</span></td><td>One option from a list</td><td>Select it from a list. <span class="m-ui">Not chosen</span> means empty.</td><td>The option</td></tr>
+        <tr><td><span class="m-ui">Email address</span></td><td>An email address</td><td>Type it, for example <code>name@example.com</code></td><td>As you typed it</td></tr>
+        <tr><td><span class="m-ui">Phone number</span></td><td>A phone number</td><td>Type digits, spaces, and <code>+ ( ) - .</code></td><td>As you typed it</td></tr>
+        <tr><td><span class="m-ui">Web address</span></td><td>A link to a web page</td><td>Type it with <code>https://</code> or <code>http://</code> at the start</td><td>As you typed it</td></tr>
+        <tr><td><span class="m-ui">File or image</span></td><td>Files, for example photos, receipts, or manuals</td><td>On a separate page. Refer to <a href="#files">Part 8</a>.</td><td>The file name; a picture shows small</td></tr>
+        <tr><td><span class="m-ui">Link to another table</span></td><td>Links to records in a table</td><td>On a separate page. Refer to <a href="#links">Part 7</a>.</td><td>The titles of the linked records</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Each type has its own problem messages, for example <span class="m-ui">Enter a date as year, month, day, for example 2026-03-14.</span> The message tells you what to type.</p>
+</section>
+
+<!-- ============================================================ Part 7 -->
+<section id="links">
+  <h2><span class="m-num">Part 7</span>Links between records</h2>
+  <p>A link connects a record to a record in a different table, or in the same table. In Home Inventory, each item links to one room, and an item can link to warranties. A link shows on the two records. When you link an item to the room Kitchen, the Kitchen record also shows the item.</p>
+
+  <figure class="m-fig m-fig--diagram u-fig">
+    <svg viewBox="0 0 360 594" role="img" aria-labelledby="us-links-t us-links-d">
+      <title id="us-links-t">How links connect Rooms, Items, and Warranties</title>
+      <desc id="us-links-d">Three tables, from top to bottom. In the Rooms table, the record Kitchen has the field Items, which lists several records: Stand mixer, Espresso machine, Dutch oven, and more. Each item links to one room, and a room links to several items. In the Items table, the record Stand mixer has the field Room with the value Kitchen, and the field Warranties with the value Stand mixer, manufacturer warranty. Each link shows on both records. An item links to several warranties, and each warranty links to one item. In the Warranties table, the record Stand mixer, manufacturer warranty has the field Item with the value Stand mixer, and other fields such as Provider, Starts, and Ends.</desc>
+      <defs>
+        <marker id="us-links-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-accent" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-surface d-s-line" x="6" y="6" width="348" height="150" rx="12" stroke-width="1.5"/>
+      <text class="d-taccent" x="20" y="32">Table: Rooms</text>
+      <rect class="d-bg d-s-ctl" x="20" y="44" width="320" height="100" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="34" y="68">Kitchen</text>
+      <text class="d-t2" x="34" y="90">Field Items (several records):</text>
+      <text class="d-t" x="34" y="112">Stand mixer, Espresso machine,</text>
+      <text class="d-t" x="34" y="132">Dutch oven, and more</text>
+
+      <path class="d-none d-s-accent" d="M50 160V208" stroke-width="2" marker-start="url(#us-links-arrow)" marker-end="url(#us-links-arrow)"/>
+      <text class="d-t2" x="70" y="180">Each item links to one room.</text>
+      <text class="d-t2" x="70" y="198">A room links to several items.</text>
+
+      <rect class="d-soft d-s-accent" x="6" y="212" width="348" height="170" rx="12" stroke-width="1.5"/>
+      <text class="d-taccent" x="20" y="238">Table: Items</text>
+      <rect class="d-surface d-s-ctl" x="20" y="250" width="320" height="120" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="34" y="274">Stand mixer</text>
+      <text class="d-t" x="34" y="298">Room: Kitchen</text>
+      <text class="d-t" x="34" y="320">Warranties: Stand mixer,</text>
+      <text class="d-t" x="34" y="340">manufacturer warranty</text>
+      <text class="d-t2" x="34" y="360">Each link shows on both records.</text>
+
+      <path class="d-none d-s-accent" d="M50 386V434" stroke-width="2" marker-start="url(#us-links-arrow)" marker-end="url(#us-links-arrow)"/>
+      <text class="d-t2" x="70" y="406">An item links to several warranties.</text>
+      <text class="d-t2" x="70" y="424">Each warranty links to one item.</text>
+
+      <rect class="d-surface d-s-line" x="6" y="438" width="348" height="150" rx="12" stroke-width="1.5"/>
+      <text class="d-taccent" x="20" y="464">Table: Warranties</text>
+      <rect class="d-bg d-s-ctl" x="20" y="476" width="320" height="100" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="34" y="500">Stand mixer,</text>
+      <text class="d-th" x="34" y="520">manufacturer warranty</text>
+      <text class="d-t" x="34" y="544">Item: Stand mixer</text>
+      <text class="d-t2" x="34" y="564">And Provider, Starts, Ends, and more.</text>
+    </svg>
+    <figcaption><b>Links in Home Inventory.</b> When an Admin makes a link field, the Admin selects <span class="m-ui">Each item can link to</span> and <span class="m-ui">Each record in the linked table can link to</span>. TiffinDB adds a matching field to the other table. Refer to <a href="#admin-tables">Tables and fields</a>.</figcaption>
+  </figure>
+
+  <h3>Link to one record</h3>
+  <p>A field that links to one record (for example Room) shows the linked title. Below it is the button <span class="m-ui">Choose a record</span>, or <span class="m-ui">Choose a different room</span> when a room is already chosen.</p>
+  <ol class="m-steps">
+    <li><p>Save the record if you changed it.</p></li>
+    <li><p>Select <span class="m-ui">Choose a different room</span>.</p><p class="m-result">The page <span class="m-ui">Room for Stand mixer</span> opens.</p></li>
+    <li><p>To find a record, type part of its title in <span class="m-ui">Find in Rooms</span>.</p></li>
+    <li><p>Select <span class="m-ui">Find</span>.</p></li>
+    <li><p>Select <span class="m-ui">Choose</span> next to the record.</p><p class="m-result">The message <span class="m-ui">Garage is now chosen.</span> shows. The new record replaces the old one.</p></li>
+    <li><p>Select <span class="m-ui">Back to Stand mixer</span>.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-link-picker.png" width="1920" height="1485" alt="The page Room for Stand mixer: the text Choose one room. Choosing replaces the current one. Under Linked now is Kitchen with an Unlink button. Below are the box Find in Rooms with a Find button, and the list Rooms you can link, 5 records: Bedroom, Garage, Hallway, Living room, and Study, each with a Choose button. At the bottom are the buttons Back to Stand mixer and Add a new room and choose it.">
+    <figcaption><b>Choose a room.</b> Each time that you select <span class="m-ui">Choose</span> or <span class="m-ui">Link</span>, TiffinDB saves the link immediately.</figcaption>
+  </figure>
+
+  <h3>Link to several records</h3>
+  <ol class="m-steps">
+    <li><p>Save the record if you changed it.</p></li>
+    <li><p>Select <span class="m-ui">Link a record</span>. If there are links already, the button is <span class="m-ui">Link another warranty</span>.</p></li>
+    <li><p>Select <span class="m-ui">Link</span> next to each record that you want.</p><p class="m-result">The message, for example <span class="m-ui">Stand mixer, manufacturer warranty is now linked.</span>, shows. The record moves to <span class="m-ui">Linked now</span>.</p></li>
+  </ol>
+  <p>Some links allow only one record on the other side. For example, each warranty links to one item only. A warranty that is linked to a different item shows, for example, <span class="m-ui">Linked to Cordless drill</span>. It has no <span class="m-ui">Link</span> button. In the example data, each warranty is linked to an item already. Thus the page shows no <span class="m-ui">Link</span> buttons. To move a warranty to a different item, first unlink it from its item.</p>
+
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-room-links.png" width="1658" height="1052" alt="The Items group on the record of the room Kitchen: five linked items, Stand mixer, Espresso machine, Dutch oven, Cast iron skillet, and Kitchen scale, each with its category and an Unlink button. Below are the button Link another item and the text Unlinking does not delete the item record.">
+    <figcaption><b>The other side of a link.</b> The room Kitchen shows the items that link to it.</figcaption>
+  </figure>
+  <p>If the record that you need does not exist yet, select <span class="m-ui">Add a new room and choose it</span> at the bottom of the page. For a link to several records, the button is <span class="m-ui">Add a new warranty and link it</span>. Type the values of the new record. Then select <span class="m-ui">Save</span>.</p>
+  <p>TiffinDB adds the record and links it. The page <span class="m-ui">Room for Stand mixer</span> opens again with a message, for example <span class="m-ui">Example attic has been added and linked.</span></p>
+  <p>When you search on this page and then choose a record, the chosen record is not in the list of results. The page can then show, for example, <span class="m-ui">Nothing in Rooms matches &quot;kit&quot;.</span> This is correct: the record is now below <span class="m-ui">Linked now</span>.</p>
+
+  <h3>Unlink a record</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Unlink</span> next to the linked record.</p><p class="m-result">The message, for example <span class="m-ui">Kitchen is no longer linked.</span>, shows immediately.</p></li>
+  </ol>
+  <p><span class="m-ui">Unlink</span> only removes the link. It does not delete the other record.</p>
+  <p>A link to a record in the trash stays. When you restore the record, the link shows again. If the room of an item is in the trash, you cannot choose a different room. Restore the room. Then unlink it. As an alternative, ask an Admin to empty the trash.</p>
+</section>
+
+<!-- ============================================================ Part 8 -->
+<section id="files">
+  <h2><span class="m-num">Part 8</span>Attached files</h2>
+  <p>A File or image field holds files, for example photos, receipts, or manuals. The files are in the <span class="m-ui">Files</span> group of the record. TiffinDB shows pictures in PNG, JPEG, GIF, or WebP format on the record. It keeps other files for download. A field holds at most 100 files for each record.</p>
+
+  <h3>Add a file</h3>
+  <ol class="m-steps">
+    <li><p>Save the record if you changed it.</p></li>
+    <li><p>In the <span class="m-ui">Files</span> group, select <span class="m-ui">Add a file</span> below the field. For a field that holds only pictures, the button is <span class="m-ui">Add an image</span>.</p><p class="m-result">The page <span class="m-ui">Add a file to Espresso machine</span> opens.</p></li>
+    <li><p>Select the file on your device in <span class="m-ui">File</span>.</p></li>
+    <li><p>Select <span class="m-ui">Add the file</span>.</p><p class="m-result">The record opens with the message, for example <span class="m-ui">receipt.pdf has been added.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-file-add.png" width="1920" height="795" alt="The page Add a file to Espresso machine: the text The file is added to Receipt, the File field with a Choose File button, the hint about the largest size and the picture formats, the button Add the file, the link Cancel, and the text This field holds 1 file. At most 100 per item.">
+    <figcaption><b>Add a file.</b> The largest file size shows in the hint on your screen. This size comes from the settings of your server. Thus it is not the same on all installations. The Admin who manages TiffinDB can tell you the size.</figcaption>
+  </figure>
+  <p>If the file is too large, TiffinDB shows <span class="m-ui">That file is too large</span> and the largest size. Make the file smaller. Or ask the Admin who manages TiffinDB.</p>
+
+  <h3>Open or download a file</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Open</span> next to the file.</p><p class="m-result">The page of the file opens. It shows a picture large. It also shows the kind, the size, and the date of the file.</p></li>
+    <li><p>To save a copy on your device, select <span class="m-ui">Download</span>.</p></li>
+  </ol>
+
+
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-file-page.png" width="1920" height="1556" alt="The page of the file photo-EX-0001.png, in Photo of Stand mixer: a large example picture, the box About this file with Kind image, Size 14 KB, and Added today by Example Admin, and the buttons Download, Replace, Remove, and Back to Stand mixer.">
+    <figcaption><b>The page of a file.</b> TiffinDB does not show files that are not pictures. Download them to open them on your device.</figcaption>
+  </figure>
+
+  <h3>Replace a file</h3>
+  <ol class="m-steps">
+    <li><p>Save the record if you changed it.</p></li>
+    <li><p>Select <span class="m-ui">Replace</span> next to the file.</p><p class="m-result">The page <span class="m-ui">Replace receipt-EX-0001.txt</span> opens.</p></li>
+    <li><p>Select the new file in <span class="m-ui">File</span>.</p></li>
+    <li><p>Select <span class="m-ui">Replace the file</span>.</p><p class="m-result">TiffinDB deletes the old file and keeps the new file. The record opens with a message, for example <span class="m-ui">receipt-EX-0002.pdf has replaced receipt-EX-0001.txt.</span></p></li>
+  </ol>
+
+  <h3>Remove a file</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Remove</span> next to the file.</p><p class="m-result">The page <span class="m-ui">Remove receipt-EX-0001.txt?</span> opens.</p></li>
+    <li><p>Select <span class="m-ui">Remove the file</span>.</p><p class="m-result">TiffinDB deletes the file. The message, for example <span class="m-ui">receipt-EX-0001.txt has been removed.</span>, shows.</p></li>
+  </ol>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>When you remove or replace a file, TiffinDB deletes the old file. You cannot restore it from the trash. If you possibly need the file again, download a copy first.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 9 -->
+<section id="collections">
+  <h2><span class="m-num">Part 9</span>Saved collections</h2>
+  <p>A collection is a saved search on one table. It has one or more rules. It updates by itself when records change. Collections show in the sidebar below <span class="m-ui">Collections</span>, with the number of records that match. Admins and Members can make collections. All the people who can use the project see the same collections.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-collection.png" width="2160" height="1424" alt="The collection Worth over 200 dollars: the line 10 records in Items match. Sorted by Value, highest first; the buttons Edit collection and Add item; the box Find in Worth over 200 dollars with Sort by and Apply; and the list of all 10 records with the columns Name, Room, Category, Purchased, Value (highest first), Condition, and Quantity, from Sofa, three-seat at 899 dollars to Bookshelf, oak at 240 dollars. In the sidebar the collection is marked as current.">
+    <figcaption><b>A collection.</b> It looks like the list of a table. <span class="m-ui">Previous</span> and <span class="m-ui">Next</span> on a record stay inside the collection.</figcaption>
+  </figure>
+
+  <h3>Make a collection</h3>
+  <ol class="m-steps">
+    <li><p>Open the list of the table.</p></li>
+    <li><p>Select <span class="m-ui">New collection</span> in the sidebar.</p><p class="m-result">The page <span class="m-ui">New collection</span> opens.</p></li>
+    <li><p>Type a name in <span class="m-ui">Collection name</span>.</p></li>
+    <li><p>Below <span class="m-ui">Show items that match</span>, select <span class="m-ui">All of these rules</span> or <span class="m-ui">Any of these rules</span>.</p></li>
+    <li><p>In <span class="m-ui">Rule 1</span>, select a field.</p></li>
+    <li><p>Select <span class="m-ui">Preview</span>.</p><p class="m-result">The tests for that field show, for example <span class="m-ui">is ticked</span> or <span class="m-ui">is after</span>.</p></li>
+    <li><p>Select a test.</p></li>
+    <li><p>If the test needs a value, type or select the value.</p></li>
+    <li><p>To add a rule, select <span class="m-ui">Add a rule</span>. Then do steps 5 to 8 again for the new rule.</p></li>
+    <li><p>If necessary, select an order in <span class="m-ui">Sort by</span>.</p></li>
+    <li><p>Select <span class="m-ui">Preview</span> to see the first 5 records that match.</p></li>
+    <li><p>Select <span class="m-ui">Save collection</span>.</p><p class="m-result">The collection opens with the message <span class="m-ui">The collection has been saved.</span> It shows in the sidebar.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-collection-edit.png" width="1920" height="2387" alt="The edit page of the collection Under warranty: Collection name Under warranty, All of these rules selected, Rule 1 Under warranty is ticked, Rule 2 Purchased is after 12/31/2023, the buttons Add a rule, Save collection, Preview, and Cancel, the link Delete this collection, and the preview 8 items match (first 5 shown) with Air purifier, Espresso machine, Bluetooth speaker, Robot vacuum, and Lawn mower.">
+    <figcaption><b>A collection with two rules.</b> The preview shows what matches before you save. The date picker uses the date format of your browser.</figcaption>
+  </figure>
+  <div class="m-note">
+    <p class="m-note__label">Note</p>
+    <ul>
+      <li>When you push <kbd>Enter</kbd> on this page, TiffinDB does <span class="m-ui">Preview</span>. It does not save.</li>
+      <li>An empty rule stops the save with the message <span class="m-ui">Choose a field for this rule.</span> Select <span class="m-ui">Remove</span> next to the empty rule.</li>
+      <li>A collection with no rules shows all the records of the table.</li>
+    </ul>
+  </div>
+
+  <h3>Change or delete a collection</h3>
+  <ul>
+    <li>To change a collection, open it. Select <span class="m-ui">Edit collection</span>. Make the changes. Then select <span class="m-ui">Save collection</span>.</li>
+    <li>To delete a collection, open it. Select <span class="m-ui">Edit collection</span>. Select <span class="m-ui">Delete this collection</span>. Then select <span class="m-ui">Delete the collection</span>. TiffinDB deletes only the saved search. The records do not change.</li>
+  </ul>
+  <p>If an Admin deletes or changes a field that a rule uses, the rule stops working. The collection then shows, for example, <span class="m-ui">1 rule of this collection no longer works and is ignored.</span> Open <span class="m-ui">Edit collection</span>. The page tells you why the rule does not work. Correct the rule. If you cannot correct it, select <span class="m-ui">Remove</span> next to the rule.</p>
+</section>
+
+<!-- ============================================================ Part 10 -->
+<section id="trash">
+  <h2><span class="m-num">Part 10</span>Trash and restore</h2>
+  <p>TiffinDB does not delete a record immediately. It moves the record to the trash. A record in the trash does not show in lists, in search, or in collections. Its links and files stay. When you restore the record, TiffinDB also restores its links and files.</p>
+
+  <figure class="m-fig m-fig--diagram u-fig">
+    <svg viewBox="0 0 360 524" role="img" aria-labelledby="us-trash-t us-trash-d">
+      <title id="us-trash-t">The life of a record in the trash</title>
+      <desc id="us-trash-d">A record starts in the table, where it shows in lists, search, and links. Move to trash, by an Admin or a Member, puts it in the trash. In the trash it does not show in lists or search, and its links and files wait. Restore or Undo, by an Admin or a Member, puts it back in the table. Empty the trash, by an Admin only, deletes it permanently: the records and the files that only they hold are deleted. Before it empties the trash, TiffinDB saves a snapshot of the project. Snapshots hold no files.</desc>
+      <defs>
+        <marker id="us-trash-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-surface d-s-accent" x="40" y="12" width="280" height="64" rx="12" stroke-width="2"/>
+      <text class="d-th d-mid" x="180" y="40">In the table</text>
+      <text class="d-t2 d-mid" x="180" y="60">Shows in lists, search, and links.</text>
+
+      <path class="d-none d-s-ink2" d="M80 76V166" stroke-width="2" marker-end="url(#us-trash-arrow)"/>
+      <text class="d-taccent" x="92" y="102">Move to trash</text>
+      <text class="d-t2" x="92" y="120">Admin or Member</text>
+      <path class="d-none d-s-ink2" d="M280 170V80" stroke-width="2" marker-end="url(#us-trash-arrow)"/>
+      <text class="d-taccent d-end" x="268" y="138">Restore or Undo</text>
+      <text class="d-t2 d-end" x="268" y="156">Admin or Member</text>
+
+      <rect class="d-warn-soft d-s-brand2" x="40" y="170" width="280" height="80" rx="12" stroke-width="2"/>
+      <text class="d-th d-mid" x="180" y="198">In the trash</text>
+      <text class="d-t2 d-mid" x="180" y="218">Not in lists or search.</text>
+      <text class="d-t2 d-mid" x="180" y="236">Its links and files wait.</text>
+
+      <path class="d-none d-s-ink2" d="M180 250V346" stroke-width="2" marker-end="url(#us-trash-arrow)"/>
+      <text class="d-taccent" x="194" y="290">Empty the trash</text>
+      <text class="d-t2" x="194" y="308">Admin only</text>
+
+      <rect class="d-danger-soft d-s-danger" x="40" y="350" width="280" height="80" rx="12" stroke-width="2"/>
+      <text class="d-th d-mid" x="180" y="378">Deleted permanently</text>
+      <text class="d-t2 d-mid" x="180" y="398">The records, and the files that</text>
+      <text class="d-t2 d-mid" x="180" y="416">only they hold, are deleted.</text>
+
+      <rect class="d-ok-soft d-s-ok" x="20" y="446" width="320" height="66" rx="10" stroke-width="1.5"/>
+      <text class="d-t2" x="34" y="472">Before it empties the trash, TiffinDB</text>
+      <text class="d-t2" x="34" y="492">saves a snapshot. Snapshots hold no files.</text>
+    </svg>
+    <figcaption><b>Trash, restore, or empty.</b> Members can move records to the trash and restore them. Only an Admin can empty the trash.</figcaption>
+  </figure>
+
+  <h3>Move a record to the trash</h3>
+  <ol class="m-steps">
+    <li><p>Open the record.</p></li>
+    <li><p>Select <span class="m-ui">Move to trash</span>.</p><p class="m-result">The list of the table opens with the message, for example <span class="m-ui">Floor lamp has been moved to the trash.</span>, and the button <span class="m-ui">Undo</span>.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-trash-undo.png" width="1920" height="612" alt="The Items list after Move to trash: a message box says Floor lamp has been moved to the trash, with an Undo button. The line under the heading reads 23 records, and the sidebar shows Items 23.">
+    <figcaption><b>Undo.</b> Select <span class="m-ui">Undo</span> to restore the record immediately. The record opens with the message <span class="m-ui">Floor lamp has been restored.</span></figcaption>
+  </figure>
+
+  <h3>Restore a record</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">In the trash</span> at the bottom of the sidebar.</p><p class="m-result">The page <span class="m-ui">Trash</span> opens. It shows the records in groups, one group for each table.</p></li>
+    <li><p>Select <span class="m-ui">Restore</span> next to the record.</p><p class="m-result">The message, for example <span class="m-ui">Toaster has been restored.</span>, shows. The record is in its table again.</p></li>
+  </ol>
+  <p>To restore all the records of one table, select <span class="m-ui">Restore all in Items</span>.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-trash.png" width="1920" height="1200" alt="The Trash page of Home Inventory: the text 2 records are in the trash. The group Items, 2 records, with the button Restore all in Items, and the records Bicycle pump and Toaster, each moved to the trash today by Example Admin, each with a Restore button. At the bottom: Emptying the trash deletes these records and the files only they hold, for good, and the button Empty the trash.">
+    <figcaption><b>The trash, as an Admin sees it.</b> Members do not see <span class="m-ui">Empty the trash</span>.</figcaption>
+  </figure>
+
+  <h3>Empty the trash <span class="m-badge m-badge--admin">Admin</span></h3>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">Trash</span>, select <span class="m-ui">Empty the trash</span>.</p><p class="m-result">The page <span class="m-ui">Empty the trash?</span> opens. It tells you how many records TiffinDB will delete. If these records hold files that no other record holds, it also tells you how many files TiffinDB will delete.</p></li>
+    <li><p>Read the numbers.</p><p>To stop, select <span class="m-ui">Cancel</span>.</p></li>
+    <li><p>Select <span class="m-ui">Empty the trash</span>.</p><p class="m-result">The message, for example <span class="m-ui">The trash has been emptied: 2 records and 0 files deleted.</span>, shows.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-trash-empty.png" width="1920" height="641" alt="The page Empty the trash? with the text 2 records will be deleted for good. A copy of the project is kept as a snapshot first, but files are not part of snapshots. A list says Items: 2 records. Below are the button Empty the trash and the link Cancel.">
+    <figcaption><b>Empty the trash?</b> This page asks you to confirm.</figcaption>
+  </figure>
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>You cannot restore records after you empty the trash. TiffinDB saves a snapshot of the project first, but the snapshot does not hold files. Only the Admin who manages TiffinDB can restore a project from a snapshot. If the trash changes while you look at the page, TiffinDB shows <span class="m-ui">The trash changed while you were looking. Check the new numbers.</span></p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 11 -->
+<section id="import">
+  <h2><span class="m-num">Part 11</span>Import from CSV and XLSX <span class="m-badge m-badge--admin">Admin</span></h2>
+  <p>An Admin can bring rows from a spreadsheet file into a project. TiffinDB reads CSV files (<code>.csv</code>, <code>.tsv</code>, <code>.txt</code>) and Excel workbooks (<code>.xlsx</code>). Each row becomes a record. Each column becomes a field. You can make a new table, or add the rows to a table that exists.</p>
+
+  <figure class="m-fig m-fig--diagram u-fig">
+    <svg viewBox="0 0 360 504" role="img" aria-labelledby="us-import-t us-import-d">
+      <title id="us-import-t">The four steps of an import</title>
+      <desc id="us-import-d">Step 1, Choose a file: a CSV file or an Excel workbook. Step 2, Check the fields: choose the table, and check each field. Step 3, Import: TiffinDB checks every row, then you select Save the rows. Step 4, Read the report: records added, values left empty, and the snapshot taken. Nothing is saved before Save the rows, and TiffinDB saves a snapshot first.</desc>
+      <defs>
+        <marker id="us-import-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="d-surface d-s-ctl" x="8" y="8" width="344" height="84" rx="12" stroke-width="1.5"/>
+      <circle class="d-accent" cx="40" cy="50" r="16"/><text class="d-ton d-mid" x="40" y="55">1</text>
+      <text class="d-th" x="68" y="40">Choose a file</text>
+      <text class="d-t2" x="68" y="62">A CSV file or an Excel workbook.</text>
+      <path class="d-none d-s-ink2" d="M40 92V112" stroke-width="2" marker-end="url(#us-import-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="8" y="116" width="344" height="84" rx="12" stroke-width="1.5"/>
+      <circle class="d-accent" cx="40" cy="158" r="16"/><text class="d-ton d-mid" x="40" y="163">2</text>
+      <text class="d-th" x="68" y="148">Check the fields</text>
+      <text class="d-t2" x="68" y="170">Choose the table.</text>
+      <text class="d-t2" x="68" y="188">Check each field name and type.</text>
+      <path class="d-none d-s-ink2" d="M40 200V220" stroke-width="2" marker-end="url(#us-import-arrow)"/>
+      <rect class="d-soft d-s-accent" x="8" y="224" width="344" height="84" rx="12" stroke-width="1.5"/>
+      <circle class="d-accent" cx="40" cy="266" r="16"/><text class="d-ton d-mid" x="40" y="271">3</text>
+      <text class="d-th" x="68" y="256">Import</text>
+      <text class="d-t2" x="68" y="278">TiffinDB checks every row.</text>
+      <text class="d-t2" x="68" y="296">Then select Save the rows.</text>
+      <path class="d-none d-s-ink2" d="M40 308V328" stroke-width="2" marker-end="url(#us-import-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="8" y="332" width="344" height="84" rx="12" stroke-width="1.5"/>
+      <circle class="d-accent" cx="40" cy="374" r="16"/><text class="d-ton d-mid" x="40" y="379">4</text>
+      <text class="d-th" x="68" y="364">Read the report</text>
+      <text class="d-t2" x="68" y="386">Records added, values left empty,</text>
+      <text class="d-t2" x="68" y="404">and the snapshot taken.</text>
+
+      <rect class="d-ok-soft d-s-ok" x="8" y="436" width="344" height="60" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="22" y="460">Nothing is saved before Save the rows.</text>
+      <text class="d-t2" x="22" y="482">TiffinDB saves a snapshot first.</text>
+    </svg>
+    <figcaption><b>Import in four steps.</b> The steps bar at the top of each import page shows the step that you are on.</figcaption>
+  </figure>
+
+  <h3>Import a file</h3>
+  <ol class="m-steps">
+    <li><p>Open a table list of the project.</p></li>
+    <li><p>Select <span class="m-ui">Import a file</span> in the sidebar.</p><p class="m-result">The page <span class="m-ui">Import a file</span> opens at <span class="m-ui">Step 1</span>.</p></li>
+    <li><p>Select the file in <span class="m-ui">File</span>.</p></li>
+    <li><p>Below <span class="m-ui">Read the file as</span>, keep <span class="m-ui">Decide from the file name</span>.</p><p>If the extension of the file name is not correct, select the format.</p></li>
+    <li><p>Select <span class="m-ui">Continue</span>.</p><p class="m-result">The page <span class="m-ui">Check the fields</span> opens. For a large file, TiffinDB first reads the file in parts.</p></li>
+    <li><p>Below <span class="m-ui">Where should the rows go?</span>, select the table for the rows.</p>
+      <ul>
+        <li>For a new table, select <span class="m-ui">A new table called</span>. Then type a name in the box.</li>
+        <li>For a table that exists, select <span class="m-ui">Add to an existing table</span>. Select the table in the list. Then select <span class="m-ui">Check again</span>.</li>
+      </ul></li>
+    <li><p>Check each row of the table <span class="m-ui">Fields</span>. Each row is one column of the file.</p>
+      <ul>
+        <li>For a new table, the row shows <span class="m-ui">Field name</span> and <span class="m-ui">Type</span>. TiffinDB guessed them from the file. If a name or a type is not correct, change it.</li>
+        <li>For a table that exists, the row shows <span class="m-ui">Goes into</span>. TiffinDB matched the columns to the fields by name. If a field is not correct, select a different field. To leave the column out, select <span class="m-ui">Leave out</span>.</li>
+        <li>To leave out a column in both cases, clear <span class="m-ui">Bring in</span>.</li>
+      </ul></li>
+    <li><p>Read the box with the things to know, if there is one. For example, it tells you about values that TiffinDB cannot read.</p></li>
+    <li><p>Select <span class="m-ui">Import 5 rows</span>. The number is the number of rows in your file.</p><p class="m-result">TiffinDB checks the rows. Then it shows <span class="m-ui">Everything is checked. Choose Save the rows to save them all together.</span></p></li>
+    <li><p>Select <span class="m-ui">Save the rows</span>.</p><p class="m-result">The import report opens with the message, for example <span class="m-ui">22 rows were imported into Items.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-import-choose.png" width="1920" height="1310" alt="Import a file, step 1: the steps bar with Step 1 Choose a file marked as now, the text Bring rows from a spreadsheet or CSV file into this project, the File field, the group Read the file as with Decide from the file name selected, CSV, and Excel workbook, the Continue and Cancel buttons, and the note Files stay on this server and are removed when the import is finished, or after a day.">
+    <figcaption><b>Step 1: choose a file.</b> The largest file size in the hint depends on the settings of your server.</figcaption>
+  </figure>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-import-check.png" width="1920" height="2244" alt="Import step 2, Check the fields, for the file books.csv: What was found shows CSV, commas, UTF-8, 5 rows plus a heading row, and 5 columns. Where should the rows go has A new table called books selected. The Fields table lists the columns Title as Text, Shelf as Text, Pages as Number, Finished as Date, and Read as Checkbox, each ticked under Bring in, with their first values. Below are the buttons Import 5 rows and Start again.">
+    <figcaption><b>Step 2: check the fields, for a new table.</b> TiffinDB saves nothing until you select <span class="m-ui">Save the rows</span>. It saves all the rows together, or none of them.</figcaption>
+  </figure>
+  <p>If the columns or the characters look wrong, select <span class="m-ui">Change how the file is read</span>. On that page, select the text encoding. Select the separator. Also tick or clear <span class="m-ui">The first row holds the column names</span>. For a workbook, select the sheet. Then select <span class="m-ui">Read the file again</span>.</p>
+  <div class="m-note">
+    <p class="m-note__label">Note</p>
+    <p>When an import makes a new table, TiffinDB uses the table name in lower case as the word for one record. For example, the button can read <span class="m-ui">Add books</span>. To correct it, change <span class="m-ui">One record is called</span> in the table settings (refer to <a href="#admin-tables">Tables and fields</a>).</p>
+  </div>
+
+  <h3>The import report</h3>
+  <p>The report tells you the file, the table, and the number of records added. It also tells you the rows left out, the values left empty, and the name of the snapshot that TiffinDB saved first. If TiffinDB left some values empty, a table shows the field and the row numbers. Row 1 is the first row after the heading row.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-import-report.png" width="1920" height="1200" alt="Import step 4, the report: What happened shows File items.csv, Table Items, Records added 22, Rows left out 0, Values left empty 0, and Copy taken before: a copy of the project was saved first, with the name of the copy. Below are the buttons Open the table and Import another file.">
+    <figcaption><b>Step 4: the report.</b> Select <span class="m-ui">Open the table</span> to see the new records.</figcaption>
+  </figure>
+  <p>If an import does not finish, TiffinDB shows <span class="m-ui">The import did not finish</span> and <span class="m-ui">Nothing was saved. The project is exactly as it was before.</span> Select <span class="m-ui">Start again</span>.</p>
+</section>
+
+<!-- ============================================================ Part 12 -->
+<section id="export">
+  <h2><span class="m-num">Part 12</span>Export, and project archives <span class="m-badge m-badge--admin">Admin</span></h2>
+  <p>An export makes a copy of the records in a file. The project does not change. There are two kinds of export:</p>
+  <ul>
+    <li>A <strong>project archive</strong> holds the whole project for TiffinDB. It holds every table, record, form, and attached file, and also the records in the trash. Use it as a backup, or to move the project to a different TiffinDB installation.</li>
+    <li>A <strong>records file</strong> holds the records for other programs, in CSV, Excel workbook, or JSON format. It does not hold records in the trash.</li>
+  </ul>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-export.png" width="1920" height="2391" alt="The Export page of Home Inventory: the box The whole project, for TiffinDB, with About 191 KB and the button Download the project archive; the group Records, for other programs, with CSV one table per file selected, Excel workbook, and JSON; the group Which records with One table: Rooms (6 records) selected and Every table; the group Options with the CSV and Excel workbook check boxes; and the Download button.">
+    <figcaption><b>The Export page.</b> TiffinDB makes the file when you select the button. It does not keep the file on the server.</figcaption>
+  </figure>
+
+  <h3>Download a project archive</h3>
+  <ol class="m-steps">
+    <li><p>Open a table list of the project.</p></li>
+    <li><p>Select <span class="m-ui">Export</span> in the sidebar.</p></li>
+    <li><p>Select <span class="m-ui">Download the project archive</span>.</p><p class="m-result">Your browser saves a file with a name such as <code>home-inventory.tiffindb.zip</code>.</p></li>
+  </ol>
+
+  <h3>Export records for other programs</h3>
+  <ol class="m-steps">
+    <li><p>On the Export page, select a format below <span class="m-ui">Records, for other programs</span>.</p><p>If you will open the file in a spreadsheet program, select <span class="m-ui">Excel workbook</span>.</p></li>
+    <li><p>Below <span class="m-ui">Which records</span>, select <span class="m-ui">One table:</span> or <span class="m-ui">Every table</span>.</p></li>
+    <li><p>If you selected <span class="m-ui">One table:</span>, select the table in the list.</p></li>
+    <li><p>Select the options that you need below <span class="m-ui">Options</span>.</p></li>
+    <li><p>Select <span class="m-ui">Download</span>.</p><p class="m-result">Your browser saves the file, for example <code>items.csv</code> or <code>home-inventory.xlsx</code>.</p></li>
+  </ol>
+  <p>Each format has its own scope, and the format controls the result:</p>
+  <ul>
+    <li><span class="m-ui">CSV</span> always gives one table. If you select <span class="m-ui">Every table</span>, you get the table that is selected in the list.</li>
+    <li><span class="m-ui">Excel workbook</span> gives one table, or every table as separate sheets.</li>
+    <li><span class="m-ui">JSON</span> always gives the whole project in one file. If you select <span class="m-ui">One table:</span>, you still get the whole project.</li>
+  </ul>
+  <p>The CSV option <span class="m-ui">Protect against spreadsheet formulas</span> adds an apostrophe before text that starts with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>, a tab, or a carriage return. The apostrophe becomes part of the value.</p>
+
+  <h3>Make a project from an archive</h3>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">Your projects</span>, select <span class="m-ui">Import a project archive</span>.</p></li>
+    <li><p>Select the <code>.zip</code> file in <span class="m-ui">Archive file</span>.</p></li>
+    <li><p>If you want a different name, type it in <span class="m-ui">Name for the new project (optional)</span>.</p></li>
+    <li><p>Select <span class="m-ui">Import</span>.</p><p class="m-result">The tables page of the new project opens with the message, for example <span class="m-ui">The project Home Inventory has been made from the archive.</span></p></li>
+  </ol>
+  <p>Your other projects do not change. TiffinDB does not share the new project with Members. Share it if necessary (refer to <a href="#admin-sharing">Sharing</a>). You cannot upload an archive that is larger than the upload limit of your server. The Admin who manages TiffinDB can restore such an archive manually.</p>
+</section>
+
+<!-- ============================================================ Part 13 -->
+<section id="settings">
+  <h2><span class="m-num">Part 13</span>Reading and display settings</h2>
+  <p>You can change how TiffinDB looks for you. These settings are yours only. They follow you to each device that you sign in on, and they apply to all projects.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-settings.png" width="1920" height="2712" alt="The Reading and display page with seven numbered marks: 1 Colours, with Light, Dark, Strong contrast light, and Strong contrast dark; 2 Accent colour, with Teal, Indigo, Plum, and Graphite; 3 Text size, from Small to Largest; 4 Space between lines, Standard, Roomy, and Very roomy; 5 Lettering and movement, with six typefaces and the box Reduce movement and animation; 6 the panel Preview: how a record will look; 7 the Save settings button, next to Back to standard.">
+    <figcaption><b>Reading and display.</b> The preview panel shows the effect before you save.</figcaption>
+  </figure>
+  <ol class="u-keys">
+    <li><span class="m-ui">Colours</span>: <span class="m-ui">Light</span> (standard), <span class="m-ui">Dark</span>, <span class="m-ui">Strong contrast, light</span>, and <span class="m-ui">Strong contrast, dark</span>.</li>
+    <li><span class="m-ui">Accent colour</span>: the colour of buttons, links, and the sidebar. The strong contrast colours do not use an accent colour.</li>
+    <li><span class="m-ui">Text size</span>: five sizes, from <span class="m-ui">Small</span> to <span class="m-ui">Largest</span>.</li>
+    <li><span class="m-ui">Space between lines</span>: <span class="m-ui">Standard</span>, <span class="m-ui">Roomy</span>, or <span class="m-ui">Very roomy</span>.</li>
+    <li><span class="m-ui">Lettering and movement</span>: six typefaces, and <span class="m-ui">Reduce movement and animation</span>. <span class="m-ui">Atkinson Hyperlegible</span> is made for easy reading.</li>
+    <li>The preview of a record.</li>
+    <li><span class="m-ui">Save settings</span> keeps your selection.</li>
+  </ol>
+
+  <h3>Change the colours</h3>
+  <ol class="m-steps">
+    <li><p>Select <span class="m-ui">Display</span> in the top bar.</p><p class="m-result">The page <span class="m-ui">Reading and display</span> opens.</p></li>
+    <li><p>Below <span class="m-ui">Colours</span>, select a colour set, for example <span class="m-ui">Dark</span>.</p></li>
+    <li><p>Select <span class="m-ui">Save settings</span>.</p><p class="m-result">The message <span class="m-ui">Your display settings have been saved.</span> shows. All pages use the new colours.</p></li>
+  </ol>
+  <div class="m-figrow m-wide">
+    <figure class="m-fig m-fig--shot">
+      <img src="img/user-theme-light.png" width="1920" height="780" alt="The top of the Items list in the Light colours: a white top bar, a teal sidebar, and dark text on a light grey page.">
+      <figcaption><b>Light.</b> The standard colours.</figcaption>
+    </figure>
+    <figure class="m-fig m-fig--shot">
+      <img src="img/user-theme-dark.png" width="1920" height="780" alt="The same part of the Items list in the Dark colours: a dark top bar and page, a dark green sidebar, light text, and light teal buttons and links.">
+      <figcaption><b>Dark.</b> The same page after you save <span class="m-ui">Dark</span>.</figcaption>
+    </figure>
+  </div>
+  <p>To return to the standard settings, select <span class="m-ui">Back to standard</span>. The message <span class="m-ui">Your display settings are back to standard.</span> shows. The <span class="m-ui">Display</span> link in the top bar only opens this page. There is no other switch for the colours.</p>
+</section>
+
+<!-- ============================================================ Part 14 -->
+<section id="admin">
+  <h2><span class="m-num">Part 14</span>Admin tasks <span class="m-badge m-badge--admin">Admin</span></h2>
+  <p>This part is for Admins. It tells you how to make projects, design tables and fields, add people, share projects, and turn plugins on and off.</p>
+
+  <h3 id="admin-projects">Make a project</h3>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">Your projects</span>, select <span class="m-ui">New project</span>.</p></li>
+    <li><p>Type a name in <span class="m-ui">Project name</span>.</p></li>
+    <li><p>If you want, type the name of the first table in <span class="m-ui">First table (optional)</span>. TiffinDB gives it a Name field.</p></li>
+    <li><p>Select <span class="m-ui">Create project</span>.</p><p class="m-result">The tables page of the new project opens with a message, for example <span class="m-ui">Book List has been created.</span> If you typed a first table, the message is, for example, <span class="m-ui">Book List has been created, with the table Books.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-new-project.png" width="1920" height="1050" alt="The New project page: the fields Project name and First table (optional), both empty, with hints, and the button Create project and the link Cancel.">
+    <figcaption><b>New project.</b> TiffinDB does not share a new project with Members.</figcaption>
+  </figure>
+  <h4>Change the name of a project</h4>
+  <ol class="m-steps">
+    <li><p>Open the tables page of the project.</p></li>
+    <li><p>Select <span class="m-ui">Project settings</span>.</p></li>
+    <li><p>Change <span class="m-ui">Project name</span>.</p></li>
+    <li><p>Select <span class="m-ui">Save</span>.</p></li>
+  </ol>
+
+  <h3 id="admin-tables">Tables and fields</h3>
+  <p>Select <span class="m-ui">Tables and fields</span> in the sidebar. The tables page opens. Select the name of a table to see its fields.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-fields.png" width="1920" height="2262" alt="The fields page of the Items table: the line 15 fields. 24 records., the button Add a field, and the table Fields with the columns Field, Type, Must be filled in, and Order. The rows are Name (shown as the title) Text, Room Link to Rooms one each, Category Choice, Purchased Date, Value Currency, Condition Rating, Quantity Number, Serial number Text, Under warranty Checkbox, Manual Web address, Notes Long text, Receipt and Photo File or image, Item number Auto-number, and Warranties Link to Warranties several each, each with Up and Down buttons.">
+    <figcaption><b>The fields of a table.</b> <span class="m-ui">Up</span> and <span class="m-ui">Down</span> change the order of the fields on the record. Each time that you select one, TiffinDB saves the order immediately.</figcaption>
+  </figure>
+
+  <h4>Add a table</h4>
+  <ol class="m-steps">
+    <li><p>On the tables page, select <span class="m-ui">Add a table</span>.</p></li>
+    <li><p>Type a name in <span class="m-ui">Table name</span>. A plural word is good, for example Books.</p></li>
+    <li><p>Type the word for one record in <span class="m-ui">One record is called</span>, for example <code>book</code>. Use a singular word in lower case.</p></li>
+    <li><p>Keep <span class="m-ui">Start with a Name field</span> ticked, unless you do not want a Name field.</p></li>
+    <li><p>Select <span class="m-ui">Create table</span>.</p><p class="m-result">The fields page of the new table opens.</p></li>
+  </ol>
+
+  <h4>Add a field</h4>
+  <ol class="m-steps">
+    <li><p>On the fields page, select <span class="m-ui">Add a field</span>.</p></li>
+    <li><p>Below <span class="m-ui">What will this field hold?</span>, select a type.</p></li>
+    <li><p>Select <span class="m-ui">Next</span>.</p><p>If you select <span class="m-ui">Next</span> with no type, the same page opens again with no message. Select a type. Then select <span class="m-ui">Next</span> again.</p></li>
+    <li><p>Type the name in <span class="m-ui">Field name</span>.</p></li>
+    <li><p>Type the settings of the type. For example, type the choices of a Choice field, one on each line.</p></li>
+    <li><p>Tick <span class="m-ui">People must fill this in</span> if the field must always have a value.</p></li>
+    <li><p>Select <span class="m-ui">Add field</span>.</p><p class="m-result">The fields page opens with the message, for example <span class="m-ui">The field Author has been added.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-field-types.png" width="1920" height="2328" alt="The page Add a field to Items: the question What will this field hold? with 17 type cards in six groups. Words: Text, Long text. Numbers and money: Number, Currency, Rating, Auto-number. Dates and times: Date, Time, Date and time, Duration. Yes or no, and choices: Checkbox, Choice. Contact and web: Email address, Phone number, Web address. Files and links: File or image, Link to another table. Each card has a short hint. Below are the button Next and the link Cancel.">
+    <figcaption><b>The 17 field types.</b> <a href="#field-types">Part 6</a> tells you what each type holds.</figcaption>
+  </figure>
+  <p>Some settings cannot change after you make the field. These are the digits after the point of a Currency field, the start number of an Auto-number field, and the table of a link field.</p>
+  <p>A link field has these settings:</p>
+  <ul>
+    <li><span class="m-ui">Link to records in</span>: the table to link to.</li>
+    <li><span class="m-ui">Each item can link to</span>: <span class="m-ui">One record</span> or <span class="m-ui">Several records</span>. The word "item" changes with the table.</li>
+    <li><span class="m-ui">Each record in the linked table can link to</span>: <span class="m-ui">One item</span> or <span class="m-ui">Several of these</span>.</li>
+    <li><span class="m-ui">Name of the matching field in the linked table</span>: TiffinDB adds this field to the other table, so the link shows there too.</li>
+  </ul>
+
+  <h4>Change, rename, or change the type of a field</h4>
+  <ol class="m-steps">
+    <li><p>On the fields page, select the name of the field.</p><p class="m-result">The page <span class="m-ui">Change the field Value</span> opens. It tells you how many records have a value in the field.</p></li>
+    <li><p>Make the changes.</p><p>To rename the field, change <span class="m-ui">Field name</span>.</p></li>
+    <li><p>Select <span class="m-ui">Save field</span>.</p></li>
+  </ol>
+  <p>For a Checkbox field, the page counts only the records with a ticked box.</p>
+  <h4>Change the type of a field</h4>
+  <ol class="m-steps">
+    <li><p>On the fields page, select the name of the field.</p></li>
+    <li><p>Select <span class="m-ui">Change the type</span>.</p></li>
+    <li><p>Select the new type below <span class="m-ui">Change it to</span>.</p></li>
+    <li><p>Select <span class="m-ui">Change type</span>.</p><p class="m-result">If TiffinDB can convert all values, it changes the type. If it cannot convert some values, the page <span class="m-ui">Clear 3 values?</span> opens.</p></li>
+    <li><p>If that page opens, select <span class="m-ui">Clear 3 values and save</span>.</p><p>To stop, select <span class="m-ui">Go back without saving</span>.</p></li>
+  </ol>
+  <p>Before it changes the type, TiffinDB saves a snapshot of the project. You cannot change the type of a File or image field or a link field.</p>
+
+
+  <h4>Delete a field</h4>
+  <ol class="m-steps">
+    <li><p>On the fields page, select the name of the field.</p></li>
+    <li><p>Select <span class="m-ui">Delete field</span>.</p><p class="m-result">The page <span class="m-ui">Delete the field Value?</span> opens.</p></li>
+    <li><p>Select <span class="m-ui">Delete field</span>.</p><p class="m-result">TiffinDB deletes the field and its values. For a link field, TiffinDB also deletes the matching field in the other table.</p></li>
+  </ol>
+
+  <h4>Delete a table</h4>
+  <ol class="m-steps">
+    <li><p>Open the fields page of the table.</p></li>
+    <li><p>Select <span class="m-ui">Delete table</span>.</p><p class="m-result">The page <span class="m-ui">Delete the table Items?</span> opens.</p></li>
+    <li><p>Tick the box that starts with <span class="m-ui">I understand that</span>.</p></li>
+    <li><p>Select <span class="m-ui">Delete table</span>.</p></li>
+  </ol>
+  <p>The number of records on the delete page also counts the records in the trash. Thus it can be larger than the number in the list.</p>
+
+
+
+
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>TiffinDB saves a snapshot of the project before it deletes a field or a table. You cannot restore the snapshot on the screen. Only the Admin who manages TiffinDB can restore it.</p>
+  </div>
+  <p>To change the table name, the word for one record, or the title field, use the box <span class="m-ui">Table settings</span> on the fields page. Then select <span class="m-ui">Save table settings</span>.</p>
+
+  <h3 id="admin-people">People</h3>
+  <p>Select <span class="m-ui">People</span> in the top bar. The page shows each person, their username, their role, their projects, and whether they can sign in.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-people.png" width="1920" height="767" alt="The People page: the button Add a person and a table with Example Admin (you), username admin, role Admin, Every project, Can sign in; and Example Member, username member, role Member, 1 project, Can sign in. A note says There must always be at least one Admin who can sign in. Two Admins are safer.">
+    <figcaption><b>People.</b> TiffinDB always keeps one Admin who can sign in. Two Admins are safer: if one forgets the password, the other can set a temporary one.</figcaption>
+  </figure>
+
+  <h4>Add a person</h4>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">People</span>, select <span class="m-ui">Add a person</span>.</p></li>
+    <li><p>Type the name in <span class="m-ui">Name</span>.</p></li>
+    <li><p>Type a username in <span class="m-ui">Username</span>.</p></li>
+    <li><p>Select <span class="m-ui">Member</span> or <span class="m-ui">Admin</span> below <span class="m-ui">Role</span>.</p></li>
+    <li><p>Keep the password that TiffinDB suggests in <span class="m-ui">Temporary password</span>. As an alternative, type a different password.</p></li>
+    <li><p>Record the temporary password.</p></li>
+    <li><p>For a Member, tick the projects below <span class="m-ui">Projects they can use</span>.</p></li>
+    <li><p>Select <span class="m-ui">Add person</span>.</p><p class="m-result">The page of the person opens. The message ends with <span class="m-ui">Give them their username and temporary password.</span></p></li>
+    <li><p>Give the username and the temporary password to the person yourself.</p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-add-person.png" width="1920" height="1782" alt="The Add a person page: the fields Name and Username, the Role cards Member (selected) and Admin with their descriptions, the field Temporary password shown empty in this picture, the check boxes Home Inventory and Recipe Box under Projects they can use, and the button Add person.">
+    <figcaption><b>Add a person.</b> On your screen, <span class="m-ui">Temporary password</span> holds a suggested password. It is empty in this picture.</figcaption>
+  </figure>
+  <div class="m-note m-note--warning">
+    <p class="m-note__label">Warning</p>
+    <p>Give the temporary password to the person yourself, in a safe way. Do not send it in the same message as the username. The person must change it at the first sign-in.</p>
+  </div>
+
+  <h4>Help a person who forgot their password</h4>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">People</span>, select the name of the person.</p></li>
+    <li><p>Below <span class="m-ui">Password</span>, keep the suggested password in <span class="m-ui">Temporary password</span>. As an alternative, type a different password.</p></li>
+    <li><p>Select <span class="m-ui">Set temporary password</span>.</p><p class="m-result">TiffinDB signs the person out on all devices. At the next sign-in, the person must choose a new password.</p></li>
+    <li><p>Give the temporary password to the person yourself.</p></li>
+  </ol>
+  <p>On the same page, you can change the name, the username, and the role. Then select <span class="m-ui">Save details</span>. For a Member, you can also change the projects. Then select <span class="m-ui">Save projects</span>.</p>
+
+  <h4>Stop a person from signing in</h4>
+  <p>TiffinDB has no action to delete a person. Stop the person from signing in.</p>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">People</span>, select the name of the person.</p></li>
+    <li><p>Select <span class="m-ui">Stop Example Member from signing in</span>. The button shows the name of the person.</p><p class="m-result">A page asks you to confirm.</p></li>
+    <li><p>Select <span class="m-ui">Stop Example Member from signing in</span> again.</p><p class="m-result">TiffinDB signs the person out immediately. Their name stays on the changes that they made.</p></li>
+  </ol>
+  <p>To let the person sign in again, open their page. Then select <span class="m-ui">Let Example Member sign in again</span>. You cannot stop yourself. You cannot stop the only Admin who can sign in.</p>
+
+  <h3 id="admin-sharing">Sharing</h3>
+  <p>Admins can always use every project. A Member can use only the projects that you share with them.</p>
+  <ol class="m-steps">
+    <li><p>On the page <span class="m-ui">Your projects</span>, select <span class="m-ui">Sharing</span> on the card of the project.</p><p class="m-result">The page <span class="m-ui">Share Home Inventory</span> opens.</p></li>
+    <li><p>Tick each Member who can use the project.</p></li>
+    <li><p>Clear the box of each Member who cannot use the project.</p></li>
+    <li><p>Select <span class="m-ui">Save sharing</span>.</p><p class="m-result">The page <span class="m-ui">Your projects</span> opens with the message <span class="m-ui">Sharing for Home Inventory has been saved.</span></p></li>
+  </ol>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-sharing.png" width="1920" height="780" alt="The page Share Home Inventory: the text Admins can always use every project. Choose which Members can use this one. The group Members has one ticked box, Example Member with the username member. Below are the button Save sharing and the link Cancel.">
+    <figcaption><b>Share a project.</b> A Member who can use a project can see and change all its records.</figcaption>
+  </figure>
+  <p>You can also share projects from the page of a person, below <span class="m-ui">Projects they can use</span>.</p>
+
+  <h3 id="admin-plugins">Plugins</h3>
+  <p>Plugins read and write the file formats for import and export. Select <span class="m-ui">Plugins</span> in the top bar to see them. TiffinDB comes with plugins for CSV and Excel workbook import, and for CSV, JSON, and Excel workbook export.</p>
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/user-admin-plugins.png" width="1920" height="2085" alt="The Plugins page: the text Plugins read and write file formats for importing and exporting. A plugin can read and change everything in this installation, so turn on only plugins you trust. Import formats: CSV and Excel workbook, each version 1.0.0, Comes with TiffinDB, On. Export formats: CSV, JSON, and Excel workbook, each On. A note at the bottom tells how to add a plugin on the server.">
+    <figcaption><b>Plugins.</b> Select the name of a plugin to see its details and to turn it on or off.</figcaption>
+  </figure>
+  <ol class="m-steps">
+    <li><p>Select the name of the plugin.</p></li>
+    <li><p>Select <span class="m-ui">Turn off</span> or <span class="m-ui">Turn on</span>.</p><p class="m-result">The message, for example <span class="m-ui">JSON is turned off.</span>, shows. A format that is off does not show on the Import and Export pages.</p></li>
+  </ol>
+  <div class="m-note m-note--warning">
+    <p class="m-note__label">Warning</p>
+    <p>A plugin can read and change everything in the installation: all projects, all accounts, and all files. Turn on a plugin that did not come with TiffinDB only if you trust its source. TiffinDB asks you to confirm before it turns on such a plugin.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 15 -->
+<section id="help">
+  <h2><span class="m-num">Part 15</span>Keyboard use, problems, and answers</h2>
+
+  <h3>Use TiffinDB with a keyboard</h3>
+  <p>TiffinDB has no special shortcut keys. All controls are usual links, buttons, boxes, and lists. Thus the usual keys work:</p>
+  <ul>
+    <li><kbd>Tab</kbd> goes to the next control. <kbd>Shift</kbd> + <kbd>Tab</kbd> goes to the control before.</li>
+    <li><kbd>Enter</kbd> opens a link or uses a button. <kbd>Space</kbd> ticks a box or uses a button.</li>
+    <li>The arrow keys move the selection in a group of options, for example a rating, and in a list.</li>
+    <li>The first <kbd>Tab</kbd> on each page goes to the link <span class="m-ui">Skip to main content</span>. Push <kbd>Enter</kbd> to skip the top bar and the sidebar.</li>
+    <li>In a box with problems, each problem is a link that goes to its field.</li>
+    <li><kbd>Enter</kbd> in a search box starts the search. On the collection page, <kbd>Enter</kbd> does <span class="m-ui">Preview</span>.</li>
+  </ul>
+  <p>TiffinDB also works without JavaScript. Without it, there are three differences. <span class="m-ui">Show password</span> does not show. The preview of the display settings does not change before you save. A long import needs <span class="m-ui">Continue</span> after each part.</p>
+
+  <h3>Problems and answers</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Problem</th><th>Answer</th></tr></thead>
+      <tbody>
+        <tr><td>I forgot my password.</td><td>Ask an Admin to set a temporary password for you. Refer to <a href="#admin-people">People</a>.</td></tr>
+        <tr><td>The sign-in page says <span class="m-ui">Too many tries.</span></td><td>Wait for the time in the message. Then type the username and password carefully.</td></tr>
+        <tr><td>I cannot see a project.</td><td>Ask an Admin to share the project with you.</td></tr>
+        <tr><td>I see <span class="m-ui">Page not found</span>.</td><td>The page does not exist, an Admin deleted the record permanently, or the project is not shared with you.</td></tr>
+        <tr><td>I see <span class="m-ui">You cannot do that here</span>.</td><td>Only an Admin can do this task. Ask an Admin.</td></tr>
+        <tr><td>I see <span class="m-ui">This form has expired</span>.</td><td>Go back to the page. Reload the page. Then do the task again. TiffinDB did not save anything.</td></tr>
+        <tr><td>I see <span class="m-ui">Please try again in a moment</span>.</td><td>A different person saves a change to the project at the same time. Wait a moment. Then try again. You did not lose anything.</td></tr>
+        <tr><td>I see <span class="m-ui">Something went wrong</span>.</td><td>TiffinDB did not change anything. Try again. If the problem continues, tell the Admin who manages TiffinDB.</td></tr>
+        <tr><td>I cannot find a record.</td><td>Look in the trash. Clear the search text. Remove the filter. Make sure that you look in the correct table.</td></tr>
+        <tr><td>I cannot add a link or a file on a new record.</td><td>Save the record first.</td></tr>
+        <tr><td>My changes went away when I added a file or a link.</td><td>The buttons for files and links leave the page. Select <span class="m-ui">Save</span> before you use them.</td></tr>
+        <tr><td>The file is too large.</td><td>The upload limit depends on the server settings. Make the file smaller. Or ask the Admin who manages TiffinDB.</td></tr>
+        <tr><td>A collection says that a rule no longer works.</td><td>Open <span class="m-ui">Edit collection</span>. Correct or remove the rule. Refer to <a href="#collections">Part 9</a>.</td></tr>
+        <tr><td>My collection does not save, with <span class="m-ui">Choose a field for this rule.</span></td><td>Select <span class="m-ui">Remove</span> next to the empty rule.</td></tr>
+        <tr><td>The JSON export holds all tables, not one.</td><td>This is correct. JSON always holds the whole project. Use CSV or Excel workbook for one table.</td></tr>
+        <tr><td>The list starts far down the page on my phone.</td><td>The project sidebar is above the list on a narrow screen. Scroll down.</td></tr>
+        <tr><td>The text is too small or hard to read.</td><td>Select <span class="m-ui">Display</span>. Change the text size, the colours, or the typeface. Refer to <a href="#settings">Part 13</a>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="m-foot">TiffinDB is free software under the GNU Affero General Public License, version 3 or later. Source code: <a href="https://github.com/osh-labs/tiffindb">github.com/osh-labs/tiffindb</a>.</p>
+</section>
+
+<nav class="m-pager" aria-label="Other guides">
+  <a href="index.html"><small>Back to</small>Documentation home</a>
+  <a href="install-guide.html"><small>Next guide</small>Install Guide</a>
+</nav>
+
+</main>
+</div>
+</body>
+</html>

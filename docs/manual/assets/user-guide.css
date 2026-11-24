@@ -1,0 +1,63 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) TiffinDB contributors */
+
+/*
+ * Page-specific rules for user-guide.html. The diagrams are drawn tall and
+ * narrow (viewBox 360 units wide) so that their text stays legible on a
+ * phone; on a wide screen they are held to a moderate width.
+ */
+
+.m-main > section > .u-fig {
+  max-width: 26rem;
+}
+
+/* The key to a screenshot with numbered callouts. */
+.u-keys {
+  list-style: none;
+  counter-reset: key;
+  padding: 0;
+}
+
+.u-keys > li {
+  counter-increment: key;
+  position: relative;
+  padding-left: 2.4rem;
+  min-height: 1.8rem;
+}
+
+.u-keys > li::before {
+  content: counter(key);
+  position: absolute;
+  left: 0;
+  top: 0.05rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Two phone screenshots side by side, each at phone width. */
+.u-phones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  justify-content: center;
+}
+
+.u-phones > .m-fig {
+  flex: 0 1 17rem;
+  margin: 0 0 1rem;
+}
+
+/* On a phone, wide tables keep readable columns and scroll inside their frame. */
+@media (max-width: 40rem) {
+  .m-table-wrap.m-wide > .m-table {
+    min-width: 34rem;
+  }
+}

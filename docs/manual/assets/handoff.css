@@ -1,0 +1,31 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) TiffinDB contributors */
+
+/*
+ * Page-specific rules for handoff.html. The diagrams on this page are drawn
+ * tall and narrow (viewBox 480 units wide) so that their text stays legible
+ * on a phone; on a wide screen they are held to a moderate width instead of
+ * being scaled up to the full reading column.
+ */
+
+.m-main > section > .h-fig {
+  max-width: 36rem;
+}
+
+/* On a phone, wide tables keep readable columns and scroll inside their frame. */
+@media (max-width: 40rem) {
+  .m-table-wrap.m-wide > .m-table {
+    min-width: 34rem;
+  }
+}
+
+/*
+ * On a phone the diagrams scale down to about two thirds; secondary diagram
+ * text is set larger there so that it stays readable. The diagrams leave
+ * room for this size.
+ */
+@media (max-width: 40rem) {
+  .h-fig svg .d-t2 {
+    font-size: 14px;
+  }
+}

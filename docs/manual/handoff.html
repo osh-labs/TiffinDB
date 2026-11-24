@@ -1,0 +1,1246 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) TiffinDB contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Developer Handoff and Roadmap: TiffinDB Documentation</title>
+<meta name="description" content="Developer handoff and roadmap for TiffinDB: true build state, architecture, code map, working rules, build process, tests, status of M0 to M4, and the roadmap from M5 to M9.">
+<link rel="icon" href="../brand/tiffindb-mark-small.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/manual.css">
+<link rel="stylesheet" href="assets/handoff.css">
+<script src="assets/manual.js" defer></script>
+</head>
+<body>
+<a class="m-skip" href="#main">Skip to content</a>
+<div class="m-shell">
+
+<nav class="m-side" aria-label="Documentation">
+  <a class="m-brand" href="index.html" aria-label="TiffinDB documentation, home">
+    <svg viewBox="-4 -4 72 72" aria-hidden="true" focusable="false"><g fill="none"><path d="M10 57V17a22 12 0 0 1 44 0v40" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/><rect x="23" y="2.5" width="18" height="6" rx="3" fill="#FFFFFF"/><rect x="15.5" y="17" width="33" height="4" rx="2" fill="#FFFFFF"/><rect x="17" y="22.5" width="30" height="9.5" rx="3" fill="#FFFFFF"/><rect x="17" y="34" width="30" height="10.5" rx="3" fill="#F2B441"/><rect x="17" y="46.5" width="30" height="10.5" rx="3" fill="#FFFFFF"/></g></svg>
+    <span>Tiffin<b>DB</b></span>
+  </a>
+  <details class="m-menu"><summary>Contents</summary></details>
+  <p class="m-side__doc">Developer Handoff and Roadmap</p>
+  <ol class="m-toc">
+    <li><a href="#start">Start here</a></li>
+    <li><a href="#orientation">Orientation</a></li>
+    <li><a href="#architecture">Architecture</a>
+      <ol>
+        <li><a href="#arch-layers">Layers</a></li>
+        <li><a href="#arch-request">Life of a request</a></li>
+        <li><a href="#arch-data">Data model</a></li>
+        <li><a href="#arch-import">Import pipeline</a></li>
+        <li><a href="#arch-security">Security essentials</a></li>
+      </ol>
+    </li>
+    <li><a href="#code-map">Code map</a>
+      <ol>
+        <li><a href="#change-x">Where do I change X</a></li>
+      </ol>
+    </li>
+    <li><a href="#rules">Working rules</a></li>
+    <li><a href="#build">How the build has been run</a></li>
+    <li><a href="#tests">Tests and quality gates</a></li>
+    <li><a href="#status">Status of M0 to M4</a></li>
+    <li><a href="#roadmap">Roadmap M5 to M9</a></li>
+    <li><a href="#open">Open decisions and maintainer tasks</a></li>
+    <li><a href="#risks">Risks, gaps, stale documents</a></li>
+    <li><a href="#reference">Reference</a>
+      <ol>
+        <li><a href="#glossary">Glossary</a></li>
+        <li><a href="#adr-index">ADR index</a></li>
+        <li><a href="#doc-map">Document map</a></li>
+      </ol>
+    </li>
+  </ol>
+  <ul class="m-docs">
+    <li><a href="index.html">Documentation home</a></li>
+    <li><a href="user-guide.html">User Guide</a></li>
+    <li><a href="install-guide.html">Install Guide</a></li>
+    <li><a href="handoff.html" aria-current="page">Developer Handoff and Roadmap</a></li>
+  </ul>
+</nav>
+
+<main id="main" class="m-main">
+
+<header class="m-hero">
+  <p class="m-kicker">Developer handoff and roadmap</p>
+  <h1>Pick up TiffinDB where the build stopped</h1>
+  <p class="m-lede">What exists, how it fits together, the rules that hold it in shape, how it was built, and what comes next. Written for a developer who has never seen the project.</p>
+  <dl class="m-meta">
+    <div><dt>Written</dt><dd>2026-11-23</dd></div>
+    <div><dt>Build state</dt><dd>M0 to M4 closed; M5 next</dd></div>
+    <div><dt>Version</dt><dd>0.1.0-dev, no release</dd></div>
+    <div><dt>Authority</dt><dd><code>docs/build/ledger.md</code></dd></div>
+  </dl>
+</header>
+
+<!-- ============================================================ Part 1 -->
+<section id="start">
+  <h2><span class="m-num">Part 1</span>Start here</h2>
+  <p>TiffinDB is a self-hosted personal database web application: PHP 8.3 or later, no framework, server-rendered HTML, one SQLite file per project, AGPL-3.0-or-later. Five of the eight version-1 milestones are closed.</p>
+  <p><strong>State as of <code>main</code> at a8ca17b, 2026-11-23.</strong> This page describes the code and the ledger on <code>main</code> at that commit (the merge of pull request 8), which this documentation is built on. A later integration branch exists on which M5 has closed and M7 work has started; it is not merged to <code>main</code>, and the ledger on that branch is the authority for its state. When this page and the ledger disagree, the ledger wins (<code>docs/build/ledger.md</code>, section 1).</p>
+
+  <ul class="m-cards m-wide">
+    <li><div class="m-card">
+      <p class="m-card__meta">Done</p>
+      <h3>M0 to M4 closed</h3>
+      <p>Scaffolding, foundation, records, import and export, links, files, and saved collections. Each closed after an independent exit audit; the last on 2026-11-22. All of it is on <code>main</code> (merged through pull request 8).</p>
+    </div></li>
+    <li><div class="m-card">
+      <p class="m-card__meta">Next</p>
+      <h3>M5: form editor and sanitizer</h3>
+      <p>Not started. It starts only on a new instruction from the maintainer. It is the next security-heavy design: stored form HTML must pass an allowlist sanitizer.</p>
+    </div></li>
+    <li><div class="m-card">
+      <p class="m-card__meta">Waits on the maintainer</p>
+      <h3>Two deferred tasks</h3>
+      <p>The legacy-format discovery run (<code>tools/discovery/</code>), which gates M6, and the reference shared-host check (<code>tools/host-check/</code>), which gates the M7 exit. Both scripts are written and reviewed.</p>
+    </div></li>
+  </ul>
+
+  <p>Also on this baseline: this documentation set (ADR 0020, provisional). Its state, the application observations made while writing it, and how to regenerate its screenshots are in <code>docs/build/documentation-handoff.md</code>. ADR 0020 decision 6 requires a change to a screen, a setup step, or the milestone state to update the page that describes it.</p>
+
+  <h3>First-day checklist</h3>
+  <ul class="m-checklist">
+    <li>Read <code>CLAUDE.md</code>. Its "Public Repository Rules" and "Licensing" sections are mandatory: this repository is public and permanent, and only synthetic data may appear in it.</li>
+    <li>Read the ledger, sections 1 (current state) and 5 (blockers and deferred maintainer tasks).</li>
+    <li>Read ADR 0008 (code layout and conventions) and ADR 0012 (core operations, authorization, snapshots, audit log). They explain most of the code.</li>
+    <li>Check the PHP on your machine: 8.3 or later with <code>pdo_sqlite</code> (SQLite 3.35.5 or later), <code>zip</code> and <code>xmlreader</code>; <code>dom</code>, <code>filter</code> and <code>libxml</code> are needed for XLSX (the setup page only warns without them). The <a href="install-guide.html#requirements">Install Guide</a> lists every check of the setup page.</li>
+    <li>Install and run the checks, then start the development server (commands below). Give it a data folder of its own first.</li>
+    <li>To regenerate the demo data or the screenshots of this manual (<code>tools/docs/</code>) you also need Node.js and Playwright. They are documentation tools, not project dependencies.</li>
+    <li>Read the as-built notes at the end of the M4 specifications (<code>docs/specs/M4-core.md</code> section 17, <code>docs/specs/M4-screens.md</code> section 13). Where a specification and its as-built notes disagree, the notes describe the code.</li>
+    <li>Before you implement anything that settles an open point, record the decision as an ADR in <code>docs/decisions/</code> (<code>CLAUDE.md</code> requires this).</li>
+  </ul>
+
+  <pre class="m-code" data-label="Shell"><code>composer install        # development install, with PHPUnit
+composer check          # lint (php -l on every PHP file), then the full suite
+composer serve          # PHP built-in server on http://127.0.0.1:8080</code></pre>
+
+  <p>Without configuration the application looks for its data folder at <code>../tiffindb-data</code>, next to the checkout, and then at <code>data/</code> inside it (<code>src/Core/Storage/DataDirectory.php</code>). To keep a development instance separate, create the git-ignored file <code>config/local.php</code> first:</p>
+  <pre class="m-code" data-label="config/local.php"><code>&lt;?php return ['data_dir' =&gt; '/absolute/path/to/a/scratch/data/folder'];</code></pre>
+  <p>Then open the server address. The setup page asks for a setup code that the installer writes to <code>setup-code.txt</code> in the data folder, then for the first Admin. The <a href="install-guide.html">Install Guide</a> covers this in detail.</p>
+
+  <div class="m-note">
+    <p class="m-note__label">Note</p>
+    <p>Run on 2026-11-23 in the main checkout: <code>php tools/dev/lint.php</code> checked 786 PHP files, 0 failed; <code>vendor/bin/phpunit tests/repo</code> passed 3,265 tests. The full suite was not re-run for this page. The baseline figure is the ledger's: 9,498 tests, 1 skipped, at M4 close. The install-guide writer of the documentation work ran <code>composer test</code> on this baseline on 2026-11-23 and reports 9,503 tests OK, 1 skipped, with the documentation files present. The counts differ because the repository-rule tests walk the file tree: each added file adds test cases to <code>tests/repo</code>.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 2 -->
+<section id="orientation">
+  <h2><span class="m-num">Part 2</span>Orientation</h2>
+
+  <h3>Goals, in priority order</h3>
+  <p>From <code>docs/plan.md</code> section 1. When two goals pull against each other, the higher one wins.</p>
+  <ol>
+    <li>Ease of use for non-technical users.</li>
+    <li>Legibility and visual accessibility (WCAG 2.2 AA throughout, 7:1 text contrast in the default theme).</li>
+    <li>Data ownership and portability: open, documented formats, exportable without the application.</li>
+    <li>Simple installation and upkeep on ordinary shared hosting.</li>
+    <li>Extensibility through plugins (import, export, and later field types).</li>
+  </ol>
+
+  <h3>Users</h3>
+  <p>A household or a small group. One more technical person installs TiffinDB and is its first <strong>Admin</strong>. Admins design projects, manage people, share projects, import, export, and turn plugins on and off. A <strong>Member</strong> sees only the projects shared with them and can view, add, change, trash, and restore records there (ADR 0002, ADR 0011). TiffinDB started as a free replacement for a discontinued desktop database product; the model UI in <code>docs/design/model-ui/</code> is the visual target for version 1 (ADR 0007).</p>
+
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/handoff-app-list.png" width="1920" height="1200" alt="TiffinDB signed in as Example Admin: a top bar with Projects, People, Plugins, a search box and Display; a teal sidebar for the project Home Inventory listing the tables Rooms, Items and Warranties and three saved collections; and the Items list with 24 records sorted by name, showing room links, category, purchase date, value, condition and quantity.">
+    <figcaption><b>The running application.</b> The Items list of the synthetic Home Inventory project, as the seeding script <code>tools/docs/seed-demo.js</code> creates it. Every screen is server-rendered HTML; it works without JavaScript.</figcaption>
+  </figure>
+
+  <h3>Hard constraints</h3>
+  <p>These are fixed by <code>CLAUDE.md</code> and ADRs 0001 and 0008. Changing any of them is a maintainer decision, not an implementation choice.</p>
+  <ul>
+    <li>PHP 8.3 or later, no framework, Apache with <code>.htaccess</code> and <code>mod_rewrite</code>, server-rendered HTML, vanilla JavaScript, no build step. Every screen works without JavaScript.</li>
+    <li>Storage is SQLite only: one file per project plus one system database. No MySQL or MariaDB.</li>
+    <li>No inline scripts or styles, no third-party assets from the network, no telemetry and no outbound network calls.</li>
+    <li>AGPL-3.0-or-later. Every source file carries the SPDX header. Dependencies must have AGPL-compatible licences, confirmed from their own licence file and recorded in <code>docs/dependencies.md</code>.</li>
+    <li>Public repository: no personal data, names of real people, credentials, employer references, or material from the discontinued product.</li>
+    <li>The core is headless: every operation is callable without the web layer, and authorization lives in the core. This exists for the post-v1 MCP server (ADR 0005).</li>
+  </ul>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 712" role="img" aria-labelledby="ho-ctx-t ho-ctx-d">
+      <title id="ho-ctx-t">System context</title>
+      <desc id="ho-ctx-d">Admins and Members use a web browser. The browser talks over HTTPS to one web host running Apache with PHP 8.3 or later. Apache, through two .htaccess files, sends every request that is not a real file to index.php. TiffinDB itself has a web layer of routes, controllers and templates, a core with the rules, permissions and SQLite access, and plugins for the CSV, XLSX and JSON formats. TiffinDB reads and writes one data folder outside public/, which holds system.sqlite, one folder per project, and a staging folder. Data leaves as CSV, XLSX, JSON or a project archive. Nothing leaves the host on its own: there is no telemetry, no content delivery network and no outbound call.</desc>
+      <defs>
+        <marker id="ho-ctx-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <text class="d-th" x="16" y="26">People</text>
+      <rect class="d-surface d-s-ctl" x="16" y="38" width="216" height="60" rx="10" stroke-width="1.5"/>
+      <circle class="d-accent" cx="44" cy="68" r="13"/>
+      <text class="d-ton d-mid" x="44" y="73">A</text>
+      <text class="d-th" x="66" y="64">Admin</text>
+      <text class="d-t2" x="66" y="83">designs and shares</text>
+      <rect class="d-surface d-s-ctl" x="248" y="38" width="216" height="60" rx="10" stroke-width="1.5"/>
+      <circle class="d-brand2" cx="276" cy="68" r="13"/>
+      <text class="d-ton d-mid" x="276" y="73">M</text>
+      <text class="d-th" x="298" y="64">Member</text>
+      <text class="d-t2" x="298" y="83">uses shared projects</text>
+
+      <path class="d-none d-s-ink2" d="M124 98V128" stroke-width="2" marker-end="url(#ho-ctx-arrow)"/>
+      <path class="d-none d-s-ink2" d="M356 98V128" stroke-width="2" marker-end="url(#ho-ctx-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="16" y="132" width="448" height="52" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="154">Web browser</text>
+      <text class="d-t2" x="32" y="173">HTML pages and forms; three small optional scripts</text>
+
+      <path class="d-none d-s-ink2" d="M240 188V222" stroke-width="2" marker-end="url(#ho-ctx-arrow)" marker-start="url(#ho-ctx-arrow)"/>
+      <text class="d-t2" x="252" y="210">HTTPS</text>
+
+      <rect class="d-soft d-s-accent" x="16" y="228" width="448" height="262" rx="14" stroke-width="1.5"/>
+      <text class="d-taccent" x="32" y="252">Web host: Apache with PHP 8.3 or later</text>
+      <rect class="d-surface d-s-line" x="32" y="264" width="416" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-t" x="48" y="283">Apache, mod_rewrite, two .htaccess files</text>
+      <text class="d-t2" x="48" y="301">a request that is not a real file goes to index.php</text>
+      <path class="d-none d-s-ink2" d="M240 310V328" stroke-width="2" marker-end="url(#ho-ctx-arrow)"/>
+      <rect class="d-side" x="32" y="332" width="416" height="144" rx="10"/>
+      <text class="d-tside" x="48" y="354">TiffinDB (PHP, no framework)</text>
+      <rect class="d-surface" x="48" y="366" width="384" height="30" rx="7"/>
+      <text class="d-t" x="62" y="386">Web: routes, controllers, templates</text>
+      <rect class="d-surface" x="48" y="402" width="384" height="30" rx="7"/>
+      <text class="d-t" x="62" y="422">Core: rules, permissions, SQLite access</text>
+      <rect class="d-surface" x="48" y="438" width="384" height="30" rx="7"/>
+      <text class="d-t" x="62" y="458">Plugins: CSV, XLSX and JSON formats</text>
+
+      <path class="d-none d-s-ink2" d="M240 494V520" stroke-width="2" marker-end="url(#ho-ctx-arrow)" marker-start="url(#ho-ctx-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="16" y="524" width="448" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="548">Data folder (outside public/)</text>
+      <text class="d-t2" x="32" y="568">system.sqlite, projects/&lt;key&gt;/, staging/</text>
+
+      <path class="d-none d-s-brand2" d="M240 586V606" stroke-width="2" marker-end="url(#ho-ctx-arrow)"/>
+      <rect class="d-warn-soft d-s-brand2" x="16" y="610" width="448" height="38" rx="10" stroke-width="1.5"/>
+      <text class="d-t" x="32" y="634">Exports: CSV, XLSX, JSON, project archive</text>
+
+      <rect class="d-none d-s-danger d-dash" x="16" y="660" width="448" height="44" rx="10" stroke-width="1.5"/>
+      <text class="d-t2" x="32" y="679">Nothing leaves the host on its own: no telemetry,</text>
+      <text class="d-t2" x="32" y="696">no content delivery network, no outbound calls.</text>
+    </svg>
+    <figcaption><b>System context.</b> One host, one PHP application, one data folder. There is no separate database server, no queue, no cache server and no build step. The three scripts are <code>import-continue.js</code>, <code>settings-preview.js</code> and <code>show-password.js</code> in <code>public/assets/js/</code>.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ Part 3 -->
+<section id="architecture">
+  <h2><span class="m-num">Part 3</span>Architecture</h2>
+  <p>Two PHP namespaces under <code>src/</code>: <code>TiffinDB\Core</code> (headless rules and storage) and <code>TiffinDB\Web</code> (HTTP, controllers, view). Plugins live outside <code>src/</code> in <code>plugins/</code> under their own namespace, <code>TiffinDB\Plugin\&lt;Kind&gt;\&lt;Id&gt;</code>. Core returns data and message keys with parameters, never English sentences, so the web layer and a later MCP adapter can each present them.</p>
+
+  <h3 id="arch-layers">Layers and allowed dependencies</h3>
+  <p>The core is split into ten areas. Each area may name only the areas on its list; a repository test reads every PHP file with <code>token_get_all</code> and fails on any other <code>TiffinDB\Core\&lt;Area&gt;</code> name. The lists below are copied from <code>CoreLayerRulesTest::ALLOWED</code>, which is the authority (ADR 0012 decision 1 as amended by ADRs 0014 and 0015).</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 576" role="img" aria-labelledby="ho-lay-t ho-lay-d">
+      <title id="ho-lay-t">Layers and allowed dependencies</title>
+      <desc id="ho-lay-d">Outside the core are the plugins, in plugins/kind/id, which may name the Io contract, five classes of Io\Csv and the OpenSpout library, and the web layer, in src/Web, templates, strings and public, which may name App, Install and Error plus listed value types from Auth, Schema and Storage. Inside src/Core, which produces no HTML and reads no superglobals: Install uses Auth, System, Storage and Error. App holds the operations and permission checks and uses every core area except Install. Io holds plugin loading, import jobs and the archive and uses Schema, Query, Forms, Storage and Error. Query and Forms each use Schema, Storage and Error. Auth uses System, Storage and Error. Schema and System each use Storage and Error. Storage holds SQLite access, files, keys, the clock and snapshots, and uses Error. Error holds problems, exceptions and text rules and uses nothing.</desc>
+      <defs>
+        <marker id="ho-lay-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-warn-soft d-s-brand2" x="16" y="16" width="176" height="88" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="40">Plugins</text>
+      <text class="d-t2" x="30" y="58">plugins/&lt;kind&gt;/&lt;id&gt;</text>
+      <text class="d-t2" x="30" y="75">Io\Contract, 5 Io\Csv</text>
+      <text class="d-t2" x="30" y="92">classes, OpenSpout</text>
+
+      <rect class="d-soft d-s-accent" x="208" y="16" width="256" height="88" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="222" y="40">Web</text>
+      <text class="d-t2" x="222" y="58">src/Web, templates, strings</text>
+      <text class="d-t2" x="222" y="75">names App, Install, Error, and</text>
+      <text class="d-t2" x="222" y="92">listed Auth, Schema, Storage types</text>
+
+      <rect class="d-none d-s-ctl d-dash" x="28" y="120" width="444" height="440" rx="14" stroke-width="1.5"/>
+      <text class="d-taccent" x="44" y="142">src/Core/: no HTML, no superglobals</text>
+
+      <path class="d-none d-s-ink2" d="M348 104V150" stroke-width="2" marker-end="url(#ho-lay-arrow)"/>
+      <path class="d-none d-s-brand2" d="M22 104V253H37" stroke-width="2" marker-end="url(#ho-lay-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="40" y="154" width="176" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="176">Install</text>
+      <text class="d-t2" x="54" y="193">uses Auth, System,</text>
+      <text class="d-t2" x="54" y="208">Storage, Error</text>
+      <rect class="d-soft d-s-accent" x="232" y="154" width="228" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="246" y="176">App</text>
+      <text class="d-t2" x="246" y="193">operations, permission checks</text>
+      <text class="d-t2" x="246" y="208">uses every area except Install</text>
+
+      <rect class="d-surface d-s-ctl" x="40" y="228" width="420" height="50" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="249">Io: plugin loading, import jobs, archive</text>
+      <text class="d-t2" x="54" y="267">uses Schema, Query, Forms, Storage, Error</text>
+
+      <rect class="d-surface d-s-ctl" x="40" y="290" width="132" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="312">Query</text>
+      <text class="d-t2" x="54" y="329">uses Schema,</text>
+      <text class="d-t2" x="54" y="344">Storage, Error</text>
+      <rect class="d-surface d-s-ctl" x="184" y="290" width="132" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="198" y="312">Forms</text>
+      <text class="d-t2" x="198" y="329">uses Schema,</text>
+      <text class="d-t2" x="198" y="344">Storage, Error</text>
+      <rect class="d-surface d-s-ctl" x="328" y="290" width="132" height="62" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="342" y="312">Auth</text>
+      <text class="d-t2" x="342" y="329">uses System,</text>
+      <text class="d-t2" x="342" y="344">Storage, Error</text>
+
+      <rect class="d-surface d-s-ctl" x="40" y="366" width="204" height="50" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="387">Schema</text>
+      <text class="d-t2" x="54" y="405">uses Storage, Error</text>
+      <rect class="d-surface d-s-ctl" x="256" y="366" width="204" height="50" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="270" y="387">System</text>
+      <text class="d-t2" x="270" y="405">uses Storage, Error</text>
+
+      <rect class="d-surface d-s-ctl" x="40" y="430" width="420" height="50" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="451">Storage</text>
+      <text class="d-t2" x="54" y="469">SQLite, files, keys, clock, snapshots; uses Error</text>
+
+      <rect class="d-sunk d-s-ctl" x="40" y="494" width="420" height="50" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="54" y="515">Error</text>
+      <text class="d-t2" x="54" y="533">problems, exceptions, text rules; uses nothing</text>
+    </svg>
+    <figcaption><b>Layers.</b> Each core area may name only the areas written in its box. Four tests hold the edges: <code>LayerRulesTest</code> (core never names Web or Mcp, reads no superglobals), <code>CoreLayerRulesTest</code> (the lists above, plus no direct clock or random calls outside <code>SystemClock</code> and <code>SecureRandom</code>), <code>WebLayerRulesTest</code> (web side: App, Install, Error, plus the Auth, Schema and Storage value types it lists) and <code>PluginLayerRulesTest</code> (plugin side: the contract, five <code>Io\Csv</code> classes, <code>OpenSpout\</code>).</figcaption>
+  </figure>
+
+  <p>Three details matter when you add code:</p>
+  <ul>
+    <li><strong>Only <code>src/Web/CoreServices.php</code> builds core objects.</strong> It is the web layer's composition root and may name any core class. Every other web file and every template may name <code>Core\App</code>, <code>Core\Install</code>, <code>Core\Error</code>, and the value types listed in <code>WebLayerRulesTest</code>: eleven from <code>Core\Auth</code> (for example <code>Actor</code>, <code>Role</code>, <code>Permission</code>), four from <code>Core\Schema</code> (<code>TableDef</code>, <code>FieldDef</code>, <code>RelationDef</code>, <code>Cardinality</code>) and <code>Core\Storage\SnapshotInfo</code>. The kernel reaches the core only through the <code>Services</code> interface.</li>
+    <li><strong>Authorization is in <code>Core\App</code>, not in controllers.</strong> Every operation takes an <code>Actor</code> first and starts with its permission check (<code>Core\Auth\Authorizer</code>). A Member who is not granted a project gets <code>NotFound</code>, the same answer as for a project that does not exist.</li>
+    <li><strong>Plugins see a small surface.</strong> They may name <code>TiffinDB\Core\Io\Contract\</code>, five pure CSV classes in <code>Core\Io\Csv</code>, their own namespace, PHP's standard library, and <code>OpenSpout\</code>. They may not open databases, call the network, read request state, or execute code dynamically. Only the shipped plugins are checked by the test; a plugin still runs with full PHP privileges (ADR 0015 decision 3).</li>
+  </ul>
+
+  <h3 id="arch-request">Life of a request</h3>
+  <p><code>public/index.php</code> is the only PHP entry point. It loads <code>Response</code>, <code>SecurityHeaders</code> and <code>Fallback</code> before the autoloader, so that even a missing <code>vendor/</code> or a fatal error answers with the full security header set. The order of checks below is the order in the doc comment of <code>src/Web/Kernel.php</code>.</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 840" role="img" aria-labelledby="ho-req-t ho-req-d">
+      <title id="ho-req-t">Life of a request (simplified)</title>
+      <desc id="ho-req-d">Step 1, Apache and .htaccess: a real file is sent as is, anything else goes to index.php. Step 2, public/index.php loads the configuration and the autoloader and builds the Request. Steps 3 to 11 run inside Kernel::handle. Step 3, shape and route: the Router looks up src/Web/routes.php; failures give 400, 404 or 405. Step 4, a POST that Sec-Fetch-Site marks cross-site or same-site is refused with 403. Step 5, installation state: before setup, other routes get a 303 to /setup; once installed, /setup is a 404; routes marked any answer in both states. Step 6, the session from the tdb_session cookie and the route's access level: a user route without a session gets a 303 to /sign-in, a guest route with a session a 303 to /projects, and a person who must change their password a 303 to the password form. Step 7, the CSRF token on every POST, after an Origin check and a check that the POST is not larger than PHP accepts; failures give 403 or 413. Step 8, the controller is constructed with a Context and one method is called; inside that call, step 9, the Core App operation checks permission and does its SQLite work, with core exceptions mapped to 403, 404 or 503, and step 10, the view renders a template with escaped output inside templates/layout.php. Step 11, the security headers, including the Content-Security-Policy, are applied once and the response is sent; anything uncaught gives the generic 500 page.</desc>
+      <defs>
+        <marker id="ho-req-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-sunk" x="46" y="160" width="428" height="666" rx="12"/>
+      <text class="d-t2" x="216" y="176">Kernel::handle()</text>
+      <g>
+        <circle class="d-accent" cx="28" cy="566" r="12"/><text class="d-ton d-mid" x="28" y="571">8</text>
+        <rect class="d-soft d-s-accent" x="56" y="544" width="408" height="198" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="564">Controller</text>
+        <text class="d-t2" x="70" y="582">new Controller(Context), one method; it runs 9 and 10</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="38" r="12"/><text class="d-ton d-mid" x="28" y="43">1</text>
+        <rect class="d-surface d-s-ctl" x="56" y="16" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="36">Apache and .htaccess</text>
+        <text class="d-t2" x="70" y="53">a real file is sent as is, else index.php</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="110" r="12"/><text class="d-ton d-mid" x="28" y="115">2</text>
+        <rect class="d-surface d-s-ctl" x="56" y="88" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="108">public/index.php</text>
+        <text class="d-t2" x="70" y="125">config, autoloader, Request object</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="206" r="12"/><text class="d-ton d-mid" x="28" y="211">3</text>
+        <rect class="d-surface d-s-ctl" x="56" y="184" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="204">Shape and route</text>
+        <text class="d-t2" x="70" y="221">Router looks up src/Web/routes.php</text>
+        <text class="d-twarn" x="70" y="236">refused: 400, 404, 405</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="278" r="12"/><text class="d-ton d-mid" x="28" y="283">4</text>
+        <rect class="d-surface d-s-ctl" x="56" y="256" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="276">Cross-site POST check</text>
+        <text class="d-t2" x="70" y="293">Sec-Fetch-Site: cross-site or same-site</text>
+        <text class="d-twarn" x="70" y="308">refused: 403</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="350" r="12"/><text class="d-ton d-mid" x="28" y="355">5</text>
+        <rect class="d-surface d-s-ctl" x="56" y="328" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="348">Installed?</text>
+        <text class="d-t2" x="70" y="365">routes marked &quot;any&quot; answer either way</text>
+        <text class="d-twarn" x="70" y="380">303 to /setup; once installed, /setup is 404</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="422" r="12"/><text class="d-ton d-mid" x="28" y="427">6</text>
+        <rect class="d-surface d-s-ctl" x="56" y="400" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="420">Session and access level</text>
+        <text class="d-t2" x="70" y="437">tdb_session cookie; guest or user route</text>
+        <text class="d-twarn" x="70" y="452">303 to /sign-in, /projects or the password form</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="494" r="12"/><text class="d-ton d-mid" x="28" y="499">7</text>
+        <rect class="d-surface d-s-ctl" x="56" y="472" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="492">CSRF token on every POST</text>
+        <text class="d-t2" x="70" y="509">Origin check first; oversized POST stops here</text>
+        <text class="d-twarn" x="70" y="524">refused: 403, or 413</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="622" r="12"/><text class="d-ton d-mid" x="28" y="627">9</text>
+        <rect class="d-surface d-s-accent" x="72" y="600" width="376" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="86" y="620">Core\App operation</text>
+        <text class="d-t2" x="86" y="637">permission check, then SQLite work</text>
+        <text class="d-twarn" x="86" y="652">core exceptions: 403, 404, 503</text>
+      </g>
+      <g>
+        <circle class="d-accent" cx="28" cy="694" r="12"/><text class="d-ton d-mid" x="28" y="699">10</text>
+        <rect class="d-surface d-s-accent" x="72" y="672" width="376" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="86" y="692">View and template</text>
+        <text class="d-t2" x="86" y="709">escaped output in templates/layout.php</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="28" cy="778" r="12"/><text class="d-ton d-mid" x="28" y="783">11</text>
+        <rect class="d-ok-soft d-s-ok" x="56" y="756" width="408" height="58" rx="9" stroke-width="1.5"/>
+        <text class="d-th" x="70" y="776">Security headers, then send</text>
+        <text class="d-t2" x="70" y="793">CSP and the other headers, once</text>
+        <text class="d-twarn" x="70" y="808">anything uncaught: the 500 page</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M204 74V86" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 146V182" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 242V254" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 314V326" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 386V398" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 458V470" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 530V542" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 588V598" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 658V670" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+      <path class="d-none d-s-ink2" d="M204 742V754" stroke-width="2" marker-end="url(#ho-req-arrow)"/>
+    </svg>
+    <figcaption><b>Life of a request, simplified.</b> Amber lines are the answers a step can give instead of going on. Steps 9 and 10 run inside the controller call. A PHP warning raised while handling is turned into an exception and ends in the generic 500 page, with no detail in the body. Left out: the anonymous CSRF cookie for setup and guest routes, and the deletion of a session cookie that no longer resolves.</figcaption>
+  </figure>
+
+  <p>Three conventions in this path:</p>
+  <ul>
+    <li><strong>Routes</strong> are one static table, <code>src/Web/routes.php</code>: <code>[method, pattern, [Controller, 'method'], access]</code>, first match wins, placeholders match one segment of <code>[A-Za-z0-9_-]+</code>. On 2026-11-23 it held 96 routes served by 21 controllers.</li>
+    <li><strong>Templates</strong> are plain PHP under <code>templates/</code>. Every <code>&lt;?=</code> must be exactly one call to a scope helper such as <code>$this-&gt;e()</code>, <code>$this-&gt;t()</code> or <code>$this-&gt;url()</code>. Output is XML-well-formed HTML5 so that tests can parse it with PHP's XML parser. No English prose in templates: text comes from <code>strings/en/*.php</code> through <code>t()</code>.</li>
+    <li><strong>Every state change is a POST with a CSRF token</strong>; GET never changes state; identifiers in URLs are opaque 12-character keys, never user text.</li>
+  </ul>
+
+  <h3 id="arch-data">Data model</h3>
+  <p>One data folder holds everything that belongs to an installation. The system database knows about people and projects; each project is a folder with its own SQLite file that never contains an account. Table names below are from <code>src/Core/System/SystemSchema.php</code> and <code>docs/formats/tiffin.md</code> (project format version 4).</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 624" role="img" aria-labelledby="ho-dat-t ho-dat-d">
+      <title id="ho-dat-t">The data folder and the system database</title>
+      <desc id="ho-dat-d">The data folder is set by data_dir in config/local.php, or else is ../tiffindb-data next to the application folder, or else data inside it. It holds system.sqlite at schema version 2 with nine tables: users, with key, role and password hash; user_settings and sessions, both belonging to users; login_throttle; project_grants, which joins users to projects; plugins, with enabled flags; meta, with the schema version; projects, with key and name; and audit_log, which refers to the acting person in users and to projects. Further references to users, not drawn: projects.created_by, plugins.changed_by and project_grants.granted_by. A project's key is also the name of its folder, projects/key, which holds project.tiffin, the attachments folder with files named by their SHA-256, and the snapshots folder. A staging folder holds four kinds of temporary job folder: imports, exports, archives and uploads; an import job has a job.sqlite file. The installer writes a deny-rule .htaccess into the data folder.</desc>
+      <defs>
+        <marker id="ho-dat-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-bg d-s-ctl" x="12" y="12" width="456" height="600" rx="14" stroke-width="1.5"/>
+      <text class="d-th" x="28" y="36">Data folder</text>
+      <text class="d-t2" x="132" y="36">data_dir, ../tiffindb-data or data/</text>
+
+      <rect class="d-surface d-s-accent" x="28" y="52" width="424" height="300" rx="12" stroke-width="1.5"/>
+      <text class="d-taccent" x="44" y="76">system.sqlite (schema version 2)</text>
+
+      <path class="d-none d-s-ink2" d="M168 115H178" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+      <path class="d-none d-s-ink2" d="M312 115H302" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+      <path class="d-none d-s-ink2" d="M240 170V138" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+      <path class="d-none d-s-ink2" d="M240 216V248" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+      <path class="d-none d-s-ink2" d="M312 271H302" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+      <path class="d-none d-s-ink2" d="M374 248V232H307V132H303" stroke-width="1.5" marker-end="url(#ho-dat-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="44" y="92" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="54" y="112">user_settings</text>
+      <text class="d-t2" x="54" y="129">theme, typeface</text>
+      <rect class="d-soft d-s-accent" x="178" y="92" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="188" y="112">users</text>
+      <text class="d-t2" x="188" y="129">key, role, hash</text>
+      <rect class="d-surface d-s-ctl" x="312" y="92" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="322" y="112">sessions</text>
+      <text class="d-t2" x="322" y="129">token hash</text>
+
+      <rect class="d-surface d-s-ctl" x="44" y="170" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="54" y="190">login_throttle</text>
+      <text class="d-t2" x="54" y="207">failures, block</text>
+      <rect class="d-surface d-s-ctl" x="178" y="170" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="188" y="190">project_grants</text>
+      <text class="d-t2" x="188" y="207">user, project</text>
+      <rect class="d-surface d-s-ctl" x="312" y="170" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="322" y="190">plugins</text>
+      <text class="d-t2" x="322" y="207">enabled flag</text>
+
+      <rect class="d-surface d-s-ctl" x="44" y="248" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="54" y="268">meta</text>
+      <text class="d-t2" x="54" y="285">schema version</text>
+      <rect class="d-soft d-s-accent" x="178" y="248" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="188" y="268">projects</text>
+      <text class="d-t2" x="188" y="285">key, name</text>
+      <rect class="d-surface d-s-ctl" x="312" y="248" width="124" height="46" rx="8" stroke-width="1.5"/>
+      <text class="d-tmono" x="322" y="268">audit_log</text>
+      <text class="d-t2" x="322" y="285">actor, action</text>
+
+      <text class="d-t2" x="44" y="320">Accounts, sharing, audit log.</text>
+      <text class="d-t2" x="44" y="337">Never in a project folder.</text>
+
+      <path class="d-none d-s-brand2 d-dash" d="M290 294V378" stroke-width="2" marker-end="url(#ho-dat-arrow)"/>
+      <text class="d-t2" x="300" y="368">key = folder name</text>
+
+      <rect class="d-surface d-s-ctl" x="36" y="388" width="424" height="112" rx="12" stroke-width="1.5"/>
+      <rect class="d-surface d-s-ctl" x="32" y="384" width="424" height="112" rx="12" stroke-width="1.5"/>
+      <rect class="d-surface d-s-ctl" x="28" y="380" width="424" height="112" rx="12" stroke-width="1.5"/>
+      <text class="d-th" x="44" y="404">projects/&lt;project key&gt;/</text>
+      <text class="d-t2" x="44" y="425">project.tiffin: one SQLite file per project</text>
+      <text class="d-t2" x="44" y="444">attachments/: files named by their SHA-256</text>
+      <text class="d-t2" x="44" y="463">snapshots/: copies taken before risky changes</text>
+      <text class="d-t2" x="44" y="482">one folder for each project</text>
+
+      <rect class="d-surface d-s-ctl" x="28" y="512" width="424" height="56" rx="12" stroke-width="1.5"/>
+      <text class="d-th" x="44" y="535">staging/</text>
+      <text class="d-t2" x="44" y="555">imports, exports, archives, uploads</text>
+
+      <text class="d-t2" x="28" y="595">.htaccess: a deny rule, written by the installer</text>
+    </svg>
+    <figcaption><b>Data folder and system database.</b> Arrows point from a table to the table it refers to; the main references are drawn, and the description lists the rest. The setup page prefers a folder outside the web root and refuses to finish while an HTTP probe can read the data folder (M1 spec section 10.4).</figcaption>
+  </figure>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 580" role="img" aria-labelledby="ho-prj-t ho-prj-d">
+      <title id="ho-prj-t">Inside a project file</title>
+      <desc id="ho-prj-d">project.tiffin is a SQLite 3 file with application_id 0x54464442, the bytes TFDB, and user_version 4. Nine metadata tables start with _tiffin_: meta, tables, fields, relations, forms, collections, attachments, attachment_links and import_log. Each row of _tiffin_tables describes one real SQLite table named t_ plus the table key, with the columns id, _created_at, _created_by, _updated_at, _updated_by, _trashed_at, _trashed_by, and one column f_ plus the field key for each row of _tiffin_fields. Each row of _tiffin_relations has a join table named j_ plus the relation key with left_id, right_id and position. Each row of _tiffin_attachments names a file outside the database, in attachments, named by the SHA-256 of its content. Snapshots are complete copies of the file made with VACUUM INTO.</desc>
+      <defs>
+        <marker id="ho-prj-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-soft d-s-accent" x="16" y="16" width="448" height="480" rx="14" stroke-width="1.5"/>
+      <text class="d-th" x="32" y="40">project.tiffin</text>
+      <text class="d-t2" x="32" y="58">application_id 0x54464442 (TFDB), user_version 4</text>
+
+      <g>
+        <rect class="d-surface d-s-ctl" x="32" y="76" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="99">_tiffin_meta</text>
+        <rect class="d-surface d-s-accent" x="32" y="122" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="145">_tiffin_tables</text>
+        <rect class="d-surface d-s-accent" x="32" y="168" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="191">_tiffin_fields</text>
+        <rect class="d-surface d-s-accent" x="32" y="214" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="237">_tiffin_relations</text>
+        <rect class="d-surface d-s-ctl" x="32" y="260" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="283">_tiffin_forms</text>
+        <rect class="d-surface d-s-ctl" x="32" y="306" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="329">_tiffin_collections</text>
+        <rect class="d-surface d-s-brand2" x="32" y="352" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="375">_tiffin_attachments</text>
+        <rect class="d-surface d-s-ctl" x="32" y="398" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="421">_tiffin_attachment_links</text>
+        <rect class="d-surface d-s-ctl" x="32" y="444" width="200" height="36" rx="8" stroke-width="1.5"/>
+        <text class="d-tmono" x="42" y="467">_tiffin_import_log</text>
+      </g>
+
+      <rect class="d-surface d-s-accent" x="276" y="76" width="172" height="224" rx="10" stroke-width="1.5"/>
+      <text class="d-tmono" x="288" y="98">t_&lt;table key&gt;</text>
+      <text class="d-t2" x="288" y="116">one per user table</text>
+      <text class="d-tmono" x="288" y="142">id</text>
+      <text class="d-tmono" x="288" y="160">_created_at, _by</text>
+      <text class="d-tmono" x="288" y="178">_updated_at, _by</text>
+      <text class="d-tmono" x="288" y="196">_trashed_at, _by</text>
+      <path class="d-none d-s-line" d="M288 210H436" stroke-width="1.5"/>
+      <text class="d-tmono" x="288" y="232">f_&lt;field key&gt;</text>
+      <text class="d-tmono" x="288" y="250">f_&lt;field key&gt;</text>
+      <text class="d-t2" x="288" y="272">one column per field;</text>
+      <text class="d-t2" x="288" y="289">live: _trashed_at null</text>
+
+      <rect class="d-surface d-s-accent" x="276" y="318" width="172" height="106" rx="10" stroke-width="1.5"/>
+      <text class="d-tmono" x="288" y="340">j_&lt;relation key&gt;</text>
+      <text class="d-t2" x="288" y="358">one per relation</text>
+      <text class="d-tmono" x="288" y="382">left_id</text>
+      <text class="d-tmono" x="288" y="400">right_id</text>
+      <text class="d-tmono" x="288" y="418">position</text>
+
+      <path class="d-none d-s-ink2" d="M232 140H274" stroke-width="1.5" marker-end="url(#ho-prj-arrow)"/>
+      <path class="d-none d-s-ink2" d="M232 186H252V228H274" stroke-width="1.5" marker-end="url(#ho-prj-arrow)"/>
+      <path class="d-none d-s-ink2" d="M232 232H244V348H274" stroke-width="1.5" marker-end="url(#ho-prj-arrow)"/>
+      <path class="d-none d-s-brand2" d="M232 370H262V532H274" stroke-width="1.5" marker-end="url(#ho-prj-arrow)"/>
+
+      <rect class="d-surface d-s-ctl d-dash" x="32" y="510" width="200" height="56" rx="10" stroke-width="1.5"/>
+      <text class="d-tmono" x="44" y="532">snapshots/*.tiffin</text>
+      <text class="d-t2" x="44" y="552">VACUUM INTO copies</text>
+      <rect class="d-surface d-s-brand2 d-dash" x="276" y="510" width="172" height="56" rx="10" stroke-width="1.5"/>
+      <text class="d-tmono" x="288" y="532">attachments/ab/…</text>
+      <text class="d-t2" x="288" y="552">named by SHA-256</text>
+    </svg>
+    <figcaption><b>Inside a project file.</b> Every user table is a real SQLite table with typed columns, not an entity-attribute-value store, so the file is usable with any SQLite tool. SQL names are built only from keys (<code>t_</code>, <code>f_</code>, <code>j_</code>, <code>x_</code> prefixes); display names live in the metadata tables and can change freely. Forms and collections belong to a table through their <code>table_key</code> column.</figcaption>
+  </figure>
+
+  <p>Format upgrades are forward-only: <code>FormatMigrations</code> takes a <code>format-upgrade</code> snapshot, then runs each step in its own transaction (versions 1 to 4 were written by M1 to M4). The system database follows the same pattern in <code>SystemSchema</code>. A project travels as a project archive (a zip with a manifest, <code>docs/formats/tiffin.md</code> section 13) and exports to JSON as described in <code>docs/formats/json-export.md</code>.</p>
+
+  <h3 id="arch-import">Import pipeline</h3>
+  <p>Shared hosts limit how long a request may run, and the import promise is "all together, or not at all". ADR 0015 resolves both: an import is a staging job outside the project file, worked through in short requests, and only the last request writes to the project, in one transaction.</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 690" role="img" aria-labelledby="ho-imp-t ho-imp-d">
+      <title id="ho-imp-t">Import pipeline</title>
+      <desc id="ho-imp-d">Phase 1, upload, in one request, Admin only; the importer plugin is chosen by file extension; the file goes to staging/imports/job. Phase 2, read in chunks of at most 2,000 rows or 5 seconds per request, with column types guessed while reading; rows go to the rows table of job.sqlite. Phase 3, review: the Admin chooses the target table, field types and columns; the mapping is stored in the job's meta table and nothing is written to the project. Phase 4, prepare in chunks: cells are converted to field values; a value that cannot be converted is emptied and counted as an issue, into the prepared and issues tables of job.sqlite. Phase 5, save the rows, in one request: check that the schema has not changed since review (if it has, the job returns to review before any snapshot is taken), take an import snapshot, then in one transaction add any new table, fields and relation, the records and links, and the import log row, into project.tiffin. Phase 6, report: an import.completed audit entry, and the job folder is removed. A failure inside the transaction rolls back, so the project is unchanged and the snapshot taken before it stays. Limits: 50,000 rows, 200 columns and 64 MiB per import.</desc>
+      <defs>
+        <marker id="ho-imp-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <text class="d-th" x="16" y="22">Phase</text>
+      <text class="d-th" x="316" y="22">Where data goes</text>
+
+      <rect class="d-surface d-s-ctl" x="16" y="34" width="280" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="56">1  Upload</text>
+      <text class="d-t2" x="30" y="74">one request, Admin only</text>
+      <text class="d-t2" x="30" y="90">plugin chosen by file extension</text>
+      <path class="d-none d-s-ctl d-dash" d="M296 66H314" stroke-width="1.5" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-sunk d-s-ctl" x="316" y="44" width="148" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="328" y="63">staging/imports/</text>
+      <text class="d-t2" x="328" y="80">&lt;job&gt;/: the file</text>
+      <path class="d-none d-s-ink2" d="M156 98V112" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="16" y="114" width="280" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="136">2  Read, in chunks</text>
+      <text class="d-t2" x="30" y="154">2,000 rows or 5 s per request</text>
+      <text class="d-t2" x="30" y="170">types guessed while reading</text>
+      <path class="d-none d-s-ctl d-dash" d="M296 146H314" stroke-width="1.5" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-sunk d-s-ctl" x="316" y="124" width="148" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="328" y="143">job.sqlite</text>
+      <text class="d-tmono" x="328" y="160">rows</text>
+      <path class="d-none d-s-ink2" d="M156 178V192" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="16" y="194" width="280" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="216">3  Review the mapping</text>
+      <text class="d-t2" x="30" y="234">target table, field types, columns</text>
+      <text class="d-t2" x="30" y="250">nothing written to the project</text>
+      <path class="d-none d-s-ctl d-dash" d="M296 226H314" stroke-width="1.5" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-sunk d-s-ctl" x="316" y="204" width="148" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="328" y="223">job.sqlite</text>
+      <text class="d-tmono" x="328" y="240">meta: mapping</text>
+      <path class="d-none d-s-ink2" d="M156 258V272" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+
+      <rect class="d-surface d-s-ctl" x="16" y="274" width="280" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="296">4  Prepare, in chunks</text>
+      <text class="d-t2" x="30" y="314">cells converted to field values</text>
+      <text class="d-t2" x="30" y="330">unconvertible values emptied, counted</text>
+      <path class="d-none d-s-ctl d-dash" d="M296 306H314" stroke-width="1.5" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-sunk d-s-ctl" x="316" y="284" width="148" height="44" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="328" y="303">job.sqlite</text>
+      <text class="d-tmono" x="328" y="320">prepared, issues</text>
+      <path class="d-none d-s-ink2" d="M156 338V352" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+
+      <rect class="d-soft d-s-accent" x="16" y="354" width="280" height="118" rx="10" stroke-width="2"/>
+      <text class="d-th" x="30" y="376">5  Save the rows: one request</text>
+      <text class="d-t2" x="30" y="396">schema unchanged since review?</text>
+      <text class="d-t2" x="30" y="413">take the "import" snapshot first</text>
+      <text class="d-t2" x="30" y="430">one transaction: new table, fields,</text>
+      <text class="d-t2" x="30" y="447">relation, records, links, and the</text>
+      <text class="d-t2" x="30" y="464">_tiffin_import_log row</text>
+      <path class="d-none d-s-accent" d="M296 382H314" stroke-width="1.5" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-surface d-s-ctl" x="316" y="364" width="148" height="36" rx="8" stroke-width="1.5"/>
+      <text class="d-t2" x="328" y="387">an import snapshot</text>
+      <path class="d-none d-s-accent" d="M296 434H314" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+      <rect class="d-accent" x="316" y="414" width="148" height="40" rx="8"/>
+      <text class="d-ton" x="328" y="439">project.tiffin</text>
+      <path class="d-none d-s-ink2" d="M156 472V486" stroke-width="2" marker-end="url(#ho-imp-arrow)"/>
+
+      <rect class="d-ok-soft d-s-ok" x="16" y="488" width="280" height="64" rx="10" stroke-width="1.5"/>
+      <text class="d-th" x="30" y="510">6  Report</text>
+      <text class="d-t2" x="30" y="528">audit entry import.completed</text>
+      <text class="d-t2" x="30" y="544">job folder removed</text>
+
+      <rect class="d-danger-soft d-s-danger" x="16" y="568" width="448" height="82" rx="10" stroke-width="1.5"/>
+      <text class="d-t2" x="30" y="588">A changed schema sends the job back to review</text>
+      <text class="d-t2" x="30" y="605">before any snapshot is taken. A failure inside the</text>
+      <text class="d-t2" x="30" y="622">transaction rolls back: the project is unchanged</text>
+      <text class="d-t2" x="30" y="639">and the snapshot taken before it stays.</text>
+      <text class="d-t2" x="16" y="676">Limits: 50,000 rows, 200 columns, 64 MiB per import</text>
+    </svg>
+    <figcaption><b>Import pipeline.</b> The importer plugin only yields rows through the contract (<code>src/Core/Io/Contract/</code>); the core owns every write. Without JavaScript each chunk is a page with a <span class="m-ui">Continue</span> button; <code>import-continue.js</code> presses it automatically. Limits are constants in <code>src/Core/Io/IoLimits.php</code>; the 64 MiB figure is lowered to PHP's own upload limits when those are smaller.</figcaption>
+  </figure>
+
+  <p>Export runs the other way through <code>ExportSourceBuilder</code> and an exporter plugin (CSV, XLSX, JSON). The CSV reader and writer are core classes (<code>Core\Io\Csv</code>), so the portability minimum never depends on plugin loading or on the XLSX library. The XLSX importer reads with PHP's <code>XMLReader</code>; OpenSpout 5.2.2 is used only by the XLSX exporter (ADR 0016, M3 as-built notes).</p>
+
+  <h3 id="arch-security">Security essentials</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Concern</th><th>As built</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>Headers and CSP</td><td><code>default-src 'none'</code> plus same-origin styles, scripts, images, fonts, connections and form targets; <code>frame-ancestors 'none'</code>; nosniff, <code>X-Frame-Options: DENY</code>, <code>Cache-Control: no-store</code> and others, on every response including errors</td><td><code>src/Web/SecurityHeaders.php</code></td></tr>
+        <tr><td>Passwords and sessions</td><td>Argon2id (bcrypt where Argon2id is missing); only session-token hashes stored; cookie <code>tdb_session</code>; sign-in throttled per user and per address</td><td><code>src/Core/Auth/</code></td></tr>
+        <tr><td>CSRF</td><td>Token on every POST, <code>Sec-Fetch-Site</code> and <code>Origin</code> checks first; anonymous token cookie <code>tdb_csrf</code> on setup and guest routes</td><td><code>src/Web/Kernel.php</code>, <code>Core\Auth\Csrf</code></td></tr>
+        <tr><td>SQL</td><td>Prepared statements only; SQL text built from literals and <code>Identifier</code> names, never user text</td><td><code>src/Core/Schema/Identifier.php</code>, <code>SqlStringsTest</code></td></tr>
+        <tr><td>Attachments</td><td>Type from the file's first bytes; served only through an access-checked route with <code>default-src 'none'; frame-ancestors 'none'; sandbox</code>; inline only for four image types</td><td>ADR 0018, <code>FileController</code></td></tr>
+        <tr><td>Data folder exposure</td><td>Setup probes over HTTP, with a positive control, and refuses to finish if the data folder is readable or the result is inconclusive</td><td><code>src/Core/Install/ExposureProbe.php</code></td></tr>
+        <tr><td>Stored forms</td><td>Never printed: parsed into a node model and rebuilt through ordinary templates until the M5 sanitizer exists</td><td>ADR 0014 decision 4, <code>Core\Forms\FormParser</code></td></tr>
+        <tr><td>Plugins</td><td>Full PHP privileges; listing never executes plugin code; non-shipped plugins are off by default and need an Admin's confirmation</td><td>ADR 0015, <code>src/Core/Io/Plugin/</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ Part 4 -->
+<section id="code-map">
+  <h2><span class="m-num">Part 4</span>Code map</h2>
+  <p>Counts made with <code>find</code> on 2026-11-23 (PHP files unless stated). Only <code>public/</code> is web-reachable; the root <code>.htaccess</code> forwards everything into it for hosts that put the whole tree under the document root.</p>
+
+  <div class="m-tree m-wide">tiffindb/
+  public/                 <i>web root: index.php, .htaccess, assets/ (css, fonts, js)</i>
+  src/
+    Core/                 <i>325 files, headless</i>
+      App/                <i>78: operations, permission checks, screen value objects</i>
+      Auth/               <i>23: users, sessions, throttle, CSRF, Authorizer</i>
+      Error/              <i>10: Problem, exceptions, Text rules</i>
+      Forms/              <i>35: form format, parser, generator, binder</i>
+      Install/            <i>15: requirements, data folder, exposure probe, setup code</i>
+      Io/                 <i>62: contract, plugins, staging jobs, CSV, archive</i>
+      Query/              <i>37: records, lists, search, trash, collections, attachments</i>
+      Schema/             <i>39: schema editor, 17 field types, format migrations</i>
+      Storage/            <i>18: SQLite, files, keys, clock, random, snapshots</i>
+      System/             <i>8: system database, registry, audit log, plugin states</i>
+    Web/                  <i>46: Kernel, Router, View, CoreServices, 21 controllers</i>
+  templates/              <i>100 plain PHP templates: layout, pages/, partials/</i>
+  strings/                <i>en.php merges strings/en/*.php (23 parts)</i>
+  plugins/                <i>import/csv, import/xlsx, export/csv, export/xlsx, export/json</i>
+  config/                 <i>app.php committed; local.php git-ignored</i>
+  tests/                  <i>221 test files; see Part 7</i>
+  tools/
+    admin/                <i>reset-password.php (command-line password reset)</i>
+    dev/                  <i>lint.php</i>
+    discovery/            <i>maintainer tool: legacy-format structure discovery</i>
+    host-check/           <i>maintainer tool: shared-host check</i>
+    docs/                 <i>seed-demo.js and screenshot scripts (Node.js, Playwright)</i>
+  docs/                   <i>plan, ADRs, specs, formats, design, build records, this manual</i></div>
+
+  <figure class="m-fig m-fig--shot m-wide">
+    <img src="img/handoff-schema-editor.png" width="1920" height="1200" alt="The fields page of the Items table in Home Inventory: a breadcrumb Projects, Home Inventory, Items; the heading Items with 15 fields and 24 records; an Add a field button; and a table of fields with their type, whether they must be filled in, and Up and Down buttons. Rows include Name (shown as the title, Text), Room (Link to Rooms, one each), Category (Choice), Purchased (Date), Value (Currency) and Condition (Rating).">
+    <figcaption><b>The schema editor.</b> An Admin's view of one table. Behind it: <code>TableController</code> and <code>FieldController</code> in the web layer, <code>Core\App\SchemaOperations</code>, then <code>Core\Schema\SchemaEditor</code>, which changes the SQLite table and regenerates the table's form in the same transaction.</figcaption>
+  </figure>
+
+  <h3 id="change-x">Where do I change X</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>To change</th><th>Go to</th><th>Also update</th></tr></thead>
+      <tbody>
+        <tr><td>A URL or add a screen</td><td><code>src/Web/routes.php</code>, a controller in <code>src/Web/Controller/</code>, a template in <code>templates/pages/</code></td><td>The milestone spec's route list; a web test in <code>tests/web/</code></td></tr>
+        <tr><td>Text on a screen</td><td><code>strings/en/&lt;area&gt;.php</code> (keys only in templates)</td><td><code>StringsTest</code> fails on a missing key</td></tr>
+        <tr><td>Page markup shared by many screens</td><td><code>templates/layout.php</code>, <code>templates/partials/</code></td><td>Keep every <code>&lt;?=</code> a single helper call</td></tr>
+        <tr><td>Styles</td><td><code>public/assets/css/app.css</code>; colours only through tokens</td><td><code>public/assets/css/tokens.css</code> must keep every colour of <code>docs/design/tokens.css</code>; lengths are converted from px to rem by the rules of M0 spec section 8.1 (<code>TokenParityTest</code>)</td></tr>
+        <tr><td>Appearance classes (theme, accent, typeface, size)</td><td><code>src/Web/Appearance.php</code></td><td>The allowed values in <code>Users::SETTINGS</code> (<code>src/Core/Auth/Users.php</code>), repeated in <code>src/Web/Controller/SettingsController.php</code></td></tr>
+        <tr><td>A business rule or a new operation</td><td><code>src/Core/App/*Operations.php</code>, reached through <code>Operations</code></td><td>Permission check first; an audit action if it changes something</td></tr>
+        <tr><td>Who may do what</td><td><code>src/Core/Auth/Permission.php</code>, <code>Authorizer.php</code></td><td>ADR 0002, ADR 0012; refusal tests in <code>tests/core/app/</code></td></tr>
+        <tr><td>A field type</td><td><code>src/Core/Schema/Type/</code> and <code>FieldTypes.php</code></td><td><code>docs/formats/tiffin.md</code> section 6; conversion matrix in the M1 spec</td></tr>
+        <tr><td>The project file format</td><td><code>src/Core/Schema/FormatMigrations.php</code> (a new forward-only step)</td><td><code>docs/formats/tiffin.md</code> first; an ADR; <code>tests/formats/</code></td></tr>
+        <tr><td>The system database</td><td><code>src/Core/System/SystemSchema.php</code> (<code>STEPS</code>, <code>VERSION</code>)</td><td>The milestone spec's DDL section</td></tr>
+        <tr><td>Record listing, search, filters</td><td><code>src/Core/Query/Records.php</code>, <code>ListQuery.php</code>, <code>Sql.php</code></td><td>ADR 0013; <code>SqlStringsTest</code> scans the SQL of Schema, Query, Forms and Io; <code>Sql.php</code> is exempt by name and reviewed instead</td></tr>
+        <tr><td>An import or export format</td><td>A new folder <code>plugins/&lt;kind&gt;/&lt;id&gt;/</code> with <code>plugin.json</code> and <code>src/</code></td><td><code>PluginLayerRulesTest</code>; licence in <code>docs/dependencies.md</code> if it ships a library</td></tr>
+        <tr><td>Import limits</td><td><code>src/Core/Io/IoLimits.php</code></td><td>M3 spec section 6.8</td></tr>
+        <tr><td>Security headers or CSP</td><td><code>src/Web/SecurityHeaders.php</code> only</td><td><code>SecurityHeadersTest</code> pins the exact set</td></tr>
+        <tr><td>Install requirements and setup</td><td><code>src/Core/Install/</code>, <code>SetupController</code></td><td>The Install Guide's requirement list</td></tr>
+        <tr><td>Configuration keys</td><td><code>config/app.php</code>; local keys in <code>Kernel::withLocalConfig()</code></td><td>The Install Guide's configuration reference</td></tr>
+        <tr><td>A dependency</td><td><code>composer.json</code> (exact pin)</td><td><code>docs/dependencies.md</code> in the same change (<code>DependencyLicenceTest</code>)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ Part 5 -->
+<section id="rules">
+  <h2><span class="m-num">Part 5</span>Working rules</h2>
+  <p>Most rules are enforced by a test that fails the suite. Where only review enforces a rule, the table says so. Every test named here exists in the repository (checked 2026-11-23).</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Rule</th><th>Reason</th><th>What enforces it</th></tr></thead>
+      <tbody>
+        <tr><td>SPDX header on every file, of the right syntax for its type; unknown file types fail</td><td>AGPL attribution in every copy</td><td><code>tests/repo/SpdxHeaderTest.php</code> (closed-world, with an exemption register)</td></tr>
+        <tr><td><code>declare(strict_types=1)</code> first in every PHP file; every file passes <code>php -l</code></td><td>Type errors surface early</td><td><code>tests/repo/PhpSourceRulesTest.php</code>, <code>tools/dev/lint.php</code></td></tr>
+        <tr><td>Core never names Web or Mcp, never reads superglobals</td><td>Headless core for the later MCP adapter</td><td><code>tests/repo/LayerRulesTest.php</code></td></tr>
+        <tr><td>Core areas use only their listed areas; no direct clock or random calls</td><td>Clear layering; deterministic tests</td><td><code>tests/repo/CoreLayerRulesTest.php</code></td></tr>
+        <tr><td>Web names only App, Install, Error and listed value types</td><td>Authorization cannot be bypassed from a controller</td><td><code>tests/web/WebLayerRulesTest.php</code></td></tr>
+        <tr><td>Plugins: only the contract, no database, network, or dynamic code</td><td>Small, reviewable plugin surface</td><td><code>tests/repo/PluginLayerRulesTest.php</code></td></tr>
+        <tr><td>The test seams of <code>Installer</code> and <code>Operations</code> are never used outside tests</td><td>Test hooks cannot reach a live request</td><td><code>tests/repo/CompositionSeamTest.php</code></td></tr>
+        <tr><td>Every template output is one escaping helper call; no inline script or style</td><td>No cross-site scripting; strict CSP</td><td><code>tests/web/TemplateRulesTest.php</code>; <code>HtmlAssertions::assertNoInlineCode</code> on rendered pages</td></tr>
+        <tr><td>SQL built only from literals and <code>Identifier</code> names</td><td>No SQL injection through table or field names</td><td><code>tests/core/schema/SqlStringsTest.php</code>, for <code>src/Core/Schema</code>, <code>Query</code>, <code>Forms</code> and <code>Io</code> only; <code>src/Core/Query/Sql.php</code> is exempt by name. Elsewhere: review</td></tr>
+        <tr><td>No error-suppression operator <code>@</code></td><td>Errors are handled, not hidden</td><td><code>tests/repo/NoErrorSuppressionTest.php</code></td></tr>
+        <tr><td>Exact security header set and CSP</td><td>One place, applied once</td><td><code>tests/web/SecurityHeadersTest.php</code></td></tr>
+        <tr><td>Dependencies AGPL-compatible, pinned exactly, recorded with version and commit</td><td>Licence compliance; reproducible release</td><td><code>tests/repo/DependencyLicenceTest.php</code>, <code>tests/repo/ComposerManifestTest.php</code></td></tr>
+        <tr><td>Mandatory <code>.gitignore</code> entries (databases, archives, <code>.env*</code>, <code>config/local.php</code>)</td><td>Real data and secrets never reach git</td><td><code>tests/repo/GitignoreTest.php</code></td></tr>
+        <tr><td>The two <code>.htaccess</code> files and the data folder's deny rule as specified</td><td>Nothing outside <code>public/</code> served</td><td><code>tests/repo/HtaccessTest.php</code> (static; Apache behaviour unverified)</td></tr>
+        <tr><td>ADRs numbered without gaps, each with an accepted status</td><td>Decisions recorded before code</td><td><code>tests/repo/DecisionRecordsTest.php</code></td></tr>
+        <tr><td>Token colours equal the design file, lengths converted px to rem by fixed rules; contrast figures as published</td><td>Accessibility target of 7:1</td><td><code>tests/design/TokenParityTest.php</code>, <code>tests/design/ContrastTest.php</code></td></tr>
+        <tr><td>No outbound network calls in the application</td><td>Privacy; no telemetry</td><td>Plugins: <code>PluginLayerRulesTest</code>. Core and web: review and the exit audits (an <code>strace</code> run at M3). The installer's loopback probe is the one socket use</td></tr>
+        <tr><td>Only synthetic data; no names, emails, credentials, employer references</td><td>Public, permanent repository</td><td>Review and the exit audits only; no automated scan</td></tr>
+        <tr><td>A decision is recorded as an ADR before it is implemented</td><td>Reversible, traceable design</td><td>Review; <code>DecisionRecordsTest</code> checks only the format</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ Part 6 -->
+<section id="build">
+  <h2><span class="m-num">Part 6</span>How the build has been run</h2>
+  <p>M0 to M4 were built by automated agents under the procedure in <code>docs/build/orchestration.md</code>. One orchestrating agent delegates design, coding and review to separate agents, integrates, and keeps the ledger. It writes no application code itself. Agents work at three tiers: <strong>design</strong> (specifications, ADRs, security review, exit audits), <strong>implementation</strong> (work packages, tests, ordinary review) and <strong>mechanical</strong> (fully specified repetitive work, always reviewed by a higher tier). Nothing in the procedure depends on agents: a human team can follow the same steps.</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 640" role="img" aria-labelledby="ho-bld-t ho-bld-d">
+      <title id="ho-bld-t">Build process for one milestone</title>
+      <desc id="ho-bld-d">Step 1, a maintainer instruction starts a milestone; nothing starts on its own. Step 2, design by the design tier: the specification in docs/specs and any ADRs, written before code. Step 3, spec review by a second agent, which fixes clear defects and reports judgement calls for ruling. Step 4, work packages by the implementation tier: disjoint owned files, at most three at once. Step 5, independent review by a different agent, the design tier for security-critical areas; findings go back to step 4. Step 6, integrate: merge one branch at a time, run tests and lint, push. Step 7, an independent exit audit re-runs the exit criteria, runs mutations and writes as-built notes; fixes go back to step 6. Step 8, the milestone is closed; the build stops or the next milestone starts on instruction. Every step updates docs/build/ledger.md.</desc>
+      <defs>
+        <marker id="ho-bld-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ink2" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <rect class="d-side" x="384" y="16" width="80" height="602" rx="12"/>
+      <text class="d-tside d-mid" transform="rotate(-90 428 317)" x="428" y="322">docs/build/ledger.md: updated after every change</text>
+
+      <g>
+        <rect class="d-warn-soft d-s-brand2" x="40" y="16" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="39">1  Maintainer instruction</text>
+        <text class="d-t2" x="56" y="59">nothing starts on its own</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 72V92" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-accent" x="40" y="94" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="117">2  Design (design tier)</text>
+        <text class="d-t2" x="56" y="137">spec in docs/specs/, ADRs first</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 150V170" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-accent" x="40" y="172" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="195">3  Spec review (second agent)</text>
+        <text class="d-t2" x="56" y="215">fixes defects, reports rulings</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 228V248" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-ctl" x="40" y="250" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="273">4  Work packages</text>
+        <text class="d-t2" x="56" y="293">own files, at most 3 at once</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 306V326" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-ctl" x="40" y="328" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="351">5  Independent review</text>
+        <text class="d-t2" x="56" y="371">by an agent that did not write it</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 384V404" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-ctl" x="40" y="406" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="429">6  Integrate</text>
+        <text class="d-t2" x="56" y="449">merge, test, lint, push</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 462V482" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-surface d-s-accent" x="40" y="484" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="507">7  Exit audit (independent)</text>
+        <text class="d-t2" x="56" y="527">criteria, mutations, as-built notes</text>
+      </g>
+      <path class="d-none d-s-ink2" d="M200 540V560" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <g>
+        <rect class="d-ok-soft d-s-ok" x="40" y="562" width="320" height="56" rx="10" stroke-width="1.5"/>
+        <text class="d-th" x="56" y="585">8  Milestone closed</text>
+        <text class="d-t2" x="56" y="605">stop, or next on instruction</text>
+      </g>
+
+      <path class="d-none d-s-warn" d="M40 356H22V278H38" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <text class="d-twarn d-mid" transform="rotate(-90 14 317)" x="14" y="321">findings</text>
+      <path class="d-none d-s-warn" d="M40 512H22V434H38" stroke-width="2" marker-end="url(#ho-bld-arrow)"/>
+      <text class="d-twarn d-mid" transform="rotate(-90 14 473)" x="14" y="477">fixes</text>
+
+      <g class="d-none d-s-ctl" stroke-width="1.5">
+        <path class="d-dash" d="M360 122H382"/>
+        <path class="d-dash" d="M360 200H382"/>
+        <path class="d-dash" d="M360 278H382"/>
+        <path class="d-dash" d="M360 356H382"/>
+        <path class="d-dash" d="M360 434H382"/>
+        <path class="d-dash" d="M360 512H382"/>
+        <path class="d-dash" d="M360 590H382"/>
+      </g>
+    </svg>
+    <figcaption><b>One milestone.</b> Security-critical code is always reviewed by the design tier. After two failed review rounds on the same class of defect, the procedure requires a root-cause redesign instead of another patch (orchestration section 3). Only the orchestrator merges and pushes, and only to the assigned branch.</figcaption>
+  </figure>
+
+  <h3>What the build produced, in numbers</h3>
+  <ul>
+    <li>9 specification files (<code>docs/specs/</code>), each ending in as-built notes written by the exit auditor.</li>
+    <li>53 planned work packages across M0 to M4 (7, 13, 10, 12, 11), plus follow-up packages named with a letter suffix (for example M3-WP2c). The ledger's work-package table lists M0 and M1 only; M2 to M4 are recorded in their specifications and the usage log.</li>
+    <li>20 ADRs. ADRs 0001 to 0007 were accepted by the lead developer; 0008 to 0020 are accepted provisionally and await confirmation.</li>
+    <li>143 provisional-decision rows in ledger section 4, numbered up to P188 (rows counted on 2026-11-23). Each records a choice made without the maintainer, picked to be cheap to reverse.</li>
+    <li>Security reviews and the M4 exit audit report are committed under <code>docs/build/reviews/</code>. Earlier evidence stayed in session scratch space and is summarised in the ledger.</li>
+  </ul>
+
+  <div class="m-note m-note--tip">
+    <p class="m-note__label">Tip</p>
+    <p>Section 9 of the orchestration guide records environment quirks of the build machine: Composer could not download distribution archives there and fell back to multi-gigabyte git clones, and Apache was never installed. Neither applies to an ordinary development machine.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 7 -->
+<section id="tests">
+  <h2><span class="m-num">Part 7</span>Tests and quality gates</h2>
+  <p>One PHPUnit suite, offline and deterministic: no network, injected clock and randomness (<code>tests/Support/FixedClock.php</code>, <code>SeededRandom.php</code>), writes only to per-test temporary folders, synthetic data only. Web tests call the kernel in process; no server is started.</p>
+
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Folder</th><th class="m-num">Test files</th><th>What it covers</th></tr></thead>
+      <tbody>
+        <tr><td><code>tests/core/</code></td><td class="m-num">138</td><td>Each core area (<code>app</code>, <code>auth</code>, <code>forms</code>, <code>install</code>, <code>io</code>, <code>query</code>, <code>schema</code>, <code>storage</code>, <code>system</code>, <code>types</code>)</td></tr>
+        <tr><td><code>tests/web/</code></td><td class="m-num">44</td><td>Kernel, router, screens, hostile requests, keyboard structure, template rules</td></tr>
+        <tr><td><code>tests/repo/</code></td><td class="m-num">13</td><td>Repository rules (Part 5)</td></tr>
+        <tr><td><code>tests/plugins/</code></td><td class="m-num">10</td><td>CSV, XLSX and JSON plugins</td></tr>
+        <tr><td><code>tests/roundtrip/</code></td><td class="m-num">8</td><td>CSV, XLSX, JSON, archive and attachment round trips; failed import leaves the project unchanged</td></tr>
+        <tr><td><code>tests/design/</code></td><td class="m-num">4</td><td>Tokens, contrast, fonts, stylesheet rules</td></tr>
+        <tr><td><code>tests/tools/</code></td><td class="m-num">3</td><td>Discovery tool, host check, password reset script</td></tr>
+        <tr><td><code>tests/formats/</code></td><td class="m-num">1</td><td>JSON export against <code>docs/formats/json-export.md</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-small">Files named <code>*Test.php</code>, counted on 2026-11-23; 221 in all. Data providers multiply them into thousands of test cases.</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 290" role="img" aria-labelledby="ho-tst-t ho-tst-d">
+      <title id="ho-tst-t">Tests in the full suite at each milestone close</title>
+      <desc id="ho-tst-d">Tests in the full suite at each milestone close, from the ledger: M0 on 11 November 2026, 1,075 tests; M1 on 17 November, 4,777; M2 on 19 November, 6,310; M3 on 19 November, 8,414; M4 on 22 November, 9,498. Files checked by lint at the same points: 69, 348, 474, 684 and 786.</desc>
+      <text class="d-th" x="16" y="24">Tests at each milestone close</text>
+      <path class="d-none d-s-line" d="M120 40V246" stroke-width="1.5"/>
+
+      <text class="d-th" x="16" y="66">M0</text><text class="d-t2" x="48" y="66">11 Nov</text>
+      <rect class="d-accent" x="120" y="50" width="31.7" height="22" rx="4"/>
+      <text class="d-t" x="160" y="66">1,075</text>
+
+      <text class="d-th" x="16" y="106">M1</text><text class="d-t2" x="48" y="106">17 Nov</text>
+      <rect class="d-accent" x="120" y="90" width="140.8" height="22" rx="4"/>
+      <text class="d-t" x="269" y="106">4,777</text>
+
+      <text class="d-th" x="16" y="146">M2</text><text class="d-t2" x="48" y="146">19 Nov</text>
+      <rect class="d-accent" x="120" y="130" width="186" height="22" rx="4"/>
+      <text class="d-t" x="314" y="146">6,310</text>
+
+      <text class="d-th" x="16" y="186">M3</text><text class="d-t2" x="48" y="186">19 Nov</text>
+      <rect class="d-accent" x="120" y="170" width="248" height="22" rx="4"/>
+      <text class="d-t" x="376" y="186">8,414</text>
+
+      <text class="d-th" x="16" y="226">M4</text><text class="d-t2" x="48" y="226">22 Nov</text>
+      <rect class="d-accent" x="120" y="210" width="280" height="22" rx="4"/>
+      <text class="d-t" x="408" y="226">9,498</text>
+
+      <text class="d-t2" x="16" y="272">Lint at the same points: 69, 348, 474, 684, 786 files</text>
+    </svg>
+    <figcaption><b>Suite growth.</b> Figures from the exit results in <code>docs/build/ledger.md</code>; each run passed with at most one skipped test. The one skip is a locale test that needs a comma-decimal locale the build machine did not have.</figcaption>
+  </figure>
+
+  <h3>Gates</h3>
+  <ul>
+    <li><strong>Before every commit:</strong> <code>composer test</code> and <code>composer lint</code> (<code>CLAUDE.md</code>). <code>composer check</code> runs both.</li>
+    <li><strong>CI:</strong> <code>.github/workflows/ci.yml</code> on every push and pull request: PHP 8.3 or later, <code>composer validate --strict</code> (with one expected warning for the exact OpenSpout pin), <code>composer install</code>, lint, tests. Read-only permissions; the checkout action is the only third-party action.</li>
+    <li><strong>Exit audits</strong> re-run each milestone's criteria by hand, run mutations to prove tests are not vacuous (M4: 23 of 23 security mutations killed), and render the screens at 1360 px in four themes, at 390 px (light only at M1; in four themes at M4) and at 320 px with the largest text size.</li>
+  </ul>
+
+  <div class="m-note m-note--caution">
+    <p class="m-note__label">Caution</p>
+    <p>Never verified in any milestone: <code>.htaccess</code> behaviour on a real Apache server, the reference shared host's limits, a manual screen-reader pass, and browsers other than Chromium. Treat these as open, not as passed.</p>
+  </div>
+</section>
+
+<!-- ============================================================ Part 8 -->
+<section id="status">
+  <h2><span class="m-num">Part 8</span>Status of M0 to M4</h2>
+  <p>Each milestone closed after an independent design-tier exit audit with no blocking findings. The full criterion tables and evidence are in ledger sections "M0 exit results" to "M4 exit results".</p>
+
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Milestone</th><th>Closed</th><th>Built</th><th>Exit criteria (plan section 8)</th><th>Notes at close</th></tr></thead>
+      <tbody>
+        <tr><th>M0 Scaffolding</th><td>2026-11-11</td><td>Request pipeline, shell in four themes, tokens, fonts, repository rule tests, CI, maintainer tools</td><td>ADRs accepted; empty app serves a page. The legacy-format findings file: <span class="m-badge m-badge--blocked">deferred</span></td><td>1,075 tests</td></tr>
+        <tr><th>M1 Foundation</th><td>2026-11-17</td><td>Storage, system database, accounts, sessions, schema engine, 17 field types, trash, snapshots, audit log, installer, sign-in, people, sharing, schema editor screens</td><td>Headless core tests; Admin can create a project and a table</td><td>Two review fixes merged at close; one CI-only fix after</td></tr>
+        <tr><th>M2 Records</th><td>2026-11-19</td><td>List view, search, sort, filter, record form, appearance settings</td><td>A Member can add, find, and edit records by keyboard only; contrast tests pass</td><td>Light warning token raised to 7.61:1</td></tr>
+        <tr><th>M3 Import and export</th><td>2026-11-19</td><td>Plugin framework, CSV and XLSX import, CSV, XLSX and JSON export, project archive</td><td>Round trips on seeded synthetic fixtures</td><td>71-file hostile corpus refused cleanly; <code>@</code> found and removed</td></tr>
+        <tr><th>M4 Links, files, collections</th><td>2026-11-22</td><td>Relation editing with a picker, attachments, saved collections, trash screen</td><td>Linked records editable from a form; attachment access control tested</td><td>One flaky test and one scanner gap fixed at close</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Carried open items</h3>
+  <p>Low-severity items that did not block a close are in ledger section 7 and in the "Open low items" paragraphs under each exit result. Examples: "Check again" on the import review loses a table name typed before switching targets; a CSV over 200 columns gets a generic "cannot read yet" message instead of the column-limit message; a large XLSX skip-ahead can exceed the 5-second chunk budget (measured at about 5.8 s); no static test pins the class-name pattern in <code>settings-preview.js</code>.</p>
+</section>
+
+<!-- ============================================================ Part 9 -->
+<section id="roadmap">
+  <h2><span class="m-num">Part 9</span>Roadmap M5 to M9</h2>
+  <p>Version 1 is M0 to M7. M8 and M9 come after version 1 and each needs an explicit maintainer instruction. No dates are planned. This part describes the <code>main</code> baseline (a8ca17b), where M5 is next. A later integration branch, not merged to <code>main</code>, already has M5 closed (2026-11-23) and M7 work started; read the ledger on that branch for its state.</p>
+
+  <figure class="m-fig m-fig--diagram h-fig">
+    <svg viewBox="0 0 480 572" role="img" aria-labelledby="ho-map-t ho-map-d">
+      <title id="ho-map-t">Roadmap, M0 to M9</title>
+      <desc id="ho-map-d">Version 1. M0 scaffolding, closed 2026-11-11. M1 foundation, closed 2026-11-17. M2 records, closed 2026-11-19. M3 import and export, closed 2026-11-19. M4 links, files and collections, closed 2026-11-22. M5 form editor, simple editor, source view and sanitizer: next, not started. M6 legacy import: deferred, waits for the maintainer's discovery run. M7 release 1.0, packaging, upgrade path and host check: not started. After version 1: M8 visual form editor with drag and drop in the same form format, post-v1 and gated. M9 MCP server, for which an OAuth design document comes first, post-v1 and gated.</desc>
+
+      <text class="d-th" x="16" y="22">Version 1</text>
+      <path class="d-none d-s-ok" d="M28 56V248" stroke-width="3"/>
+      <path class="d-none d-s-line" d="M28 248V392" stroke-width="3"/>
+
+      <g>
+        <circle class="d-ok" cx="28" cy="56" r="11"/>
+        <text class="d-th" x="48" y="53">M0 Scaffolding</text>
+        <text class="d-t2" x="48" y="71">pipeline, shell, rule tests</text>
+        <rect class="d-ok-soft d-s-ok" x="318" y="43" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="61">Closed 2026-11-11</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="28" cy="104" r="11"/>
+        <text class="d-th" x="48" y="101">M1 Foundation</text>
+        <text class="d-t2" x="48" y="119">storage, accounts, schema, installer</text>
+        <rect class="d-ok-soft d-s-ok" x="318" y="91" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="109">Closed 2026-11-17</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="28" cy="152" r="11"/>
+        <text class="d-th" x="48" y="149">M2 Records</text>
+        <text class="d-t2" x="48" y="167">lists, search, forms, settings</text>
+        <rect class="d-ok-soft d-s-ok" x="318" y="139" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="157">Closed 2026-11-19</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="28" cy="200" r="11"/>
+        <text class="d-th" x="48" y="197">M3 Import and export</text>
+        <text class="d-t2" x="48" y="215">CSV, XLSX, JSON, archive, plugins</text>
+        <rect class="d-ok-soft d-s-ok" x="318" y="187" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="205">Closed 2026-11-19</text>
+      </g>
+      <g>
+        <circle class="d-ok" cx="28" cy="248" r="11"/>
+        <text class="d-th" x="48" y="245">M4 Links, files, collections</text>
+        <text class="d-t2" x="48" y="263">relations, attachments, trash</text>
+        <rect class="d-ok-soft d-s-ok" x="318" y="235" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="253">Closed 2026-11-22</text>
+      </g>
+      <g>
+        <circle class="d-none d-s-accent" cx="28" cy="296" r="15" stroke-width="2"/>
+        <circle class="d-accent" cx="28" cy="296" r="10"/>
+        <text class="d-th" x="48" y="293">M5 Form editor</text>
+        <text class="d-t2" x="48" y="311">simple editor, source view, sanitizer</text>
+        <rect class="d-accent" x="318" y="283" width="146" height="26" rx="13"/>
+        <text class="d-ton d-mid" x="391" y="301">Next</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-warn d-dash" cx="28" cy="344" r="10" stroke-width="2.5"/>
+        <text class="d-th" x="48" y="341">M6 Legacy import</text>
+        <text class="d-t2" x="48" y="359">waits for the maintainer's discovery run</text>
+        <rect class="d-warn-soft d-s-warn" x="318" y="331" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="349">Deferred</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-ctl" cx="28" cy="392" r="10" stroke-width="2.5"/>
+        <text class="d-th" x="48" y="389">M7 Release 1.0</text>
+        <text class="d-t2" x="48" y="407">packaging, upgrade path, host check</text>
+        <rect class="d-surface d-s-ctl" x="318" y="379" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="397">Not started</text>
+      </g>
+
+      <path class="d-none d-s-ctl d-dash" d="M16 432H464" stroke-width="1.5"/>
+      <text class="d-th" x="16" y="458">After version 1</text>
+      <g>
+        <circle class="d-surface d-s-line" cx="28" cy="488" r="10" stroke-width="2.5"/>
+        <text class="d-th" x="48" y="485">M8 Visual form editor</text>
+        <text class="d-t2" x="48" y="503">drag and drop, same form format</text>
+        <rect class="d-surface d-s-ctl d-dash" x="318" y="475" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="493">Post-v1, gated</text>
+      </g>
+      <g>
+        <circle class="d-surface d-s-line" cx="28" cy="536" r="10" stroke-width="2.5"/>
+        <text class="d-th" x="48" y="533">M9 MCP server</text>
+        <text class="d-t2" x="48" y="551">OAuth design document comes first</text>
+        <rect class="d-surface d-s-ctl d-dash" x="318" y="523" width="146" height="26" rx="13" stroke-width="1.5"/>
+        <text class="d-t2 d-mid" x="391" y="541">Post-v1, gated</text>
+      </g>
+    </svg>
+    <figcaption><b>Roadmap.</b> State on <code>main</code> at a8ca17b, from its ledger section 1. On a later integration branch, not yet merged, M5 has closed and M7 has started. The proposed order of M8 before M9 is an ADR 0006 default that awaits confirmation.</figcaption>
+  </figure>
+
+  <ol class="m-timeline">
+    <li class="is-next">
+      <h3>M5: Form editor and source editing with sanitizer <span class="m-badge m-badge--next">Next</span></h3>
+      <p><strong>Exit criteria:</strong> editor output equals hand-editable HTML; the sanitizer test corpus passes (plan section 8); editor output renders correctly under every appearance setting (ui-design-plan section 11).</p>
+      <p><strong>Prerequisites:</strong> a maintainer instruction to continue. The sanitizer, the form CSS check, and the "safe HTML" view helper that ADR 0008 decision 4 deliberately left out are security-critical and need design-tier review.</p>
+      <p><strong>Open questions:</strong> whether images in forms keep attachments alive (ledger next action); links in forms (ADR 0009 row E2, left open by ADR 0014); how form CSS is served and checked (ADR 0014 decision 1).</p>
+    </li>
+    <li>
+      <h3>M6: Legacy import plugin <span class="m-badge m-badge--blocked">Deferred</span></h3>
+      <p><strong>Exit criteria:</strong> a synthetic fixture with the legacy structure imports with relations and attachments; the import report is complete.</p>
+      <p><strong>Prerequisites:</strong> the maintainer runs <code>tools/discovery/discover-structure.php</code> on legitimately owned files outside the repository and reviews its structure-only output; findings go into a format document under <code>docs/formats/</code>. Clean-room only: no proprietary code, schemas or assets; real files never enter the repository.</p>
+      <p><strong>Open questions:</strong> the plugin's directory, id and UI label (ADR 0009 row D5; the product's name may not appear in the UI or package metadata).</p>
+    </li>
+    <li>
+      <h3>M7: Packaging, upgrade path, host and user documentation, release 1.0 <span class="m-badge">Not started</span></h3>
+      <p><strong>Exit criterion:</strong> the release archive installs on the reference shared host by upload and the setup page only; recorded as pending maintainer verification (ADR 0009 row D4).</p>
+      <p><strong>Assigned work:</strong> snapshot restore, project deletion, an audit-log screen and the About page (P170); lone-Admin recovery without a shell (P49); favicon and app icon; a visual pass of every screen in every theme; the release build check that shipped packages match <code>docs/dependencies.md</code> (ADR 0008 decision 12, ADR 0016); a CSP for static assets served by Apache; repeated failed format upgrades pushing out older snapshots (P183); overlong attachment names losing their extension (P187); review and completion of this documentation set; a final whole-codebase audit (orchestration section 10).</p>
+      <p><strong>Open questions:</strong> whether to commit <code>composer.lock</code> under a named-file exemption (P8); whether the application links to this manual (ADR 0020).</p>
+    </li>
+    <li>
+      <h3>M8: WYSIWYG form editor (post-v1) <span class="m-badge m-badge--later">Gated</span></h3>
+      <p><strong>Exit criteria:</strong> forms round-trip between simple editor, WYSIWYG editor and source view without loss; accessibility checks pass on editor output.</p>
+      <p><strong>Prerequisites:</strong> maintainer instruction; confirmation of the ADR 0006 defaults (text elements, token-based styling, one reflowing layout, sequencing). The form format already carries grid placement, static elements and a format version, so no second format is needed.</p>
+    </li>
+    <li>
+      <h3>M9: MCP server (post-v1) <span class="m-badge m-badge--later">Gated</span></h3>
+      <p><strong>Exit criteria:</strong> OAuth and MCP design documents reviewed; conformance and abuse-case tests pass; disabled by default.</p>
+      <p><strong>Prerequisites:</strong> maintainer instruction; an OAuth 2.1 design document and its review before any code (ADR 0005). The core already meets the ADR 0005 constraints: every operation is callable without the web layer, and trash, snapshots and the audit log exist.</p>
+      <p><strong>Open questions:</strong> client registration without outbound fetches (plan question 4); <code>Authorization</code> header pass-through on shared hosts.</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ============================================================ Part 10 -->
+<section id="open">
+  <h2><span class="m-num">Part 10</span>Open decisions and maintainer tasks</h2>
+
+  <h3>Tasks only the maintainer can do</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Task</th><th>Script and procedure</th><th>Unblocks</th></tr></thead>
+      <tbody>
+        <tr><td>Legacy-format discovery run on legitimately owned files</td><td><code>tools/discovery/discover-structure.php</code>, <code>tools/discovery/README.md</code></td><td>M6; the deferred M0 criterion</td></tr>
+        <tr><td>Reference shared-host check (PHP extensions, data folder outside the web root, <code>Authorization</code> header, upload and time limits, direct access to <code>attachments/</code>)</td><td><code>tools/host-check/host-check.php</code>, <code>tools/host-check/README.md</code></td><td>The M7 exit criterion; every "not verified on Apache" statement</td></tr>
+        <tr><td>Instruction to start M5</td><td>Orchestration section 7 commands</td><td>All further development</td></tr>
+        <tr><td>Confirm or change provisional decisions</td><td>ADRs 0008 to 0020; ledger section 4</td><td>Removing the "provisional" status</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Provisional decisions worth reading first</h3>
+  <p>Every ADR from 0008 to 0020 and every row of ledger section 4 is provisional. These are the ones with the widest effect or an explicit question to the maintainer:</p>
+  <ul>
+    <li><strong>ADR 0008, URL shapes and the <code>Core</code>/<code>Web</code> namespace split:</strong> the two choices the ADR itself calls costly to reverse.</li>
+    <li><strong>P8, no <code>composer.lock</code>:</strong> lock files embed package authors' names and emails; a named-file exemption is recommended.</li>
+    <li><strong>P10, the "Source code" link target:</strong> uses the repository URL from the committed mock-up.</li>
+    <li><strong>P14, commit trailers:</strong> commits carry session-supplied attribution trailers that two reviewers flagged against the rule on email addresses in commit messages.</li>
+    <li><strong>ADR 0009 rows A1 to A5:</strong> differences between the model UI and the plan (form columns on wide screens, mark colour, breadcrumb on record screens, warning contrast, sign-out placement).</li>
+    <li><strong>ADR 0015 and ADR 0010:</strong> the plugin manifest and contract and the project file format become costly to change once third-party plugins or many user files exist.</li>
+    <li><strong>ADR 0020:</strong> whether this documentation set is published, and whether the application links to it.</li>
+  </ul>
+  <p>Out of scope for version 1, provisionally (P5): non-Apache hosting and desktop packaging.</p>
+</section>
+
+<!-- ============================================================ Part 11 -->
+<section id="risks">
+  <h2><span class="m-num">Part 11</span>Risks, known gaps, and stale documents</h2>
+
+  <h3>Risks</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Risk</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>Apache and shared-host behaviour differs from what the code assumes</td><td>Not tested anywhere. <code>.htaccess</code> files are checked statically; the host check is pending</td></tr>
+        <tr><td>Data folder reachable over the web on some hosts</td><td>Mitigated by the installer's HTTP probe with a positive control; direct access to <code>attachments/</code> not confirmed on a real host</td></tr>
+        <tr><td>Large imports exceed host time limits</td><td>Chunked reading and preparing; the final 50,000-row commit was not measured on a shared host</td></tr>
+        <tr><td>Stored form HTML (stored cross-site scripting) once M5 allows editing</td><td>Forms are parsed and rebuilt, never printed; the allowlist sanitizer is M5 work</td></tr>
+        <tr><td>Plugins run with full PHP privileges</td><td>By design (ADR 0015); only Admins enable them, with a warning for non-shipped ones</td></tr>
+        <tr><td>SQLite write contention</td><td>WAL mode, busy timeout, short transactions; <code>Busy</code> gives 503 with <code>Retry-After</code>; household scale assumed</td></tr>
+        <tr><td>Legacy file structure unknown</td><td>M6 isolated as a plugin and deferred until discovery</td></tr>
+        <tr><td>Many unconfirmed provisional decisions</td><td>Each chosen to be cheap to reverse; ADR 0008 names the two that are not</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Known gaps</h3>
+  <ul>
+    <li>No manual screen-reader pass in any milestone; Chromium is the only browser tested.</li>
+    <li>No snapshot restore, project deletion, or audit-log screen yet (assigned to M7). Snapshots can be restored by hand (<code>docs/formats/tiffin.md</code> section 10).</li>
+    <li>A lone Admin who forgets their password needs shell access (<code>php tools/admin/reset-password.php &lt;username&gt;</code>).</li>
+    <li>No automated scan for personal data in the repository; it relies on review.</li>
+    <li>No release archive and no tested upgrade path.</li>
+  </ul>
+
+  <h3>Stale documents</h3>
+  <p>Documents whose text no longer matches the build. Checked on 2026-11-23. The ledger and the code win over each of them.</p>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Document</th><th>What is out of date</th></tr></thead>
+      <tbody>
+        <tr><td><code>docs/plan.md</code></td><td>Header still reads "draft 5, planning phase. No application code exists yet." Section 3.1 lists the original layer names, not the ten core areas; section 3.2 proposes <code>plugins/import/</code> with a legacy-product folder and a <code>data/</code> folder (the default is now <code>../tiffindb-data</code>); section 3.3 omits <code>_tiffin_attachment_links</code>; section 9 lists dependencies as "not yet added"</td></tr>
+        <tr><td><code>CLAUDE.md</code> on <code>main</code></td><td>The status paragraph at a8ca17b says M0 and M1 are complete; the documentation branch corrects it to M0 to M4 complete, M5 next</td></tr>
+        <tr><td><code>docs/build/context-brief.md</code></td><td>States "no application code exists"; a pre-build condensation kept for history</td></tr>
+        <tr><td><code>docs/build/M2-M3-session-plan.md</code>, <code>docs/build/M4-session-plan.md</code></td><td>Status lines still read "proposed, awaiting the maintainer's go-ahead"; both plans were carried out</td></tr>
+        <tr><td><code>docs/build/orchestration.md</code> section 1</td><td>Says "M0 and M1 are closed"; M0 to M4 are closed</td></tr>
+        <tr><td>ADR 0008 decision 5</td><td>Describes one flat <code>strings/en.php</code>; as built it merges <code>strings/en/*.php</code> (recorded as P40 and in the M1 screens spec, not in the ADR)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ Part 12 -->
+<section id="reference">
+  <h2><span class="m-num">Part 12</span>Reference</h2>
+
+  <h3 id="glossary">Glossary</h3>
+  <dl class="m-gloss">
+    <dt>Project</dt><dd>A folder in the data folder with one SQLite file, its attachments and snapshots.</dd>
+    <dt>Table, field, record</dt><dd>A user table is a real SQLite table <code>t_&lt;key&gt;</code>; a field is a column <code>f_&lt;key&gt;</code>; a record is a row.</dd>
+    <dt>Relation</dt><dd>A link between two tables, shown as a relation field on both sides and stored in a join table <code>j_&lt;key&gt;</code>.</dd>
+    <dt>Saved collection</dt><dd>A named set of filter rules and a sort on one table (ADR 0019).</dd>
+    <dt>Key</dt><dd>A random 12-character identifier from <code>a-z</code> and <code>2-7</code>; never changes, never reused, used in URLs and SQL names.</dd>
+    <dt>Trash</dt><dd>Records with <code>_trashed_at</code> set; restored by anyone with access, emptied only by an Admin.</dd>
+    <dt>Snapshot</dt><dd>A complete copy of <code>project.tiffin</code> taken before a risky change; the 20 newest automatic ones are kept.</dd>
+    <dt>Audit log</dt><dd>Table <code>audit_log</code> in the system database: who did what, when.</dd>
+    <dt>Staging job</dt><dd>An import in progress, in <code>staging/imports/&lt;job&gt;/</code> with its own <code>job.sqlite</code>.</dd>
+    <dt>Plugin</dt><dd>A folder <code>plugins/&lt;kind&gt;/&lt;id&gt;/</code> with <code>plugin.json</code> and PHP classes implementing the import or export contract.</dd>
+    <dt>Actor</dt><dd>The person an operation runs for; every <code>Core\App</code> method takes it first.</dd>
+    <dt>Composition root</dt><dd><code>src/Web/CoreServices.php</code>, the one web class that builds core objects.</dd>
+    <dt>Exposure probe</dt><dd>The installer's HTTP test that the data folder cannot be read over the web.</dd>
+    <dt>Work package</dt><dd>A unit of build work with owned files, dependencies, a tier and acceptance tests, defined in a milestone spec.</dd>
+    <dt>Exit audit</dt><dd>An independent check of a milestone against its exit criteria, with evidence, before it is closed.</dd>
+    <dt>As-built notes</dt><dd>The section at the end of a spec recording where the code differs from the design.</dd>
+    <dt>Provisional decision</dt><dd>A choice made without the maintainer, recorded as a P-numbered ledger row or a provisional ADR.</dd>
+    <dt>Host check, discovery tool</dt><dd>The two maintainer-run scripts in <code>tools/host-check/</code> and <code>tools/discovery/</code>.</dd>
+  </dl>
+
+  <h3 id="adr-index">ADR index</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>ADR</th><th>Subject</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>0001</td><td>Runtime stack and storage</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0002</td><td>Accounts and roles</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0003</td><td>Forms as HTML and CSS</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0004</td><td>v1 scope: relations, attachments, fonts, import and export</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0005</td><td>MCP server (post-v1)</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0006</td><td>WYSIWYG form editor (post-v1)</td><td><span class="m-badge m-badge--done">Accepted</span>, some defaults open</td></tr>
+        <tr><td>0007</td><td>UI appearance, typefaces, v1 visual target</td><td><span class="m-badge m-badge--done">Accepted</span></td></tr>
+        <tr><td>0008</td><td>Code layout and conventions</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0009</td><td>Provisional defaults for open questions</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0010</td><td>Project file format and identifiers</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0011</td><td>System database, sign-in, sessions, installation</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0012</td><td>Core operations, authorization, snapshots, audit log</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0013</td><td>Record layer: paging, sort, filter, search, lost updates</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0014</td><td>Form format 1, stored forms, rendering before the sanitizer</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0015</td><td>Plugin contract and the import commit model</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0016</td><td>XLSX library and pinning of shipped dependencies</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0017</td><td>Project archive and JSON export formats</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0018</td><td>Attachments: types, limits, storage, serving, removal</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0019</td><td>Saved collections and relation editing</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+        <tr><td>0020</td><td>HTML documentation set and its screenshots</td><td><span class="m-badge m-badge--open">Provisional</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="m-small">20 files in <code>docs/decisions/</code> on 2026-11-23. "Accepted" means accepted by the lead developer; "Provisional" means accepted by the build and awaiting confirmation.</p>
+
+  <h3 id="doc-map">Document map</h3>
+  <div class="m-table-wrap m-wide">
+    <table class="m-table">
+      <thead><tr><th>Read this</th><th>For</th></tr></thead>
+      <tbody>
+        <tr><td><code>CLAUDE.md</code></td><td>Project rules: public-repository rules, licensing, working conventions; binding on every contributor</td></tr>
+        <tr><td><code>docs/build/ledger.md</code></td><td>The authority on build state, exit results, provisional decisions, deferred tasks</td></tr>
+        <tr><td><code>docs/build/orchestration.md</code></td><td>The build procedure (Part 6)</td></tr>
+        <tr><td><code>docs/specs/M0-*.md</code> to <code>M4-*.md</code></td><td>Design of each milestone, test plans, work packages, as-built notes</td></tr>
+        <tr><td><code>docs/decisions/</code></td><td>ADRs 0001 to 0020</td></tr>
+        <tr><td><code>docs/formats/tiffin.md</code>, <code>json-export.md</code></td><td>Project file, archive and JSON export formats, readable without TiffinDB</td></tr>
+        <tr><td><code>docs/plan.md</code></td><td>Goals, milestones and exit criteria (header stale, see Part 11)</td></tr>
+        <tr><td><code>docs/ui-design-plan.md</code>, <code>docs/design/</code></td><td>Visual target, tokens, per-milestone screen designs</td></tr>
+        <tr><td><code>docs/dependencies.md</code></td><td>Every dependency, its version and licence</td></tr>
+        <tr><td><code>docs/build/reviews/</code></td><td>M4 security reviews and the M4 exit audit</td></tr>
+        <tr><td><code>tools/host-check/README.md</code>, <code>tools/discovery/README.md</code></td><td>The maintainer procedures</td></tr>
+        <tr><td><a href="user-guide.html">User Guide</a>, <a href="install-guide.html">Install Guide</a></td><td>The other two guides of this set</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="m-foot">TiffinDB is free software under the GNU Affero General Public License, version 3 or later. Source code: <a href="https://github.com/osh-labs/tiffindb">github.com/osh-labs/tiffindb</a>.</p>
+</section>
+
+<nav class="m-pager" aria-label="Other guides">
+  <a href="install-guide.html"><small>Previous</small>Install Guide</a>
+  <a href="index.html"><small>Back to</small>Documentation home</a>
+</nav>
+
+</main>
+</div>
+</body>
+</html>

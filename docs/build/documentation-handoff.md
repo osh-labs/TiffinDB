@@ -1,62 +1,50 @@
 # Documentation set: handoff
 
-Written 2026-11-23 when the work was stopped on the maintainer's instruction. Contains no personal data. Scope: the HTML documentation set of ADR 0020 (`docs/manual/`), not the application build (for that, see `docs/build/ledger.md`).
+First written 2026-11-23 when the work was stopped on the maintainer's instruction; updated 2026-11-23 when the work was resumed and completed. Contains no personal data. Scope: the HTML documentation set of ADR 0020 (`docs/manual/`), not the application build (for that, see `docs/build/ledger.md`, entry DOC-1).
 
 ## 1. Bottom line
 
-- The task: a browser-viewable documentation set with three guides (user guide in Simplified Technical English, install guide, developer handoff and roadmap), with SVG diagrams and real screenshots.
-- State: the foundation is committed and pushed. None of the three guides exists yet. No screenshot exists yet.
-- Estimated completion: about 15 percent (foundation, entry page, demo-data script, briefs). The three guides are the bulk of the work.
-- Nothing is running. All agents and local servers were stopped. No work is unpushed.
-- Branch: `claude/nice-cray-z9jgtj` (three commits ahead of `main` after this handoff is committed). No pull request was opened.
+- The set is complete for the code on `main` at a8ca17b (M0 to M4 closed): entry page, user guide, install guide, and developer handoff, with inline SVG diagrams and 51 screenshots (50 in the guides plus the entry-page hero) of synthetic demo data.
+- Each guide was checked against the code and the running application by a reviewer who did not write it, and corrected. The install guide was also checked for unsafe instructions; one was found (moving an installation could put the data folder under the document root) and fixed.
+- Not verified anywhere in the set: behaviour on a real Apache server or on the reference shared host (the install guide marks every such step as derived from the code), a manual screen-reader pass, and browsers other than Chromium.
+- A later integration branch, not merged to `main`, has M5 closed and M7 started. When it merges, the handoff page's status parts and any changed screens must be updated (ADR 0020 decision 6).
 
-## 2. What is done
+## 2. What exists
 
-| Item | File | State |
-|---|---|---|
-| Decision record | `docs/decisions/0020-html-documentation-set.md` | Committed. Status: accepted, provisional. Sets location, self-contained pages, screenshot rules, tooling, STE scope, upkeep |
-| Shared stylesheet | `docs/manual/assets/manual.css` | Committed. Design tokens, light and dark, print, all page components, `d-` classes for themed SVG diagrams |
-| Shared script | `docs/manual/assets/manual.js` | Committed. Optional: current-section marker, folding contents list on narrow screens |
-| Entry page | `docs/manual/index.html` | Committed. Two SVG diagrams (system overview, milestone progress). Rendered and checked at 1440 px and 390 px, light and dark: no horizontal overflow |
-| SPDX exemption for screenshots | `tests/repo/SpdxHeaderTest.php`, `docs/specs/M0-scaffolding.md` section 13 | Committed. One register entry: `docs/manual/img/*.png` |
-| Tooling record | `docs/dependencies.md`, new last section | Committed. Playwright licence (Apache-2.0) confirmed from its own licence file |
-| Stale status corrected | `CLAUDE.md` status paragraph, `README.md` | Committed. Both now state M0 to M4 complete, M5 next, and point to `docs/manual/` |
-| Demo-data script | `tools/docs/seed-demo.js` (646 lines) | Committed. Installs a fresh instance through the setup page, then creates "Home Inventory" (Rooms, Items, Warranties, links, 3 attachments, CSV import, 2 saved collections, 2 trashed records), "Recipe Box", and the people "Example Admin" and "Example Member". Passwords are generated at run time and written only to a state file outside the repository |
-| Writers' brief | `docs/build/documentation-brief.md` | Committed with this handoff. Page shell, components, diagram and screenshot rules, content rules, verification steps |
+| Item | File |
+|---|---|
+| Decision record | `docs/decisions/0020-html-documentation-set.md` (accepted, provisional) |
+| Entry page | `docs/manual/index.html` |
+| User guide (Simplified Technical English) | `docs/manual/user-guide.html`, `assets/user-guide.css`, `img/user-*.png` |
+| Install guide | `docs/manual/install-guide.html`, `assets/install-guide.css`, `img/install-*.png` |
+| Developer handoff and roadmap | `docs/manual/handoff.html`, `assets/handoff.css`, `img/handoff-*.png` |
+| Shared style and script | `docs/manual/assets/manual.css`, `manual.js` |
+| Demo data and screenshot scripts | `tools/docs/seed-demo.js`, `shots-user-guide.js`, `shots-install-guide.js`, `shots-handoff.js`, `shots-index.js`, `reduce-png.php`; procedure in `tools/docs/README.md` |
+| Writers' brief | `docs/build/documentation-brief.md` (rules every page follows) |
 
-Test evidence:
+## 3. Application observations made while writing
 
-- `vendor/bin/phpunit tests/repo`: OK, 3264 tests, after the SPDX and dependency-record changes (run by the orchestrating session).
-- Full suite: OK, 9502 tests, 963,516 assertions, 1 skipped, 3 min 14 s. Run by the install-guide agent on the working tree that already held the foundation changes. The orchestrating session did not repeat it.
-- `composer lint`: not run in this session.
-- `seed-demo.js`: two consecutive clean runs ended with "Seeded." (logs of the seed agent). The orchestrating session did not inspect the seeded instance or its check screenshots, so treat the script as passing but unreviewed.
+None of these were changed (documentation work only). The user guide describes the real behaviour neutrally where a reader meets it.
 
-## 3. What is not done
+1. Plural text: "1 values could not be converted and were cleared." and an import warning "1 value ... They will be left empty".
+2. "Add a field": "Next" with no type chosen reloads with no message; "Choose what the field will hold." is never shown.
+3. Export ignores the scope choice without saying so: JSON always exports the whole project; CSV with "Every table" exports the selected table.
+4. The tables page has no link to the record lists; for a Member it is a dead end.
+5. XLSX "How the file is read" shows two groups both titled "Sheet".
+6. Link picker: choosing a record during a search then shows that nothing matches.
+7. A Checkbox field's page counts only ticked boxes as having a value; the delete-table page counts records in the trash, lists do not.
+8. Import into a new table sets the record word to the table name in lower case.
+9. Change password reports only one problem per attempt when the new passwords differ.
+10. At phone width the sidebar sits above the record list.
+11. The setup page's "PHP too old" row is probably unreachable: Composer's platform check stops first with a plain error page.
+12. After setup, `DataDirectory::locate()` uses the first candidate that holds `system.sqlite` without checking the document root again. After a move to a host where the sibling folder is inside the document root, only the data folder's `.htaccess` protects it. The install guide's move procedure avoids this; a runtime check could be considered for M7.
+13. `/admin/plugins`: section headings sit flush against the first card; the breadcrumb repeats the heading.
 
-| Item | State | Notes |
-|---|---|---|
-| `docs/manual/user-guide.html` | Not started | Was waiting for the seeded demo data. Outline in section 6.1 |
-| `docs/manual/install-guide.html` | Not started (research partly done by an agent, nothing written) | Outline in section 6.2 |
-| `docs/manual/handoff.html` | Not started (research partly done by an agent, nothing written) | Outline in section 6.3 |
-| Screenshots, `docs/manual/img/` | None | Folder does not exist yet |
-| `tools/docs/shots-<page>.js` capture scripts | None | One per guide, plus the entry-page hero shot |
-| `tools/docs/README.md` | Not written | ADR 0020 decision 4 refers to it |
-| UI notes for writers | Not written | The seed agent was to record every screen, URL pattern, and exact label; it was stopped first |
-| Independent review of each guide | Not started | Planned: fact check against code for install guide and handoff; STE and accuracy check for the user guide |
-| PNG palette reduction | Not started | ADR 0020 decision 3 |
-| Ledger entry | Not made | `docs/build/ledger.md` has no record of this work or of ADR 0020 as a provisional decision |
+## 4. Known limits of the set
 
-## 4. Known defects in what is pushed
-
-These are on the branch now. Fix or accept them before a merge to `main`.
-
-1. `docs/manual/index.html` shows a broken image: it references `img/index-hero.png`, which does not exist.
-2. `docs/manual/index.html`, `README.md`, and `CLAUDE.md` link to or name `user-guide.html`, `install-guide.html`, and `handoff.html`, which do not exist. The links are dead until the guides are written.
-3. `docs/manual/index.html` and ADR 0020 name `tools/docs/README.md`, which does not exist.
-4. `docs/dependencies.md` and ADR 0020 describe `shots-<page>.js` scripts that do not exist yet.
-5. `docs/plan.md` still says in its header that no application code exists. Not changed in this work.
-
-If the work will not resume soon, the smallest consistent state is: remove the hero figure from `index.html` and mark the three guide cards as "not written yet", or revert the `README.md` documentation table. Neither was done, because the instruction was to stop.
+- The upload limit shown in two user-guide screenshots ("2.0 MB") is the PHP built-in server's default, not a TiffinDB limit; the captions say so.
+- Wide tables scroll sideways inside their frame on a phone; the page itself does not.
+- `tests/repo` test counts grow with the number of files, so the handoff page quotes the ledger's suite figure as the baseline.
 
 ## 5. Decisions made in this work that the maintainer should confirm
 
@@ -69,7 +57,7 @@ If the work will not resume soon, the smallest consistent state is: remove the h
 | Fonts are referenced from `public/assets/fonts/` by relative path, with device-font fallback when the set is copied elsewhere | ADR 0020 decision 2 | Low |
 | The `CLAUDE.md` status paragraph was edited | Commit `07b0eb0` | Low |
 
-## 6. Outlines of the three guides (as briefed to the writers)
+## 6. Outlines of the three guides (as briefed to the writers; kept as the record of scope)
 
 All three follow `docs/build/documentation-brief.md`. Each owns one page, its `img/<prefix>-*.png` files, and one capture script.
 
@@ -129,18 +117,9 @@ Audience: a developer new to the project. At least 6 diagrams (system context, l
 11. Risks, known gaps, and a list of stale documents.
 12. Reference: glossary, ADR index, document map.
 
-## 7. How to resume
+## 7. How to regenerate
 
-1. Check out `claude/nice-cray-z9jgtj`. Run `composer install` (see section 8 for the environment quirk).
-2. Make a scratch folder outside the repository and a runnable copy of the application in it, with `config/local.php` setting `data_dir` to a scratch data folder. Without that file the application uses `../tiffindb-data`, which copies of the application would share.
-3. Start the copy: `php -S 127.0.0.1:8091 -t public public/index.php`.
-4. Seed it: `node tools/docs/seed-demo.js --base http://127.0.0.1:8091 --app <app copy> --data <data folder> --out <scratch folder>`. Review the result in a browser before relying on it. Keep the `state.json` it writes out of the repository: it holds the generated passwords.
-5. Write the UI notes (every screen, URL pattern, exact labels), then the three guides, each to `docs/build/documentation-brief.md` and its outline in section 6.
-6. Have each guide reviewed by someone who did not write it, against the code and the running application.
-7. Look at every screenshot before it is committed. A screenshot is permanent in a public history; none may show a password, a setup code, or data that is not the synthetic demo data.
-8. Reduce the PNG files to an indexed palette, write `tools/docs/README.md`, add the ledger entry, run `composer check`, and fix the defects in section 4.
-
-Work-splitting note: the three guides are independent once the seeded instance and the UI notes exist. The user guide depends on both; the other two depend on neither for their text.
+Follow `tools/docs/README.md`. In short: make a runnable copy of the application outside the repository with its own `config/local.php`, start it with the built-in server, run `seed-demo.js`, run the capture script of each changed page, look at every PNG, reduce them with `reduce-png.php`, and check each changed page at 1440 and 390 px in light and dark. Never commit `state.json`: it holds the generated passwords, and `seed-demo.js` refuses an output folder inside the checkout.
 
 ## 8. Environment notes from this session
 

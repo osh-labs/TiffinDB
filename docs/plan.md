@@ -1,6 +1,6 @@
 # TiffinDB Project Plan
 
-Status: draft 5, planning phase. No application code exists yet.
+Status: draft 5, written in the planning phase and kept as the approved plan. It is not updated with the build: the build state is in `docs/build/ledger.md`, and the as-built design is in the "as-built" notes of `docs/specs/`. Where this plan and those records differ, they win.
 Decisions referenced here are recorded in `docs/decisions/`. The visual design is covered by `docs/ui-design-plan.md`.
 
 ## 1. Goal

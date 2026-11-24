@@ -540,3 +540,13 @@ Independent design-tier exit audit on the integration branch; full report `docs/
 | Repository rules | PASS | SPDX, no names or model names, dependencies unchanged |
 
 Findings: F-1 oversized regenerated form (fixed, P243); F-2 doc wording (fixed). Review findings fixed during the milestone: href apostrophe (P242), WCAG names and row clipping, flaky XLSX hash test. Not verified: manual screen-reader pass; `.htaccess` on a real Apache host.
+
+### M7 part 1 checkpoint (2026-11-24, usage limit)
+
+Wave 1a merged and pushed: M7-WP0 (reviewed, APPROVE), M7-WP6 (reviewed, APPROVE), M7-WP1 (merged; design-tier security review not finished). Suite at the last full run: 11226 tests, 1 skipped; lint 870 files, 0 failed.
+
+Stopped by the usage limit (resets 04:00 UTC). Three agents were interrupted and are recorded as `dispatched`; their work exists only as uncommitted files in local worktrees (nothing pushed): M7-WP2 in `../wt-M7-WP2` (branch `claude/determined-johnson-d3rjl1--M7-WP2`), M7-WP3 in `../wt-M7-WP3` (branch `...--M7-WP3`), and the WP1 security review in `../wt-M7-R-WP1` (one new test file, `tests/core/app/M7Wp1ReviewTest.php`). If the container is reclaimed, redo these from the spec.
+
+Open low items to settle at the M7 part 1 audit: empty Origin accepted when Sec-Fetch-Site is present (WP0 review); `Response::cutName` trims with `\s` (WP0 review); extra files in `vendor/composer/` ship unchecked, third-party author emails ship in vendor files, R1 prefix-only check outside vendor, dirty check trusts git status (WP6 review); offline OpenSpout copy ships dev files (documented). CLAUDE.md status line still says M5 is next: update at the part 1 hand-over.
+
+Next action: resume the three interrupted agents with SendMessage (continue from saved work), merge WP2 and WP3, finish the WP1 review, then dispatch wave 2 (WP4, WP5, WP7, WP8, WP9), then WP12 and the release candidate hand-over.

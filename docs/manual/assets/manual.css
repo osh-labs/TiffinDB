@@ -608,7 +608,9 @@ section > h2 > .m-num {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0.04em 0.4em;
-  white-space: nowrap;
+  /* Long quoted messages must wrap on a phone; each line keeps its frame. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 /* ---------------------------------------------------------------- figures */

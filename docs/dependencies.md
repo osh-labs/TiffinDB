@@ -70,3 +70,5 @@ Total font payload: 269,836 bytes. With the four licence files: 287,496 bytes.
 The scripts in `tools/docs/` make the demo data and the screenshots of the HTML documentation set (`docs/manual/`, ADR 0020). They need Node.js and Playwright on the machine of the person who regenerates screenshots. Neither is an application, test, or Composer dependency: nothing under `src/`, `public/`, `plugins/`, or `tests/` uses them, nothing from them is committed or shipped, and `composer test` does not run them.
 
 Playwright declares Apache-2.0. Verified from the `LICENSE` file of the installed `playwright` 1.63.0 package, 2026-11-23; SHA-256 `45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb`. The browser that Playwright drives is a separate download under its own licences and is not redistributed by this project.
+
+`tools/docs/reduce-png.php` reduces the screenshots to an indexed palette with PHP's bundled `gd` extension (part of the PHP distribution, under the PHP and GD licences, not redistributed by this project). It is documentation tooling like the scripts above: the application does not use `gd` and the setup page does not check for it.

@@ -2,7 +2,10 @@
 # Copyright (C) TiffinDB contributors
 #
 # TiffinDB web root. Existing files (static assets) are served directly;
-# everything else goes to the front controller.
+# everything else goes to the front controller. Static assets get a
+# sandboxing policy of their own, no framing, no referrer, and one week of
+# caching (M7 screens spec section 2.2); the application's own responses
+# carry the headers of SecurityHeaders.
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -15,9 +18,16 @@
 
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
+    <FilesMatch "\.(css|js|woff2|svg|webmanifest|txt)$">
+        Header set Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; sandbox"
+        Header set X-Frame-Options "DENY"
+        Header set Referrer-Policy "no-referrer"
+        Header set Cache-Control "public, max-age=604800"
+    </FilesMatch>
 </IfModule>
 
 <IfModule mod_mime.c>
     AddType font/woff2 .woff2
     AddType image/svg+xml .svg
+    AddType application/manifest+json .webmanifest
 </IfModule>

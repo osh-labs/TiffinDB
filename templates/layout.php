@@ -18,7 +18,8 @@
  *   `.page-trash`, docs/design/m4/components.md; P184 to P186); `form` and
  *   `form-narrow` the M5 form editor and source pages and the upload and
  *   reset pages (`main.page.page-form`, `.page-form.page-form-narrow`,
- *   docs/design/m5/components.md section 8); then the footer.
+ *   docs/design/m5/components.md section 8); then the footer, with the
+ *   About link (M7 screens spec section 5).
  * - Plain shell (`shell` null): lockup header, `main.page.page-plain` (or
  *   `main.page` when `wide` is true), centred footer.
  *
@@ -27,6 +28,9 @@
  * error summary (`problems`); then the page (the `content` slot). Pages do
  * not print these themselves. A flash notice whose parameters hold `undo`
  * (a restore path Shell has checked) gets the Undo form.
+ *
+ * The head links the favicon and the web manifest on every page (M7
+ * screens spec section 3).
  *
  * Data (see View for the full contract): `title`, `documentTitle`,
  * `hasError`, `sourceUrl`, `shell`, `wide`, `script` (`show-password`,
@@ -55,6 +59,8 @@ declare(strict_types=1);
 <link rel="stylesheet" href="<?= $this->asset('css/fonts.css') ?>" />
 <link rel="stylesheet" href="<?= $this->asset('css/tokens.css') ?>" />
 <link rel="stylesheet" href="<?= $this->asset('css/app.css') ?>" />
+<link rel="icon" href="<?= $this->asset('icons/favicon.svg') ?>" type="image/svg+xml" />
+<link rel="manifest" href="<?= $this->asset('app.webmanifest') ?>" />
 <?php if (($data['script'] ?? null) === 'show-password') : ?>
 <script src="<?= $this->asset('js/show-password.js') ?>" defer="defer"></script>
 <?php elseif (($data['script'] ?? null) === 'settings-preview') : ?>
@@ -118,7 +124,7 @@ declare(strict_types=1);
 </div>
 <?php endif; ?>
 <?php if (is_array($data['shell'] ?? null)) : ?>
-<?= $this->partial('footer', ['sourceUrl' => $data['sourceUrl'], 'centered' => false]) ?>
+<?= $this->partial('footer', ['sourceUrl' => $data['sourceUrl'], 'centered' => false, 'about' => true]) ?>
 <?php else : ?>
 <?= $this->partial('footer', ['sourceUrl' => $data['sourceUrl'], 'centered' => true]) ?>
 <?php endif; ?>

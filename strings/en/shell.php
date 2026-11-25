@@ -7,7 +7,8 @@
  * M1 spec part 2 section 5.2; M2 spec part 2 section 6.3: the Display
  * link, the project search, and the sidebar; M3 spec part 2 section 4:
  * the Plugins link and the sidebar's Data group; M4 spec part 2 section 7:
- * the sidebar's Collections group).
+ * the sidebar's Collections group; M7 screens spec section 7: the Activity
+ * tab and the About link).
  */
 
 declare(strict_types=1);
@@ -20,11 +21,13 @@ return [
     'shell.title' => '{title} - TiffinDB',
     'shell.footer.licence' => 'TiffinDB, free software under AGPL-3.0-or-later',
     'shell.footer.source' => 'Source code',
+    'shell.footer.about' => 'About TiffinDB',
     'shell.nav.main' => 'Main',
     'shell.nav.account' => 'Account',
     'shell.nav.projects' => 'Projects',
     'shell.nav.people' => 'People',
     'shell.nav.plugins' => 'Plugins',
+    'shell.nav.activity' => 'Activity',
     'shell.account.label' => '{name}, change your password',
     'shell.sign_out' => 'Sign out',
     'shell.breadcrumb' => 'Where you are',

@@ -1,6 +1,6 @@
 # For Admins
 
-Admins can do everything Members can, in every project, and also look after the people, projects, tables, and plugins of their TiffinDB. This chapter covers the Admin screens in the browser. Installing, upgrading, and backing up the server are in the host documentation.
+Admins can do everything Members can, in every project, and also look after the people, projects, tables, and plugins of their TiffinDB. This chapter covers the Admin screens in the browser. Installing, upgrading, and backing up the server are in the [host documentation](../host/README.md).
 
 ## People
 
@@ -31,6 +31,8 @@ Choose the person's name in the list. Their page has four parts:
 - **Signing in**: choose **Stop Example Member from signing in** (with the person's name) to stop them. A confirmation page explains that they are signed out at once and cannot sign in; nothing they made is deleted, and their name stays on the changes they made. Later, **Let Example Member sign in again** lets them back in.
 
 You cannot stop yourself from signing in, and you cannot stop the only Admin who can sign in.
+
+If no Admin can sign in, for example because the only Admin has forgotten their password, the sign-in page has a link **Locked out of the Admin account?**, unless recovery has been turned off on the server. Recovery needs access to the server's files; the steps are in [Accounts and recovery](../host/accounts-and-recovery.md) in the host documentation.
 
 People are never deleted, so the records and the activity log keep the names of the people who made changes.
 
@@ -128,7 +130,7 @@ The project goes back to how it was when the snapshot was saved. Everything chan
 
 People using the project at that moment may need to reload their page. If someone is saving a change just then, TiffinDB asks you to try again.
 
-If the server cannot lock files, restoring in TiffinDB is turned off, and the **Snapshots** page says so. The host documentation describes restoring by hand.
+If the server cannot lock files, restoring in TiffinDB is turned off, and the **Snapshots** page says so. [Backup and restore](../host/backup-and-restore.md) in the host documentation describes restoring by hand.
 
 ## Deleting a project
 

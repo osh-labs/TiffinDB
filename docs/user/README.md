@@ -2,7 +2,7 @@
 
 This guide is for the people who use TiffinDB in the browser: adding and changing records, finding them again, and keeping their files. The last chapter is for Admins, the people who also set up projects and accounts.
 
-Installing TiffinDB on a server, upgrading it, and backing up its data folder are covered in the host documentation, for the person who looks after the server.
+Installing TiffinDB on a server, upgrading it, and backing up its data folder are covered in the [host documentation](../host/README.md), for the person who looks after the server.
 
 ## Chapters
 

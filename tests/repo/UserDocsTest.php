@@ -26,12 +26,6 @@ use TiffinDB\Tests\Support\RepoFiles;
  *   exist.
  * - No images (no screenshots in v1, plan 8.2 row 9), and email addresses
  *   and IP addresses are synthetic only.
- *
- * Labels of the M7 screens that are not merged yet (WP4 snapshots and
- * project deletion, WP5 activity) are written from docs/design/m7/. They
- * are accepted through PENDING only while their key is not defined in
- * strings/en/; once the key exists, the bold text must match its real
- * value like every other label, so the allowance ends by itself.
  */
 #[CoversNothing]
 final class UserDocsTest extends TestCase
@@ -56,26 +50,6 @@ final class UserDocsTest extends TestCase
     /** The reserved place for the importer chapter (sections 14.1 to 14.3; replaced by M7-WP11). */
     public const RESERVED = '<!-- reserved for a later chapter; see docs/specs/M7-release.md section 14.3 -->';
 
-    /**
-     * Key => English text from docs/design/m7/ (snapshots.md, project-delete.md,
-     * audit.md, components.md) for labels whose strings file is not merged yet.
-     *
-     * @var array<string, string>
-     */
-    public const PENDING = [
-        'projects.settings.snapshots' => 'Snapshots',
-        'projects.settings.delete' => 'Delete this project',
-        'snapshots.title' => 'Snapshots',
-        'snapshots.take' => 'Take a snapshot now',
-        'snapshots.restore_link' => 'Restore…',
-        'snapshots.restore.title' => 'Restore this snapshot?',
-        'snapshots.restore.submit' => 'Restore this snapshot',
-        'projects.delete.archive_link' => 'Go to Export',
-        'projects.delete.submit' => 'Delete for good',
-        'audit.title' => 'Activity',
-        'audit.filter.apply' => 'Show',
-        'audit.filter.clear' => 'Show everything',
-    ];
 
     // ---------------------------------------------------------------- rules
 
@@ -123,25 +97,6 @@ final class UserDocsTest extends TestCase
         return false;
     }
 
-    /**
-     * The strings a bold span may equal: every English value, and the
-     * PENDING texts whose keys are not defined yet.
-     *
-     * @return array<string, string>
-     */
-    private static function allowedStrings(): array
-    {
-        /** @var array<string, string> $strings */
-        $strings = require RepoFiles::path('strings/en.php');
-        foreach (self::PENDING as $key => $text) {
-            if (!array_key_exists($key, $strings)) {
-                $strings['pending:' . $key] = $text;
-            }
-        }
-
-        return $strings;
-    }
-
     /** @return array<string, string> file name => text */
     private static function documents(): array
     {
@@ -172,7 +127,8 @@ final class UserDocsTest extends TestCase
 
     public function testEveryBoldSpanIsAStringOfTheInterface(): void
     {
-        $strings = self::allowedStrings();
+        /** @var array<string, string> $strings */
+        $strings = require RepoFiles::path('strings/en.php');
         $unknown = [];
         $count = 0;
         foreach (self::documents() as $name => $text) {
@@ -185,17 +141,6 @@ final class UserDocsTest extends TestCase
         }
         self::assertGreaterThan(100, $count, 'The chapters name the buttons and screens they describe in bold.');
         self::assertSame([], $unknown, 'Bold is only for button labels and screen names, written exactly as in strings/en/.');
-    }
-
-    public function testThePendingLabelsAreTheDesignTexts(): void
-    {
-        $design = '';
-        foreach (['snapshots.md', 'project-delete.md', 'audit.md', 'components.md'] as $file) {
-            $design .= RepoFiles::read('docs/design/m7/' . $file);
-        }
-        foreach (self::PENDING as $key => $text) {
-            self::assertStringContainsString('`' . $key . '` "' . $text . '"', $design, "PENDING {$key} must be the text docs/design/m7/ gives it.");
-        }
     }
 
     public function testTheReservedPlaceIsPresentAndNamesNothing(): void

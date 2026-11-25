@@ -50,12 +50,8 @@ require_once __DIR__ . '/../web/EndToEndTest.php';
  * FormatMigrations. T-UPG-3 and T-UPG-4 (newer data refused) are in
  * tests/web/NewerDataTest.php.
  *
- * T-UPG-5 as specified ("a version 4 file goes to 5") cannot be run: the
- * FormatMigrations seam replaces the steps up to ProjectFile::VERSION and
- * runs nothing past it, and ProjectFile::open does not call it for a file
- * already at that version. The test here simulates the next step as the
- * last step the seam can run (version 3 to 4); the gap is reported to the
- * owner of FormatMigrations.
+ * T-UPG-5 runs a real next step (version 4 to 5) through the
+ * FormatMigrations seam, whose injected steps raise its target version.
  */
 #[CoversNothing]
 final class UpgradePathTest extends TestCase
@@ -242,26 +238,25 @@ final class UpgradePathTest extends TestCase
 
     public function testASimulatedNextProjectStepRunsThroughTheSeamAfterOneSnapshot(): void
     {
-        $fixture = $this->build(2, 3);
+        $fixture = $this->build(2, 4);
         $file = $fixture->projectFile();
         $before = HistoricFixture::dump($file);
-        $next = new FormatMigrations([4 => static function (Database $db): void {
-            foreach (FormatMigrations::STEPS[4] as $statement) {
-                $db->run($statement);
-            }
+        $next = new FormatMigrations([5 => static function (Database $db): void {
             $db->run('CREATE TABLE "_tiffin_next_example" ("key" TEXT PRIMARY KEY, "note" TEXT NOT NULL) WITHOUT ROWID');
             $db->run('INSERT INTO "_tiffin_next_example" VALUES (\'k2mq7vn3xbpa\', \'added by the simulated step\')');
         }]);
+        self::assertSame(5, $next->target());
         $snapshots = $this->snapshots();
 
         $db = ProjectFile::open($file, $fixture->projectKey, $snapshots, $next);
-        self::assertSame(4, $db->value('PRAGMA user_version'));
+        self::assertSame(5, $db->value('PRAGMA user_version'));
+        self::assertSame('5', $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'format_version\''));
         self::assertSame(1, $db->value('SELECT COUNT(*) FROM "_tiffin_next_example"'));
         $db->close();
         $list = $snapshots->list($fixture->projectFolder());
         self::assertCount(1, $list);
         self::assertSame(SnapshotReason::FormatUpgrade, $list[0]->reason);
-        self::assertSame(3, HistoricFixture::userVersion($fixture->projectFolder() . '/snapshots/' . $list[0]->file));
+        self::assertSame(4, HistoricFixture::userVersion($fixture->projectFolder() . '/snapshots/' . $list[0]->file), 'The snapshot holds the version 4 file.');
         $after = HistoricFixture::dump($file);
         foreach (self::without($before, '_schema', '_user_version', '_tiffin_meta') as $table => $rows) {
             self::assertSame($rows, $after[$table], "{$table} is unchanged.");
@@ -271,6 +266,24 @@ final class UpgradePathTest extends TestCase
         $this->clock->advance(60);
         ProjectFile::open($file, $fixture->projectKey, $snapshots, $next)->close();
         self::assertSame($after, HistoricFixture::dump($file));
+        self::assertCount(1, $snapshots->list($fixture->projectFolder()));
+
+        // The application's own code refuses the version 5 file as newer, and so
+        // does the seam for a file newer than its target.
+        foreach ([null, new FormatMigrations([5 => static function (Database $db): void {
+        }]),] as $migrations) {
+            try {
+                ProjectFile::open($file, $fixture->projectKey, $snapshots, $migrations)->close();
+                self::fail('A file newer than the target was opened.');
+            } catch (Unavailable $refused) {
+                self::assertSame(Unavailable::NEWER, $refused->reason);
+            }
+            if ($migrations === null) {
+                $pdo = new \PDO('sqlite:' . $file);
+                $pdo->exec('PRAGMA user_version = 6');
+                $pdo = null;
+            }
+        }
         self::assertCount(1, $snapshots->list($fixture->projectFolder()));
     }
 

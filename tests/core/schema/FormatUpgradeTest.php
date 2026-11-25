@@ -692,4 +692,21 @@ final class FormatUpgradeTest extends TestCase
         $this->openFailing();
         self::assertSame(['format-upgrade' => 5, 'manual' => 1], $this->reasons(), 'And then no more.');
     }
+
+    public function testTheSeamTargetIsTheHighestInjectedVersionAndProductionIsUnchanged(): void
+    {
+        self::assertSame(ProjectFile::VERSION, (new FormatMigrations())->target());
+        self::assertSame(ProjectFile::VERSION, (new FormatMigrations([2 => static function (Database $db): void {
+        }]))->target());
+        self::assertSame(7, (new FormatMigrations([5 => static function (Database $db): void {
+        }, 7 => static function (Database $db): void {
+        }]))->target());
+        self::assertSame([5, 6, 7, 8], array_keys(FormatMigrations::SEAM_VERSION_PRAGMAS));
+        foreach (FormatMigrations::SEAM_VERSION_PRAGMAS as $version => $pragma) {
+            self::assertSame('PRAGMA user_version = ' . $version, $pragma);
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        new FormatMigrations([9 => static function (Database $db): void {
+        }]);
+    }
 }

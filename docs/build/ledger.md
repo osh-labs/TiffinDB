@@ -19,7 +19,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 | M4 | CLOSED 2026-11-22 (independent exit audit; no blocking findings; one flaky-test cause and one scanner gap fixed) | See M4 exit results below |
 | M5 | CLOSED 2026-11-23 (independent exit audit PASS; F-1 fixed, P243; manual screen-reader pass not verified) | Report: `docs/build/reviews/M5-exit-audit.md`; specs `docs/specs/M5-forms.md`, `M5-screens.md`; provisional decisions P189 to P212, P242, P243 |
 | M6 | deferred to near the end (maintainer instruction); awaiting maintainer discovery output | Plan: `docs/build/M6-handoff-plan.md` |
-| M7 | not started | |
+| M7 | part 1 complete 2026-11-25: release candidate 1.0.0-rc.1 built (SHA-256 below); part 2 waits for M6 or `DECIDE release-without-importer: yes` | Specs: `docs/specs/M7-release.md`, `M7-screens.md` |
 | M8 | post-v1, gated | |
 | M9 | post-v1, gated | |
 
@@ -550,3 +550,24 @@ Stopped by the usage limit (resets 04:00 UTC). Three agents were interrupted and
 Open low items to settle at the M7 part 1 audit: empty Origin accepted when Sec-Fetch-Site is present (WP0 review); `Response::cutName` trims with `\s` (WP0 review); extra files in `vendor/composer/` ship unchecked, third-party author emails ship in vendor files, R1 prefix-only check outside vendor, dirty check trusts git status (WP6 review); offline OpenSpout copy ships dev files (documented). CLAUDE.md status line still says M5 is next: update at the part 1 hand-over.
 
 Next action: resume the three interrupted agents with SendMessage (continue from saved work), merge WP2 and WP3, finish the WP1 review, then dispatch wave 2 (WP4, WP5, WP7, WP8, WP9), then WP12 and the release candidate hand-over.
+
+### M7 part 1 hand-over (2026-11-25)
+
+All part 1 packages merged and pushed (integration branch `claude/determined-johnson-d3rjl1`, tip is the commit after `e6205ab`): WP0 to WP9 and WP12, with design-tier security reviews of WP0, WP1, WP2, WP3, WP4 and WP5, and WP6 (all APPROVE after fixes). Provisional decisions P213 to P245 (specs `docs/specs/M7-release.md` section 20, ADRs 0021, 0022; P245 amends ADR 0012 decision 1, enforced by `tests/repo/AppInstallNarrowingTest.php`). Suite at the version commit: `composer test` OK, 11746 tests, 2 skipped; `composer lint` 912 files, 0 failed (`COMPOSER_PROCESS_TIMEOUT=0` is needed locally because the suite exceeds Composer's 300 s default).
+
+Release candidate: `tiffindb-1.0.0-rc.1.zip`, 1,568,907 bytes, 823 files, SHA-256 `c851ba715dfb4e8e2b6d8e609e2da4d008e5ab84fd6c3124a66c5e3b1c44d79d`. Two builds (one under a different time zone) are byte-identical; the orchestrator re-hashed both. Built from the offline-prepared vendor with `php tools/release/build.php --vendor=<prep>/vendor --out=<out>` (README in `tools/release/`). The archive file lives only in the session scratchpad and is not committed; rebuild it from the tip with the same command and compare the hash. No tag and no hosted release were created (maintainer's step).
+
+Not verified: `.htaccess` behaviour on a real Apache host (host check); manual screen-reader pass; the V-35/V-36 visual states and K-5 scripted keyboard run for the M7 screens (planned for M7 part 2, WP10).
+
+Open items for the maintainer or the part 2 audit:
+- About page shows the Source code address as text, not a link, because only the footer may print a configured URL (`TemplateRulesTest`); the design asks for a link. AGPL section 13 is met by the footer link. Decide: rule change or design amendment.
+- At 320 px Largest text, `break-word` on the compare and mapping table headers does not apply in table cells; the tables are wider but scroll inside `.table-wrap`. A long word in a page heading or breadcrumb still scrolls the page sideways (existed before M7).
+- Fixed-version cache lifetime (one week) applies to the font files and the manifest icon whose addresses carry no version.
+- Release archive: any extra file in `vendor/composer/` ships unchecked; third-party author emails ship in vendor files (OpenSpout `composer.json`, Composer class loader headers); the offline OpenSpout copy ships its dev files; the dirty-tree check trusts `git status`.
+- Empty `Origin` accepted when `Sec-Fetch-Site` is present; `Response::cutName` trims with `\s`; a bidi control in a hand-edited audit row is not stripped.
+- Restore deletes stored files the restored copy does not name; not undoable for files (P241).
+- The `.sidebar` and other rules in M7-WP3 were added without a position rule for visually hidden text (`position: relative` not set); WP4 used an `aria-label` instead.
+
+Maintainer decisions still open: plan section 3 rows 1 (release without the importer), 2 to 5 (defaults applied: form CSS deferred, rewriting on save, links shown, one form per table), 6 (recovery code file, built), 7 (publication). Deferred maintainer tasks: legacy-format discovery run (`tools/discovery/`) and reference-host check (`tools/host-check/`).
+
+Next action: the session stops here (plan 4.1 phase 5). To continue: M6 by `docs/build/M6-handoff-plan.md` after the maintainer's discovery output and trial gate, or `DECIDE release-without-importer: yes` to run M7 part 2 (WP10 release test and visual pass, M7-X, final audit M7-A) now.

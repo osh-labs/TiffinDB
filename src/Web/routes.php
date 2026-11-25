@@ -95,6 +95,8 @@ return [
     ['POST', '/projects/{project}/settings', [ProjectController::class, 'settings'], 'user'],
     ['GET', '/projects/{project}/sharing', [SharingController::class, 'form'], 'user'],
     ['POST', '/projects/{project}/sharing', [SharingController::class, 'save'], 'user'],
+    ['GET', '/projects/{project}/delete', [ProjectController::class, 'deleteForm'], 'user'],
+    ['POST', '/projects/{project}/delete', [ProjectController::class, 'delete'], 'user'],
     ['GET', $snapshots, [SnapshotController::class, 'index'], 'user'],
     ['POST', $snapshots, [SnapshotController::class, 'take'], 'user'],
     ['GET', $snapshots . '/{snapshot}/restore', [SnapshotController::class, 'restoreForm'], 'user'],

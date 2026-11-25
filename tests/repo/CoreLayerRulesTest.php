@@ -85,7 +85,7 @@ final class CoreLayerRulesTest extends TestCase
         'Forms' => ['Schema', 'Storage', 'Error'],
         'Install' => ['Auth', 'System', 'Storage', 'Error'],
         'Io' => ['Schema', 'Query', 'Forms', 'Storage', 'Error'],
-        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query', 'Forms', 'Io'],
+        'App' => ['Error', 'Storage', 'System', 'Auth', 'Schema', 'Query', 'Forms', 'Io', 'Install'], // Install: M7 spec section 2.1 (RecoveryOperations)
     ];
 
     /** The plugin contract's folder: names in it stay inside its own namespace. */
@@ -619,7 +619,9 @@ final class CoreLayerRulesTest extends TestCase
         yield 'group use with alias' => ['src/Core/Storage/A.php', $head('Storage') . "use TiffinDB\\Core\\{Error\\Busy as Install};\n", []];
         yield 'comment is not checked here' => ['src/Core/Storage/A.php', $head('Storage') . "// See TiffinDB\\Core\\App\\Operations.\n", []];
         yield 'app uses everything allowed' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Error\\A;\nuse TiffinDB\\Core\\Storage\\B;\nuse TiffinDB\\Core\\System\\C;\nuse TiffinDB\\Core\\Auth\\D;\nuse TiffinDB\\Core\\Schema\\E;\nuse TiffinDB\\Core\\Query\\F;\n", []];
-        yield 'app uses install' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Install\\Installer;\n", ['uses TiffinDB\\Core\\Install, which App may not use']];
+        // M7 spec section 2.1: RecoveryOperations uses RecoveryCode and SetupCode; Install still may not use App.
+        yield 'app uses install' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Install\\RecoveryCode;\n", []];
+        yield 'install uses app' => ['src/Core/Install/A.php', $head('Install') . "use TiffinDB\\Core\\App\\Operations;\n", ['uses TiffinDB\\Core\\App, which Install may not use']];
         yield 'app uses forms' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Forms\\FormStore;\n", []];
         // M5 spec section 2.1 (T-APP-174): the form operations use the parser, serializer, editor, and report.
         yield 'app uses the form editor' => ['src/Core/App/A.php', $head('App') . "use TiffinDB\\Core\\Forms\\FormParser;\nuse TiffinDB\\Core\\Forms\\FormEditor;\nuse TiffinDB\\Core\\Forms\\FormReport;\n", []];

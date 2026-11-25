@@ -47,7 +47,12 @@ use TiffinDB\Web\ViewScope;
  *   fixed meta elements (LAYOUT_METAS) and the three script elements,
  *   each at most once and exactly as in SCRIPT_ELEMENTS. The only
  *   `enctype` is the literal `enctype="multipart/form-data"` on a `form`
- *   start tag (M3 spec part 2 section 5.2); no `formenctype`.
+ *   start tag (M3 spec part 2 section 5.2); no `formenctype`. A `link`
+ *   element appears only in the layout, and each is exactly one of
+ *   LINK_ELEMENTS, at most once: the three stylesheets, the favicon, and
+ *   the web manifest, each `href` one asset() call (M7 screens spec
+ *   section 3). A `pre` element appears only in LICENCE_TEMPLATE (M7
+ *   screens spec section 6.4).
  * - Each `<?=` sits in element text, or is the whole value of a
  *   double-quoted attribute (not `class`, `id`, `style`, `on*`, or
  *   NO_OUTPUT_ATTRIBUTES such as `srcdoc` and SVG `to`, `from`, `values`,
@@ -137,6 +142,8 @@ final class TemplateRulesTest extends TestCase
         'import.warning.', 'import.issue.', 'import.type.', 'plugins.status.', 'problem.archive.', 'steps.import.',
         // M4 spec part 2 section 7.
         'collection.broken.', 'collections.test.',
+        // M7 screens spec section 7.
+        'snapshots.reason.', 'audit.action.',
     ];
 
     /**
@@ -203,6 +210,22 @@ final class TemplateRulesTest extends TestCase
         '<script src="<?= $this->asset(\'js/settings-preview.js\') ?>" defer="defer"></script>',
         '<script src="<?= $this->asset(\'js/import-continue.js\') ?>" defer="defer"></script>',
     ];
+
+    /**
+     * The only link elements, each at most once and only in the layout
+     * (M7 screens spec section 3): the three stylesheets, the favicon, and
+     * the web manifest.
+     */
+    public const LINK_ELEMENTS = [
+        '<link rel="stylesheet" href="<?= $this->asset(\'css/fonts.css\') ?>" />',
+        '<link rel="stylesheet" href="<?= $this->asset(\'css/tokens.css\') ?>" />',
+        '<link rel="stylesheet" href="<?= $this->asset(\'css/app.css\') ?>" />',
+        '<link rel="icon" href="<?= $this->asset(\'icons/favicon.svg\') ?>" type="image/svg+xml" />',
+        '<link rel="manifest" href="<?= $this->asset(\'app.webmanifest\') ?>" />',
+    ];
+
+    /** The one template that may hold a `pre` element: the licence text page (M7 screens spec section 6.4, M7-WP5). */
+    public const LICENCE_TEMPLATE = 'templates/pages/about/licence.php';
 
     /** The one enctype a template may write, on a form start tag (M3 spec part 2 section 5.2). */
     public const UPLOAD_ENCTYPE = 'enctype="multipart/form-data"';
@@ -356,7 +379,42 @@ final class TemplateRulesTest extends TestCase
         }
 
         array_push($problems, ...self::markupProblems(self::withoutLayoutHead($source, $html, $file)));
+        array_push($problems, ...self::linkAndPreProblems($source, $html, $file));
         array_push($problems, ...self::outputContextProblems($html, $echoes, $file));
+
+        return $problems;
+    }
+
+    /**
+     * The `link` and `pre` rules (M7 screens spec sections 3 and 6.4). The
+     * static markup and the source must hold the same number of `link`
+     * start tags (so none is assembled around a PHP block), each one of
+     * LINK_ELEMENTS exactly as written, at most once, in the layout only.
+     *
+     * @return list<string>
+     */
+    private static function linkAndPreProblems(string $source, string $html, string $file): array
+    {
+        $problems = [];
+        $inMarkup = preg_match_all('/<\s*link\b/i', $html);
+        if ($inMarkup > 0 && $file !== self::LAYOUT) {
+            $problems[] = 'A link element outside the layout.';
+        } elseif ($inMarkup > 0) {
+            $known = 0;
+            foreach (self::LINK_ELEMENTS as $element) {
+                $n = substr_count($source, $element);
+                if ($n > 1) {
+                    $problems[] = "A link element more than once: {$element}.";
+                }
+                $known += $n;
+            }
+            if ($known !== $inMarkup || preg_match_all('/<\s*link\b/i', $source) !== $inMarkup) {
+                $problems[] = 'A link element that is not one of LINK_ELEMENTS.';
+            }
+        }
+        if ($file !== self::LICENCE_TEMPLATE && preg_match('/<\s*\/?\s*pre\b/i', $html) === 1) {
+            $problems[] = 'A pre element outside the licence template.';
+        }
 
         return $problems;
     }
@@ -1631,6 +1689,38 @@ final class TemplateRulesTest extends TestCase
         yield 'url in a form link tag is still checked' => ['<a class="form-link" href="<?= $this->e($node[\'href\']) ?>" rel="noopener noreferrer">x</a>', $inline];
         yield 'target on any element' => ['<a href="/x" target="_blank">x</a>', $page];
         yield 'formtarget on a button' => ['<button type="submit" formtarget="_blank">x</button>', $page];
+
+        // M7 screens spec sections 3 and 6.4 (T-WEB-83).
+        $favicon = self::LINK_ELEMENTS[3];
+        yield 'favicon link in a page' => [$favicon, $page];
+        yield 'stylesheet link in a partial' => [self::LINK_ELEMENTS[0], 'templates/partials/top-bar.php'];
+        yield 'favicon link twice in the layout' => [$head($favicon . "\n" . $favicon), $layout];
+        yield 'other icon in the layout' => [$head('<link rel="icon" href="<?= $this->asset(\'icons/app-icon.svg\') ?>" type="image/svg+xml" />'), $layout];
+        yield 'manifest with url() in the layout' => [$head('<link rel="manifest" href="<?= $this->url(\'/assets/app.webmanifest\') ?>" />'), $layout];
+        yield 'literal manifest link in the layout' => [$head('<link rel="manifest" href="/assets/app.webmanifest" />'), $layout];
+        yield 'preload link in the layout' => [$head('<link rel="preload" href="<?= $this->asset(\'css/app.css\') ?>" as="style" />'), $layout];
+        yield 'favicon with another attribute' => [$head(str_replace(' />', ' crossorigin="anonymous" />', $favicon)), $layout];
+        yield 'link split by an empty PHP block' => [$head('<li<?php ?>nk rel="manifest" href="<?= $this->asset(\'app.webmanifest\') ?>" />'), $layout];
+        yield 'upper-case link in a page' => ['<LINK rel="icon" href="/x.svg" />', $page];
+        yield 'pre in a page' => ['<pre><?= $this->e($data[\'t\']) ?></pre>', $page];
+        yield 'pre in a partial' => ['<pre>x</pre>', 'templates/partials/facts.php'];
+        yield 'upper-case pre in the layout' => [$head('') . '<PRE>x</PRE>', $layout];
+    }
+
+    /** T-WEB-83: the layout holds each link element once; the licence template may hold a `pre`. */
+    public function testLinkAndPreRulesAcceptTheirPlaces(): void
+    {
+        $layout = RepoFiles::read(self::LAYOUT);
+        foreach (self::LINK_ELEMENTS as $element) {
+            self::assertSame(1, substr_count($layout, $element), $element);
+        }
+        self::assertSame(count(self::LINK_ELEMENTS), preg_match_all('/<\s*link\b/i', $layout));
+        self::assertSame([], self::violations(self::HEADER . '<pre class="licence-text"><?= $this->e($data[\'text\']) ?></pre>', self::LICENCE_TEMPLATE));
+        foreach (self::templates() as $file) {
+            if ($file !== self::LAYOUT) {
+                self::assertDoesNotMatchRegularExpression('/<\s*link\b/i', RepoFiles::read($file), $file);
+            }
+        }
     }
 
     /** M5 spec part 2 sections 3.2 and 6.3: the form link, in the form-inline partial only. */

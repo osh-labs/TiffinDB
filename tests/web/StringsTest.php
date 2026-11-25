@@ -421,6 +421,23 @@ final class StringsTest extends TestCase
         self::assertSame('1 field element names a field that is not in Items. They show nothing.', $strings->get('forms.report.unknown', ['count' => 1, 'table' => 'Items']));
     }
 
+    /**
+     * M7 screens spec sections 5 and 7 and docs/design/m7/components.md
+     * sections 2 and 3: the two shell strings, exactly, and the shell file
+     * holds no other new key.
+     */
+    public function testM7ShellStringsAreTheDesign(): void
+    {
+        $design = RepoFiles::read('docs/design/m7/components.md');
+        $shell = require RepoFiles::path('strings/en/shell.php');
+        self::assertIsArray($shell);
+        foreach (['shell.nav.activity' => 'Activity', 'shell.footer.about' => 'About TiffinDB'] as $key => $text) {
+            self::assertStringContainsString("`{$key}` \"{$text}\"", $design, $key);
+            self::assertSame($text, $shell[$key] ?? null, $key);
+        }
+        self::assertCount(39, $shell, 'strings/en/shell.php gains exactly the two M7 keys.');
+    }
+
     /** M3 spec part 2 sections 2.3, 4, and 6, and docs/design/m3/import.md section 1. */
     public function testM3SharedStringsAreTheSpecification(): void
     {

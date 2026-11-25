@@ -95,7 +95,8 @@ final class KeyboardStructureTest extends TestCase
         'Display', 'Example Member, change your password', 'Sign out',
     ];
 
-    private const FOOTER = ['Source code'];
+    /** The signed-in footer (About from M7, screens spec section 5). */
+    private const FOOTER = ['About TiffinDB', 'Source code'];
 
     private const RATING = ['1, lowest', '2', '3', '4', '5, highest', 'Not rated'];
 
@@ -360,9 +361,9 @@ final class KeyboardStructureTest extends TestCase
 
     // T-KBD-2 (M3 spec part 2 section 9.1): the M3 screens, as the Admin.
 
-    /** The top bar for the Admin (People and Plugins). */
+    /** The top bar for the Admin (People, Plugins, and from M7 Activity). */
     private const ADMIN_TOP = [
-        'Skip to main content', 'TiffinDB, all projects', 'Projects', 'People', 'Plugins',
+        'Skip to main content', 'TiffinDB, all projects', 'Projects', 'People', 'Plugins', 'Activity',
         'Display', 'Example Admin, change your password', 'Sign out',
     ];
 
@@ -1169,9 +1170,9 @@ final class KeyboardStructureTest extends TestCase
         $response = $client->get($uri);
         self::assertSame(200, $response->status, "GET {$uri}");
         if ($exact) {
-            self::assertSame(self::FOOTER[0], $names[count($names) - 1], 'An exact order ends with the footer.');
+            self::assertSame(self::FOOTER[count(self::FOOTER) - 1], $names[count($names) - 1], 'An exact order ends with the footer.');
         } else {
-            self::assertNotSame(self::FOOTER[0], $names[count($names) - 1], 'A start of the order.');
+            self::assertNotSame(self::FOOTER[count(self::FOOTER) - 1], $names[count($names) - 1], 'A start of the order.');
         }
         $this->assertStructure($response->body, $names, $uri);
         $this->assertM4Rules($response->body, $uri);
@@ -1446,7 +1447,7 @@ final class KeyboardStructureTest extends TestCase
             /** @var DOMElement $element */
             $actual[] = in_array($element->nodeName, ['input', 'select', 'textarea'], true) ? self::labelName($x, $element) : self::accessibleName($x, $element);
         }
-        $end = $names === [] || $names[count($names) - 1] !== self::FOOTER[0];
+        $end = $names === [] || $names[count($names) - 1] !== self::FOOTER[count(self::FOOTER) - 1];
         self::assertSame($names, $end ? array_slice($actual, 0, count($names)) : $actual, "{$where}: focus order.");
 
         // 5. Forms that change data.

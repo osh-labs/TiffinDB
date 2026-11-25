@@ -12,16 +12,21 @@
  * the file, collection, trash, link, and upload routes (M4 spec part 2
  * section 3; their controllers arrive with M4-WP6 to WP8), M5 the form
  * editor, source, download, upload, and reset routes (M5 spec part 2
- * section 2; their controllers arrive with M5-WP5 and WP6). `/files/{field}/new`
- * comes before `/files/{field}/{attachment}`.
+ * section 2; their controllers arrive with M5-WP5 and WP6), M7 the
+ * snapshot, activity, About, and recovery routes (M7 screens spec section
+ * 4; their controllers arrive with M7-WP4 and WP5; the two project
+ * deletion routes are added by M7-WP4). `/files/{field}/new` comes before
+ * `/files/{field}/{attachment}`.
  */
 
 declare(strict_types=1);
 
 namespace TiffinDB\Web;
 
+use TiffinDB\Web\Controller\AboutController;
 use TiffinDB\Web\Controller\AccountController;
 use TiffinDB\Web\Controller\ArchiveController;
+use TiffinDB\Web\Controller\AuditController;
 use TiffinDB\Web\Controller\CollectionController;
 use TiffinDB\Web\Controller\ExportController;
 use TiffinDB\Web\Controller\FieldController;
@@ -36,11 +41,13 @@ use TiffinDB\Web\Controller\PluginController;
 use TiffinDB\Web\Controller\ProjectController;
 use TiffinDB\Web\Controller\RecordController;
 use TiffinDB\Web\Controller\RecordListController;
+use TiffinDB\Web\Controller\RecoveryController;
 use TiffinDB\Web\Controller\SearchController;
 use TiffinDB\Web\Controller\SettingsController;
 use TiffinDB\Web\Controller\SetupController;
 use TiffinDB\Web\Controller\SharingController;
 use TiffinDB\Web\Controller\SignInController;
+use TiffinDB\Web\Controller\SnapshotController;
 use TiffinDB\Web\Controller\TableController;
 use TiffinDB\Web\Controller\TrashController;
 
@@ -51,6 +58,7 @@ $plugin = '/admin/plugins/{kind}/{plugin}';
 $record = $table . '/records/{record}';
 $collection = '/projects/{project}/collections/{collection}';
 $trash = '/projects/{project}/trash';
+$snapshots = '/projects/{project}/snapshots';
 
 return [
     ['GET', '/', [HomeController::class, 'show'], 'any'],
@@ -70,6 +78,12 @@ return [
     ['POST', '/settings', [SettingsController::class, 'save'], 'user'],
     ['POST', '/settings/reset', [SettingsController::class, 'reset'], 'user'],
 
+    ['GET', '/about', [AboutController::class, 'show'], 'user'],
+    ['GET', '/about/licences/{licence}', [AboutController::class, 'licence'], 'user'],
+    ['GET', '/recover', [RecoveryController::class, 'form'], 'guest'],
+    ['POST', '/recover/start', [RecoveryController::class, 'start'], 'guest'],
+    ['POST', '/recover', [RecoveryController::class, 'recover'], 'guest'],
+
     ['GET', '/projects', [ProjectController::class, 'index'], 'user'],
     ['GET', '/projects/new', [ProjectController::class, 'newForm'], 'user'],
     ['POST', '/projects', [ProjectController::class, 'create'], 'user'],
@@ -81,6 +95,10 @@ return [
     ['POST', '/projects/{project}/settings', [ProjectController::class, 'settings'], 'user'],
     ['GET', '/projects/{project}/sharing', [SharingController::class, 'form'], 'user'],
     ['POST', '/projects/{project}/sharing', [SharingController::class, 'save'], 'user'],
+    ['GET', $snapshots, [SnapshotController::class, 'index'], 'user'],
+    ['POST', $snapshots, [SnapshotController::class, 'take'], 'user'],
+    ['GET', $snapshots . '/{snapshot}/restore', [SnapshotController::class, 'restoreForm'], 'user'],
+    ['POST', $snapshots . '/{snapshot}/restore', [SnapshotController::class, 'restore'], 'user'],
     ['GET', $import, [ImportController::class, 'start'], 'user'],
     ['POST', $import, [ImportController::class, 'upload'], 'user'],
     ['GET', $import . '/{job}', [ImportController::class, 'show'], 'user'],
@@ -168,4 +186,6 @@ return [
     ['GET', $plugin . '/enable', [PluginController::class, 'enableForm'], 'user'],
     ['POST', $plugin . '/enable', [PluginController::class, 'enable'], 'user'],
     ['POST', $plugin . '/disable', [PluginController::class, 'disable'], 'user'],
+
+    ['GET', '/admin/activity', [AuditController::class, 'index'], 'user'],
 ];

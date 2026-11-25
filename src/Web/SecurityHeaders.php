@@ -21,12 +21,15 @@ final class SecurityHeaders
     /**
      * Content-Security-Policy directives, in order. Nothing inline and no
      * external origin is allowed; anything unlisted falls to default-src.
+     * `manifest-src` lets the page load its own web manifest (M7 screens
+     * spec section 2.1).
      */
     public const CSP_DIRECTIVES = [
         ['default-src', "'none'"],
         ['style-src', "'self'"],
         ['script-src', "'self'"],
         ['img-src', "'self'"],
+        ['manifest-src', "'self'"],
         ['font-src', "'self'"],
         ['connect-src', "'self'"],
         ['form-action', "'self'"],

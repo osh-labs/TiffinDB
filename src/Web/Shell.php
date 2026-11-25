@@ -20,8 +20,12 @@ use InvalidArgumentException;
  */
 final class Shell
 {
-    /** Areas of the top bar that can be current ('' for none); `plugins` from M3 (spec part 2 section 4). */
-    public const NAVS = ['projects', 'people', 'plugins', 'account', 'settings', ''];
+    /**
+     * Areas of the top bar that can be current ('' for none); `plugins`
+     * from M3 (spec part 2 section 4), `activity` from M7 (screens spec
+     * section 5).
+     */
+    public const NAVS = ['projects', 'people', 'plugins', 'activity', 'account', 'settings', ''];
 
     private const FLASH_KEY = '/^notice\.[a-z0-9_]+(?:[.-][a-z0-9_]+)*\z/';
 
@@ -38,7 +42,7 @@ final class Shell
     /**
      * @param string                                                 $displayName Plain text; escaped on output.
      * @param string                                                 $initials    Plain text; escaped on output.
-     * @param 'projects'|'people'|'plugins'|'account'|'settings'|'' $nav
+     * @param 'projects'|'people'|'plugins'|'activity'|'account'|'settings'|'' $nav
      * @param array{key: string, params: array<string, string|int>}|null $flash  A `notice.*` string key and its parameters.
      *                                                                            An `undo` parameter that is not a restore
      *                                                                            path (UNDO_PATH) is removed.

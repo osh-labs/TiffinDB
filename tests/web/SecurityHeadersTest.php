@@ -24,7 +24,7 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
 final class SecurityHeadersTest extends TestCase
 {
     private const CSP = "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; "
-        . "font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+        . "manifest-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
     private const EXPECTED = [
         'Content-Security-Policy' => self::CSP,
@@ -40,6 +40,18 @@ final class SecurityHeadersTest extends TestCase
     public function testExactPolicyString(): void
     {
         self::assertSame(self::CSP, SecurityHeaders::contentSecurityPolicy());
+    }
+
+    /** T-WEB-81, M7 screens spec section 2.1: the page may load its own manifest, and only that is added. */
+    public function testManifestSourceFollowsTheImageSource(): void
+    {
+        $names = array_column(SecurityHeaders::CSP_DIRECTIVES, 0);
+        $at = array_search('manifest-src', $names, true);
+
+        self::assertIsInt($at);
+        self::assertSame('img-src', $names[$at - 1]);
+        self::assertSame(['manifest-src', "'self'"], SecurityHeaders::CSP_DIRECTIVES[$at]);
+        self::assertCount(10, SecurityHeaders::CSP_DIRECTIVES);
     }
 
     public function testExactHeaderSet(): void

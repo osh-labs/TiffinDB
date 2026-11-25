@@ -112,6 +112,58 @@ final class HtaccessTest extends TestCase
         );
     }
 
+    /**
+     * T-WEB-84, M7 screens spec section 2.2: the web root's directives are
+     * exactly the rewrite rules, `nosniff`, the static-file headers inside
+     * one `FilesMatch` for exactly six extensions, and the three types; no
+     * other directive is added.
+     */
+    public function testWebRootDirectivesAreTheSpecifiedList(): void
+    {
+        self::assertSame(
+            [
+                '<IfModule mod_rewrite.c>',
+                'RewriteEngine On',
+                'RewriteCond %{REQUEST_FILENAME} -f',
+                'RewriteRule ^ - [L]',
+                'RewriteRule ^ index.php [L]',
+                '</IfModule>',
+                '<IfModule mod_headers.c>',
+                'Header set X-Content-Type-Options "nosniff"',
+                '<FilesMatch "\.(css|js|woff2|svg|webmanifest|txt)$">',
+                'Header set Content-Security-Policy "default-src \'none\'; frame-ancestors \'none\'; sandbox"',
+                'Header set X-Frame-Options "DENY"',
+                'Header set Referrer-Policy "no-referrer"',
+                'Header set Cache-Control "public, max-age=604800"',
+                '</FilesMatch>',
+                '</IfModule>',
+                '<IfModule mod_mime.c>',
+                'AddType font/woff2 .woff2',
+                'AddType image/svg+xml .svg',
+                'AddType application/manifest+json .webmanifest',
+                '</IfModule>',
+            ],
+            self::directives('public/.htaccess'),
+        );
+    }
+
+    public function testStaticFilesMatchExactlySixExtensions(): void
+    {
+        $matches = preg_grep('/^<FilesMatch\b/i', self::directives('public/.htaccess')) ?: [];
+        self::assertCount(1, $matches);
+        $line = (string) reset($matches);
+        self::assertSame(1, preg_match('/^<FilesMatch "\\\\\.\(([a-z0-9|]+)\)\$">\z/', $line, $m), $line);
+        $extensions = explode('|', $m[1]);
+        sort($extensions);
+        self::assertSame(['css', 'js', 'svg', 'txt', 'webmanifest', 'woff2'], $extensions);
+        foreach (['app.css', 'show-password.js', 'inter.woff2', 'favicon.svg', 'app.webmanifest', 'LICENSE.txt'] as $file) {
+            self::assertSame(1, preg_match('/\.(' . $m[1] . ')$/', $file), $file);
+        }
+        foreach (['index.php', 'app.css.php', 'x.html', 'a.svgz'] as $file) {
+            self::assertSame(0, preg_match('/\.(' . $m[1] . ')$/', $file), $file);
+        }
+    }
+
     public function testRootGuardDeniesWithoutModRewrite(): void
     {
         $contents = RepoFiles::read('.htaccess');

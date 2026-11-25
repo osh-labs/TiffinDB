@@ -1,0 +1,14 @@
+{
+    "name": "TiffinDB",
+    "short_name": "TiffinDB",
+    "start_url": "../",
+    "scope": "../",
+    "display": "browser",
+    "icons": [
+        {
+            "src": "icons/app-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        }
+    ]
+}

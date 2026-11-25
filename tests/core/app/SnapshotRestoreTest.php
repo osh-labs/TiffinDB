@@ -68,6 +68,7 @@ final class SnapshotRestoreTest extends AppTestCase
             $holder->stop();
         }
         ProjectLock::$waitScaleForTests = 1.0;
+        ProjectLock::$flockDisabledForTests = false;
         parent::tearDown();
     }
 
@@ -443,5 +444,21 @@ final class SnapshotRestoreTest extends AppTestCase
         self::assertSame('ok', $db->value('PRAGMA integrity_check'));
         $db->close();
         self::assertFalse(is_file($live . '-wal') && file_get_contents($live . '-wal') === str_repeat("\x37", 4096), 'The planted WAL file was removed.');
+    }
+
+    public function testWithFlockDisabledTheProjectWorksButARestoreRefuses(): void
+    {
+        $this->add('Example Basil');
+        $manual = $this->ops->snapshots()->take($this->admin, $this->p);
+        $this->ops->close();
+        ProjectLock::$flockDisabledForTests = true;
+        $this->captureLog();
+
+        $this->add('Example Thyme');
+        self::assertFalse($this->ops->snapshots()->screen($this->admin, $this->p)->canRestore);
+        self::assertSame([[null, 'problem.lock.unavailable', []]], self::problems(fn () => $this->ops->snapshots()->restore($this->admin, $this->p, self::id($manual))));
+        self::assertSame(['Example Basil', 'Example Thyme'], $this->names());
+        self::assertSame([], $this->snapshotsOf(SnapshotReason::PreRestore));
+        self::assertSame([], $this->restoreJobs());
     }
 }

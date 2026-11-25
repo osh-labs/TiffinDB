@@ -337,7 +337,13 @@ final class ProjectOperations
         }
 
         // 4. Lock (the folder must be a real directory first: a link is never locked through).
+        // Each refusal first checks whether a concurrent clearAbandoned finished this
+        // deletion meanwhile (a project whose file cannot be opened holds no shared
+        // lock here); then this request reports it, and writes its one audit row.
         if (!Fs::isDir($folder)) {
+            if ($this->finishedElsewhere($project)) {
+                return $this->recordDeletion($project, $actor, $counts);
+            }
             $this->setActive($project);
 
             throw self::deleteFailed();
@@ -345,10 +351,16 @@ final class ProjectOperations
         try {
             $lock = $this->c->opener->lockExclusive($project->key);
         } catch (Busy $busy) {
+            if ($this->finishedElsewhere($project)) {
+                return $this->recordDeletion($project, $actor, $counts);
+            }
             $this->setActive($project);
 
             throw $busy;
         } catch (LocksUnavailable) {
+            if ($this->finishedElsewhere($project)) {
+                return $this->recordDeletion($project, $actor, $counts);
+            }
             $this->setActive($project);
 
             throw new ValidationFailed([new Problem(null, 'problem.lock.unavailable')]);
@@ -356,7 +368,7 @@ final class ProjectOperations
 
         try {
             // An interrupted-deletion sweep may have finished it while this request waited for the lock.
-            if ($this->c->registry->byKey($project->key) === null) {
+            if ($this->finishedElsewhere($project)) {
                 return $this->recordDeletion($project, $actor, $counts);
             }
 
@@ -369,6 +381,9 @@ final class ProjectOperations
                 $this->c->seam('delete.move');
                 Fs::moveIn($folder, $target);
             } catch (\RuntimeException) {
+                if ($this->finishedElsewhere($project)) {
+                    return $this->recordDeletion($project, $actor, $counts);
+                }
                 $this->setActive($project);
 
                 throw self::deleteFailed();
@@ -442,6 +457,12 @@ final class ProjectOperations
         }
 
         return $members;
+    }
+
+    /** Whether the registry row is gone: the sweep (clearAbandoned) finished this deletion, which writes no audit row. */
+    private function finishedElsewhere(ProjectRecord $project): bool
+    {
+        return $this->c->registry->byKey($project->key) === null;
     }
 
     private function setActive(ProjectRecord $project): void

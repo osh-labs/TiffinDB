@@ -37,6 +37,14 @@ final class ProjectLock
      */
     public static float $waitScaleForTests = 1.0;
 
+    /**
+     * Makes this class behave as on a server where `flock` is disabled
+     * (disable_functions), which tests cannot set at run time.
+     *
+     * @internal Test seam only; application code never changes it.
+     */
+    public static bool $flockDisabledForTests = false;
+
     /** @var resource|null */
     private $handle;
 
@@ -96,7 +104,9 @@ final class ProjectLock
     public function release(): void
     {
         if (is_resource($this->handle)) {
-            flock($this->handle, LOCK_UN);
+            if (self::canLock()) {
+                flock($this->handle, LOCK_UN);
+            }
             fclose($this->handle);
         }
         $this->handle = null;
@@ -110,6 +120,12 @@ final class ProjectLock
     public function __destruct()
     {
         $this->release();
+    }
+
+    /** Whether `flock` can be called here (it is missing when listed in disable_functions). */
+    private static function canLock(): bool
+    {
+        return !self::$flockDisabledForTests && function_exists('flock');
     }
 
     private static function exclusiveWithin(string $projectFolder, int $waitMs): self
@@ -180,6 +196,12 @@ final class ProjectLock
     /** @param resource $handle */
     private static function acquire($handle, int $operation, int $waitMs): self
     {
+        if (!self::canLock()) {
+            // flock disabled (disable_functions): shared() degrades to no lock, exclusive() refuses.
+            fclose($handle);
+
+            throw new LocksUnavailable('This server cannot lock files.');
+        }
         $deadline = hrtime(true) + (int) ($waitMs * self::$waitScaleForTests * 1_000_000);
         while (true) {
             $wouldBlock = 0;

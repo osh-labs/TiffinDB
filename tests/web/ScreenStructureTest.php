@@ -71,6 +71,18 @@ final class ScreenStructureTest extends TestCase
         \TiffinDB\Web\Controller\FormSourceController::class,
     ];
 
+    /** The M7 snapshot controller (M7-WP4); T-SCR-6 visits every GET route it handles, and the two deletion routes. */
+    private const M7_SNAPSHOT_CONTROLLERS = [
+        \TiffinDB\Web\Controller\SnapshotController::class,
+    ];
+
+    /** The M7 activity, About, and recovery controllers (M7-WP5); T-SCR-6 visits every GET route they handle. */
+    private const M7_ADMIN_CONTROLLERS = [
+        \TiffinDB\Web\Controller\AuditController::class,
+        \TiffinDB\Web\Controller\AboutController::class,
+        \TiffinDB\Web\Controller\RecoveryController::class,
+    ];
+
     private const PASSWORD = 'example admin passphrase 1';
     private const MEMBER_TEMPORARY = 'temporary words 0101';
     private const MEMBER_PASSWORD = 'example member passphrase 2';
@@ -337,6 +349,12 @@ final class ScreenStructureTest extends TestCase
 
         // M5 source screens (T-SCR-5, M5-WP6), on Home Inventory.
         $this->m5SourceScreens($admin, $items);
+
+        // M7 snapshot and deletion screens (T-SCR-6, M7-WP4), on Home Inventory and Recipes.
+        $this->m7SnapshotScreens($admin, $home, $recipes);
+
+        // M7 activity, About, and recovery screens (T-SCR-6, M7-WP5).
+        $this->m7AdminScreens($admin);
 
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
@@ -764,6 +782,114 @@ final class ScreenStructureTest extends TestCase
     }
 
     /**
+     * T-SCR-6 (M7 screens spec section 11.1, M7-WP5): the activity, About,
+     * licence, and recovery pages in each state their designs under
+     * docs/design/m7/ list that a GET can reach, over a CoreFixture with
+     * synthetic audit entries, as the Admin, as the Member (403 on the
+     * activity page; About without server facts), and signed out (the
+     * recovery page; with `admin_recovery` off its routes are 404 and the
+     * sign-in page has no link to it). States reached only by a POST (422,
+     * 429) are covered by RecoveryScreenTest and KeyboardStructureTest.
+     */
+    public function testEveryM7AdminScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $services = static fn (string $seed): CoreServices => new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom($seed), $core->hasher);
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, $services('tiffindb-screen-structure-m7-seed'));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+            $main = fn (EndToEndClient $client): string => (string) $client->xpath()->query('//main/@class')->item(0)?->nodeValue;
+            $entries = fn (EndToEndClient $client): int => $client->xpath()->query('//ol[@class="audit-list"]/li[@class="audit-entry"]')->length;
+
+            // Activity (audit.md section 2): no filters, filtered, last page, empty result.
+            $audit = new \TiffinDB\Core\System\AuditLog($core->system, $core->clock);
+            for ($i = 0; $i < 60; $i++) {
+                $audit->record('snapshot.taken', $core->person('admin')->id);
+            }
+            $this->screen($admin, '/admin/activity', 'Activity', 'Activity');
+            self::assertSame('page page-io', $main($admin));
+            self::assertSame(50, $entries($admin));
+            self::assertSame(0, $admin->xpath()->query('//a[normalize-space(.)="Show everything"]')->length, 'No Show everything without a filter.');
+            $adminKey = $core->person('admin')->key;
+            $this->screen($admin, '/admin/activity?person=' . $adminKey . '&action=auth.sign_in', 'Activity', 'Activity');
+            self::assertSame(1, $entries($admin));
+            self::assertSame(['Example Admin signed in.'], $admin->texts('//p[@class="audit-what"]'));
+            self::assertSame(1, $admin->xpath()->query('//a[normalize-space(.)="Show everything"]')->length);
+            self::assertSame('auth.sign_in', (string) $admin->xpath()->query('//select[@name="action"]/option[@selected]/@value')->item(0)?->nodeValue);
+            $this->screen($admin, '/admin/activity?page=2', 'Activity', 'Activity');
+            self::assertSame(12, $entries($admin), '60 snapshots and two sign-ins: 12 on the last page.');
+            self::assertSame(1, $admin->xpath()->query('//nav[@class="pager"]//span[@aria-disabled="true"][normalize-space(.)="Next"]')->length);
+            $this->screen($admin, '/admin/activity?project=deleted', 'Activity', 'Activity');
+            self::assertSame(0, $entries($admin));
+            self::assertSame(['Nothing matches these choices.'], $admin->texts('//p[@class="empty-state-title"]'));
+            $this->visit('/admin/activity', 403, $member);
+
+            // About (about.md section 2): the Admin with server facts, the Member without; licence pages.
+            $this->screen($admin, '/about', 'About TiffinDB', 'About TiffinDB');
+            self::assertSame('page page-settings', $main($admin));
+            self::assertSame(['Made with', 'Plugins', 'This server'], $admin->texts('//main//h2'));
+            $this->screen($member, '/about', 'About TiffinDB', 'About TiffinDB');
+            self::assertSame(['Made with', 'Plugins'], $member->texts('//main//h2'));
+            $this->screen($member, '/about/licences/tiffindb', 'Licence: TiffinDB', 'Licence: TiffinDB');
+            self::assertSame('page page-settings', $main($member));
+            self::assertSame(1, $member->xpath()->query('//pre[@class="licence-text"]')->length);
+            $this->screen($admin, '/about/licences/openspout', 'Licence: OpenSpout', 'Licence: OpenSpout');
+            self::assertSame(['LICENSE', 'LICENSE-for-cc42c1d'], $admin->texts('//main//h2'));
+            $this->visit('/about/licences/no-such-part', 404, $admin);
+            $this->visit('/about/licences/Not_An_Id', 404, $admin);
+
+            // Recovery (recovery.md sections 2 and 3), signed out: the page, after starting, the sign-in link and notice.
+            $guest = new EndToEndClient($kernel);
+            $this->screen($guest, '/sign-in', 'Sign in', 'Sign in');
+            self::assertSame(['Locked out of the Admin account?'], $guest->texts('//main//p[@class="help form-narrow"]/a[@href="/recover"]'));
+            $this->screen($guest, '/recover', 'Get back into an Admin account', 'Get back into an Admin account');
+            self::assertSame('page page-plain', $main($guest));
+            self::assertSame(303, $guest->submit('/recover/start')->status);
+            $this->screen($guest, '/recover?started=1', 'Get back into an Admin account', 'Get back into an Admin account');
+            self::assertSame(1, $guest->xpath()->query('//main//section//div[@role="status"]')->length, 'The started text.');
+            $this->screen($guest, '/sign-in?recovered=1', 'Sign in', 'Sign in', 'The password has been changed. Sign in with the new password.');
+            $this->visit('/recover', 303, $admin);
+
+            // With admin_recovery off: the recovery routes are not found and the sign-in page has no link.
+            $off = new EndToEndClient(new Kernel(['admin_recovery' => false] + $config, Fixtures::appRoot(), null, $services('tiffindb-screen-structure-m7-off-seed')));
+            $this->screen($off, '/sign-in', 'Sign in', 'Sign in');
+            self::assertSame(0, $off->xpath()->query('//a[@href="/recover"]')->length);
+            $this->visit('/recover', 404, $off);
+        } finally {
+            $core->remove();
+        }
+
+        $m7Patterns = [];
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && in_array($route[2][0], self::M7_ADMIN_CONTROLLERS, true)) {
+                $m7Patterns[] = (string) $route[1];
+            }
+        }
+        self::assertCount(4, $m7Patterns, 'Four M7-WP5 GET routes.');
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m7Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
+    /**
+     * The M7-WP5 screens inside testEveryScreenInEveryState, so that its
+     * every-route check covers them: the activity page, About, a licence
+     * page as the Admin, and the recovery page signed out.
+     */
+    private function m7AdminScreens(EndToEndClient $admin): void
+    {
+        $this->screen($admin, '/admin/activity', 'Activity', 'Activity');
+        $this->screen($admin, '/about', 'About TiffinDB', 'About TiffinDB');
+        $this->screen($admin, '/about/licences/inter', 'Licence: Inter', 'Licence: Inter');
+        $guest = new EndToEndClient($this->kernel);
+        $this->screen($guest, '/recover', 'Get back into an Admin account', 'Get back into an Admin account');
+    }
+
+    /**
      * The M4 screens inside testEveryScreenInEveryState, so that its
      * every-route check covers them (M4 spec part 2 section 12): on Home
      * Inventory as built through the screens, as the Admin, one visit of
@@ -824,6 +950,137 @@ final class ScreenStructureTest extends TestCase
         $this->visitFile($items . '/form/download', 200, $admin);
         $this->screen($admin, $items . '/form/upload', 'Upload a form file for Items', 'Upload a form file for Items');
         self::assertSame('page page-form page-form-narrow', (string) $admin->xpath()->query('//main/@class')->item(0)?->nodeValue);
+    }
+
+    /**
+     * M7-WP4: the project settings links, the snapshots list empty and with
+     * a row, taking a snapshot, the restore confirmation, the deletion page,
+     * and deleting Recipes, with the main class of each layout.
+     */
+    private function m7SnapshotScreens(EndToEndClient $admin, string $home, string $recipes): void
+    {
+        $main = static fn (EndToEndClient $client): string => (string) $client->xpath()->query('//main/@class')->item(0)?->nodeValue;
+        $this->screen($admin, $home . '/settings', 'Project settings', 'Project settings');
+        self::assertSame(['Snapshots', 'Delete this project'], $admin->texts('//main//ul[@class="settings-links"]/li/a'));
+
+        $this->screen($admin, $recipes . '/snapshots', 'Snapshots', 'Snapshots');
+        self::assertSame('page page-settings', $main($admin));
+        self::assertSame(['No snapshots yet.'], $admin->texts('//main//p[@class="empty-state-title"]'));
+        $admin->get($home . '/snapshots');
+        self::assertSame(303, $admin->submit($home . '/snapshots')->status);
+        $this->screen($admin, $home . '/snapshots', 'Snapshots', 'Snapshots', 'A snapshot was saved: 3 Nov 2026, 10:00.');
+        self::assertSame('Taken by an Admin', $admin->texts('//main//table[contains(@class, "snapshot-table")]/tbody/tr[1]/td[2]')[0] ?? null);
+        $restore = (string) $admin->xpath()->query('//main//table/tbody/tr[1]//a/@href')->item(0)?->nodeValue;
+        self::assertMatchesRegularExpression('#^' . preg_quote($home, '#') . '/snapshots/[0-9]{8}T[0-9]{6}Z-manual-[a-z2-7]{4}/restore\z#', $restore);
+        $this->screen($admin, $restore, 'Restore this snapshot?', 'Restore this snapshot?');
+        self::assertSame('page page-record page-record-narrow', $main($admin));
+        self::assertSame(['Restore this snapshot'], $admin->texts('//main//div[@class="danger-zone"]//button[contains(@class, "button-danger")]'));
+
+        $this->screen($admin, $recipes . '/delete', 'Delete Recipes?', 'Delete Recipes?');
+        self::assertSame('page page-record page-record-narrow', $main($admin));
+        $deleted = $admin->submit($recipes . '/delete', ['confirm_name' => 'recipes']);
+        self::assertSame(303, $deleted->status, $deleted->body);
+        self::assertSame('/projects', $deleted->header('Location'));
+        $this->screen($admin, '/projects', 'Your projects', 'Your projects', 'Recipes has been deleted.');
+        $this->visit($recipes . '/delete', 404, $admin);
+    }
+
+    /**
+     * T-SCR-6 (M7 screens spec section 11.1), WP4 part: every GET route of
+     * SnapshotController and the deletion page, in each state
+     * docs/design/m7/snapshots.md and project-delete.md list that a GET can
+     * reach, over the M2 data set with the real CoreServices, as the Admin:
+     * the list with several reasons, a snapshot that cannot be used (422),
+     * a server that cannot lock files (the notice, no Restore links, 422),
+     * and the deletion page with and without the project folder. A Member
+     * gets 403 on every route, an ungranted person 404.
+     */
+    public function testEveryM7SnapshotScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $ops = $core->operations();
+            $m2 = M2Fixture::build($core, $ops);
+            $actor = $core->actor('admin');
+            $core->addPerson('stranger', 'Example Stranger', \TiffinDB\Core\Auth\Role::Member);
+            $manual = $ops->snapshots()->take($actor, $m2->project);
+            $core->clock->set('2026-11-03T11:00:00Z');
+            $ops->trash()->empty($actor, $m2->project, null, 1000);
+            $garden = $ops->projects()->create($actor, 'Garden Log', 'Plants')->key;
+            $ops->close();
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom('tiffindb-screen-structure-m7-seed'), $core->hasher));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+            $stranger = $this->signIn($kernel, 'stranger');
+            $home = $m2->projectPath();
+            $manualPath = $home . '/snapshots/' . substr($manual->file, 0, -strlen('.tiffin')) . '/restore';
+
+            // The list, newest first, with the reasons in words.
+            $this->screen($admin, $home . '/snapshots', 'Snapshots', 'Snapshots');
+            self::assertSame(['Before the trash was emptied', 'Taken by an Admin'], $admin->texts('//main//table/tbody/tr/td[2]'));
+            self::assertSame(['Restore the snapshot saved 3 Nov 2026, 11:00', 'Restore the snapshot saved 3 Nov 2026, 10:00'], $admin->texts('//main//table/tbody/tr/td[4]/a/@aria-label'));
+            $this->screen($admin, $manualPath, 'Restore this snapshot?', 'Restore this snapshot?');
+
+            // A snapshot that cannot be used.
+            $copy = $core->temp->path('manual-copy.tiffin');
+            $file = $core->projectFolder($m2->project) . '/snapshots/' . $manual->file;
+            self::assertTrue(copy($file, $copy));
+            file_put_contents($file, str_repeat("\x00", 4096));
+            $this->screen($admin, $manualPath, 'Error: Restore this snapshot?', 'Restore this snapshot?', null, 422);
+            self::assertSame(0, $admin->xpath()->query('//main//form')->length, 'No form after a refusal.');
+            self::assertSame(1, $admin->xpath()->query('//main//div[@class="error-summary"]')->length);
+            self::assertTrue(rename($copy, $file));
+
+            // A server that cannot lock files.
+            \TiffinDB\Core\Storage\ProjectLock::$flockDisabledForTests = true;
+            try {
+                $admin->allowFailure = true;
+                $this->screen($admin, $home . '/snapshots', 'Snapshots', 'Snapshots');
+                self::assertSame(1, $admin->xpath()->query('//main//div[contains(@class, "notice-warn")]')->length);
+                self::assertSame(0, $admin->xpath()->query('//main//table//a')->length, 'No Restore links.');
+                $this->screen($admin, $manualPath, 'Error: Restore this snapshot?', 'Restore this snapshot?', null, 422);
+                self::assertSame(0, $admin->xpath()->query('//main//form')->length);
+            } finally {
+                \TiffinDB\Core\Storage\ProjectLock::$flockDisabledForTests = false;
+                $admin->allowFailure = false;
+            }
+
+            // The deletion page, with the folder and without it (P239).
+            $this->screen($admin, $home . '/delete', 'Delete Home Inventory?', 'Delete Home Inventory?');
+            self::assertSame(1, $admin->xpath()->query('//main//dl[@class="facts"]')->length);
+            $folder = $core->projectFolder($garden);
+            self::assertTrue(rename($folder, $folder . '-moved'));
+            $this->screen($admin, '/projects/' . $garden . '/delete', 'Delete Garden Log?', 'Delete Garden Log?');
+            self::assertSame(0, $admin->xpath()->query('//main//dl[@class="facts"]')->length);
+            self::assertSame(1, $admin->xpath()->query('//main//div[contains(@class, "notice-warn")]')->length);
+            self::assertTrue(rename($folder . '-moved', $folder));
+
+            // A Member is refused, an ungranted person does not find the project.
+            foreach (['/snapshots', '/delete', substr($manualPath, strlen($home))] as $route) {
+                $this->visit($home . $route, 403, $member);
+                $this->visit($home . $route, 404, $stranger);
+            }
+            $this->visit($home . '/snapshots/not-a-snapshot/restore', 404, $admin);
+            $admin->cleanUp();
+        } finally {
+            \TiffinDB\Core\Storage\ProjectLock::$flockDisabledForTests = false;
+            $core->remove();
+        }
+
+        $m7Patterns = [];
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && in_array($route[2][0], self::M7_SNAPSHOT_CONTROLLERS, true)) {
+                $m7Patterns[] = (string) $route[1];
+            }
+        }
+        self::assertCount(2, $m7Patterns, 'Two M7 snapshot GET routes.');
+        $m7Patterns[] = '/projects/{project}/delete';
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m7Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
     }
 
     /** Visits a route that answers with a file (or a refusal page), counting the route; no page checks on a file. */

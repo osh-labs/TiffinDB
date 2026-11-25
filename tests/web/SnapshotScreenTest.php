@@ -124,7 +124,9 @@ final class SnapshotScreenTest extends TestCase
         $x = $this->xpath($this->page(self::ADMIN, $this->s()));
         $rows = '//main/div[@class="table-scroll"]/table[@class="data-table snapshot-table"]/tbody/tr';
         self::assertSame('Snapshots, newest first', $this->text($x, '//table/caption[@class="visually-hidden"]'));
-        self::assertSame(['Saved', 'Why', 'Size', 'Action'], $this->texts($x, '//table/thead/tr/th'));
+        self::assertSame(['Saved', 'Why', 'Size', ''], $this->texts($x, '//table/thead/tr/th'));
+        // The action column is named by aria-label, not a visually hidden span, which would escape the scrolling box at narrow widths.
+        self::assertSame('Action', $this->attr($x, '//table/thead/tr/th[4]', 'aria-label'));
         self::assertSame(['3 Nov 2026, 11:30', '3 Nov 2026, 10:00'], $this->texts($x, $rows . '/td[1]/time'));
         self::assertSame(['2026-11-03T11:30:00Z', '2026-11-03T10:00:00Z'], $this->texts($x, $rows . '/td[1]/time/@datetime'));
         self::assertSame(['Before the trash was emptied', 'Taken by an Admin'], $this->texts($x, $rows . '/td[2]'));

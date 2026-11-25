@@ -925,6 +925,84 @@ final class KeyboardStructureTest extends TestCase
         }
     }
 
+    // T-KBD-5 (M7 screens spec section 10.1), M7-WP4: the project settings
+    // links, the snapshots list, the restore confirmation, and the deletion
+    // page, as the Admin over the M2 data set, with rules 1 to 7 and the
+    // M7 items (assertM7DeleteField for the typed-name field).
+
+    public function testM7SnapshotsSettingsListAndRestore(): void
+    {
+        $admin = $this->admin();
+        $actor = $this->core->actor('admin');
+        $home = $this->m2->projectPath();
+        $response = $admin->get($home . '/settings');
+        self::assertSame(200, $response->status);
+        $names = $this->focusNames($response->body);
+        $this->assertStructure($response->body, $names, 'settings');
+        self::assertSame(['Snapshots', 'Delete this project', ...self::FOOTER], array_slice($names, -4), 'The two links come last, before the footer.');
+
+        $this->checkAs($admin, $home . '/snapshots', [...self::ADMIN_TOP, 'Home Inventory', 'Take a snapshot now', ...self::FOOTER]);
+        $this->ops->snapshots()->take($actor, $this->m2->project);
+        $this->core->clock->set('2026-11-03T11:00:00Z');
+        $manual = $this->ops->snapshots()->take($actor, $this->m2->project);
+        $this->checkAs($admin, $home . '/snapshots', [
+            ...self::ADMIN_TOP, 'Home Inventory', 'Take a snapshot now',
+            'Restore the snapshot saved 3 Nov 2026, 11:00', 'Restore the snapshot saved 3 Nov 2026, 10:00', ...self::FOOTER,
+        ]);
+        self::assertSame(1, $admin->xpath()->query('//main//table/caption')->length);
+        self::assertSame(4, $admin->xpath()->query('//main//table/thead/tr/th[@scope="col"]')->length);
+        $restore = $home . '/snapshots/' . substr($manual->file, 0, -strlen('.tiffin')) . '/restore';
+        $this->checkAs($admin, $restore, [...self::ADMIN_TOP, 'Home Inventory', 'Snapshots', 'Restore this snapshot', 'Cancel', ...self::FOOTER]);
+        self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertSame(0, $admin->xpath()->query('//main//*[contains(@class, "button-primary")]')->length);
+
+        // A snapshot that cannot be used: the summary has no link, the page no form.
+        file_put_contents($this->core->projectFolder($this->m2->project) . '/snapshots/' . $manual->file, str_repeat('x', 4096));
+        $refused = $admin->get($restore);
+        self::assertSame(422, $refused->status);
+        $this->assertStructure($refused->body, [...self::ADMIN_TOP, 'Home Inventory', 'Snapshots', ...self::FOOTER], 'restore 422');
+    }
+
+    public function testM7ProjectDeletePageAndItsErrors(): void
+    {
+        $admin = $this->admin();
+        $delete = $this->m2->projectPath() . '/delete';
+        $order = [...self::ADMIN_TOP, 'Home Inventory', 'Go to Export', 'Type the project\'s name to confirm', 'Delete for good', 'Cancel', ...self::FOOTER];
+        $this->checkAs($admin, $delete, $order);
+        $this->assertM7DeleteField($admin->page(), false);
+
+        $wrong = $admin->submit($delete, ['confirm_name' => 'Garden Log']);
+        self::assertSame(422, $wrong->status);
+        $this->assertStructure($wrong->body, [...self::ADMIN_TOP, 'Home Inventory', 'Type the project\'s name exactly as it is shown above.', ...array_slice($order, count(self::ADMIN_TOP) + 1)], 'delete 422');
+        $this->assertM7DeleteField($wrong->body, true);
+
+        // Grown counts: the page again, with the warning before the form.
+        $admin->get($delete);
+        $this->core->addRecord($this->m2->project, $this->m2->items, [$this->m2->itemFields['Name'] => 'Example extra item']);
+        $again = $admin->submit($delete, ['confirm_name' => 'Home Inventory']);
+        self::assertSame(200, $again->status);
+        $this->assertStructure($again->body, $order, 'delete changed');
+        $this->assertM7DeleteField($again->body, false);
+        self::assertSame(1, $admin->xpath()->query('//main/div[contains(@class, "notice-warn")]')->length);
+    }
+
+    /** The typed-name field (section 10.1): no autocomplete or spell check, described by its help and, after a refusal, its error. */
+    private function assertM7DeleteField(string $html, bool $error): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $input = $x->query('//input[@id="confirm-name"]')->item(0);
+        self::assertInstanceOf(DOMElement::class, $input);
+        self::assertSame('off', $input->getAttribute('autocomplete'));
+        self::assertSame('false', $input->getAttribute('spellcheck'));
+        self::assertSame($error ? 'confirm-name-help confirm-name-error' : 'confirm-name-help', $input->getAttribute('aria-describedby'));
+        foreach (explode(' ', $input->getAttribute('aria-describedby')) as $id) {
+            self::assertSame(1, $x->query('//*[@id="' . $id . '"]')->length, $id);
+        }
+        self::assertSame(1, $x->query('//label[@for="confirm-name"][not(contains(@class, "visually-hidden"))]')->length);
+        self::assertSame(1, $x->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertSame(0, $x->query('//main//*[contains(@class, "button-primary")] | //*[@disabled]')->length);
+    }
+
     private ?CoreFixture $core5 = null;
     private ?Operations $ops5 = null;
 

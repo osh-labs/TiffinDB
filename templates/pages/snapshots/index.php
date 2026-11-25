@@ -39,7 +39,7 @@ declare(strict_types=1);
 <th scope="col"><?= $this->t('snapshots.col.reason') ?></th>
 <th scope="col" class="num"><?= $this->t('snapshots.col.size') ?></th>
 <?php if ($data['canRestore'] === true) : ?>
-<th scope="col"><span class="visually-hidden"><?= $this->t('snapshots.col.action') ?></span></th>
+<th scope="col" aria-label="<?= $this->t('snapshots.col.action') ?>"></th>
 <?php endif; ?>
 </tr>
 </thead>

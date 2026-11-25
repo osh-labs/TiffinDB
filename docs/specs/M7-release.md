@@ -950,3 +950,6 @@ Each is the option cheapest to reverse (orchestration guide section 5) and is re
 ## 22. As-built notes
 
 To be appended by the M7 exit audit (M7-X). Where the merged code differs from the text above, the code, these notes, and the provisional decisions in `docs/build/ledger.md` govern.
+
+- M7-WP1 (audit search, section 2.2 and 7.2): `AuditLog::search` and `count` are each one literal statement, not a `WHERE` clause joined from literal fragments. Each filter is a fixed part `(? IS NULL OR column = ?)`, and `deletedProjects` is `(? = 0 OR (project_id IS NULL AND action = ?))`, all with bound values. A filter is off when its value is null. The property the section asks for holds: no text from a request reaches SQL. The file passes the `SqlStringsTest` scan (`testTheAuditSearchIsBuiltFromLiteralsOnly`).
+- M7-WP1 review fixes: where `flock` is disabled, `ProjectLock::shared` returns null (the project opens without a lock, logged once) and `exclusive` throws `LocksUnavailable`, so restore and deletion refuse with `problem.lock.unavailable` (section 4.1). A deletion that finds its registry row already removed by a concurrent `clearAbandoned` reports success and writes the one `project.deleted` row; the sweep writes none (section 6.2).

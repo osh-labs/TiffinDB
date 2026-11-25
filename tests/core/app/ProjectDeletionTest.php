@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Core\App;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\App\ProjectDeleted;
 use TiffinDB\Core\App\ProjectDeleteScreen;
@@ -73,6 +74,7 @@ final class ProjectDeletionTest extends AppTestCase
             $holder->stop();
         }
         ProjectLock::$waitScaleForTests = 1.0;
+        ProjectLock::$flockDisabledForTests = false;
         parent::tearDown();
     }
 
@@ -424,5 +426,64 @@ final class ProjectDeletionTest extends AppTestCase
         unlink($this->deletedEntry());
         $this->ops->exports()->export($this->admin, $this->kitchen->key, 'export/csv', $this->pans, []);
         self::assertNull($this->state());
+    }
+
+    // ------------------------------------------------------------ review findings (M7-WP1 review, Low 1 and Low 2)
+
+    /** @return iterable<string, array{string}> */
+    public static function sweepPoints(): iterable
+    {
+        yield 'after marking' => ['delete.marked'];
+        yield 'just before the move' => ['delete.move'];
+    }
+
+    /**
+     * A project whose file cannot be opened holds no shared lock between
+     * marking and locking, so a concurrent clearAbandoned (an export,
+     * import, or upload) can finish the deletion first. The request then
+     * still reports success, and exactly one project.deleted row is written.
+     */
+    #[DataProvider('sweepPoints')]
+    public function testASweepThatFinishesTheDeletionFirstLeavesOneAuditRowAndSuccess(string $point): void
+    {
+        $this->ops->close();
+        file_put_contents($this->folder() . '/project.tiffin', 'synthetic junk: not a database');
+        $swept = 0;
+        $racing = $this->fx->operations(null, null, function (string $at) use ($point, &$swept): void {
+            if ($at === $point) {
+                $sweeper = $this->fx->operations();
+                $sweeper->projects()->clearAbandoned();
+                $sweeper->close();
+                $swept++;
+            }
+        });
+        $this->captureLog();
+
+        $deleted = $racing->projects()->delete($this->admin, $this->garden->key, 'Example Garden', 0);
+        $racing->close();
+
+        self::assertSame(1, $swept);
+        self::assertSame('Example Garden', $deleted->name);
+        self::assertNull($this->state());
+        self::assertSame(0, $this->grants($this->garden->id));
+        self::assertFileDoesNotExist($this->folder());
+        self::assertSame(1, count(array_filter($this->auditActions(), static fn (string $a): bool => $a === AuditAction::PROJECT_DELETED)), 'Exactly one audit row.');
+        self::assertSame($this->garden->key, $this->lastAudit(AuditAction::PROJECT_DELETED)->targetKey);
+    }
+
+    public function testWithFlockDisabledProjectsOpenButADeletionRefuses(): void
+    {
+        $this->ops->close();
+        ProjectLock::$flockDisabledForTests = true;
+        $this->captureLog();
+
+        self::assertSame(2, $this->ops->projects()->deleteScreen($this->admin, $this->garden->key)->records, 'The project still opens, without a lock.');
+        self::assertSame([[null, 'problem.lock.unavailable', []]], self::problems(fn () => $this->delete()));
+
+        self::assertSame('active', $this->state());
+        self::assertDirectoryExists($this->folder());
+        self::assertFileDoesNotExist($this->deletedEntry());
+        self::assertNotContains(AuditAction::PROJECT_DELETED, $this->auditActions());
+        self::assertSame(1, substr_count($this->errorLog(), 'cannot lock files'), 'Opening without the lock is logged once.');
     }
 }

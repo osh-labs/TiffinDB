@@ -925,6 +925,121 @@ final class KeyboardStructureTest extends TestCase
         }
     }
 
+    // T-KBD-5 (M7 screens spec section 10.1), M7-WP5: the activity, About,
+    // licence, and recovery pages over this class's M2 data set, as the
+    // Admin, the Member, and signed out, with rules 1 to 7 and the M7
+    // items of assertM7Rules.
+
+    public function testM7ActivityFiltersEntriesAndPager(): void
+    {
+        $audit = new \TiffinDB\Core\System\AuditLog($this->core->system, $this->core->clock);
+        for ($i = 0; $i < 60; $i++) {
+            $audit->record('snapshot.taken', $this->core->person('admin')->id, null, null, null, ['n' => $i]);
+        }
+        $admin = $this->admin();
+        $this->checkM7($admin, '/admin/activity', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Next', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?action=snapshot.taken', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', 'Next', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?action=snapshot.taken&page=2', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', 'Previous', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?project=deleted', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', ...self::FOOTER]);
+        $x = $admin->xpath();
+        foreach (['filter-person', 'filter-project', 'filter-action'] as $id) {
+            self::assertSame(1, $x->query('//label[@for="' . $id . '"]')->length, "{$id} has its label.");
+        }
+        self::assertSame(0, $x->query('//form[contains(@class, "audit-filters")]//button[contains(@class, "button-primary")]')->length, 'Show is not filled: the page has no primary action.');
+    }
+
+    public function testM7AboutAndLicencePages(): void
+    {
+        $licences = [];
+        foreach (['OpenSpout', 'Composer class loader', 'Inter', 'Atkinson Hyperlegible', 'Lexend', 'Source Serif 4'] as $name) {
+            $licences[] = 'Licence text of ' . $name;
+        }
+        $admin = $this->admin();
+        $this->checkM7($admin, '/about', [...self::ADMIN_TOP, 'Read the licence', ...$licences, ...self::FOOTER]);
+        $this->checkM7($admin, '/about/licences/openspout', [...self::ADMIN_TOP, 'Back to About TiffinDB', ...self::FOOTER]);
+        $this->checkM7($this->member, '/about', [...self::TOP, 'Read the licence', ...$licences, ...self::FOOTER]);
+        $this->checkM7($this->member, '/about/licences/tiffindb', [...self::TOP, 'Back to About TiffinDB', ...self::FOOTER]);
+    }
+
+    public function testM7RecoveryPageInEveryState(): void
+    {
+        $plain = ['Skip to main content', 'TiffinDB, all projects'];
+        $fields = ['Admin username', 'Code from the file', 'New password', 'New password again', 'Show passwords', 'Change the password', 'Back to sign in'];
+        $guest = new EndToEndClient($this->kernel);
+        $this->checkM7($guest, '/sign-in', [...$plain, 'Username', 'Password', 'Show password', 'Sign in', 'Locked out of the Admin account?', 'Source code']);
+        $this->checkM7($guest, '/recover', [...$plain, 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(303, $guest->submit('/recover/start')->status);
+        $this->checkM7($guest, '/recover?started=1', [...$plain, 'Write a code', ...$fields, 'Source code']);
+
+        // Password problems: the summary links to the password fields.
+        $mismatch = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 8']);
+        self::assertSame(422, $mismatch->status);
+        $this->assertM7Page($mismatch->body, '/recover (mismatch)', [...$plain, 'The two new passwords are different.', 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(['recover-again'], self::describedErrors($mismatch->body));
+
+        // A code that is not right: the one problem, tied to the code field.
+        $guest->get('/recover');
+        $failed = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        self::assertSame(422, $failed->status);
+        $this->assertM7Page($failed->body, '/recover (failed)', [...$plain, 'That did not work. Check the username and the code, or start again for a new code.', 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(['recover-code'], self::describedErrors($failed->body));
+
+        // Too many tries: 429 with the warning notice and no error summary.
+        for ($i = 0; $i < 5; $i++) {
+            $guest->get('/recover');
+            $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        }
+        $guest->get('/recover');
+        $wait = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        self::assertSame(429, $wait->status);
+        $this->assertM7Page($wait->body, '/recover (wait)', [...$plain, 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(1, (new DOMXPath(HtmlAssertions::assertWellFormed($wait->body)))->query('//main//div[@role="alert"][contains(@class, "notice-warn")]')->length);
+    }
+
+    /** GETs $uri as $client (200) and asserts rules 1 to 7 and the M7 items. */
+    private function checkM7(EndToEndClient $client, string $uri, array $names): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        $this->assertM7Page($response->body, $uri, $names);
+    }
+
+    /** @param list<string> $names */
+    private function assertM7Page(string $html, string $where, array $names): void
+    {
+        $this->assertStructure($html, $names, $where);
+        $this->assertM7Rules($html, $where);
+    }
+
+    /**
+     * The M7 items of section 10.1: one `h1`; every control labelled
+     * (assertForm); at most one `.button-primary`; every error message
+     * referenced by its control and every summary link a target (rule 6).
+     */
+    private function assertM7Rules(string $html, string $where): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        HtmlAssertions::assertForm($html);
+        self::assertSame(1, $x->query('//h1')->length, "{$where}: one h1.");
+        self::assertLessThanOrEqual(1, $x->query('//*[contains(concat(" ", @class, " "), " button-primary ")]')->length, "{$where}: at most one primary button.");
+        self::assertSame(0, $x->query('//*[@tabindex and @tabindex != "-1"]')->length, "{$where}: no positive tabindex.");
+    }
+
+    /**
+     * The ids of the controls that are aria-invalid on the page.
+     *
+     * @return list<string>
+     */
+    private static function describedErrors(string $html): array
+    {
+        $ids = [];
+        foreach ((new DOMXPath(HtmlAssertions::assertWellFormed($html)))->query('//*[@aria-invalid="true"]/@id') as $id) {
+            $ids[] = (string) $id->nodeValue;
+        }
+
+        return $ids;
+    }
+
     private ?CoreFixture $core5 = null;
     private ?Operations $ops5 = null;
 

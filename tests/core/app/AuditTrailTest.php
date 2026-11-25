@@ -13,6 +13,7 @@ use TiffinDB\Core\App\AuditOperations;
 use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\Auth\Role;
 use TiffinDB\Core\Error\AccessDenied;
+use TiffinDB\Core\Install\RecoveryCode;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditEntry;
@@ -156,8 +157,35 @@ final class AuditTrailTest extends AppTestCase
         $collections->delete($this->admin, $p, $collection);
         $expect(AuditAction::COLLECTION_DELETED, $admin, $project->id, 'collection', $collection, ['table' => $plants->key, 'rules' => 1, 'match' => 'any']);
 
+        // M5 (spec section 9.6, T-APP-175): the table, the source, and the generated flag; never form text.
+        $forms = $this->ops->forms();
+        $screen = $forms->source($this->admin, $p, $plants->key, ['text' => '<div data-tiffin-form="1"><p>Synthetic form note</p></div>', 'base' => $forms->source($this->admin, $p, $plants->key)->base, 'do' => 'save']);
+        $formKey = (string) $this->fx->projectDb($p)->value('SELECT "key" FROM "_tiffin_forms" WHERE "is_default" = 1 AND "table_key" = ?', [$plants->key]);
+        self::assertNotNull($screen->saved);
+        $expect(AuditAction::FORM_SAVED, $admin, $project->id, 'form', $formKey, ['table' => $plants->key, 'source' => 'source', 'generated' => 0]);
+        self::assertTrue($forms->reset($this->admin, $p, $plants->key));
+        $expect(AuditAction::FORM_RESET, $admin, $project->id, 'form', $formKey, ['table' => $plants->key]);
+
+        // M7 (spec section 11.2): file names and counts; project.deleted alone keeps a name (the project's).
+        $restored = $this->ops->snapshots()->restore($this->admin, $p, substr($snapshot->file, 0, -strlen('.tiffin')));
+        $expect(AuditAction::SNAPSHOT_RESTORED, $admin, $project->id, 'snapshot', $snapshot->file, [
+            'pre_restore' => $restored->preRestore->file, 'files_missing' => $restored->filesMissing, 'files_removed' => $restored->filesRemoved, 'from_version' => 4,
+        ]);
+        $shed = $projects->create($this->admin, 'Example Shed', null);
+        $projects->delete($this->admin, $shed->key, 'example shed', 0);
+        $expect(AuditAction::PROJECT_DELETED, $admin, null, 'project', $shed->key, ['name' => 'Example Shed', 'records' => 0, 'trashed' => 0, 'files' => 0, 'snapshots' => 0]);
+
+        // M7 (spec section 11.2, T-REC-13): no acting person; never the code or a path.
+        $recovery = $this->ops->recovery();
+        $recovery->start(true, CoreFixture::ADDRESS);
+        $expect(AuditAction::RECOVERY_STARTED, null, null, null, null, ['written' => true]);
+        $code = RecoveryCode::current($this->fx->data->path(), $this->fx->clock->now());
+        self::assertNotNull($code);
+        self::assertSame('done', $recovery->recover(true, 'admin', $code, self::NEW, self::NEW, CoreFixture::ADDRESS)->outcome);
+        $expect(AuditAction::RECOVERED, null, null, 'user', $this->admin->userKey);
+
         $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
-        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987'] as $text) {
+        foreach ([$code, str_replace('-', '', $code), RecoveryCode::FILE, 'Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987', 'Synthetic form note'] as $text) {
             self::assertStringNotContainsString($text, $all);
         }
 

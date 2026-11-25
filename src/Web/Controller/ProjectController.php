@@ -8,7 +8,9 @@ declare(strict_types=1);
 
 namespace TiffinDB\Web\Controller;
 
+use TiffinDB\Core\App\ProjectDeleteScreen;
 use TiffinDB\Core\Auth\Permission;
+use TiffinDB\Core\Error\ConfirmationRequired;
 use TiffinDB\Core\Error\Problem;
 use TiffinDB\Core\Error\ValidationFailed;
 use TiffinDB\Web\Context;
@@ -19,7 +21,8 @@ use TiffinDB\Web\Response;
  * The project list, new project, and project settings screens
  * (docs/design/m1/sign-in-and-projects.md section 3,
  * docs/design/m1/new-project.md, docs/design/m1/schema-editor.md
- * section 2). Every decision about who may do what is made in Core\App:
+ * section 2), and deleting a project (docs/design/m7/project-delete.md;
+ * M7 screens spec section 9). Every decision about who may do what is made in Core\App:
  * the controller asks AuthOperations::can() which controls to show and
  * AuthOperations::require() before rendering an Admin-only form.
  *
@@ -33,6 +36,12 @@ final class ProjectController
 
     /** Project settings form. */
     private const SETTINGS_FIELDS = ['name' => 'project-name'];
+
+    /** Delete a project: the typed name. */
+    private const DELETE_FIELDS = ['confirm-name' => 'confirm-name'];
+
+    /** Digits of the posted record count; anything else (or longer) is 0 (P184). */
+    private const NUMBER = '/^[0-9]{1,9}\z/';
 
     public function __construct(private readonly Context $context)
     {
@@ -149,6 +158,81 @@ final class ProjectController
         return $this->context->redirect('/projects/' . $project->key . '/tables');
     }
 
+    /** @param array<string, string> $params */
+    public function deleteForm(Request $request, array $params): Response
+    {
+        $screen = $this->context->services()->operations()->projects()->deleteScreen($this->context->actor(), $params['project'] ?? '');
+
+        return $this->deletePage($screen, '', [], false, 200);
+    }
+
+    /**
+     * Deletes the project: the core checks the typed name and the record
+     * count the page showed (`expected`); the counts grew meanwhile, the
+     * page is shown again with the new numbers (P82 pattern).
+     *
+     * @param array<string, string> $params
+     */
+    public function delete(Request $request, array $params): Response
+    {
+        $key = $params['project'] ?? '';
+        $typed = $request->input('confirm_name');
+        $expected = $request->input('expected');
+        $actor = $this->context->actor();
+        $projects = $this->context->services()->operations()->projects();
+        try {
+            $deleted = $projects->delete($actor, $key, $typed, preg_match(self::NUMBER, $expected) === 1 ? (int) $expected : 0);
+        } catch (ValidationFailed $failed) {
+            return $this->deletePage($projects->deleteScreen($actor, $key), $typed, $failed->problems, false, 422);
+        } catch (ConfirmationRequired) {
+            return $this->deletePage($projects->deleteScreen($actor, $key), $typed, [], true, 200);
+        }
+        $this->context->flash('notice.project_deleted', ['name' => $deleted->name]);
+
+        return $this->context->redirect('/projects');
+    }
+
+    /**
+     * The deletion page (project-delete.md section 2), first shown, asked
+     * again with new counts, or after a refusal with the typed text kept.
+     *
+     * @param list<Problem> $problems
+     */
+    private function deletePage(ProjectDeleteScreen $screen, string $typed, array $problems, bool $changed, int $status): Response
+    {
+        [$list, $errors] = self::problems($this->context, $problems, self::DELETE_FIELDS);
+        $view = $this->context->view();
+        $project = $screen->project;
+        $base = '/projects/' . $project->key;
+
+        return $this->context->page('projects/delete', [
+            'title' => $view->text('projects.delete.title', ['project' => $project->name]),
+            'layout' => 'record-narrow',
+            'breadcrumb' => [
+                ['label' => $project->name, 'path' => $base],
+                ['label' => $view->text('projects.delete.crumb'), 'path' => null],
+            ],
+            'problems' => $list,
+            'errors' => $errors,
+            'project' => $project->name,
+            'changed' => $changed,
+            'folderMissing' => $screen->folderMissing,
+            'counts' => [
+                'records' => $screen->records,
+                'trashed' => $screen->trashed,
+                'files' => $screen->files,
+                'size' => $view->format()->fileSize(max(0, $screen->fileBytes)),
+                'snapshots' => $screen->snapshots,
+                'members' => $screen->members,
+            ],
+            'expected' => (string) ($screen->records + $screen->trashed),
+            'typed' => $typed,
+            'exportPath' => $base . '/export',
+            'action' => $base . '/delete',
+            'cancel' => $base . '/settings',
+        ], $status, 'projects');
+    }
+
     /**
      * @param array<string, string> $values
      * @param list<Problem>         $problems
@@ -189,6 +273,8 @@ final class ProjectController
             'action' => '/projects/' . $key . '/settings',
             'cancel' => '/projects/' . $key . '/tables',
             'files' => ['count' => $totals->files, 'size' => $view->format()->fileSize(max(0, $totals->bytes))],
+            'snapshotsPath' => '/projects/' . $key . '/snapshots',
+            'deletePath' => '/projects/' . $key . '/delete',
         ], $status, 'projects');
     }
 

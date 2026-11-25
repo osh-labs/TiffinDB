@@ -16,7 +16,8 @@ use TiffinDB\Tests\Support\TempDir;
 
 /**
  * ADR 0008 decision 6: no error-suppression operator (`@`) in application
- * code: every PHP file under src/, plugins/, and templates/. Read with
+ * code: every PHP file under src/, plugins/, and templates/, and (M7 spec
+ * part 1 section 15.1, CF7-4) every PHP file under tools/. Read with
  * token_get_all: PHP has no T_AT token, the operator is the one-character
  * token `@`. An `@` inside a string, a comment, a docblock (`@param`), a
  * heredoc, or the HTML of a template is part of another token and is not
@@ -25,7 +26,7 @@ use TiffinDB\Tests\Support\TempDir;
 #[CoversNothing]
 final class NoErrorSuppressionTest extends TestCase
 {
-    public const DIRECTORIES = ['src', 'plugins', 'templates'];
+    public const DIRECTORIES = ['src', 'plugins', 'templates', 'tools'];
 
     /**
      * Line numbers of every `@` operator in $source.
@@ -63,6 +64,18 @@ final class NoErrorSuppressionTest extends TestCase
         }
         self::assertGreaterThan(100, $count, 'The scan reads the application files.');
         self::assertSame([], $found, 'Error-suppression operators (ADR 0008 decision 6).');
+    }
+
+    /** T-CF7-4: the scan reaches both tools that used the operator, and every other PHP file under tools/. */
+    public function testTheScanCoversTheTools(): void
+    {
+        $tools = RepoFiles::withExtension(['php'], 'tools');
+        foreach (['tools/host-check/host-check.php', 'tools/discovery/discover-structure.php', 'tools/admin/reset-password.php'] as $path) {
+            self::assertContains($path, $tools);
+        }
+        foreach ($tools as $path) {
+            self::assertSame([], self::suppressions(RepoFiles::read($path)), $path);
+        }
     }
 
     /** @return iterable<string, array{string, list<int>}> */

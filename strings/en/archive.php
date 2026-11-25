@@ -28,7 +28,7 @@ return [
     'archive.change.values' => '{count|# value|# values} left empty',
     'archive.change.links' => '{count|# link|# links} dropped',
     'archive.change.forms_dropped' => '{count|# form|# forms} replaced by the standard layout',
-    'archive.change.forms_extended' => '{count|# form|# forms} given missing fields',
+    'archive.change.forms_extended' => '{count|# edited form|# edited forms} lost fields that no longer exist',
     'archive.change.files' => '{count|# file|# files} missing',
 
     'notice.archive_imported' => 'The project {name} has been made from the archive.',

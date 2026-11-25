@@ -18,7 +18,7 @@ use TiffinDB\Core\Storage\SnapshotReason;
 
 require_once __DIR__ . '/AppTestCase.php';
 
-/** T-APP-40 and T-APP-50: trash and snapshots. */
+/** T-APP-40 and T-APP-50: trash and snapshots; restoring brings the trash back as it was (M7 spec section 5.4). */
 #[CoversClass(TrashOperations::class)]
 #[CoversClass(SnapshotOperations::class)]
 final class TrashAndSnapshotOperationsTest extends AppTestCase
@@ -120,5 +120,28 @@ final class TrashAndSnapshotOperationsTest extends AppTestCase
         $deleted = $this->lastAudit('schema.field_deleted');
         self::assertSame(['field', $field->key, ['type' => 'long_text']], [$deleted->targetKind, $deleted->targetKey, $deleted->detail]);
         self::assertSame(SnapshotReason::FieldDelete, $this->ops->snapshots()->list($this->admin, $this->project)[0]->reason);
+    }
+
+    public function testARestoreBringsBackTheTrashAndTheRecordIds(): void
+    {
+        $trash = $this->ops->trash();
+        $records = $this->ops->records();
+        $a = $records->create($this->admin, $this->project, $this->table, [$this->name => 'Example Basil']);
+        $b = $records->create($this->admin, $this->project, $this->table, [$this->name => 'Example Thyme']);
+        $trash->moveToTrash($this->admin, $this->project, $this->table, [$b]);
+        $manual = $this->ops->snapshots()->take($this->admin, $this->project);
+        $trash->empty($this->admin, $this->project, null);
+        $c = $records->create($this->admin, $this->project, $this->table, [$this->name => 'Example Sage']);
+        self::assertSame(0, $trash->count($this->admin, $this->project, null));
+
+        $this->ops->snapshots()->restore($this->admin, $this->project, substr($manual->file, 0, -strlen('.tiffin')));
+
+        self::assertSame([$b], array_map(static fn (TrashedRecord $r): int => $r->id, $trash->list($this->admin, $this->project, $this->table, 10, 0)));
+        self::assertSame(1, $this->ops->schema()->tables($this->admin, $this->project)[0]->recordCount);
+        self::assertSame(1, $trash->restore($this->admin, $this->project, $this->table, [$b]));
+        self::assertSame(2, $this->ops->schema()->tables($this->admin, $this->project)[0]->recordCount);
+        self::assertSame($c, $records->create($this->admin, $this->project, $this->table, [$this->name => 'Example Dill']), 'Ids continue from the restored file.');
+        self::assertEqualsCanonicalizing(['empty-trash', 'manual', 'pre-restore'], array_map(static fn ($s): string => $s->reason->value, $this->ops->snapshots()->list($this->admin, $this->project)));
+        self::assertNotSame($a, $b);
     }
 }

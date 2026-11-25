@@ -276,6 +276,36 @@ final class SqlStringsTest extends TestCase
         }
     }
 
+    // ------------------------------------------------------------ the audit search (M7 spec sections 2.2 and 7.2)
+
+    /**
+     * AuditLog::search and count (M7 spec section 2.2): every rule above
+     * holds in src/Core/System/AuditLog.php, and each of the four filters
+     * (person, project, action, deleted projects) is a fixed literal part
+     * of one statement whose values are bound, in both methods: no text
+     * from a request is ever joined into SQL.
+     */
+    public function testTheAuditSearchIsBuiltFromLiteralsOnly(): void
+    {
+        $file = 'src/Core/System/AuditLog.php';
+        $source = RepoFiles::read($file);
+        self::assertSame([], self::violations($source, []), $file);
+        $filters = [
+            '(? IS NULL OR actor_user_id = ?)',
+            '(? IS NULL OR project_id = ?)',
+            '(? IS NULL OR action = ?)',
+            '(? = 0 OR (project_id IS NULL AND action = ?))',
+        ];
+        foreach ($filters as $filter) {
+            self::assertSame(2, substr_count($source, $filter), $filter . ' is in search and in count.');
+        }
+        foreach (self::tokens($source) as $token) {
+            if (self::isToken($token, T_CONSTANT_ENCAPSED_STRING) && str_contains($token[1], 'FROM audit_log')) {
+                self::assertStringStartsWith("'", $token[1], 'Single-quoted: nothing is interpolated.');
+            }
+        }
+    }
+
     // ------------------------------------------------------------ the attachment store (M4 spec section 2.2)
 
     /**

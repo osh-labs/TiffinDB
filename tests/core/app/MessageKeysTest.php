@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use TiffinDB\Core\Forms\FormRejected;
 use TiffinDB\Tests\Support\RepoFiles;
 
 /**
@@ -41,16 +42,123 @@ final class MessageKeysTest extends TestCase
      */
     private const PENDING_SPEC_KEYS = [];
 
+    /** The M7 packages whose rows of M7 spec section 11.3 are built (each package adds its own). */
+    private const M7_PACKAGES = ['WP1', 'WP2'];
+
+    /** Keys FormOperations produces itself (M5 spec section 9). */
+    private const M5_APP_KEYS = [
+        'problem.form.draft',
+        'problem.form.changed',
+        'problem.form.action',
+        'problem.form.too_large',
+        'problem.form.empty_file',
+    ];
+
     public function testEveryCoreProblemKeyIsListedInTheSpec(): void
     {
-        // M1 spec section 12, M2 spec section 8, M3 spec section 14, and M4 spec section 11; the strings file test stays M1-only.
-        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::m4Keys(), ...self::PENDING_SPEC_KEYS];
+        // M1 spec section 12, M2 spec section 8, M3 spec section 14, M4 spec section 11, and M5 spec section 10 (its section 4.3).
+        $listed = [...self::specKeys(), ...self::m2Keys(), ...self::m3Keys(), ...self::m4Keys(), ...self::m5Keys(), ...self::m7Keys(), ...self::PENDING_SPEC_KEYS];
         foreach (self::PENDING_SPEC_KEYS as $pending) {
-            self::assertNotContains($pending, self::m3Keys(), $pending . ' is listed now: remove it from PENDING_SPEC_KEYS.');
+            self::assertNotContains($pending, [...self::m3Keys(), ...self::m4Keys(), ...self::m5Keys()], $pending . ' is listed now: remove it from PENDING_SPEC_KEYS.');
         }
         $used = self::coreKeys('src/Core');
         self::assertNotEmpty($used);
-        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, M3 spec section 14, and M4 spec section 11.');
+        self::assertSame([], array_values(array_diff(array_keys($used), $listed)), 'Keys used by the core but missing from M1 spec section 12, M2 spec section 8, M3 spec section 14, M4 spec section 11, and M5 spec section 10.');
+    }
+
+    /** @return list<string> problem keys listed in `docs/specs/M7-release.md` section 11.3 */
+    private static function m7Keys(): array
+    {
+        return array_keys(self::m7Rows());
+    }
+
+    /** @return array<string, array{0: string, 1: string}> key => [package, English] of `docs/specs/M7-release.md` section 11.3 */
+    private static function m7Rows(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M7-release.md'));
+        $start = strpos($spec, "\n### 11.3 Message keys produced by the core");
+        $end = strpos($spec, "\n## 12.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        $section = substr($spec, $start, $end - $start);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', $section, $matches);
+        self::assertGreaterThanOrEqual(4, count($matches[1]));
+        self::assertContains('problem.snapshot.unreadable', $matches[1]);
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \| (WP\d+) \| (.+?) \|[^|]*\|$/m', $section, $rows, PREG_SET_ORDER);
+        self::assertCount(count($matches[1]), $rows, 'Every row has a package and its English.');
+        $found = [];
+        foreach ($rows as [, $key, $package, $english]) {
+            $found[$key] = [$package, $english];
+        }
+
+        return $found;
+    }
+
+    public function testEveryM7KeyOfAMergedPackageHasItsTextAndTheOperationsProduceTheirs(): void
+    {
+        $strings = require RepoFiles::path('strings/en/problems.php');
+        self::assertIsArray($strings);
+        $app = self::coreKeys('src/Core/App');
+        foreach (self::m7Rows() as $key => [$package, $english]) {
+            if (!in_array($package, self::M7_PACKAGES, true)) {
+                continue;
+            }
+            self::assertSame($english, $strings[$key] ?? null, $key . ' has the text of M7 spec section 11.3.');
+            self::assertArrayHasKey($key, $app, $key . ' is produced by Core\App.');
+        }
+    }
+
+    /** @return list<string> problem keys listed in `docs/specs/M5-forms.md` section 4.3 (section 10 refers to it) */
+    private static function m5Keys(): array
+    {
+        $spec = (string) file_get_contents(RepoFiles::path('docs/specs/M5-forms.md'));
+        $start = strpos($spec, "\n### 4.3 Message keys and parameters");
+        $end = strpos($spec, "\n## 5.", (int) $start);
+        self::assertIsInt($start);
+        self::assertIsInt($end);
+        self::assertIsInt(strpos($spec, "\n## 10. Message keys produced by the core"));
+        preg_match_all('/^\| `(problem\.[a-z_.]+)` \|/m', substr($spec, $start, $end - $start), $matches);
+        self::assertGreaterThanOrEqual(30, count($matches[1]));
+        self::assertContains('problem.form.empty_file', $matches[1]);
+
+        return $matches[1];
+    }
+
+    public function testEveryFormRefusalKeyIsListedAndHasItsText(): void
+    {
+        // M5 spec section 10: every key FormRejected::messageKey() gives, the `_unnamed` variants included.
+        $strings = require RepoFiles::path('strings/en/problems.php');
+        self::assertIsArray($strings);
+        $keys = [];
+        foreach (FormRejected::REASONS as $reason) {
+            $keys[] = (new FormRejected($reason, 1, 'p', 'title'))->messageKey();
+            $keys[] = (new FormRejected($reason))->messageKey();
+        }
+        $keys = array_values(array_unique($keys));
+        foreach ([FormRejected::ELEMENT, FormRejected::MISPLACED, FormRejected::ATTRIBUTE] as $named) {
+            self::assertContains('problem.form.' . $named . '_unnamed', $keys);
+        }
+        self::assertCount(count(FormRejected::REASONS) + 3, $keys);
+        foreach ($keys as $key) {
+            self::assertContains($key, self::m5Keys(), $key . ' is listed in M5 spec section 4.3.');
+            self::assertArrayHasKey($key, $strings, $key . ' has its text in strings/en/problems.php.');
+        }
+    }
+
+    public function testEveryM5KeyHasItsTextAndTheOperationsProduceTheirs(): void
+    {
+        $strings = require RepoFiles::path('strings/en/problems.php');
+        self::assertIsArray($strings);
+        self::assertSame([], array_values(array_diff(self::m5Keys(), array_keys($strings))));
+        $app = self::coreKeys('src/Core/App');
+        foreach (self::M5_APP_KEYS as $key) {
+            self::assertContains($key, self::m5Keys());
+            self::assertArrayHasKey($key, $app, $key . ' is produced by Core\App.');
+        }
+        $forms = self::coreKeys('src/Core/Forms');
+        foreach (['problem.form.label', 'problem.form.legend'] as $key) {
+            self::assertArrayHasKey($key, $forms, $key . ' is produced by Core\Forms.');
+        }
     }
 
     /** @return list<string> problem keys listed in `docs/specs/M4-core.md` section 11 */

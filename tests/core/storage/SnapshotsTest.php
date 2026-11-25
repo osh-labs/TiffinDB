@@ -64,12 +64,13 @@ final class SnapshotsTest extends TestCase
     public function testReasonValues(): void
     {
         self::assertSame(
-            ['format-upgrade', 'table-delete', 'field-delete', 'field-type-change', 'field-options', 'empty-trash', 'import', 'manual'],
+            ['format-upgrade', 'table-delete', 'field-delete', 'field-type-change', 'field-options', 'empty-trash', 'import', 'pre-restore', 'manual'],
             array_map(static fn (SnapshotReason $r): string => $r->value, SnapshotReason::cases()),
         );
         self::assertFalse(SnapshotReason::Manual->isAutomatic());
         self::assertTrue(SnapshotReason::EmptyTrash->isAutomatic());
         self::assertTrue(SnapshotReason::Import->isAutomatic());
+        self::assertTrue(SnapshotReason::PreRestore->isAutomatic());
         self::assertSame(20, Snapshots::KEEP_AUTOMATIC);
     }
 
@@ -259,5 +260,28 @@ final class SnapshotsTest extends TestCase
         self::assertSame($info->file, $listed[0]->file);
         self::assertSame(SnapshotReason::FieldOptions, $listed[0]->reason);
         self::assertSame([], $this->snapshots->list($this->temp->path('no-such-project')));
+    }
+
+    public function testFindReturnsOnlyWhatListWouldList(): void
+    {
+        $manual = $this->snapshots->take($this->project(), $this->folder, SnapshotReason::Manual);
+        $pre = $this->snapshots->take($this->project(), $this->folder, SnapshotReason::PreRestore);
+        self::assertSame($manual->file, $this->snapshots->find($this->folder, $manual->file)?->file);
+        self::assertSame(SnapshotReason::PreRestore, $this->snapshots->find($this->folder, $pre->file)?->reason);
+        self::assertSame($this->folder . '/snapshots/' . $manual->file, Snapshots::path($this->folder, $manual));
+
+        $unknown = '20261112T031500Z-unknown-abcd.tiffin';
+        file_put_contents($this->folder . '/snapshots/' . $unknown, 'synthetic');
+        symlink($this->folder . '/snapshots/' . $manual->file, $this->folder . '/snapshots/20261112T031500Z-manual-zzzz.tiffin');
+        mkdir($this->folder . '/snapshots/20261112T031500Z-manual-yyyy.tiffin');
+        $bad = [
+            $unknown, '20261112T031500Z-manual-zzzz.tiffin', '20261112T031500Z-manual-yyyy.tiffin',
+            '../' . $manual->file, 'snapshots/' . $manual->file, $this->folder . '/snapshots/' . $manual->file,
+            $manual->file . '.tiffin', substr($manual->file, 0, -7), '', $manual->file . "\0", '20261112T031500Z-manual-abcd.tiffin',
+        ];
+        foreach ($bad as $name) {
+            self::assertNull($this->snapshots->find($this->folder, $name), $name);
+        }
+        self::assertNull($this->snapshots->find($this->temp->path('nothing'), $manual->file));
     }
 }

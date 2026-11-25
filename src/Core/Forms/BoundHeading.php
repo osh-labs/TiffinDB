@@ -12,12 +12,17 @@ namespace TiffinDB\Core\Forms;
 final class BoundHeading implements BoundNode
 {
     /** @param list<Inline> $children */
-    public function __construct(public readonly int $level, public readonly array $children)
+    public function __construct(public readonly int $level, public readonly array $children, public readonly ?string $span = null)
     {
     }
 
     public function kind(): string
     {
         return 'heading';
+    }
+
+    public function span(): ?string
+    {
+        return $this->span;
     }
 }

@@ -29,7 +29,9 @@ use TiffinDB\Tests\Support\TempDir;
  * - any class in Core\App, Core\Install, and Core\Error;
  * - from Core\Auth, only the value types and enums in AUTH_ALLOWED;
  * - from Core\Schema, only the value types returned by Core\App
- *   (SCHEMA_ALLOWED), and from Core\Storage only SnapshotInfo.
+ *   (SCHEMA_ALLOWED), from Core\Storage only SnapshotInfo, and from
+ *   Core\Forms only the editor's value classes EditorRow and FormReport
+ *   (M5 spec section 2.1).
  *
  * Everything else in Core\Storage, Core\System, Core\Schema, Core\Query (or
  * any other Core namespace) is refused, and so is a name that stops at a
@@ -61,6 +63,7 @@ final class WebLayerRulesTest extends TestCase
     public const VALUE_TYPES = [
         'Schema' => ['TableDef', 'FieldDef', 'RelationDef', 'Cardinality'],
         'Storage' => ['SnapshotInfo'],
+        'Forms' => ['EditorRow', 'FormReport'],
     ];
 
     private ?TempDir $temp = null;
@@ -342,6 +345,11 @@ final class WebLayerRulesTest extends TestCase
             'root namespace' => ["<?php\nnamespace TiffinDB;\nnew Core\\System\\AuditLog(\$s, \$c);\n"],
             'braced root namespace' => ["<?php\nnamespace TiffinDB {\nnew Core\\System\\AuditLog(\$s, \$c);\n}\n"],
             'second namespace' => [$php . "namespace TiffinDB\\Core\\Auth;\nnew Users(\$s);\n"],
+            'Forms parser' => [$php . "use TiffinDB\\Core\\Forms\\FormParser;\n"],
+            'Forms store' => [$php . "use TiffinDB\\Core\\Forms\\FormStore;\n"],
+            'Forms editor' => [$php . "use TiffinDB\\Core\\Forms\\FormEditor;\n"],
+            'Forms binder' => [$php . "use TiffinDB\\Core\\Forms\\FormBinder;\n"],
+            'Forms namespace alias' => [$php . "use TiffinDB\\Core\\Forms;\n"],
         ];
     }
 
@@ -364,6 +372,7 @@ final class WebLayerRulesTest extends TestCase
             'Auth value types' => [$php . "use TiffinDB\\Core\\Auth\\{Actor, SignedIn, IssuedSession, SessionRecord, SignInResult, SignInOutcome, Permission, Role, GrantLevel, UserRecord, Csrf};\n"],
             'Schema value types' => [$php . "use TiffinDB\\Core\\Schema\\TableDef;\nuse TiffinDB\\Core\\Schema\\FieldDef;\nuse TiffinDB\\Core\\Schema\\RelationDef;\nuse TiffinDB\\Core\\Schema\\Cardinality;\n"],
             'SnapshotInfo' => [$php . "use TiffinDB\\Core\\Storage\\SnapshotInfo;\n"],
+            'Forms value classes' => [$php . "use TiffinDB\\Core\\Forms\\EditorRow;\nuse TiffinDB\\Core\\Forms\\FormReport;\n"],
             'fully qualified' => [$php . "\$r = \\TiffinDB\\Core\\Auth\\Role::Admin;\n"],
             'case differs' => [$php . "use tiffindb\\core\\auth\\actor;\n"],
             'comment only' => [$php . "// TiffinDB\\Core\\Storage\\Fs is not used here.\n/** @see \\TiffinDB\\Core\\System\\AuditLog */\n"],

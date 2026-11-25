@@ -12,6 +12,7 @@ use TiffinDB\Core\Error\Unavailable;
 use TiffinDB\Core\Storage\Database;
 use TiffinDB\Core\Storage\SnapshotReason;
 use TiffinDB\Core\Storage\Snapshots;
+use TiffinDB\Core\Storage\Sqlite;
 
 /**
  * Forward-only upgrades of the project file format (M1 spec section 7.2,
@@ -98,8 +99,22 @@ final class FormatMigrations
         4 => 'PRAGMA user_version = 4',
     ];
 
+    /**
+     * The `PRAGMA user_version` literals of versions past ProjectFile::VERSION,
+     * used only by the test seam to run a simulated next step (T-UPG-5).
+     * Application code never reaches them: without injected steps the
+     * target is ProjectFile::VERSION.
+     */
+    public const SEAM_VERSION_PRAGMAS = [
+        5 => 'PRAGMA user_version = 5',
+        6 => 'PRAGMA user_version = 6',
+        7 => 'PRAGMA user_version = 7',
+        8 => 'PRAGMA user_version = 8',
+    ];
+
     /** @var array<int, \Closure(Database): void> */
     private readonly array $steps;
+    private readonly int $target;
 
     /**
      * Without arguments, the steps run the statements of STEPS.
@@ -121,35 +136,84 @@ final class FormatMigrations
                 };
             }
         }
+        $target = ProjectFile::VERSION;
         foreach ($steps as $version => $step) {
             if (!is_int($version) || $version < 1 || !$step instanceof \Closure) {
                 throw new \InvalidArgumentException('Format steps map a version to a function.');
             }
+            if ($version > ProjectFile::VERSION && !isset(self::SEAM_VERSION_PRAGMAS[$version])) {
+                throw new \InvalidArgumentException('A simulated step must target a version listed in SEAM_VERSION_PRAGMAS.');
+            }
+            $target = max($target, $version);
         }
         $this->steps = $steps;
+        $this->target = $target;
     }
 
     /**
-     * Brings a file from $from to ProjectFile::VERSION: a `format-upgrade`
-     * snapshot first, then each step in its own transaction, which also sets
+     * The version upgrade() brings a file to: ProjectFile::VERSION, or with
+     * injected steps (the test seam) the highest version they name, when
+     * that is higher. ProjectFile::open refuses a file newer than this.
+     */
+    public function target(): int
+    {
+        return $this->target;
+    }
+
+    /**
+     * Brings a file from $from to target() (ProjectFile::VERSION in the application): a `format-upgrade`
+     * snapshot first (unless the newest snapshot already is one of this
+     * file at $from, P183), then each step in its own transaction, which also sets
      * `PRAGMA user_version` and meta `format_version`. A failing step rolls
      * back and is rethrown; earlier steps stay applied. Unavailable
      * ('not-project') when a needed step is missing (nothing is changed).
      */
     public function upgrade(Database $db, string $projectFolder, Snapshots $snapshots, int $from): void
     {
-        if ($from >= ProjectFile::VERSION) {
+        $target = $this->target;
+        if ($from >= $target) {
             return;
         }
-        for ($version = $from + 1; $version <= ProjectFile::VERSION; $version++) {
-            if (!isset($this->steps[$version]) || !isset(self::VERSION_PRAGMAS[$version])) {
+        for ($version = $from + 1; $version <= $target; $version++) {
+            if (!isset($this->steps[$version]) || !isset(self::VERSION_PRAGMAS[$version]) && !isset(self::SEAM_VERSION_PRAGMAS[$version])) {
                 throw new Unavailable(Unavailable::NOT_PROJECT);
             }
         }
-        $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
-        for ($version = $from + 1; $version <= ProjectFile::VERSION; $version++) {
+        if (!self::alreadySaved($db, $projectFolder, $snapshots, $from)) {
+            $snapshots->take($db, $projectFolder, SnapshotReason::FormatUpgrade);
+        }
+        for ($version = $from + 1; $version <= $target; $version++) {
             $step = $this->steps[$version];
             $db->write(static fn (Database $db) => self::apply($db, $step, $version));
+        }
+    }
+
+    /**
+     * Whether the newest snapshot is a `format-upgrade` snapshot of this
+     * file at $from (its `PRAGMA user_version` is $from and its meta
+     * `project_key` is the file's own): an earlier attempt from this
+     * version already saved this state, and a failed upgrade leaves the
+     * project unopenable, so nothing has changed it since (P183, M7 spec
+     * section 8). Any error while reading means no.
+     */
+    private static function alreadySaved(Database $db, string $projectFolder, Snapshots $snapshots, int $from): bool
+    {
+        $copy = null;
+        try {
+            $newest = $snapshots->list($projectFolder)[0] ?? null;
+            if ($newest === null || $newest->reason !== SnapshotReason::FormatUpgrade) {
+                return false;
+            }
+            $key = $db->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'project_key\'');
+            $copy = Sqlite::openUntrusted(Snapshots::path($projectFolder, $newest));
+            $version = $copy->value('PRAGMA user_version');
+            $copyKey = $copy->value('SELECT "value" FROM "_tiffin_meta" WHERE "key" = \'project_key\'');
+
+            return is_string($key) && $version === $from && $copyKey === $key;
+        } catch (\Throwable) {
+            return false;
+        } finally {
+            $copy?->close();
         }
     }
 
@@ -158,6 +222,11 @@ final class FormatMigrations
     {
         $step($db);
         foreach (self::VERSION_PRAGMAS as $target => $pragma) {
+            if ($target === $version) {
+                $db->run($pragma);
+            }
+        }
+        foreach (self::SEAM_VERSION_PRAGMAS as $target => $pragma) {
             if ($target === $version) {
                 $db->run($pragma);
             }

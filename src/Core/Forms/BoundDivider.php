@@ -11,8 +11,17 @@ namespace TiffinDB\Core\Forms;
 /** A divider of a bound form. */
 final class BoundDivider implements BoundNode
 {
+    public function __construct(public readonly ?string $span = null)
+    {
+    }
+
     public function kind(): string
     {
         return 'divider';
+    }
+
+    public function span(): ?string
+    {
+        return $this->span;
     }
 }

@@ -21,6 +21,7 @@ use TiffinDB\Tests\Support\HtmlAssertions;
 use TiffinDB\Tests\Support\IoFixture;
 use TiffinDB\Tests\Support\M2Fixture;
 use TiffinDB\Tests\Support\M4Fixture;
+use TiffinDB\Tests\Support\M5Fixture;
 use TiffinDB\Tests\Support\SeededRandom;
 use TiffinDB\Tests\Web\Fixtures\Fixtures;
 use TiffinDB\Web\CoreServices;
@@ -31,6 +32,13 @@ require_once __DIR__ . '/EndToEndTest.php';
 require_once __DIR__ . '/ScreenStructureTest.php';
 
 /**
+ * T-KBD-4 (M5 spec part 2 section 9.1) is in the methods named testM5*:
+ * the M5 screens over the M5 data set (M5Fixture) in a CoreFixture of
+ * their own, as the Admin (the record screen also as the Member), with
+ * the seven rules below and the seven M5 items of assertM5Rules. Rule 1
+ * also allows the editor's hidden Apply (tabindex -1), and rule 7 allows
+ * one `autofocus` where a check names it (the editor after a change).
+ *
  * T-KBD-3 (M4 spec part 2 section 10.1) is in the methods named testM4*:
  * the M4 screens over the M4 data set in a CoreFixture of their own, with
  * the seven rules below and the six M4 items of assertM4Rules.
@@ -87,7 +95,8 @@ final class KeyboardStructureTest extends TestCase
         'Display', 'Example Member, change your password', 'Sign out',
     ];
 
-    private const FOOTER = ['Source code'];
+    /** The signed-in footer (About from M7, screens spec section 5). */
+    private const FOOTER = ['About TiffinDB', 'Source code'];
 
     private const RATING = ['1, lowest', '2', '3', '4', '5, highest', 'Not rated'];
 
@@ -144,6 +153,7 @@ final class KeyboardStructureTest extends TestCase
     protected function tearDown(): void
     {
         $this->core4?->remove();
+        $this->core5?->remove();
         $this->core->remove();
     }
 
@@ -351,9 +361,9 @@ final class KeyboardStructureTest extends TestCase
 
     // T-KBD-2 (M3 spec part 2 section 9.1): the M3 screens, as the Admin.
 
-    /** The top bar for the Admin (People and Plugins). */
+    /** The top bar for the Admin (People, Plugins, and from M7 Activity). */
     private const ADMIN_TOP = [
-        'Skip to main content', 'TiffinDB, all projects', 'Projects', 'People', 'Plugins',
+        'Skip to main content', 'TiffinDB, all projects', 'Projects', 'People', 'Plugins', 'Activity',
         'Display', 'Example Admin, change your password', 'Sign out',
     ];
 
@@ -769,6 +779,537 @@ final class KeyboardStructureTest extends TestCase
         self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")][normalize-space(.)="Empty the trash"]')->length);
     }
 
+    // T-KBD-4 (M5 spec part 2 section 9.1): the M5 screens over the M5
+    // data set (M5Fixture, its own CoreFixture), as the Admin, with rules
+    // 1 to 7 and the seven M5 items (assertM5Rules).
+
+    public function testM5EditorStandardAndEditedForms(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $rooms = $m2->tablePath($m2->rooms) . '/form';
+        $this->checkM5($admin, $rooms, [
+            ...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Rooms',
+            'Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form',
+            'Section name, section 1', 'Move down: Details', 'Remove section Details and keep what is in it',
+            'Label for Name', 'Width of Name', 'Move up: Name', 'Move down: Name', 'Hide Name',
+            'Section name, section 2', 'Move up: Items', 'Remove section Items and keep what is in it',
+            'Label for Items', 'Width of Items', 'Move up: Items', 'Move down: Items', 'Hide Items',
+            'Add a section', 'Save the form', 'Cancel', ...self::FOOTER,
+        ]);
+
+        // The fixture form: sections, widths, a heading and a link, a hidden required field.
+        $items = $m2->tablePath($m2->items) . '/form';
+        $this->checkM5($admin, $items, [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        self::assertSame(['Add Serial number to the form'], $admin->texts('//section[@aria-labelledby="not-on-form-title"]//button/@aria-label'));
+
+        // Every row kind: a placed field with a span the editor does not offer, a missing slot, static rows, an empty section.
+        $w = $m2->warrantyFields;
+        $this->saveSource($fx, $m2->warranties, '<div data-tiffin-form="1">'
+            . '<fieldset data-tiffin-section="details"><legend>Details</legend>'
+            . '<div data-tiffin-field="' . $w['Name'] . '" data-tiffin-label="Warranty" data-tiffin-col="2" data-tiffin-span="5"></div>'
+            . '<div data-tiffin-field="' . $w['Ends'] . '" data-tiffin-span="8"></div>'
+            . '<div data-tiffin-field="zzzzzzzzzzzz"></div></fieldset>'
+            . '<h2>Cover</h2><p>See <a href="https://example.com/terms">the terms</a>.</p><hr/><img src="attachment:999" alt="A sketch"/>'
+            . '<fieldset></fieldset></div>');
+        $warranties = $m2->tablePath($m2->warranties) . '/form';
+        $this->checkM5($admin, $warranties, [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Warranties']);
+        $x = $admin->xpath();
+        self::assertSame(['form-row form-row-section', 'form-row', 'form-row', 'form-row', 'form-row', 'form-row form-row-section'], array_map(static fn (DOMElement $li): string => $li->getAttribute('class'), iterator_to_array($x->query('//form[@id="form-editor"]/ol/li'))));
+        self::assertSame(1, $x->query('//li[@class="form-row form-row-missing"]')->length);
+        self::assertSame(['other'], $admin->texts('//select[@id="width-1-1"]/option[@selected]/@value'));
+        self::assertSame(1, $x->query('//li[@id="row-1-1"]/p[contains(@class, "form-row-note")]')->length, 'The placed note.');
+        self::assertSame('This section is empty.', HtmlAssertions::text($admin->page(), '//li[@id="row-6"]/p[contains(@class, "form-row-note")]'));
+    }
+
+    public function testM5EditorAfterChangesProblemsAndAConflict(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $form = $m2->tablePath($m2->items) . '/form';
+        $start = [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items', 'Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form'];
+
+        // After a move: focus on the moved row's button in its new place.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'up-1-2', 200);
+        $this->checkM5Page($admin, 'editor after a move', $start, 'up-1-1');
+        // After hide, add-section, ungroup, and add: one autofocus each, on the control the core names.
+        $this->editorPost($admin, $form, 'hide-1-1', 200);
+        $this->checkM5Page($admin, 'editor after hide', $start, 'up-1-1');
+        $this->editorPost($admin, $form, 'add-section', 200);
+        $this->checkM5Page($admin, 'editor after add-section', $start, 'legend-5');
+        $this->editorPost($admin, $form, 'add-' . $fx->itemFields['Serial number'], 200);
+        $this->checkM5Page($admin, 'editor after add', $start, 'up-1-11');
+        $this->editorPost($admin, $form, 'ungroup-2', 200);
+        $this->checkM5Page($admin, 'editor after ungroup', $start, 'up-2');
+
+        // A 422 with a label problem: the summary links to the box, the box describes the problem.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'apply', 422, ['label[1-1]' => str_repeat('x', 61)]);
+        $this->checkM5Page($admin, 'editor 422 label', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        self::assertSame(['#label-1-1'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+        self::assertStringContainsString('err-label-1-1', (string) $admin->xpath()->query('//input[@id="label-1-1"]/@aria-describedby')->item(0)?->nodeValue);
+
+        // A refused draft, and a conflict.
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'save', 422, ['draft' => '<div data-tiffin-form="1"><script>alert(1)</script></div>']);
+        $this->checkM5Page($admin, 'editor refused draft', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+        $admin->get($form);
+        $this->editorPost($admin, $form, 'save', 422, ['base' => str_repeat('0', 64)]);
+        $this->checkM5Page($admin, 'editor conflict', [...self::ADMIN_TOP, 'Projects', 'Home Inventory', 'Items']);
+    }
+
+    public function testM5SourceUploadAndResetPages(): void
+    {
+        [$fx, , $admin] = $this->m5();
+        $m2 = $fx->m2;
+        $items = $m2->tablePath($m2->items);
+        $tabs = ['Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form'];
+        $head = [...self::ADMIN_TOP, 'Projects', 'Home Inventory'];
+        $db = $this->core5?->projectDb($m2->project);
+        self::assertNotNull($db);
+        $db->run('DELETE FROM "_tiffin_forms" WHERE "table_key" = ?', [$m2->rooms]);
+        $db->run('UPDATE "_tiffin_forms" SET "html" = ?, "generated" = 0 WHERE "table_key" = ?', ['<div data-tiffin-form="1"><p onclick="x">Example</p></div>', $m2->warranties]);
+
+        // Source view: stored, generated, refused stored, after Check, a 422.
+        $source = [...$head, 'Items', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER];
+        $this->checkM5($admin, $items . '/form/source', $source);
+        $this->checkM5($admin, $m2->tablePath($m2->rooms) . '/form/source', [...$head, 'Rooms', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER]);
+        $this->checkM5($admin, $m2->tablePath($m2->warranties) . '/form/source', [...$head, 'Warranties', 'Form', ...$tabs, 'Form source', 'Save', 'Check', 'Cancel', ...self::FOOTER]);
+        $admin->get($items . '/form/source');
+        self::assertSame(200, $admin->submit($items . '/form/source', ['do' => 'check', 'text' => $fx->html])->status);
+        $this->checkM5Page($admin, 'source after Check', $source);
+        $refused = $admin->submit($items . '/form/source', ['do' => 'save', 'text' => $fx->html . '<p onclick="x">y</p>']);
+        self::assertSame(422, $refused->status);
+        $this->checkM5Page($admin, 'source 422', [...$head, 'Items', 'Form']);
+        $x = $admin->xpath();
+        self::assertSame(['#source'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+        self::assertStringContainsString('source-error', (string) $x->query('//textarea[@id="source"]/@aria-describedby')->item(0)?->nodeValue);
+
+        // Upload: plain and a 422.
+        $upload = [...$head, 'Items', 'Form', ...$tabs];
+        $this->checkM5($admin, $items . '/form/upload', $upload);
+        $missing = $admin->submit($items . '/form/upload');
+        self::assertSame(422, $missing->status);
+        $this->checkM5Page($admin, 'upload 422', [...$head, 'Items', 'Form']);
+        self::assertSame(['#file'], $admin->texts('//div[@class="error-summary"]//a/@href'));
+
+        // Reset: an edited form and the standard form.
+        $this->checkM5($admin, $items . '/form/reset', [...$head, 'Items', 'Form', ...$tabs]);
+        self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertTrue($this->ops5?->forms()->reset($this->core5?->actor('admin') ?? throw new \LogicException('No M5 data set.'), $m2->project, $m2->warranties));
+        $this->checkM5($admin, $m2->tablePath($m2->warranties) . '/form/reset', [...$head, 'Warranties', 'Form', ...$tabs, 'Back to the form', ...self::FOOTER]);
+        self::assertSame('The form for Warranties is already the standard form.', HtmlAssertions::text($admin->page(), '//main//p[contains(@class, "notice-muted")]'));
+        self::assertSame(0, $admin->xpath()->query('//main//form')->length, 'Nothing to confirm.');
+    }
+
+    public function testM5RecordScreenWithWidthsAndALink(): void
+    {
+        [$fx, $member, $admin] = $this->m5();
+        foreach ([$member, $admin] as $client) {
+            $this->checkM5($client, $fx->m2->itemPath('Stand mixer'), [
+                ...($client === $admin ? self::ADMIN_TOP : self::TOP), 'Home Inventory', 'Items', 'Previous item: Sewing machine', 'Next item: Tent, 4-person',
+                'Name', 'Category', 'Purchased', 'Value (US dollars)', ...self::RATING, 'Under warranty', 'Manual', 'Notes', 'Model', M5Fixture::LINK_TEXT, 'Kitchen', 'Choose a different room',
+            ]);
+            $x = $client->xpath();
+            $labels = [];
+            foreach ($x->query('//form[@id="record-form"]/fieldset[1]//div[contains(concat(" ", @class, " "), " cell ")]') as $cell) {
+                $first = $x->query('descendant::*[self::label or self::legend][1]', $cell)->item(0);
+                if ($first !== null) {
+                    $labels[] = trim((string) preg_replace('/\s*\(.*\)\z/', '', trim((string) $first->textContent)));
+                }
+            }
+            self::assertSame(array_keys(M5Fixture::WIDTHS), $labels, 'Cells in the DOM in source order.');
+            self::assertSame(['Where it is'], $client->texts('//form[@id="record-form"]/fieldset[2]/legend'));
+            self::assertSame(0, $x->query('//label[normalize-space(.)="Serial number"]')->length);
+        }
+    }
+
+    // T-KBD-5 (M7 screens spec section 10.1), M7-WP4: the project settings
+    // links, the snapshots list, the restore confirmation, and the deletion
+    // page, as the Admin over the M2 data set, with rules 1 to 7 and the
+    // M7 items (assertM7DeleteField for the typed-name field).
+
+    public function testM7SnapshotsSettingsListAndRestore(): void
+    {
+        $admin = $this->admin();
+        $actor = $this->core->actor('admin');
+        $home = $this->m2->projectPath();
+        $response = $admin->get($home . '/settings');
+        self::assertSame(200, $response->status);
+        $names = $this->focusNames($response->body);
+        $this->assertStructure($response->body, $names, 'settings');
+        self::assertSame(['Snapshots', 'Delete this project', ...self::FOOTER], array_slice($names, -4), 'The two links come last, before the footer.');
+
+        $this->checkAs($admin, $home . '/snapshots', [...self::ADMIN_TOP, 'Home Inventory', 'Take a snapshot now', ...self::FOOTER]);
+        $this->ops->snapshots()->take($actor, $this->m2->project);
+        $this->core->clock->set('2026-11-03T11:00:00Z');
+        $manual = $this->ops->snapshots()->take($actor, $this->m2->project);
+        $this->checkAs($admin, $home . '/snapshots', [
+            ...self::ADMIN_TOP, 'Home Inventory', 'Take a snapshot now',
+            'Restore the snapshot saved 3 Nov 2026, 11:00', 'Restore the snapshot saved 3 Nov 2026, 10:00', ...self::FOOTER,
+        ]);
+        self::assertSame(1, $admin->xpath()->query('//main//table/caption')->length);
+        self::assertSame(4, $admin->xpath()->query('//main//table/thead/tr/th[@scope="col"]')->length);
+        $restore = $home . '/snapshots/' . substr($manual->file, 0, -strlen('.tiffin')) . '/restore';
+        $this->checkAs($admin, $restore, [...self::ADMIN_TOP, 'Home Inventory', 'Snapshots', 'Restore this snapshot', 'Cancel', ...self::FOOTER]);
+        self::assertSame(1, $admin->xpath()->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertSame(0, $admin->xpath()->query('//main//*[contains(@class, "button-primary")]')->length);
+
+        // A snapshot that cannot be used: the summary has no link, the page no form.
+        file_put_contents($this->core->projectFolder($this->m2->project) . '/snapshots/' . $manual->file, str_repeat('x', 4096));
+        $refused = $admin->get($restore);
+        self::assertSame(422, $refused->status);
+        $this->assertStructure($refused->body, [...self::ADMIN_TOP, 'Home Inventory', 'Snapshots', ...self::FOOTER], 'restore 422');
+    }
+
+    public function testM7ProjectDeletePageAndItsErrors(): void
+    {
+        $admin = $this->admin();
+        $delete = $this->m2->projectPath() . '/delete';
+        $order = [...self::ADMIN_TOP, 'Home Inventory', 'Go to Export', 'Type the project\'s name to confirm', 'Delete for good', 'Cancel', ...self::FOOTER];
+        $this->checkAs($admin, $delete, $order);
+        $this->assertM7DeleteField($admin->page(), false);
+
+        $wrong = $admin->submit($delete, ['confirm_name' => 'Garden Log']);
+        self::assertSame(422, $wrong->status);
+        $this->assertStructure($wrong->body, [...self::ADMIN_TOP, 'Home Inventory', 'Type the project\'s name exactly as it is shown above.', ...array_slice($order, count(self::ADMIN_TOP) + 1)], 'delete 422');
+        $this->assertM7DeleteField($wrong->body, true);
+
+        // Grown counts: the page again, with the warning before the form.
+        $admin->get($delete);
+        $this->core->addRecord($this->m2->project, $this->m2->items, [$this->m2->itemFields['Name'] => 'Example extra item']);
+        $again = $admin->submit($delete, ['confirm_name' => 'Home Inventory']);
+        self::assertSame(200, $again->status);
+        $this->assertStructure($again->body, $order, 'delete changed');
+        $this->assertM7DeleteField($again->body, false);
+        self::assertSame(1, $admin->xpath()->query('//main/div[contains(@class, "notice-warn")]')->length);
+    }
+
+    /** The typed-name field (section 10.1): no autocomplete or spell check, described by its help and, after a refusal, its error. */
+    private function assertM7DeleteField(string $html, bool $error): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $input = $x->query('//input[@id="confirm-name"]')->item(0);
+        self::assertInstanceOf(DOMElement::class, $input);
+        self::assertSame('off', $input->getAttribute('autocomplete'));
+        self::assertSame('false', $input->getAttribute('spellcheck'));
+        self::assertSame($error ? 'confirm-name-help confirm-name-error' : 'confirm-name-help', $input->getAttribute('aria-describedby'));
+        foreach (explode(' ', $input->getAttribute('aria-describedby')) as $id) {
+            self::assertSame(1, $x->query('//*[@id="' . $id . '"]')->length, $id);
+        }
+        self::assertSame(1, $x->query('//label[@for="confirm-name"][not(contains(@class, "visually-hidden"))]')->length);
+        self::assertSame(1, $x->query('//main//form//button[contains(@class, "button-danger")]')->length);
+        self::assertSame(0, $x->query('//main//*[contains(@class, "button-primary")] | //*[@disabled]')->length);
+    }
+
+    // T-KBD-5 (M7 screens spec section 10.1), M7-WP5: the activity, About,
+    // licence, and recovery pages over this class's M2 data set, as the
+    // Admin, the Member, and signed out, with rules 1 to 7 and the M7
+    // items of assertM7Rules.
+
+    public function testM7ActivityFiltersEntriesAndPager(): void
+    {
+        $audit = new \TiffinDB\Core\System\AuditLog($this->core->system, $this->core->clock);
+        for ($i = 0; $i < 60; $i++) {
+            $audit->record('snapshot.taken', $this->core->person('admin')->id, null, null, null, ['n' => $i]);
+        }
+        $admin = $this->admin();
+        $this->checkM7($admin, '/admin/activity', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Next', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?action=snapshot.taken', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', 'Next', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?action=snapshot.taken&page=2', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', 'Previous', ...self::FOOTER]);
+        $this->checkM7($admin, '/admin/activity?project=deleted', [...self::ADMIN_TOP, 'Person', 'Project', 'What', 'Show', 'Show everything', ...self::FOOTER]);
+        $x = $admin->xpath();
+        foreach (['filter-person', 'filter-project', 'filter-action'] as $id) {
+            self::assertSame(1, $x->query('//label[@for="' . $id . '"]')->length, "{$id} has its label.");
+        }
+        self::assertSame(0, $x->query('//form[contains(@class, "audit-filters")]//button[contains(@class, "button-primary")]')->length, 'Show is not filled: the page has no primary action.');
+    }
+
+    public function testM7AboutAndLicencePages(): void
+    {
+        $licences = [];
+        foreach (['OpenSpout', 'Composer class loader', 'Inter', 'Atkinson Hyperlegible', 'Lexend', 'Source Serif 4'] as $name) {
+            $licences[] = 'Licence text of ' . $name;
+        }
+        $admin = $this->admin();
+        $this->checkM7($admin, '/about', [...self::ADMIN_TOP, 'Read the licence', ...$licences, ...self::FOOTER]);
+        $this->checkM7($admin, '/about/licences/openspout', [...self::ADMIN_TOP, 'Back to About TiffinDB', ...self::FOOTER]);
+        $this->checkM7($this->member, '/about', [...self::TOP, 'Read the licence', ...$licences, ...self::FOOTER]);
+        $this->checkM7($this->member, '/about/licences/tiffindb', [...self::TOP, 'Back to About TiffinDB', ...self::FOOTER]);
+    }
+
+    public function testM7RecoveryPageInEveryState(): void
+    {
+        $plain = ['Skip to main content', 'TiffinDB, all projects'];
+        $fields = ['Admin username', 'Code from the file', 'New password', 'New password again', 'Show passwords', 'Change the password', 'Back to sign in'];
+        $guest = new EndToEndClient($this->kernel);
+        $this->checkM7($guest, '/sign-in', [...$plain, 'Username', 'Password', 'Show password', 'Sign in', 'Locked out of the Admin account?', 'Source code']);
+        $this->checkM7($guest, '/recover', [...$plain, 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(303, $guest->submit('/recover/start')->status);
+        $this->checkM7($guest, '/recover?started=1', [...$plain, 'Write a code', ...$fields, 'Source code']);
+
+        // Password problems: the summary links to the password fields.
+        $mismatch = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 8']);
+        self::assertSame(422, $mismatch->status);
+        $this->assertM7Page($mismatch->body, '/recover (mismatch)', [...$plain, 'The two new passwords are different.', 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(['recover-again'], self::describedErrors($mismatch->body));
+
+        // A code that is not right: the one problem, tied to the code field.
+        $guest->get('/recover');
+        $failed = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        self::assertSame(422, $failed->status);
+        $this->assertM7Page($failed->body, '/recover (failed)', [...$plain, 'That did not work. Check the username and the code, or start again for a new code.', 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(['recover-code'], self::describedErrors($failed->body));
+
+        // Too many tries: 429 with the warning notice and no error summary.
+        for ($i = 0; $i < 5; $i++) {
+            $guest->get('/recover');
+            $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        }
+        $guest->get('/recover');
+        $wait = $guest->submit('/recover', ['username' => 'admin', 'code' => 'AAAA-BBBB-CCCC-DDDD', 'password' => 'plum orbit candle 7', 'password_again' => 'plum orbit candle 7']);
+        self::assertSame(429, $wait->status);
+        $this->assertM7Page($wait->body, '/recover (wait)', [...$plain, 'Write a code', ...$fields, 'Source code']);
+        self::assertSame(1, (new DOMXPath(HtmlAssertions::assertWellFormed($wait->body)))->query('//main//div[@role="alert"][contains(@class, "notice-warn")]')->length);
+    }
+
+    /** GETs $uri as $client (200) and asserts rules 1 to 7 and the M7 items. */
+    private function checkM7(EndToEndClient $client, string $uri, array $names): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        $this->assertM7Page($response->body, $uri, $names);
+    }
+
+    /** @param list<string> $names */
+    private function assertM7Page(string $html, string $where, array $names): void
+    {
+        $this->assertStructure($html, $names, $where);
+        $this->assertM7Rules($html, $where);
+    }
+
+    /**
+     * The M7 items of section 10.1: one `h1`; every control labelled
+     * (assertForm); at most one `.button-primary`; every error message
+     * referenced by its control and every summary link a target (rule 6).
+     */
+    private function assertM7Rules(string $html, string $where): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        HtmlAssertions::assertForm($html);
+        self::assertSame(1, $x->query('//h1')->length, "{$where}: one h1.");
+        self::assertLessThanOrEqual(1, $x->query('//*[contains(concat(" ", @class, " "), " button-primary ")]')->length, "{$where}: at most one primary button.");
+        self::assertSame(0, $x->query('//*[@tabindex and @tabindex != "-1"]')->length, "{$where}: no positive tabindex.");
+    }
+
+    /**
+     * The ids of the controls that are aria-invalid on the page.
+     *
+     * @return list<string>
+     */
+    private static function describedErrors(string $html): array
+    {
+        $ids = [];
+        foreach ((new DOMXPath(HtmlAssertions::assertWellFormed($html)))->query('//*[@aria-invalid="true"]/@id') as $id) {
+            $ids[] = (string) $id->nodeValue;
+        }
+
+        return $ids;
+    }
+
+    private ?CoreFixture $core5 = null;
+    private ?Operations $ops5 = null;
+
+    /**
+     * The M5 data set in its own CoreFixture (closed in tearDown), with the
+     * Member and the Admin signed in through the form.
+     *
+     * @return array{0: M5Fixture, 1: EndToEndClient, 2: EndToEndClient}
+     */
+    private function m5(): array
+    {
+        $this->core5 = new CoreFixture();
+        $this->core5->clock->set('2026-11-03T10:00:00Z');
+        $this->ops5 = $this->core5->operations();
+        $fx = M5Fixture::build($this->core5, $this->ops5);
+        $config = Fixtures::config(false) + ['data_dir' => $this->core5->temp->path('data'), 'timezone' => 'UTC'];
+        $kernel = new Kernel($config, Fixtures::appRoot(), null, new CoreServices($config, Fixtures::appRoot(), $this->core5->clock, new SeededRandom('tiffindb-keyboard-structure-m5-seed'), $this->core5->hasher));
+        $clients = [];
+        foreach (['member', 'admin'] as $username) {
+            $client = new EndToEndClient($kernel);
+            $client->get('/sign-in');
+            self::assertSame(303, $client->submit('/sign-in', ['username' => $username, 'password' => CoreFixture::PASSWORD])->status);
+            $clients[] = $client;
+        }
+
+        return [$fx, $clients[0], $clients[1]];
+    }
+
+    /** Saves $text as the default form of $table through the source view (as the Admin). */
+    private function saveSource(M5Fixture $fx, string $table, string $text): void
+    {
+        $actor = $this->core5?->actor('admin') ?? throw new \LogicException('No M5 data set.');
+        $forms = $this->ops5?->forms() ?? throw new \LogicException('No M5 data set.');
+        $base = $forms->source($actor, $fx->m2->project, $table)->base;
+        $screen = $forms->source($actor, $fx->m2->project, $table, ['text' => $text, 'base' => $base, 'do' => 'save']);
+        self::assertSame([], $screen->problems);
+    }
+
+    /**
+     * Posts the editor page's form with $do, the draft read as a browser
+     * reads it, and $values; expects $status.
+     *
+     * @param array<string, string> $values
+     */
+    private function editorPost(EndToEndClient $client, string $form, string $do, int $status, array $values = []): void
+    {
+        $document = new \DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        $document->loadHTML('<?xml encoding="UTF-8">' . $client->page(), LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        $draft = (string) (new DOMXPath($document))->query('//form[@id="form-editor"]/input[@name="draft"]/@value')->item(0)?->nodeValue;
+        $response = $client->submit($form, $values + ['do' => $do, 'draft' => $draft]);
+        self::assertSame($status, $response->status, "do={$do}");
+    }
+
+    /** GETs $uri as $client (200), rules 1 to 7 (the whole focus order when $names ends with the footer, else its start) and the M5 items. */
+    private function checkM5(EndToEndClient $client, string $uri, array $names): void
+    {
+        $response = $client->get($uri);
+        self::assertSame(200, $response->status, "GET {$uri}");
+        $this->checkM5Page($client, $uri, $names);
+    }
+
+    /**
+     * Rules 1 to 7 and the M5 items on the client's last page; $focus is
+     * the `value` of the button, or the `id` of the box, that must carry
+     * the one `autofocus` ($autofocus 1 with $focus null: any one control).
+     *
+     * @param list<string> $names
+     */
+    private function checkM5Page(EndToEndClient $client, string $where, array $names, ?string $focus = null, int $autofocus = 0): void
+    {
+        $html = $client->page();
+        $count = $focus === null ? $autofocus : 1;
+        $this->assertStructure($html, $names, $where, $count);
+        $this->assertM5Rules($html, $where, $focus, $count);
+    }
+
+    /**
+     * The M5 items of section 9.1: (1) the editor's first submit button is
+     * the hidden Apply with tabindex -1, and no tabindex is other than -1
+     * or 0; (2) at most one autofocus, only on the editor after a change,
+     * on the control named; (3) every editor button's accessible name
+     * starts with its visible text and names its row; (4) every input,
+     * select, and textarea of an M5 form has a label whose text starts its
+     * accessible name, and the text area's problem is in its description;
+     * (5) rows are `li` of a labelled `ol`, a section's children a nested
+     * `ol` inside its `li`; (6) no nested form, and every editor control
+     * belongs to form#form-editor; (7) every `a.form-link` has text, the
+     * fixed rel, and no target.
+     */
+    private function assertM5Rules(string $html, string $where, ?string $focus, int $autofocus): void
+    {
+        $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
+        $editor = $x->query('//form[@id="form-editor"]')->item(0);
+
+        // 1.
+        if ($editor instanceof DOMElement) {
+            $first = $x->query('.//button[@type="submit"]', $editor)->item(0);
+            self::assertInstanceOf(DOMElement::class, $first);
+            self::assertSame(['visually-hidden', 'apply', '-1'], [$first->getAttribute('class'), $first->getAttribute('value'), $first->getAttribute('tabindex')], "{$where}: the hidden Apply first.");
+        }
+        self::assertSame(0, $x->query('//*[@tabindex][not(@tabindex="-1")][not(@tabindex="0")]')->length, "{$where}: tabindex -1 or 0 only.");
+
+        // 2.
+        $focused = $x->query('//*[@autofocus]');
+        self::assertSame($autofocus, $focused->length, "{$where}: autofocus.");
+        if ($focused->length === 1) {
+            $element = $focused->item(0);
+            self::assertInstanceOf(DOMElement::class, $element);
+            self::assertInstanceOf(DOMElement::class, $editor, "{$where}: autofocus only on the editor.");
+            self::assertSame(1, $x->query('ancestor::form[@id="form-editor"]', $element)->length);
+            self::assertContains($element->nodeName, ['button', 'input'], "{$where}: a button or a name box.");
+            if ($focus !== null) {
+                self::assertSame($focus, $element->nodeName === 'button' ? $element->getAttribute('value') : $element->getAttribute('id'), "{$where}: the control the core names.");
+            }
+        }
+
+        // 3.
+        if ($editor instanceof DOMElement) {
+            foreach ($x->query('.//li[contains(concat(" ", @class, " "), " form-row ")]', $editor) as $row) {
+                /** @var DOMElement $row */
+                $rowName = self::text($x->query('div[@class="form-row-head"]/span[@class="form-row-name"]', $row)->item(0) ?? $x->query('div[@class="form-row-head"]/span[@class="form-row-kind"]', $row)->item(0) ?? $row);
+                foreach ($x->query('div[@class="form-row-actions"]/button | div/button', $row) as $button) {
+                    /** @var DOMElement $button */
+                    $visible = self::text($button);
+                    $name = self::accessibleName($x, $button);
+                    self::assertNotSame('', $visible, "{$where}: a row button has visible text.");
+                    self::assertStringStartsWith($visible, $name, "{$where}: {$name} starts with its visible text.");
+                    self::assertStringContainsString($rowName, $name, "{$where}: {$name} names its row.");
+                    self::assertGreaterThan(strlen($visible), strlen($name), "{$where}: {$name} says more than its visible text.");
+                }
+            }
+            foreach ($x->query('//section[@aria-labelledby="not-on-form-title"]//li') as $row) {
+                $rowName = self::text($x->query('.//span[@class="form-row-name"]', $row)->item(0) ?? $row);
+                foreach ($x->query('.//button', $row) as $button) {
+                    /** @var DOMElement $button */
+                    self::assertSame('Add ' . $rowName . ' to the form', self::accessibleName($x, $button), $where);
+                    self::assertSame('Add', self::text($button), $where);
+                }
+            }
+        }
+
+        // 4.
+        $forms = '//form[@id="form-editor"] | //form[.//textarea[@id="source"]] | //form[@enctype="multipart/form-data"]';
+        foreach ($x->query($forms) as $form) {
+            foreach ($x->query('.//input[not(@type="hidden")] | .//select | .//textarea', $form) as $control) {
+                /** @var DOMElement $control */
+                $label = $x->query('//label[@for="' . $control->getAttribute('id') . '"]')->item(0);
+                self::assertInstanceOf(DOMElement::class, $label, "{$where}: {$control->getAttribute('name')} has a label.");
+                self::assertStringStartsWith(self::text($label), self::labelName($x, $control), "{$where}: the label starts the accessible name of {$control->getAttribute('name')}.");
+                if ($control->nodeName === 'textarea' && $x->query('//*[@id="source-error"]')->length > 0) {
+                    self::assertContains('source-error', preg_split('/\s+/', $control->getAttribute('aria-describedby')) ?: [], "{$where}: the problem describes the text area.");
+                }
+            }
+        }
+
+        // 5.
+        if ($editor instanceof DOMElement) {
+            $top = $x->query('ol', $editor)->item(0);
+            self::assertInstanceOf(DOMElement::class, $top);
+            self::assertNotSame('', $top->getAttribute('aria-label'), "{$where}: the rows list is labelled.");
+            foreach ($x->query('.//li[contains(concat(" ", @class, " "), " form-row ")]', $top) as $row) {
+                self::assertSame('ol', $row->parentNode?->nodeName, "{$where}: a row is an li of an ol.");
+            }
+            foreach ($x->query('.//ol', $top) as $nested) {
+                /** @var DOMElement $nested */
+                self::assertStringContainsString('form-row-section', $nested->parentNode instanceof DOMElement ? $nested->parentNode->getAttribute('class') : '', "{$where}: a nested list sits in its section's li.");
+            }
+        }
+
+        // 6.
+        self::assertSame(0, $x->query('//form//form')->length, "{$where}: no nested form.");
+        foreach ($x->query('//*[@name="do" or @name="draft" or @name="base" or starts-with(@name, "label[") or starts-with(@name, "legend[") or starts-with(@name, "width[")]') as $control) {
+            /** @var DOMElement $control */
+            if ($x->query('ancestor::form[.//textarea[@id="source"]]', $control)->length > 0) {
+                continue;
+            }
+            self::assertSame(1, $x->query('ancestor::form[@id="form-editor"]', $control)->length, "{$where}: an editor control belongs to the editor form.");
+            self::assertFalse($control->hasAttribute('form'), $where);
+        }
+
+        // 7.
+        foreach ($x->query('//a[contains(concat(" ", @class, " "), " form-link ")]') as $link) {
+            /** @var DOMElement $link */
+            self::assertNotSame('', self::text($link), "{$where}: a form link has text.");
+            self::assertSame('noopener noreferrer', $link->getAttribute('rel'), $where);
+            self::assertFalse($link->hasAttribute('target'), $where);
+        }
+    }
+
     // M4 helpers.
 
     private ?CoreFixture $core4 = null;
@@ -822,9 +1363,9 @@ final class KeyboardStructureTest extends TestCase
         $response = $client->get($uri);
         self::assertSame(200, $response->status, "GET {$uri}");
         if ($exact) {
-            self::assertSame(self::FOOTER[0], $names[count($names) - 1], 'An exact order ends with the footer.');
+            self::assertSame(self::FOOTER[count(self::FOOTER) - 1], $names[count($names) - 1], 'An exact order ends with the footer.');
         } else {
-            self::assertNotSame(self::FOOTER[0], $names[count($names) - 1], 'A start of the order.');
+            self::assertNotSame(self::FOOTER[count(self::FOOTER) - 1], $names[count($names) - 1], 'A start of the order.');
         }
         $this->assertStructure($response->body, $names, $uri);
         $this->assertM4Rules($response->body, $uri);
@@ -1054,8 +1595,9 @@ final class KeyboardStructureTest extends TestCase
      * separately, the expected start of it.
      *
      * @param list<string> $names
+     * @param int $autofocus how many elements may carry `autofocus` (M5: one, on the editor after a change)
      */
-    private function assertStructure(string $html, array $names, string $where): void
+    private function assertStructure(string $html, array $names, string $where, int $autofocus = 0): void
     {
         $x = new DOMXPath(HtmlAssertions::assertWellFormed($html));
 
@@ -1067,8 +1609,10 @@ final class KeyboardStructureTest extends TestCase
             // M4: the collection editor's hidden default Preview button (section 10.1 item 4).
             $allowed = $element->getAttribute('class') === 'error-summary'
                 || ($element->nodeName === 'main' && $element->getAttribute('id') === 'main')
-                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'default-action');
-            self::assertTrue($allowed, "{$where}: only the error summary, main#main, and the editor's default button have a tabindex.");
+                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'default-action')
+                // M5: the form editor's hidden Apply (section 9.1 item 1).
+                || ($element->nodeName === 'button' && $element->getAttribute('class') === 'visually-hidden' && $element->getAttribute('value') === 'apply');
+            self::assertTrue($allowed, "{$where}: only the error summary, main#main, and the editors' default buttons have a tabindex.");
         }
 
         // 2. Names and radio groups.
@@ -1096,7 +1640,7 @@ final class KeyboardStructureTest extends TestCase
             /** @var DOMElement $element */
             $actual[] = in_array($element->nodeName, ['input', 'select', 'textarea'], true) ? self::labelName($x, $element) : self::accessibleName($x, $element);
         }
-        $end = $names === [] || $names[count($names) - 1] !== self::FOOTER[0];
+        $end = $names === [] || $names[count($names) - 1] !== self::FOOTER[count(self::FOOTER) - 1];
         self::assertSame($names, $end ? array_slice($actual, 0, count($names)) : $actual, "{$where}: focus order.");
 
         // 5. Forms that change data.
@@ -1162,7 +1706,8 @@ final class KeyboardStructureTest extends TestCase
         }
 
         // 7.
-        self::assertSame(0, $x->query('//*[@accesskey or @autofocus]')->length, "{$where}: no accesskey or autofocus.");
+        self::assertSame(0, $x->query('//*[@accesskey]')->length, "{$where}: no accesskey.");
+        self::assertSame($autofocus, $x->query('//*[@autofocus]')->length, "{$where}: autofocus only where named.");
     }
 
     /** The name of a link or button: aria-label, else its text without aria-hidden parts. */

@@ -12,6 +12,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use DOMDocument;
 use DOMElement;
+use DOMNodeList;
 use DOMXPath;
 use FilesystemIterator;
 use PHPUnit\Framework\AssertionFailedError;
@@ -331,6 +332,7 @@ final class ShellTest extends TestCase
                 '/projects' => [self::string('shell.nav.projects'), 'top-pill'],
                 '/admin/people' => [self::string('shell.nav.people'), 'top-pill'],
                 '/admin/plugins' => [self::string('shell.nav.plugins'), 'top-pill'],
+                '/admin/activity' => [self::string('shell.nav.activity'), 'top-pill'],
             ],
             $links(self::render('error', self::errorData(self::shell(true)))),
         );
@@ -338,6 +340,125 @@ final class ShellTest extends TestCase
             ['/projects' => [self::string('shell.nav.projects'), 'top-pill']],
             $links(self::render('error', self::errorData(self::shell(false)))),
         );
+    }
+
+    // M7 shell (T-WEB-81, T-WEB-82; M7 screens spec sections 3 and 5).
+
+    /** @return iterable<string, array{string, ?bool}> */
+    public static function m7Pages(): iterable
+    {
+        yield 'error page, signed in as an Admin' => ['error', true];
+        yield 'error page, signed in as a Member' => ['error', false];
+        yield 'error page, signed out' => ['error', null];
+        yield 'components page, signed in' => ['components', true];
+        yield 'components page, signed out' => ['components', null];
+    }
+
+    /** @param ?bool $admin Null for the plain shell. */
+    private static function m7Page(string $page, ?bool $admin, string $basePath = ''): string
+    {
+        $shell = $admin === null ? null : self::shell($admin);
+        $data = $page === 'error' ? self::errorData($shell) : self::componentData($shell);
+
+        return self::render($page, $data, 'light', $basePath);
+    }
+
+    #[DataProvider('m7Pages')]
+    public function testHeadLinksTheFaviconAndTheManifest(string $page, ?bool $admin): void
+    {
+        foreach (['', '/sub'] as $base) {
+            $xpath = self::xpath(self::m7Page($page, $admin, $base));
+            $links = [];
+            foreach ($xpath->query('/html/head/link[@rel!="stylesheet"]') as $link) {
+                /** @var DOMElement $link */
+                $attributes = [];
+                foreach ($link->attributes as $attribute) {
+                    $attributes[$attribute->nodeName] = (string) $attribute->nodeValue;
+                }
+                $links[] = $attributes;
+            }
+
+            self::assertSame(
+                [
+                    ['rel' => 'icon', 'href' => $base . '/assets/icons/favicon.svg?v=' . self::VERSION, 'type' => 'image/svg+xml'],
+                    ['rel' => 'manifest', 'href' => $base . '/assets/app.webmanifest?v=' . self::VERSION],
+                ],
+                $links,
+            );
+            self::assertSame(5, $xpath->query('//link')->length, 'Three stylesheets, the icon, and the manifest.');
+            self::assertSame(0, $xpath->query('/html/body//link')->length);
+        }
+        self::assertFileExists(RepoFiles::path('public/assets/icons/favicon.svg'));
+        self::assertFileExists(RepoFiles::path('public/assets/app.webmanifest'));
+    }
+
+    #[DataProvider('m7Pages')]
+    public function testFooterAboutLinkOnlyWhenSignedIn(string $page, ?bool $admin): void
+    {
+        $xpath = self::xpath(self::m7Page($page, $admin));
+        $footer = self::element($xpath, '//footer');
+
+        $children = [];
+        foreach ($xpath->query('./*', $footer) as $child) {
+            /** @var DOMElement $child */
+            $children[] = [$child->nodeName, $child->getAttribute('href'), self::text($child)];
+        }
+        $licence = ['span', '', self::string('shell.footer.licence')];
+        $source = ['a', self::sourceUrl(), self::string('shell.footer.source')];
+        $expected = $admin === null
+            ? [$licence, $source]
+            : [$licence, ['a', '/about', self::string('shell.footer.about')], $source];
+        self::assertSame($expected, $children);
+    }
+
+    /**
+     * T-WEB-80, M7 screens spec section 6.1: every M7 page uses a layout
+     * the layout template has (no branch is added), so its `main` has the
+     * class of that layout, not the bare `page` of an unknown one (the M4
+     * lesson, P184 to P186).
+     *
+     * @return iterable<string, array{string, ?string, string}>
+     */
+    public static function m7PageLayouts(): iterable
+    {
+        yield 'snapshots' => ['snapshots', 'settings', 'page page-settings'];
+        yield 'restore confirmation' => ['restore', 'record-narrow', 'page page-record page-record-narrow'];
+        yield 'delete a project' => ['delete', 'record-narrow', 'page page-record page-record-narrow'];
+        yield 'activity' => ['activity', 'io', 'page page-io'];
+        yield 'about' => ['about', 'settings', 'page page-settings'];
+        yield 'licence' => ['licence', 'settings', 'page page-settings'];
+        yield 'recovery' => ['recovery', null, 'page page-plain'];
+    }
+
+    #[DataProvider('m7PageLayouts')]
+    public function testM7PageLayoutsExist(string $page, ?string $layout, string $mainClass): void
+    {
+        $data = self::errorData($layout === null ? null : self::shell(true, $page === 'activity' ? 'activity' : ''));
+        $data['layout'] = $layout;
+        $data['wide'] = false;
+
+        self::assertSame($mainClass, self::element(self::xpath(self::render('error', $data)), '//main')->getAttribute('class'), $page);
+        if ($layout !== null) {
+            self::assertStringContainsString("(\$data['layout'] ?? null) === '{$layout}'", RepoFiles::read('templates/layout.php'), $page);
+        }
+    }
+
+    public function testActivityTabOnlyForAdmins(): void
+    {
+        $activity = static fn (bool $admin, string $nav): DOMNodeList => self::xpath(self::render('error', self::errorData(self::shell($admin, $nav))))
+            ->query('//nav[@class="top-nav"]/a[@href="/admin/activity"]');
+
+        self::assertSame(1, $activity(true, 'projects')->length);
+        self::assertSame(0, $activity(false, 'projects')->length);
+        self::assertSame(0, $activity(false, 'activity')->length);
+        $current = $activity(true, 'activity')->item(0);
+        self::assertInstanceOf(DOMElement::class, $current);
+        self::assertSame('page', $current->getAttribute('aria-current'));
+        self::assertSame(self::string('shell.nav.activity'), self::text($current));
+        $previous = $current->previousElementSibling;
+        self::assertInstanceOf(DOMElement::class, $previous);
+        self::assertSame('/admin/plugins', $previous->getAttribute('href'), 'Activity comes after Plugins.');
+        self::assertNull($current->nextElementSibling, 'Activity is the last main tab.');
     }
 
     /** @return iterable<string, array{string, bool, list<string>}> */
@@ -350,6 +471,8 @@ final class ShellTest extends TestCase
         yield 'people, as a Member' => ['people', false, []];
         yield 'plugins' => ['plugins', true, ['/admin/plugins']];
         yield 'plugins, as a Member' => ['plugins', false, []];
+        yield 'activity' => ['activity', true, ['/admin/activity']];
+        yield 'activity, as a Member' => ['activity', false, []];
         yield 'account, as a Member' => ['account', false, ['/account/password']];
     }
 
@@ -933,7 +1056,7 @@ final class ShellTest extends TestCase
     /** @return iterable<string, array{string, bool}> */
     public static function displayLinkAreas(): iterable
     {
-        foreach (['projects', 'people', 'plugins', 'account', 'settings', ''] as $nav) {
+        foreach (Shell::NAVS as $nav) {
             foreach ([true, false] as $admin) {
                 yield ($nav === '' ? 'none' : $nav) . ($admin ? ', Admin' : ', Member') => [$nav, $admin];
             }
@@ -1400,6 +1523,85 @@ final class ShellTest extends TestCase
             }
         }
         self::assertSame([], $missing, 'Classes of docs/design/m4/components.md missing from app.css.');
+    }
+
+    /**
+     * T-WEB-93, M7 screens spec section 8: every class of the table in
+     * docs/design/m7/components.md section 5 exists in app.css.
+     */
+    public function testEveryM7ComponentClassExistsInTheStylesheet(): void
+    {
+        $doc = RepoFiles::read('docs/design/m7/components.md');
+        $section = substr($doc, (int) strpos($doc, "\n## 5. "));
+        preg_match_all('/^\| `\.([a-z][a-z0-9-]*)/m', $section, $m);
+        $classes = array_values(array_unique($m[1]));
+        self::assertSame(
+            ['snapshot-table', 'audit-filters', 'audit-list', 'audit-entry', 'audit-detail', 'licence-text', 'about-list', 'recovery-steps', 'settings-links', 'link-danger', 'danger-zone'],
+            $classes,
+            'The M7 component table was read.',
+        );
+
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        $missing = [];
+        foreach ([...$classes, 'audit-when', 'audit-what'] as $class) {
+            if (preg_match('/\.' . preg_quote($class, '/') . '(?![a-z0-9_-])[^{}]*\{/', $css) !== 1) {
+                $missing[] = $class;
+            }
+        }
+        self::assertSame([], $missing, 'Classes of docs/design/m7/components.md missing from app.css.');
+    }
+
+    /** @return array<string, string> selector => the bodies of its rules in app.css, joined, comments removed */
+    private static function cssRules(): array
+    {
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', RepoFiles::read('public/assets/css/app.css'));
+        preg_match_all('/([^{}]+)\{([^{}]*)\}/', $css, $m, PREG_SET_ORDER);
+        $rules = [];
+        foreach ($m as [, $selector, $body]) {
+            $key = trim((string) preg_replace('/\s+/', ' ', $selector));
+            $rules[$key] = ($rules[$key] ?? '') . $body;
+        }
+
+        return $rules;
+    }
+
+    /**
+     * T-WEB-93, M7 spec part 1 section 15.2: labels, headings, buttons, and
+     * sidebar and top-bar text break inside a word only when it is longer
+     * than its line (`break-word`, with `min-width: 0` on flex items);
+     * values, file names, and the licence text keep `anywhere`.
+     */
+    public function testMidWordBreaksAreLimitedToValues(): void
+    {
+        $rules = self::cssRules();
+        $breakWord = ['.radio-card > span', '.sidebar-project-name', '.mapping-table th[scope="row"]', '.compare-table th', '.form-row-name', '.form-row-actions > .button'];
+        foreach ($breakWord as $selector) {
+            self::assertArrayHasKey($selector, $rules, $selector);
+            self::assertStringContainsString('overflow-wrap: break-word;', $rules[$selector], $selector);
+            if (!str_contains($selector, ' th')) {
+                // A table header cell is no flex or grid item.
+                self::assertStringContainsString('min-width: 0;', $rules[$selector], $selector);
+            }
+        }
+        self::assertStringContainsString('min-width: 0;', $rules['.top-pill, .sidebar, .sidebar-link > span'] ?? '');
+        self::assertStringContainsString('overflow-wrap: break-word;', $rules['body'] ?? '', 'Everything else inherits break-word.');
+
+        $anywhere = [];
+        foreach ($rules as $selector => $body) {
+            if (str_contains($body, 'overflow-wrap: anywhere')) {
+                $anywhere[] = $selector;
+            }
+        }
+        sort($anywhere);
+        self::assertSame(
+            [
+                '.audit-detail', '.compare-table td', '.facts dd', '.file-name', '.file-row > span:first-child',
+                '.form-row-summary', '.licence-text', '.link-chosen', '.linked-main a', '.mapping-first',
+                '.picker-title', '.result-match', '.result-title', '.trash-title',
+            ],
+            $anywhere,
+            'Only rules for values, file names, and the licence text break anywhere.',
+        );
     }
 
     /** CF-2: in the import report only the count cells (`.num`) are right-aligned. */

@@ -28,11 +28,24 @@ use TiffinDB\Core\Schema\FieldDef;
  * - partial() and slot() return markup produced by templates.
  * - rootClassAttribute() (layout only) returns markup built solely from
  *   Appearance::rootClasses(), which are server-side constants.
+ * - formLink() returns the escaped address of a stored form's link, for
+ *   the `href` of `a.form-link` in the form-inline partial only (M5 spec
+ *   part 2 section 3.2).
  */
 final class ViewScope
 {
     /** A same-page element reference: `#` and an id as templates write them. */
     private const FRAGMENT = '/^#[A-Za-z][A-Za-z0-9_-]*\z/';
+
+    /**
+     * A form link address: http or https, printable ASCII without space
+     * (M5 spec part 2 section 3.2); the quote, angle, backtick, and
+     * backslash characters are refused separately.
+     */
+    private const FORM_LINK = '~\Ahttps?://[\x21-\x7E]+\z~i';
+
+    /** Characters a form link address may never hold. */
+    private const FORM_LINK_REFUSED = ['"', "'", '<', '>', '`', '\\'];
 
     /** @var array<string, string> */
     private array $slots = [];
@@ -118,10 +131,46 @@ final class ViewScope
         return $this->e($this->valueText()->input($field, $text, $submitted));
     }
 
-    /** An escaped generated id (Ids::make()). */
+    /**
+     * An escaped generated id (Ids::make()). A string part holding `-` is
+     * split on it first, so an editor path `3-2` gives the parts `3` and
+     * `2` (M5 spec part 2 section 3.3); each piece is still checked by
+     * Ids::make(), so an empty piece is refused.
+     */
     public function id(string $prefix, string|int ...$parts): string
     {
-        return $this->e(Ids::make($prefix, ...$parts));
+        $pieces = [];
+        foreach ($parts as $part) {
+            if (is_string($part) && str_contains($part, '-')) {
+                array_push($pieces, ...explode('-', $part));
+            } else {
+                $pieces[] = $part;
+            }
+        }
+
+        return $this->e(Ids::make($prefix, ...$pieces));
+    }
+
+    /**
+     * The escaped address of a stored form's link (M5 spec part 2 section
+     * 3.2): a second guard behind the parser's url rule. Only `http` and
+     * `https` addresses of printable ASCII, with none of `"` `'` `<` `>`
+     * `` ` `` `\`, are returned.
+     *
+     * @throws InvalidArgumentException for anything else (the page fails closed)
+     */
+    public function formLink(string $href): string
+    {
+        if (preg_match(self::FORM_LINK, $href) !== 1) {
+            throw new InvalidArgumentException('Not a form link address.');
+        }
+        foreach (self::FORM_LINK_REFUSED as $char) {
+            if (str_contains($href, $char)) {
+                throw new InvalidArgumentException('Not a form link address.');
+            }
+        }
+
+        return $this->e($href);
     }
 
     /**

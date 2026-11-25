@@ -15,6 +15,7 @@ use TiffinDB\Core\Forms\Divider;
 use TiffinDB\Core\Forms\Emphasis;
 use TiffinDB\Core\Forms\FieldSlot;
 use TiffinDB\Core\Forms\FormDocument;
+use TiffinDB\Core\Forms\FormFormat;
 use TiffinDB\Core\Forms\FormParser;
 use TiffinDB\Core\Forms\FormRejected;
 use TiffinDB\Core\Forms\Heading;
@@ -24,6 +25,7 @@ use TiffinDB\Core\Forms\Link;
 use TiffinDB\Core\Forms\Paragraph;
 use TiffinDB\Core\Forms\Placement;
 use TiffinDB\Core\Forms\Section;
+use TiffinDB\Core\Forms\StartTags;
 use TiffinDB\Core\Forms\Strong;
 use TiffinDB\Core\Forms\TextRun;
 use TiffinDB\Core\Schema\FieldTypes;
@@ -32,10 +34,13 @@ use TiffinDB\Tests\Support\TempDir;
 
 /**
  * T-FORM-2 (accepted documents) and T-FORM-4 (rejection corpus) for the
- * default-deny parser of M2 spec section 5.2. All keys are synthetic.
+ * default-deny parser of M2 spec section 5.2, and T-SAN-6 (M5 spec section
+ * 4.2): problem lines with LF, CR, and CR LF texts, the byte order mark,
+ * and the start-tag table. All keys are synthetic.
  */
 #[CoversClass(FormParser::class)]
 #[CoversClass(FormRejected::class)]
+#[CoversClass(StartTags::class)]
 final class FormParserTest extends TestCase
 {
     private const K1 = 'm4pz7k2qsw3n';
@@ -207,28 +212,28 @@ final class FormParserTest extends TestCase
         yield 'field slot without key' => [self::wrap('<div></div>'), FormRejected::ATTRIBUTE];
         yield 'img without alt' => [self::wrap('<img src="attachment:1"/>'), FormRejected::ATTRIBUTE];
         yield 'link without href' => [self::wrap('<p><a>x</a></p>'), FormRejected::ATTRIBUTE];
-        yield 'javascript href' => [self::wrap('<p><a href="javascript:alert(1)">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'javascript href with entities' => [self::wrap('<p><a href="&#106;avascript:alert(1)">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'data href' => [self::wrap('<p><a href="data:text/html,x">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with tab' => [self::wrap('<p><a href="https://exa&#9;mple.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href ending in a tab' => [self::wrap('<p><a href="https://example.com/&#9;">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'javascript href' => [self::wrap('<p><a href="javascript:alert(1)">x</a></p>'), FormRejected::HREF];
+        yield 'javascript href with entities' => [self::wrap('<p><a href="&#106;avascript:alert(1)">x</a></p>'), FormRejected::HREF];
+        yield 'data href' => [self::wrap('<p><a href="data:text/html,x">x</a></p>'), FormRejected::HREF];
+        yield 'href with tab' => [self::wrap('<p><a href="https://exa&#9;mple.com/">x</a></p>'), FormRejected::HREF];
+        yield 'href ending in a tab' => [self::wrap('<p><a href="https://example.com/&#9;">x</a></p>'), FormRejected::HREF];
         // The url type trims; FormRules::isHref in FormParser::values refuses at the attribute, before the
         // script inside the link is reached (without that check the script would be reported instead).
-        yield 'href with leading space, at the attribute' => [self::wrap('<p><a href=" https://example.com/"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with trailing space, at the attribute' => [self::wrap('<p><a href="https://example.com/ "><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with leading line feed, at the attribute' => [self::wrap('<p><a href="&#10;https://example.com/"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with trailing line feed, at the attribute' => [self::wrap('<p><a href="https://example.com/&#10;"><script/></a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with trailing space' => [self::wrap('<p><a href="https://example.com/ ">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with line feed' => [self::wrap('<p><a href="https://example.com/&#10;">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'href with leading space' => [self::wrap('<p><a href=" https://example.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'scheme-relative href' => [self::wrap('<p><a href="//example.com/">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'empty href' => [self::wrap('<p><a href="">x</a></p>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'outside image' => [self::wrap('<img src="https://example.com/x.png" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'attachment 0' => [self::wrap('<img src="attachment:0" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'attachment with leading zero' => [self::wrap('<img src="attachment:07" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'attachment beyond an integer' => [self::wrap('<img src="attachment:9223372036854775808" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'attachment 20 digits' => [self::wrap('<img src="attachment:12345678901234567890" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
-        yield 'attachment upper case' => [self::wrap('<img src="ATTACHMENT:1" alt=""/>'), FormRejected::ATTRIBUTE_VALUE];
+        yield 'href with leading space, at the attribute' => [self::wrap('<p><a href=" https://example.com/"><script/></a></p>'), FormRejected::HREF];
+        yield 'href with trailing space, at the attribute' => [self::wrap('<p><a href="https://example.com/ "><script/></a></p>'), FormRejected::HREF];
+        yield 'href with leading line feed, at the attribute' => [self::wrap('<p><a href="&#10;https://example.com/"><script/></a></p>'), FormRejected::HREF];
+        yield 'href with trailing line feed, at the attribute' => [self::wrap('<p><a href="https://example.com/&#10;"><script/></a></p>'), FormRejected::HREF];
+        yield 'href with trailing space' => [self::wrap('<p><a href="https://example.com/ ">x</a></p>'), FormRejected::HREF];
+        yield 'href with line feed' => [self::wrap('<p><a href="https://example.com/&#10;">x</a></p>'), FormRejected::HREF];
+        yield 'href with leading space' => [self::wrap('<p><a href=" https://example.com/">x</a></p>'), FormRejected::HREF];
+        yield 'scheme-relative href' => [self::wrap('<p><a href="//example.com/">x</a></p>'), FormRejected::HREF];
+        yield 'empty href' => [self::wrap('<p><a href="">x</a></p>'), FormRejected::HREF];
+        yield 'outside image' => [self::wrap('<img src="https://example.com/x.png" alt=""/>'), FormRejected::SRC];
+        yield 'attachment 0' => [self::wrap('<img src="attachment:0" alt=""/>'), FormRejected::SRC];
+        yield 'attachment with leading zero' => [self::wrap('<img src="attachment:07" alt=""/>'), FormRejected::SRC];
+        yield 'attachment beyond an integer' => [self::wrap('<img src="attachment:9223372036854775808" alt=""/>'), FormRejected::SRC];
+        yield 'attachment 20 digits' => [self::wrap('<img src="attachment:12345678901234567890" alt=""/>'), FormRejected::SRC];
+        yield 'attachment upper case' => [self::wrap('<img src="ATTACHMENT:1" alt=""/>'), FormRejected::SRC];
         yield 'bad field key' => [self::wrap('<div data-tiffin-field="M4PZ7K2QSW3N"></div>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'label too long' => [self::wrap('<div data-tiffin-field="' . $k1 . '" data-tiffin-label="' . str_repeat('a', 61) . '"></div>'), FormRejected::ATTRIBUTE_VALUE];
         yield 'label blank' => [self::wrap('<div data-tiffin-field="' . $k1 . '" data-tiffin-label="   "></div>'), FormRejected::ATTRIBUTE_VALUE];
@@ -350,5 +355,238 @@ final class FormParserTest extends TestCase
                 self::assertSame(FormRejected::DECLARATION, $rejected->reason, $name);
             }
         }
+    }
+
+    // ------------------------------------------------------------ T-SAN-6
+
+    /**
+     * One text per reason group, written with $break between lines; the
+     * problem sits on line 4.
+     *
+     * @return array<string, array{string, string}> group => [text, reason]
+     */
+    private static function linedTexts(string $break): array
+    {
+        $head = self::OPEN . $break . '<p>one</p>' . $break . '<!-- a < b -->' . $break;
+        $tail = $break . self::CLOSE . $break;
+
+        return [
+            'encoding' => [$head . "<p>\xC3\x28</p>" . $tail, FormRejected::ENCODING],
+            'nul' => [$head . "<p>a\0</p>" . $tail, FormRejected::NUL],
+            'declaration' => [$head . '<p><![CDATA[x]]></p>' . $tail, FormRejected::DECLARATION],
+            'instruction' => [$head . '<?x y?>' . $tail, FormRejected::PROCESSING_INSTRUCTION],
+            'malformed by libxml' => [$head . '<p>a</b>' . $tail, FormRejected::MALFORMED],
+            'duplicate attribute' => [$head . '<p data-tiffin-span="6" data-tiffin-span="4">x</p>' . $tail, FormRejected::MALFORMED],
+            'element' => [$head . '<script>x</script>' . $tail, FormRejected::ELEMENT],
+            'misplaced' => [$head . '<legend>x</legend>' . $tail, FormRejected::MISPLACED],
+            'attribute' => [$head . '<p class="x">x</p>' . $tail, FormRejected::ATTRIBUTE],
+            'attribute value' => [$head . '<p data-tiffin-span="0">x</p>' . $tail, FormRejected::ATTRIBUTE_VALUE],
+            'href' => [$head . '<p><a href="javascript:x">x</a></p>' . $tail, FormRejected::HREF],
+            'src' => [$head . '<img src="attachment:0" alt=""/>' . $tail, FormRejected::SRC],
+            'content' => [$head . '<hr><br/></hr>' . $tail, FormRejected::CONTENT],
+            'duplicate field' => [$head . self::slot() . self::slot() . $tail, FormRejected::DUPLICATE_FIELD],
+            'too deep' => [$head . '<fieldset><p><strong><em><strong><em><strong><em>x</em></strong></em></strong></em></strong></p></fieldset>' . $tail, FormRejected::TOO_DEEP],
+            'text near its element' => [$head . '<p>' . $break . "a\u{202E}b" . $break . '</p>' . $tail, FormRejected::TEXT_VALUE],
+            'text in a section' => [$head . '<fieldset>' . $break . 'loose' . $break . '</fieldset>' . $tail, FormRejected::TEXT],
+            'legend' => [$head . '<fieldset><legend>' . $break . $break . '</legend></fieldset>' . $tail, FormRejected::TEXT_VALUE],
+        ];
+    }
+
+    private static function slot(): string
+    {
+        return '<div data-tiffin-field="' . self::K1 . '"></div>';
+    }
+
+    /** @return iterable<string, array{string, string, string}> */
+    public static function linedCases(): iterable
+    {
+        foreach (['LF' => "\n", 'CR' => "\r", 'CR LF' => "\r\n"] as $name => $break) {
+            foreach (self::linedTexts($break) as $group => [$text, $reason]) {
+                yield $group . ', ' . $name => [$text, $reason, $break];
+            }
+        }
+    }
+
+    #[DataProvider('linedCases')]
+    public function testProblemsAreReportedOnTheirLine(string $text, string $reason, string $break): void
+    {
+        foreach (['' => 0, "\xEF\xBB\xBF" => 0] as $prefix => $unused) {
+            try {
+                self::parser()->parse($prefix . $text);
+                self::fail('The form was accepted.');
+            } catch (FormRejected $rejected) {
+                self::assertSame($reason, $rejected->reason);
+                // The byte order mark is removed and does not shift lines.
+                self::assertSame(4, $rejected->formLine, $prefix === '' ? 'plain' : 'with a byte order mark');
+                self::assertSame(4, $rejected->params()['line']);
+            }
+        }
+    }
+
+    public function testLinesThatAreUnknown(): void
+    {
+        foreach (['' => FormRejected::ROOT, "\xEF\xBB\xBF" => FormRejected::ROOT] as $text => $reason) {
+            $rejected = self::rejectionOf($text);
+            self::assertSame([$reason, null], [$rejected->reason, $rejected->formLine]);
+        }
+        $large = self::wrap("\n\n<p>" . str_repeat('a', FormFormat::MAX_BYTES) . '</p>');
+        self::assertSame([FormRejected::TOO_LARGE, null], [self::rejectionOf($large)->reason, self::rejectionOf($large)->formLine]);
+        // Text after the root is reported at the root's start tag by the walk; libxml refuses it first.
+        $after = self::rejectionOf("\n\n" . self::wrap('') . "\nx");
+        self::assertSame([FormRejected::MALFORMED, 4], [$after->reason, $after->formLine]);
+    }
+
+    public function testElementAndAttributeNamesAreGiven(): void
+    {
+        $element = self::rejectionOf(self::wrap('<p><span>x</span></p>'));
+        self::assertSame(['span', null, 'problem.form.element'], [$element->element, $element->attribute, $element->messageKey()]);
+        $attribute = self::rejectionOf(self::wrap('<p class="x">x</p>'));
+        self::assertSame(['p', 'class', 'problem.form.attribute'], [$attribute->element, $attribute->attribute, $attribute->messageKey()]);
+        self::assertSame(['line' => 1, 'element' => 'p', 'attribute' => 'class'], $attribute->params());
+        $missing = self::rejectionOf(self::wrap('<img alt=""/>'));
+        self::assertSame(['img', 'src'], [$missing->element, $missing->attribute]);
+        $value = self::rejectionOf(self::wrap('<hr data-tiffin-row="0"/>'));
+        self::assertSame(['hr', 'data-tiffin-row', 'problem.form.attribute_value'], [$value->element, $value->attribute, $value->messageKey()]);
+        $long = self::rejectionOf(self::wrap('<p ' . str_repeat('z', 45) . '="1">x</p>'));
+        self::assertSame(['p', null, 'problem.form.attribute_unnamed'], [$long->element, $long->attribute, $long->messageKey()]);
+        $href = self::rejectionOf(self::wrap('<p><a href="vbscript:x">x</a></p>'));
+        self::assertSame([FormRejected::HREF, 'a', 'href', 'problem.form.href'], [$href->reason, $href->element, $href->attribute, $href->messageKey()]);
+    }
+
+    private static function rejectionOf(string $text): FormRejected
+    {
+        try {
+            self::parser()->parse($text);
+        } catch (FormRejected $rejected) {
+            return $rejected;
+        }
+        self::fail('The form was accepted.');
+    }
+
+    public function testStartTagOffsetsSkipCommentsAndEndTags(): void
+    {
+        $text = '<div a="1"><!-- <p> < --><p>x</p><br/><!----><hr/></div>';
+        self::assertSame([0, 25, 33, 45], StartTags::offsets($text));
+        self::assertSame([0], StartTags::offsets('<div><!-- unterminated <p>'));
+        self::assertSame([], StartTags::offsets('no tags'));
+        self::assertSame([0, 9], StartTags::offsets('<a></a>  <b/>'));
+        self::assertSame([3], StartTags::offsets('</a<b>'));
+    }
+
+    public function testLineAtCountsEachBreakOnce(): void
+    {
+        self::assertSame(1, StartTags::lineAt("abc", 2));
+        self::assertSame(2, StartTags::lineAt("a\nb", 2));
+        self::assertSame(2, StartTags::lineAt("a\rb", 2));
+        self::assertSame(2, StartTags::lineAt("a\r\nb", 3));
+        self::assertSame(5, StartTags::lineAt("a\r\n\r\n\n\rb", 7));
+        self::assertSame(1, StartTags::lineAt("a\nb", 0));
+        // A CR LF split by the offset counts the CR alone.
+        self::assertSame(2, StartTags::lineAt("a\r\nb", 2));
+    }
+
+    public function testLinesAreCountedFarIntoALongForm(): void
+    {
+        $text = self::OPEN . "\n" . str_repeat("<hr/>\n", 4997) . "<hr title=\"x\"/>\n" . self::CLOSE;
+        $rejected = self::rejectionOf($text);
+        self::assertSame([FormRejected::ATTRIBUTE, 4999], [$rejected->reason, $rejected->formLine]);
+        // Past libxml's old 65,535-line limit, for libxml's own errors and for the walk's.
+        foreach (['<p>a</b>' => FormRejected::MALFORMED, '<p class="x">a</p>' => FormRejected::ATTRIBUTE] as $bad => $reason) {
+            $far = self::rejectionOf(self::OPEN . str_repeat("\n", 70000) . $bad . self::CLOSE);
+            self::assertSame([$reason, 70001], [$far->reason, $far->formLine]);
+        }
+    }
+
+    // ------------------------------------------------------------ reader settings (review M5-R-WP1)
+
+    /** The reader the parser opens, on a text the pre-scan would refuse, with libxml errors collected. */
+    private static function openReader(string $text): \XMLReader
+    {
+        $reader = (new \ReflectionMethod(FormParser::class, 'reader'))->invoke(null, $text);
+        self::assertInstanceOf(\XMLReader::class, $reader);
+
+        return $reader;
+    }
+
+    /**
+     * Every node type, value, and attribute the reader yields for $text.
+     *
+     * @return array{types: list<int>, text: string}
+     */
+    private static function readAll(\XMLReader $reader): array
+    {
+        $types = [];
+        $text = '';
+        $previous = libxml_use_internal_errors(true);
+        try {
+            for ($n = 0; $n < 1000 && $reader->read(); $n++) {
+                $types[] = $reader->nodeType;
+                $text .= '|' . $reader->name . '=' . $reader->value;
+                if ($reader->hasAttributes && $reader->moveToFirstAttribute()) {
+                    do {
+                        $text .= '|@' . $reader->name . '=' . $reader->value;
+                    } while ($reader->moveToNextAttribute());
+                    $reader->moveToElement();
+                }
+            }
+            foreach (libxml_get_errors() as $error) {
+                $text .= '|!' . $error->message;
+            }
+        } finally {
+            $reader->close();
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+
+        return ['types' => $types, 'text' => $text];
+    }
+
+    public function testReaderOptionsHoldNoNetAndNothingThatLoadsOrExpands(): void
+    {
+        $options = (new \ReflectionClassConstant(FormParser::class, 'READER_OPTIONS'))->getValue();
+        self::assertIsInt($options);
+        self::assertSame(LIBXML_NONET, $options & LIBXML_NONET);
+        foreach ([LIBXML_NOENT, LIBXML_DTDLOAD, LIBXML_DTDATTR, LIBXML_DTDVALID, LIBXML_XINCLUDE, LIBXML_PARSEHUGE] as $flag) {
+            self::assertSame(0, $options & $flag);
+        }
+        $reader = self::openReader(self::wrap(''));
+        try {
+            foreach ([\XMLReader::LOADDTD, \XMLReader::DEFAULTATTRS, \XMLReader::VALIDATE, \XMLReader::SUBST_ENTITIES] as $property) {
+                self::assertFalse($reader->getParserProperty($property), 'Parser property ' . $property);
+            }
+        } finally {
+            $reader->close();
+        }
+    }
+
+    public function testReaderDoesNotSubstituteInternalEntities(): void
+    {
+        $read = self::readAll(self::openReader('<!DOCTYPE div [<!ENTITY y "SYNTHETIC-MARKER-0002">]>' . self::wrap('<p>&y;</p>')));
+        self::assertContains(\XMLReader::ENTITY_REF, $read['types']);
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0002', $read['text']);
+    }
+
+    public function testReaderLoadsNoExternalDtd(): void
+    {
+        $this->temp = TempDir::create();
+        $dtd = $this->temp->path('form.dtd');
+        file_put_contents($dtd, '<!ENTITY z "SYNTHETIC-MARKER-0003"><!ATTLIST p data-x CDATA "SYNTHETIC-MARKER-0004">');
+        $read = self::readAll(self::openReader('<!DOCTYPE div SYSTEM "file://' . $dtd . '">' . self::wrap('<p>&z;</p>')));
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0003', $read['text']);
+        self::assertStringNotContainsString('SYNTHETIC-MARKER-0004', $read['text']);
+        self::assertStringNotContainsString('data-x', $read['text']);
+    }
+
+    public function testLinkNodesRefuseAnApostrophe(): void
+    {
+        foreach (["https://example.com/a'b", "https://example.com/?q='"] as $href) {
+            try {
+                new Link($href, []);
+                self::fail('The link was built: ' . $href);
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+        self::assertSame('https://example.com/it%27s', (new Link('https://example.com/it%27s', []))->href);
     }
 }

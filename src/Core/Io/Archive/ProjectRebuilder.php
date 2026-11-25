@@ -50,9 +50,10 @@ use TiffinDB\Core\Storage\Timestamp;
  * touches). Values that fail their type's check are emptied and counted,
  * links whose records are missing or that break a side limited to one
  * link are dropped, forms that the M2 parser rejects are dropped, and
- * every table's default form is then regenerated, so an edited default
- * form gains a slot for every field it does not name (ADR 0017 decision
- * 5). Collections (version 4) are repaired or dropped row by row, and
+ * every table's default form is then regenerated with no added fields,
+ * so an edited default form loses the slots of fields that no longer
+ * exist and gains none: a field hidden from it stays hidden (M5 spec
+ * section 7.3, ADR 0020 decision 9, amending ADR 0017 decision 5). Collections (version 4) are repaired or dropped row by row, and
  * rules that break the shape of format section 4.8.1 dropped; rules that
  * do not fit the rebuilt tables are kept, as in a live project (M4 spec
  * section 8.2). The source's import log is not copied; the new project's log gets
@@ -665,8 +666,10 @@ final class ProjectRebuilder
      * Step 6: forms of a version 2 or 3 file. A row is kept when its key
      * is a key, its table exists, its format is 1, and the M2 parser
      * accepts its HTML; at most one default per table (the first by key).
-     * Then every table's default form is regenerated. Returns the forms
-     * dropped and the edited default forms whose HTML regeneration changed.
+     * Then every table's default form is regenerated with no added fields
+     * (M5 spec section 7.3). Returns the forms dropped and the edited
+     * default forms whose HTML regeneration changed (they lost the slots of
+     * fields that no longer exist).
      *
      * @return array{0: int, 1: int}
      */

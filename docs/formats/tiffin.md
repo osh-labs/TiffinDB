@@ -14,6 +14,7 @@ projects/
     project.tiffin                      the database: a SQLite 3 file
     project.tiffin-wal                  present only while the project is in use (SQLite WAL mode)
     project.tiffin-shm                  present only while the project is in use
+    project.lock                        an empty file used as a lock (see below)
     attachments/
       9f/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
     snapshots/
@@ -23,6 +24,7 @@ projects/
 - `project.tiffin` is a standard SQLite 3 database. Open it with any SQLite tool (for example `sqlite3 project.tiffin`). Open it read-only, or work on a copy, unless you know TiffinDB is not running.
 - `attachments/` holds files added to records, named by the SHA-256 of their content (section 8).
 - `snapshots/` holds complete, self-contained copies of `project.tiffin` taken before risky changes (section 10).
+- `project.lock` is an empty file TiffinDB uses to keep other requests out while it restores or deletes the project; safe to delete when nobody is using TiffinDB.
 - Users, passwords, sharing, and the audit log are **not** in the project folder. They are in the installation's system database. A project folder can be copied, zipped, or handed to someone else without carrying anyone's account.
 
 ## 2. Identifying the file
@@ -234,12 +236,14 @@ One row per stored form: the layout used to show and edit one table's records (s
 | `name` | The form's name, for example `Standard form` |
 | `format` | The form format version of `html` (section 12): `1` |
 | `html` | The form's layout, in the form format of section 12 |
-| `css` | Reserved for a form's own styling. Always the empty string in files written by milestone M2; TiffinDB ignores any other value until a later version documents it |
+| `css` | Reserved for a form's own styling. TiffinDB writes the empty string in every row it creates, leaves the value of an existing row as it is when it saves that row's form, and never reads, checks, serves, or applies it (ADR 0020 decision 5). A later version may document it |
 | `is_default` | 1 for the form TiffinDB uses for the table; at most one per table (index `_tiffin_forms_default`) |
-| `generated` | 1 while the form is exactly what TiffinDB generates from the table's fields; 0 once a person has edited it (a later milestone) |
+| `generated` | 1 while the form is what TiffinDB generates from the table's fields (section 12.3). An Admin's save (milestone M5) sets 0, unless the saved text equals the generated text, which keeps 1; "Back to the standard form" sets 1 and stores the generated text |
 | `created_at`, `updated_at` | UTC times (section 5) |
 
-A table may have no row here, for example in a file just upgraded from version 1. TiffinDB then lays the table's records out as it would generate them (section 12.3), and stores that form the next time the table's fields change.
+A table may have no row here, for example in a file just upgraded from version 1. TiffinDB then lays the table's records out as it would generate them (section 12.3), and stores that form the next time the table's fields change or an Admin saves the table's form.
+
+TiffinDB shows and edits only each table's default form. Other rows (`is_default` 0), which files written elsewhere may hold, are kept unchanged and are not listed (ADR 0020 decision 6).
 
 ### 4.7 `_tiffin_import_log` (version 3)
 
@@ -463,11 +467,12 @@ File name: `<UTC time as YYYYMMDDTHHMMSSZ>-<reason>-<4 random characters from th
 | `field-options` | Changing field options in a way that clears or rewrites stored values |
 | `empty-trash` | Emptying the trash |
 | `import` | Saving the rows of an import into the project (version 3; the snapshot is taken by the application before the import transaction, so older versions of TiffinDB simply never write this reason) |
+| `pre-restore` | Restoring a snapshot (a copy of the project as it was just before) |
 | `manual` | An Admin asked for one |
 
 The 20 newest snapshots other than `manual` ones are kept; older ones are deleted when a new one is taken. Manual snapshots are kept until removed by hand.
 
-**Restoring by hand.** TiffinDB does not yet restore snapshots itself. With nobody using TiffinDB: rename `project.tiffin` (to keep it), copy the chosen snapshot to `project.tiffin` in the same folder, and delete `project.tiffin-wal` and `project.tiffin-shm` if they exist (they belong to the old file). If the snapshot has an older format version, TiffinDB upgrades it the next time the project is opened.
+**Restoring by hand.** An Admin can restore a snapshot in TiffinDB (Project settings, Snapshots). To restore by hand instead, with nobody using TiffinDB: rename `project.tiffin` (to keep it), copy the chosen snapshot to `project.tiffin` in the same folder, and delete `project.tiffin-wal` and `project.tiffin-shm` if they exist (they belong to the old file). If the snapshot has an older format version, TiffinDB upgrades it the next time the project is opened.
 
 ## 11. Versions and upgrades
 
@@ -573,7 +578,7 @@ A form says which fields of a table appear on the screen that shows one record, 
 
 `_tiffin_forms.format` is `1`, and the outermost element repeats it. Everything below is the complete vocabulary of format 1; TiffinDB refuses a form that contains anything else (section 12.4).
 
-**Document rules.** One root element. Well-formed XML 1.0 in UTF-8. No `<!DOCTYPE>`, no processing instructions, no CDATA sections. Comments are allowed and ignored. Character references (`&#233;`) and the five XML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`) are the only references. White space between block elements has no meaning. At most 262,144 bytes, 5,000 elements, and 8 levels of nesting.
+**Document rules.** One root element. Well-formed XML 1.0 in UTF-8. No `<!DOCTYPE>`, no processing instructions, no CDATA sections. Comments are allowed and ignored. Character references (`&#233;`) and the five XML entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`) are the only references. White space between block elements has no meaning. At most 262,144 bytes, 5,000 elements, and 8 levels of nesting. A UTF-8 byte order mark at the very start is accepted and ignored. Element and attribute names are lower case exactly as listed. Text and attribute values hold no control character other than tab and line feed in inline text (no bidirectional controls, zero-width space, soft hyphen, line or paragraph separator, or U+FEFF) and no noncharacter (U+FDD0 to U+FDEF, and the last two code points of every plane).
 
 **Elements.**
 
@@ -589,11 +594,11 @@ A form says which fields of a table appear on the screen that shows one record, 
 | `img` | In the root or a `fieldset` | `src` (required): `attachment:` followed by an attachment `id` from `_tiffin_attachments`. `alt` (required): 0 to 200 characters. Placement attributes | Empty |
 | `strong`, `em` | Inline content | none | Inline content |
 | `br` | Inline content | none | Empty |
-| `a` | Inline content | `href` (required): an `http` or `https` address following the rules of the `url` field type (section 6) | Inline content other than `a` |
+| `a` | Inline content | `href` (required): an `http` or `https` address following the rules of the `url` field type (section 6), and holding no apostrophe `'` (write `%27`; provisional decision P242) | Inline content other than `a` |
 
 Inline content is text and the inline elements `strong`, `em`, `br`, and `a`. No other element and no other attribute is allowed anywhere: in particular no `class`, `id`, `style`, event attributes, `script`, `style`, `iframe`, `form`, or `input`.
 
-**Placement attributes** (optional, on any block element) place an element on a grid of 12 columns, for later form editors: `data-tiffin-col` (first column, 1 to 12), `data-tiffin-row` (row, 1 to 50), `data-tiffin-span` (columns covered, 1 to 12, or `full` for the whole width). Milestone M2 uses only `data-tiffin-span="full"`; it shows the other values in reading order without explicit placement.
+**Placement attributes** (optional, on any block element) place an element on a grid of 12 columns: `data-tiffin-col` (first column, 1 to 12), `data-tiffin-row` (row, 1 to 50), `data-tiffin-span` (columns covered, 1 to 12, or `full` for the whole width). How TiffinDB shows them is in section 12.4. The simple form editor (milestone M5) writes only `data-tiffin-span`, with the values `full`, `8` (two thirds), `6` (half), and `4` (one third), and keeps `data-tiffin-col` and `data-tiffin-row` as they are; the post-v1 editor of ADR 0006 is expected to write them.
 
 ### 12.2 Example
 
@@ -635,10 +640,18 @@ The legends are written in English as data, like the `Name` field of a new table
 ### 12.4 How TiffinDB uses a stored form
 
 - A field element whose key is not a field of the table (for example after the field was deleted) shows nothing.
-- A field of the table that no field element names is not shown on the record screen and is left unchanged when a record is saved.
+- A field of the table that no field element names is not shown on the record screen and is left unchanged when a record is saved. From milestone M5 this is how an Admin hides a field: the editor removes its field element. A required field that the form does not show is not required when saving through that form.
+- When the table's fields change, a form with `generated` 1 is generated again. A form with `generated` 0 loses the field elements of deleted fields and gains one field element, at the end of its first `fieldset` (or of the root when it has none), for each field the change adds; it does not gain elements for other fields it does not name (ADR 0020 decision 9).
 - A form that breaks any rule of section 12.1, or whose `format` is not `1`, is not used: TiffinDB shows the generated layout instead (section 12.3) and leaves the stored text as it is.
-- An `img` element is shown (from milestone M4) only while its attachment is a PNG, JPEG, GIF, or WebP image linked from a record that is not in the trash (section 8); otherwise nothing is shown in its place.
-- Stored form text is never sent to a browser as it is. TiffinDB reads it into the elements of section 12.1 and builds the page from those, escaping all text.
+- An `img` element is shown (from milestone M4) only while its attachment is a PNG, JPEG, GIF, or WebP image linked from a record that is not in the trash (section 8); otherwise nothing is shown in its place. A form's `img` does not keep its attachment from being removed.
+- An `a` element is shown (from milestone M5) as a link to its address, with `rel="noopener noreferrer"` and no `target`; an `a` with no text is not shown. TiffinDB never loads the address itself.
+- Placement (from milestone M5): a `fieldset`, or the root, that holds an element with a `data-tiffin-span` of `1` to `12` is laid out as 12 equal columns, in which each element covers its span and an element without one, or with `full`, covers all 12; when that area is narrower than 40 times the root font size, every element covers the whole width. In a `fieldset` with no numeric span, `full` makes an element cover the whole width of the section's own layout (for a `details` section, columns at least 300 design pixels wide). `data-tiffin-col` and `data-tiffin-row` are read and kept but do not move elements: elements are shown in the order they are written.
+- Stored form text is never sent to a browser as it is. TiffinDB reads it into the elements of section 12.1 and builds the page from those, escaping all text. Form text appears in a page only on the Admin's form pages, escaped: as the text of the source view, and as the editor's hidden working copy (canonical text, read again under these rules when it comes back). The form download sends it as a file, never as a page.
+- `_tiffin_forms.css` is not applied (section 4.6).
+
+### 12.5 Canonical text
+
+Whenever TiffinDB stores a form (generation, the editor, the source view, an uploaded file), it stores its own canonical writing of it: the text read with the rules of section 12.1 and written again as follows. The root on its own line; each block on its own line, indented two spaces per level; inline content on one line as given; attributes in the order `data-tiffin-section`, `data-tiffin-field`, `data-tiffin-label`, `data-tiffin-col`, `data-tiffin-row`, `data-tiffin-span`, `src`, `alt`, `href`, each in double quotes; field elements written `<div ...></div>`; `hr`, `br`, and `img` written self-closed (`<hr/>`); every other element with an end tag; `&`, `<`, `>`, `"`, and `'` written as `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&apos;`, and every other character as itself; labels, legends, and alternative text trimmed; a final line feed. Comments, spacing between blocks, other character references, and a leading byte order mark are not kept. Reading the canonical text and writing it again gives the same bytes, so two stored forms with the same content have the same text. The example of section 12.2 is canonical text. An archive import (section 13.3) keeps an accepted form's text as the archive holds it unless bringing it in line with the fields changes it; files written by TiffinDB from milestone M5 hold canonical text already, and the next save of the form writes it canonically.
 
 ## 13. Project archive
 
@@ -678,7 +691,7 @@ Example (synthetic):
 
 ### 13.3 What TiffinDB does when importing an archive
 
-TiffinDB treats the archive as untrusted. It checks the zip and the manifest, opens `project.tiffin` read-only, and refuses it when `PRAGMA integrity_check` is not `ok`, when its identity (section 2) is wrong or its version is newer than TiffinDB knows, or when it holds a trigger, a view, a virtual table, an object whose name is not one of the documented patterns (sections 3 and 4), or a user or join table whose columns differ from sections 5 and 7. It then builds a **new** project file and copies the archive's metadata and values into it, checking each one against this document: values that do not fit their field type are left empty, links whose records are missing are dropped, and forms that break section 12 are dropped; every table's forms are then brought in line with its fields (section 12.3), so each table's edited default form gains a field element for any field it does not name. Collections (version 4) are copied when their key, table, and name are valid, the name is not taken by an earlier one, and fewer than 50 are already kept (else the collection is dropped and counted as `collections_dropped`); a `match_mode` other than `all` or `any` becomes `all`, and a `sort` that is not a sort token (section 4.8) becomes null; each rule is kept when it has exactly the shape of section 4.8.1 (a field key, a known operator, and at most two strings of at most 200 characters), else dropped and counted as `collection_rules_dropped`. A kept rule that does not fit the rebuilt tables is kept and shown as no longer working, as in a live project. Keys and record ids are kept; the project gets a new key and no sharing. The import report lists everything that was emptied, dropped, or missing.
+TiffinDB treats the archive as untrusted. It checks the zip and the manifest, opens `project.tiffin` read-only, and refuses it when `PRAGMA integrity_check` is not `ok`, when its identity (section 2) is wrong or its version is newer than TiffinDB knows, or when it holds a trigger, a view, a virtual table, an object whose name is not one of the documented patterns (sections 3 and 4), or a user or join table whose columns differ from sections 5 and 7. It then builds a **new** project file and copies the archive's metadata and values into it, checking each one against this document: values that do not fit their field type are left empty, links whose records are missing are dropped, and forms that break section 12 are dropped; every table's default form is then brought in line with its fields (section 12.4): a generated form is generated again, and an edited form loses field elements whose key is not a field of its table but gains none, so a field hidden in the source project stays hidden (ADR 0020 decision 9; the report's `forms_extended` counts the edited forms changed this way). Collections (version 4) are copied when their key, table, and name are valid, the name is not taken by an earlier one, and fewer than 50 are already kept (else the collection is dropped and counted as `collections_dropped`); a `match_mode` other than `all` or `any` becomes `all`, and a `sort` that is not a sort token (section 4.8) becomes null; each rule is kept when it has exactly the shape of section 4.8.1 (a field key, a known operator, and at most two strings of at most 200 characters), else dropped and counted as `collection_rules_dropped`. A kept rule that does not fit the rebuilt tables is kept and shown as no longer working, as in a live project. Keys and record ids are kept; the project gets a new key and no sharing. The import report lists everything that was emptied, dropped, or missing.
 
 ### 13.4 Restoring an archive by hand
 

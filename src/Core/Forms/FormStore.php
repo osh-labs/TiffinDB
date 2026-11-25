@@ -111,14 +111,79 @@ final class FormStore
     }
 
     /**
+     * Stores $document as the table's default form (M5 spec section 7.1);
+     * must run inside the caller's write(). The text stored is the
+     * canonical serialization (`docs/formats/tiffin.md` section 12.5).
+     * With no default row, one is inserted; otherwise only `format`,
+     * `html`, `generated`, and `updated_at` change, and only when the text,
+     * the generated flag, or the format differ from the row.
+     *
+     * @throws \LengthException when the text is longer than FormFormat::MAX_BYTES (callers check first)
+     */
+    public function saveDefault(Schema $schema, string $tableKey, FormDocument $document): FormWrite
+    {
+        if (!$this->db->inTransaction()) {
+            throw new \LogicException('FormStore::saveDefault must run inside a write transaction.');
+        }
+        $schema->table($tableKey);
+        $html = $this->serializer->serialize($document);
+        if (strlen($html) > FormFormat::MAX_BYTES) {
+            throw new \LengthException('The form text is longer than form format 1 allows.');
+        }
+        $generated = $html === $this->serializer->serialize($this->generator->generate($schema, $tableKey));
+        $stored = $this->defaultFor($tableKey);
+        $now = Timestamp::format($this->clock->now());
+        if ($stored === null) {
+            $key = $this->newKey();
+            $this->db->run(
+                'INSERT INTO "_tiffin_forms" ("key", "table_key", "name", "format", "html", "css", "is_default", "generated", "created_at", "updated_at")'
+                . ' VALUES (?, ?, ?, 1, ?, \'\', 1, ?, ?, ?)',
+                [$key, $tableKey, self::GENERATED_NAME, $html, $generated ? 1 : 0, $now, $now],
+            );
+
+            return new FormWrite($key, $html, $generated, true);
+        }
+        if ($stored->html === $html && $stored->generated === $generated && $stored->format === FormFormat::VERSION) {
+            return new FormWrite($stored->key, $html, $generated, false);
+        }
+        $this->db->run(
+            'UPDATE "_tiffin_forms" SET "format" = 1, "html" = ?, "generated" = ?, "updated_at" = ? WHERE "key" = ?',
+            [$html, $generated ? 1 : 0, $now, $stored->key],
+        );
+
+        return new FormWrite($stored->key, $html, $generated, true);
+    }
+
+    /** Stores the generated layout as the table's default form; as saveDefault. */
+    public function resetDefault(Schema $schema, string $tableKey): FormWrite
+    {
+        $schema->table($tableKey);
+
+        return $this->saveDefault($schema, $tableKey, $this->generator->generate($schema, $tableKey));
+    }
+
+    /** The save token of a stored form (ADR 0020 decision 12): SHA-256 of its text, or of '' when there is none. */
+    public static function baseOf(?StoredForm $stored): string
+    {
+        return hash('sha256', $stored === null ? '' : $stored->html);
+    }
+
+    /**
      * Brings the default forms of the given tables in line with the schema
-     * (M2 spec section 5.5); must run inside the caller's write(). Keys that
-     * are not tables of $schema are skipped. A default form whose format is
-     * not 1 is left as it is.
+     * (M2 spec section 5.5, M5 spec section 7.1); must run inside the
+     * caller's write(). Keys that are not tables of $schema are skipped. A
+     * default form whose format is not 1 is left as it is. An edited form
+     * loses the slots of keys that are not fields of its table and gains a
+     * slot only for each field in $addedFieldKeys that no slot names, so a
+     * field a person hid stays hidden. When the new text of a stored form
+     * would be longer than FormFormat::MAX_BYTES, nothing is written: the
+     * form keeps its stored text, and a log line names the table key and
+     * the reason only (P243).
      *
      * @param list<string> $tableKeys
+     * @param list<string> $addedFieldKeys fields the change has just added
      */
-    public function regenerate(Schema $schema, array $tableKeys): void
+    public function regenerate(Schema $schema, array $tableKeys, array $addedFieldKeys = []): void
     {
         if (!$this->db->inTransaction()) {
             throw new \LogicException('FormStore::regenerate must run inside a write transaction.');
@@ -127,14 +192,21 @@ final class FormStore
         foreach ($schema->tables() as $table) {
             $tables[$table->key] = true;
         }
+        $added = [];
+        foreach ($addedFieldKeys as $key) {
+            if (is_string($key)) {
+                $added[$key] = true;
+            }
+        }
         foreach (array_unique($tableKeys) as $tableKey) {
             if (is_string($tableKey) && isset($tables[$tableKey])) {
-                $this->regenerateOne($schema, $tableKey);
+                $this->regenerateOne($schema, $tableKey, $added);
             }
         }
     }
 
-    private function regenerateOne(Schema $schema, string $tableKey): void
+    /** @param array<string, true> $added */
+    private function regenerateOne(Schema $schema, string $tableKey, array $added): void
     {
         $stored = $this->defaultFor($tableKey);
         $now = Timestamp::format($this->clock->now());
@@ -159,24 +231,34 @@ final class FormStore
             } catch (FormRejected) {
                 return;
             }
-            $adjusted = self::adjust($document, $schema, $tableKey);
+            $adjusted = self::adjust($document, $schema, $tableKey, $added);
             if ($this->serializer->serialize($adjusted) === $this->serializer->serialize($document)) {
                 return;
             }
             $html = $this->serializer->serialize($adjusted);
         }
-        if ($html !== $stored->html) {
-            $this->db->run('UPDATE "_tiffin_forms" SET "html" = ?, "updated_at" = ? WHERE "key" = ?', [$html, $now, $stored->key]);
+        if ($html === $stored->html) {
+            return;
         }
+        if (strlen($html) > FormFormat::MAX_BYTES) {
+            // P243: a text over the limit of form format 1 is never stored; the form keeps its stored text.
+            error_log('TiffinDB: stored form not regenerated; reason=' . FormRejected::TOO_LARGE . '; table_key=' . $tableKey);
+
+            return;
+        }
+        $this->db->run('UPDATE "_tiffin_forms" SET "html" = ?, "updated_at" = ? WHERE "key" = ?', [$html, $now, $stored->key]);
     }
 
     /**
      * An edited form brought in line with the table's fields: slots for
      * keys that are not fields of the table removed; a slot appended for
-     * each field no slot names, in field order, at the end of the first
-     * section (or of the root when there is none). Nothing else changes.
+     * each field in $added that no slot names, in field order, at the end
+     * of the first section (or of the root when there is none). Nothing
+     * else changes.
+     *
+     * @param array<string, true> $added
      */
-    private static function adjust(FormDocument $document, Schema $schema, string $tableKey): FormDocument
+    private static function adjust(FormDocument $document, Schema $schema, string $tableKey, array $added): FormDocument
     {
         $fieldKeys = [];
         foreach ($schema->fields($tableKey) as $field) {
@@ -200,24 +282,24 @@ final class FormStore
         }
 
         $named = array_flip($document->fieldKeys());
-        $added = [];
+        $slots = [];
         foreach (array_keys($fieldKeys) as $key) {
-            if (!isset($named[$key])) {
-                $added[] = new FieldSlot((string) $key);
+            if (!isset($named[$key]) && isset($added[$key])) {
+                $slots[] = new FieldSlot((string) $key);
             }
         }
-        if ($added === []) {
+        if ($slots === []) {
             return new FormDocument($blocks);
         }
         foreach ($blocks as $i => $block) {
             if ($block instanceof Section) {
-                $blocks[$i] = new Section($block->role, $block->legend, [...$block->children, ...$added], $block->placement);
+                $blocks[$i] = new Section($block->role, $block->legend, [...$block->children, ...$slots], $block->placement);
 
                 return new FormDocument($blocks);
             }
         }
 
-        return new FormDocument([...$blocks, ...$added]);
+        return new FormDocument([...$blocks, ...$slots]);
     }
 
     /**

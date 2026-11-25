@@ -26,6 +26,9 @@ use UnexpectedValueException;
 #[CoversClass(Strings::class)]
 final class StringsTest extends TestCase
 {
+    /** The M7 packages whose problem rows (M7 spec section 11.3) are built; each adds its own. */
+    private const M7_PROBLEM_PACKAGES = ['WP1', 'WP2'];
+
     private static function strings(): Strings
     {
         return new Strings(__DIR__ . '/fixtures/strings/en.php');
@@ -318,8 +321,23 @@ final class StringsTest extends TestCase
         self::assertCount(18, $m4, 'The M4 specification table was read.');
         self::assertSame([], array_intersect_key($m1 + $m2 + $m3, $m4), 'The M4 table adds keys only.');
 
+        $m5 = self::problemRows('docs/specs/M5-forms.md', "\n### 4.3 Message keys and parameters", "\n## 5. ");
+        self::assertCount(30, $m5, 'The M5 specification table was read.');
+        self::assertSame([], array_intersect_key($m1 + $m2 + $m3 + $m4, $m5), 'The M5 table adds keys only.');
+
+        // M7 spec section 11.3 has a package column: the rows of the packages built so far.
+        $m7 = [];
+        foreach (self::problemRows('docs/specs/M7-release.md', "\n### 11.3 Message keys produced by the core", "\n## 12. ") as $key => $cells) {
+            self::assertSame(1, preg_match('/^(WP\d+) \| (.+) \|\s*$/', $cells, $cell), $key);
+            if (in_array($cell[1], self::M7_PROBLEM_PACKAGES, true)) {
+                $m7[$key] = $cell[2];
+            }
+        }
+        self::assertCount(6, $m7, 'The M7 specification table was read.');
+        self::assertSame([], array_intersect_key($m1 + $m2 + $m3 + $m4 + $m5, $m7), 'The M7 table adds keys only.');
+
         $problems = require RepoFiles::path('strings/en/problems.php');
-        self::assertSame($m1 + $m2 + $m3 + $m4, $problems);
+        self::assertSame($m1 + $m2 + $m3 + $m4 + $m5 + $m7, $problems);
     }
 
     /**
@@ -369,6 +387,55 @@ final class StringsTest extends TestCase
         self::assertIsArray($components);
         $m4 = array_filter(array_keys($components), static fn (string $key): bool => str_starts_with($key, 'components.'));
         self::assertSame(20, count($m4), 'Every components.* key is listed above.');
+    }
+
+    /**
+     * T-WEB-72, M5 spec part 2 section 7 and docs/design/m5/components.md
+     * sections 3 to 5 and 7: strings/en/forms.php holds exactly the
+     * `forms.*` keys of the design, with the design's texts (table rows
+     * `| `key` | text |` and inline `` `key` "text" ``).
+     */
+    public function testM5FormStringsAreTheDesign(): void
+    {
+        $design = RepoFiles::read('docs/design/m5/components.md');
+        $expected = [];
+        preg_match_all('/^\| `(forms\.[a-z0-9._-]+)` \| (.*) \|$/m', $design, $rows, PREG_SET_ORDER);
+        foreach ($rows as [, $key, $text]) {
+            $expected[$key] = str_replace('\|', '|', $text);
+        }
+        preg_match_all('/`(forms\.[a-z0-9._-]+)` "([^"]+)"/', $design, $inline, PREG_SET_ORDER);
+        foreach ($inline as [, $key, $text]) {
+            self::assertSame($expected[$key] ?? $text, $text, $key);
+            $expected[$key] = $text;
+        }
+        self::assertCount(50, $expected, 'The design was read.');
+
+        $forms = require RepoFiles::path('strings/en/forms.php');
+        self::assertIsArray($forms);
+        ksort($expected);
+        ksort($forms);
+        self::assertSame($expected, $forms);
+
+        $strings = new Strings(RepoFiles::path('strings/en.php'));
+        self::assertSame('2 links have no text, so they are not shown.', $strings->get('forms.report.empty_links', ['count' => 2]));
+        self::assertSame('1 field element names a field that is not in Items. They show nothing.', $strings->get('forms.report.unknown', ['count' => 1, 'table' => 'Items']));
+    }
+
+    /**
+     * M7 screens spec sections 5 and 7 and docs/design/m7/components.md
+     * sections 2 and 3: the two shell strings, exactly, and the shell file
+     * holds no other new key.
+     */
+    public function testM7ShellStringsAreTheDesign(): void
+    {
+        $design = RepoFiles::read('docs/design/m7/components.md');
+        $shell = require RepoFiles::path('strings/en/shell.php');
+        self::assertIsArray($shell);
+        foreach (['shell.nav.activity' => 'Activity', 'shell.footer.about' => 'About TiffinDB'] as $key => $text) {
+            self::assertStringContainsString("`{$key}` \"{$text}\"", $design, $key);
+            self::assertSame($text, $shell[$key] ?? null, $key);
+        }
+        self::assertCount(39, $shell, 'strings/en/shell.php gains exactly the two M7 keys.');
     }
 
     /** M3 spec part 2 sections 2.3, 4, and 6, and docs/design/m3/import.md section 1. */

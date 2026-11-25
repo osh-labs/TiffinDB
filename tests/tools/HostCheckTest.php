@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace TiffinDB\Tests\Tools;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -28,7 +29,7 @@ final class HostCheckTest extends TestCase
         'limit.memory_limit', 'limit.max_execution_time', 'limit.upload_max_filesize',
         'limit.post_max_size', 'limit.max_file_uploads', 'limit.max_input_vars',
         'php.disable_functions', 'fs.stale_leftovers', 'fs.outside_webroot_writable', 'fs.beside_script_writable',
-        'fs.sqlite_file', 'fs.sqlite_journal_mode', 'fs.flock', 'fs.cleanup',
+        'fs.sqlite_file', 'fs.sqlite_journal_mode', 'fs.flock', 'fs.free', 'fs.cleanup',
         'web.server', 'web.https', 'web.selftest',
     ];
 
@@ -156,6 +157,111 @@ final class HostCheckTest extends TestCase
         $this->assertSame('', $err);
         $this->assertNoSensitiveText($out);
         $this->assertSame(['public', 'public/host-check.php'], $this->filesInWorkDir());
+    }
+
+    /** T-CF7-5: free space of the data folder's parent, in whole MiB, WARN under 1 GiB. */
+    public function testFreeSpaceIsReportedInWholeMebibytes(): void
+    {
+        [, $out, $err] = $this->runCli();
+        $data = $this->extractJson($out);
+        $this->assertSame('', $err);
+        $this->assertArrayHasKey('free_bytes', $data);
+        $free = $data['free_bytes'];
+        $this->assertIsInt($free);
+        $this->assertGreaterThanOrEqual(0, $free);
+        $check = $data['checks']['fs.free'];
+        $this->assertSame(intdiv($free, 1048576), $check['value']);
+        $this->assertSame($free < 1073741824 ? 'WARN' : 'INFO', $check['status']);
+        $this->assertStringStartsWith('Free space in <script-dir>/..: ' . intdiv($free, 1048576) . ' MiB', $check['message']);
+        $this->assertStringEndsWith('Quotas set by the host are not shown.', $check['message']);
+        $this->assertMatchesRegularExpression('/^(INFO|WARN)  fs\.free +Free space in <script-dir>\/\.\.: \d+ MiB/m', $out);
+    }
+
+    /** T-CF7-5: a disabled disk_free_space() gives "not available" and a null free_bytes. */
+    public function testFreeSpaceNotAvailableWhenDisabled(): void
+    {
+        [, $out, $err] = $this->runCli(['disable_functions=disk_free_space']);
+        $data = $this->extractJson($out);
+        $this->assertSame('', $err);
+        $this->assertNull($data['free_bytes']);
+        $this->assertSame('INFO', $data['checks']['fs.free']['status']);
+        $this->assertNull($data['checks']['fs.free']['value']);
+        $this->assertSame('Free space in <script-dir>/..: not available. Quotas set by the host are not shown.', $data['checks']['fs.free']['message']);
+        $this->assertSame('PASS', $data['checks']['fs.cleanup']['status']);
+        $this->assertNoSensitiveText($out);
+    }
+
+    /**
+     * T-CF7-4: the host check must parse on PHP 7.4, so it uses no syntax
+     * newer than that: no `match`, no named arguments, no nullsafe
+     * operator, no `mixed`, no attributes, enums, or readonly. Checked by
+     * a token scan (no PHP 7.4 binary is available here); the scanner is
+     * itself tested on samples below.
+     */
+    public function testTheHostCheckUsesNoSyntaxNewerThanPhp74(): void
+    {
+        $source = (string) file_get_contents(dirname(__DIR__, 2) . '/tools/host-check/host-check.php');
+        $this->assertSame([], self::newerSyntax($source));
+    }
+
+    /** @return iterable<string, array{string, list<string>}> */
+    public static function syntaxSamples(): iterable
+    {
+        yield 'match' => ["<?php\n\$x = match (\$a) { 1 => 2, default => 3 };\n", ['match']];
+        yield 'nullsafe' => ["<?php\n\$x = \$a?->b;\n", ['nullsafe']];
+        yield 'named argument' => ["<?php\nf(1, name: 2);\n", ['named argument']];
+        yield 'named first argument' => ["<?php\nf(name: 2);\n", ['named argument']];
+        yield 'mixed type' => ["<?php\nfunction f(Mixed \$a) {}\n", ['mixed']];
+        yield 'attribute' => ["<?php\n#[A]\nfunction f() {}\n", ['attribute']];
+        yield 'readonly' => ["<?php\nclass A { public readonly int \$a; }\n", ['readonly']];
+        yield 'ternary and static call are fine' => ["<?php\n\$x = f(\$a ? B : C, D::e());\n", []];
+        yield 'switch case is fine' => ["<?php\nswitch (\$a) { case B: break; }\n", []];
+        yield 'words in strings and comments are fine' => ["<?php\n// match mixed ?->\n\$s = 'match(x) mixed';\n", []];
+        yield 'goto label is fine' => ["<?php\nend:\n", []];
+    }
+
+    /** @param list<string> $expected */
+    #[DataProvider('syntaxSamples')]
+    public function testTheSyntaxScanFindsNewerConstructs(string $source, array $expected): void
+    {
+        $this->assertSame($expected, self::newerSyntax($source));
+    }
+
+    /**
+     * Constructs newer than PHP 7.4 found in $source, by name.
+     *
+     * @return list<string>
+     */
+    private static function newerSyntax(string $source): array
+    {
+        $tokens = array_values(array_filter(
+            token_get_all($source),
+            static fn ($t): bool => !is_array($t) || !in_array($t[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true),
+        ));
+        $found = [];
+        foreach ($tokens as $i => $token) {
+            if (!is_array($token)) {
+                continue;
+            }
+            [$id, $text] = $token;
+            if ($id === T_MATCH) {
+                $found[] = 'match';
+            } elseif ($id === T_NULLSAFE_OBJECT_OPERATOR) {
+                $found[] = 'nullsafe';
+            } elseif ($id === T_ATTRIBUTE) {
+                $found[] = 'attribute';
+            } elseif ($id === T_READONLY) {
+                $found[] = 'readonly';
+            } elseif ($id === T_ENUM) {
+                $found[] = 'enum';
+            } elseif ($id === T_STRING && strtolower($text) === 'mixed') {
+                $found[] = 'mixed';
+            } elseif ($id === T_STRING && ($tokens[$i + 1] ?? null) === ':' && in_array($tokens[$i - 1] ?? null, ['(', ','], true)) {
+                $found[] = 'named argument';
+            }
+        }
+
+        return $found;
     }
 
     public function testHelpExitsZeroAndUnknownOptionExitsTwo(): void

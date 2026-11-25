@@ -192,8 +192,11 @@ final class SchemaScreensTest extends TestCase
         self::assertSame(['Projects', 'Home Inventory', 'Items'], $this->crumbs($x));
         self::assertSame('Items', HtmlAssertions::text($html, '//h1'));
         self::assertSame('3 fields. 1 record.', HtmlAssertions::text($html, '//div[@class="page-head"]//p[@class="lead"]'));
-        self::assertSame(['Add a field'], $this->texts($x, '//div[@class="page-actions"]/a'));
+        // T-WEB-80: "Edit the form" after "Add a field", a secondary button to the form editor.
+        self::assertSame(['Add a field', 'Edit the form'], $this->texts($x, '//div[@class="page-actions"]/a'));
         self::assertSame($this->t('/fields/new'), $x->query('//div[@class="page-actions"]/a/@href')->item(0)?->nodeValue);
+        self::assertSame($this->t('/form'), $x->query('//div[@class="page-actions"]/a/@href')->item(1)?->nodeValue);
+        self::assertSame(['button button-primary', 'button'], $this->texts($x, '//div[@class="page-actions"]/a/@class'));
         self::assertSame('Fields', HtmlAssertions::text($html, '//section[@aria-labelledby="fields-title"]/h2[@id="fields-title"]'));
         self::assertSame('Fields in Items, in the order they appear', HtmlAssertions::text($html, '//section//caption'));
         self::assertSame(['Field', 'Type', 'Must be filled in', 'Order'], $this->texts($x, '//section//thead/tr/th'));

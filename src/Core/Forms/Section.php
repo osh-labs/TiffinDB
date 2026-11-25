@@ -50,4 +50,16 @@ final class Section implements Block
     {
         return $this->placement;
     }
+
+    /** This section with other children; role, legend, and placement kept. @param list<Block> $children */
+    public function withChildren(array $children): self
+    {
+        return new self($this->role, $this->legend, $children, $this->placement);
+    }
+
+    /** This section with another legend (null: none); the same object when it is unchanged. */
+    public function withLegend(?string $legend): self
+    {
+        return $legend === $this->legend ? $this : new self($this->role, $legend, $this->children, $this->placement);
+    }
 }

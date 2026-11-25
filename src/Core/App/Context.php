@@ -241,7 +241,8 @@ final class Context
      *
      * Each structural change regenerates the default forms of the tables
      * it touches inside its own transaction (M2 spec section 5.6): an
-     * exception from the regeneration rolls the whole change back.
+     * exception from the regeneration rolls the whole change back. An
+     * edited form gains only the fields the change added (M5 spec section 7.2).
      */
     public function editor(ProjectRecord $project, Database $db, Actor $actor): SchemaEditor
     {
@@ -256,8 +257,8 @@ final class Context
             function (SnapshotInfo $info) use ($project, $actor): void {
                 $this->recordSnapshot($project, $actor, $info);
             },
-            function (Database $db, array $tableKeys): void {
-                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys));
+            function (Database $db, array $tableKeys, array $addedFieldKeys = []): void {
+                $this->forms($db)->regenerate(new Schema($db, $this->types), array_values($tableKeys), array_values($addedFieldKeys));
             },
         );
     }
@@ -300,13 +301,20 @@ final class Context
     }
 
     /**
-     * The staging sweep (M3) and, for an opened and authorised project,
-     * the orphan-file part of the attachment sweep (P175, ADR 0018
-     * decision 6). A failure of the file sweep is logged without a path
-     * or hash and never stops the caller: the next sweep tries again.
+     * Finishing interrupted project creations and deletions
+     * (ProjectOperations::clearAbandoned, P238), the staging sweep (M3),
+     * and, for an opened and authorised project, the orphan-file part of
+     * the attachment sweep (P175, ADR 0018 decision 6). Called outside any
+     * write. A failure of the first or the last is logged without a key,
+     * path, or hash and never stops the caller: the next sweep tries again.
      */
     public function sweepStaging(?ProjectRecord $project = null, ?Database $db = null): void
     {
+        try {
+            (new ProjectOperations($this))->clearAbandoned();
+        } catch (\Throwable $error) {
+            error_log('TiffinDB: finishing interrupted project changes failed (' . $error::class . ').');
+        }
         $this->staging()->sweep();
         if ($project === null || $db === null) {
             return;

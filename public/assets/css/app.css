@@ -698,7 +698,7 @@ textarea.input {
 
 .radio-card > span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /*
@@ -1147,10 +1147,11 @@ textarea.input {
 }
 
 .sidebar-project-name {
+  min-width: 0;
   font-size: 1.3333rem;
   font-weight: 700;
   line-height: 1.2;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .sidebar-switch {
@@ -1499,6 +1500,13 @@ li.link-row a {
 .compare-table td {
   vertical-align: top;
   white-space: normal;
+}
+
+.compare-table th {
+  overflow-wrap: break-word;
+}
+
+.compare-table td {
   overflow-wrap: anywhere;
 }
 
@@ -1969,7 +1977,7 @@ div.table-scroll {
   color: var(--ink);
   font-size: var(--text-base);
   font-weight: 700;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .mapping-left-out th[scope="row"] {
@@ -2536,4 +2544,433 @@ li.link-row .linked-main a {
 /* The record page's unlink forms hold only hidden fields (record-controls.md section 2). */
 .unlink-form {
   margin: 0;
+}
+
+/*
+ * M5: forms (docs/design/m5/components.md sections 1 to 6 and 8; M5 spec
+ * part 2 section 8). Layout comes from the classes the templates write,
+ * never from the stored data-tiffin-* attributes. Design px at the
+ * Standard text size, written in rem (px / 18).
+ */
+
+/* 1. Layouts */
+.page.page-form {
+  gap: 1.3333rem;
+  max-width: var(--width-wide);
+  padding: 1.1111rem 1.1111rem 2.6667rem;
+}
+
+.page.page-form.page-form-narrow {
+  max-width: var(--width-form);
+}
+
+/* The editor's "Add a section" row, under the rows (docs/design/m5/editor.md section 2, item 5.3) */
+.form-actions-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 2. Widths on the record form: one column until the container is 40rem wide */
+.form-area {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.form-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1111rem;
+  align-items: start;
+}
+
+.cell {
+  min-width: 0;
+}
+
+@container (min-width: 40rem) {
+  .form-cols {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .form-cols > .cell {
+    grid-column: span 12;
+  }
+
+  .form-cols > .span-1 {
+    grid-column: span 1;
+  }
+
+  .form-cols > .span-2 {
+    grid-column: span 2;
+  }
+
+  .form-cols > .span-3 {
+    grid-column: span 3;
+  }
+
+  .form-cols > .span-4 {
+    grid-column: span 4;
+  }
+
+  .form-cols > .span-5 {
+    grid-column: span 5;
+  }
+
+  .form-cols > .span-6 {
+    grid-column: span 6;
+  }
+
+  .form-cols > .span-7 {
+    grid-column: span 7;
+  }
+
+  .form-cols > .span-8 {
+    grid-column: span 8;
+  }
+
+  .form-cols > .span-9 {
+    grid-column: span 9;
+  }
+
+  .form-cols > .span-10 {
+    grid-column: span 10;
+  }
+
+  .form-cols > .span-11 {
+    grid-column: span 11;
+  }
+
+  .form-cols > .span-12 {
+    grid-column: span 12;
+  }
+}
+
+/* 3. Links in forms: the link style, visited not distinguished */
+.form-link,
+.form-link:visited {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.form-link:hover {
+  color: var(--ink);
+}
+
+/* 4. Form tools navigation */
+.form-tabs {
+  min-width: 0;
+}
+
+.form-tabs-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4444rem 0.8889rem;
+  margin: 0 0 1.3333rem;
+  padding: 0;
+  list-style: none;
+}
+
+.form-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 0.7778rem;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+}
+
+.form-tab[aria-current="page"] {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+/* 5. Editor rows */
+.form-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6667rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6667rem;
+  min-width: 0;
+  padding: 0.8889rem;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.form-row.form-row-section {
+  border-width: 2px;
+  background: var(--sunk);
+}
+
+.form-row.form-row-missing {
+  border-style: dashed;
+}
+
+.form-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2222rem 0.6667rem;
+}
+
+.form-row-name {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.form-row-kind {
+  color: var(--ink2);
+}
+
+.form-row-summary {
+  margin: 0;
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.form-row-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.6667rem), 1fr));
+  gap: 0.6667rem 1.1111rem;
+}
+
+.form-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4444rem 0.6667rem;
+}
+
+.help.form-row-note {
+  margin: 0;
+}
+
+.form-rows.form-row-children {
+  margin-top: 0.2222rem;
+  padding-left: 0.8889rem;
+  border-left: 3px solid var(--line);
+}
+
+/*
+ * Narrow rows (320 px at Largest text): each row is a container, so a
+ * nested row's buttons never run past its border. They may shrink and
+ * wrap; a narrow section indents its rows less and pads them less.
+ */
+.form-row {
+  container-type: inline-size;
+}
+
+.form-row-actions > .button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+@container (max-width: 15rem) {
+  .form-row-actions > .button {
+    padding: 0 var(--space-2);
+  }
+
+  .form-rows.form-row-children {
+    padding-left: var(--space-2);
+  }
+
+  .form-row-children > .form-row {
+    padding: var(--space-3);
+  }
+}
+
+/* 6. Report */
+.panel.form-report {
+  gap: 0.5556rem;
+}
+
+.form-report-list {
+  margin: 0;
+  padding-left: 1.3333rem;
+}
+
+/* 7. Source text area: the device monospace font (components.md section 6) */
+.input.source-input {
+  width: 100%;
+  min-height: 30rem;
+  overflow: auto;
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.8889rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/*
+ * M7: snapshots, activity, About, recovery, project settings links
+ * (docs/design/m7/components.md section 5; M7 screens spec section 8).
+ * Design px at the Standard text size, written in rem (px / 18).
+ */
+
+/* 1. Words break inside only when longer than their line (M7 spec part 1
+ * section 15.2): flex items of the shell may shrink below their content,
+ * and labels, headings, and links keep the inherited break-word. Values
+ * and file names keep overflow-wrap: anywhere. */
+.top-pill,
+.sidebar,
+.sidebar-link > span {
+  min-width: 0;
+}
+
+/* 2. Snapshots list: a .data-table in div.table-scroll; the size cell is .num */
+.snapshot-table td:last-child {
+  white-space: nowrap;
+}
+
+/* 3. Activity filters: a wrapping row, one column under 40em */
+.audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.audit-filters > .field {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+@media (max-width: 40em) {
+  .audit-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .audit-filters > .field {
+    flex-basis: auto;
+  }
+}
+
+/* 4. Activity entries */
+.audit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-entry {
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-card) solid var(--line);
+}
+
+.audit-entry:first-child {
+  border-top: var(--border-card) solid var(--line);
+}
+
+.audit-entry .audit-when {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink2);
+}
+
+.audit-entry .audit-what {
+  margin: 0;
+}
+
+.audit-detail {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-small);
+  color: var(--ink2);
+  overflow-wrap: anywhere;
+}
+
+.audit-detail dt,
+.audit-detail dd {
+  display: inline;
+  margin: 0;
+}
+
+.audit-detail dt {
+  font-weight: 700;
+}
+
+.audit-detail dd::after {
+  content: "; ";
+}
+
+.audit-detail dd:last-child::after {
+  content: "";
+}
+
+/* 5. Licence text: wraps; scrolls in its own box only when a line cannot */
+.licence-text {
+  max-width: 56rem;
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+  border: var(--border-card) solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--sunk);
+  color: var(--ink);
+  font-size: var(--text-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 6. About: components and plugins */
+.about-list {
+  margin: 0;
+}
+
+.about-list dd + dt {
+  margin-top: var(--space-2);
+}
+
+.about-list dt {
+  font-weight: 700;
+}
+
+.about-list dd {
+  margin: 0;
+  color: var(--ink2);
+}
+
+/* 7. Recovery steps */
+.recovery-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 40rem;
+  margin: 0;
+  padding-left: 1.3333rem;
+}
+
+/* 8. Project settings links, each with its help line below */
+.settings-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-links > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 9. A link to a destructive page: warning ink, underlined, the usual focus ring */
+a.link-danger,
+a.link-danger:hover {
+  color: var(--warn);
+  text-decoration: underline;
 }

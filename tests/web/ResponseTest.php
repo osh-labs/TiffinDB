@@ -21,6 +21,7 @@ use TiffinDB\Web\SecurityHeaders;
 /**
  * T-WEB-14: response values, header and cookie validation, redirects, send(), and the fallback reply.
  * T-WEB-40 (M3 spec part 2 section 2.2): downloads, their headers, streaming, HEAD, and the after-send callback.
+ * T-WEB-74 (M5 spec part 2 section 3.1): attachmentText(), the form download.
  */
 #[CoversClass(Response::class)]
 #[CoversClass(Fallback::class)]
@@ -381,6 +382,38 @@ final class ResponseTest extends TestCase
         yield 'overlong encoding' => ["\xC0\xAF.csv"];
     }
 
+    /**
+     * T-CF7-3: an overlong download name keeps an extension of 1 to 16
+     * letters or digits; the stem is cut, then trimmed.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function cutNames(): iterable
+    {
+        yield '1,000 characters with .pdf' => [str_repeat('a', 1000) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield 'exactly 255 with .pdf' => [str_repeat('a', 251) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield '256 with .pdf' => [str_repeat('a', 252) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield '20-character "extension" is cut whole' => [str_repeat('a', 300) . '.' . str_repeat('b', 20), str_repeat('a', 255)];
+        yield '16-character extension is kept' => [str_repeat('a', 300) . '.' . str_repeat('b', 16), str_repeat('a', 238) . '.' . str_repeat('b', 16)];
+        yield '17-character extension is not' => [str_repeat('a', 300) . '.' . str_repeat('b', 17), str_repeat('a', 255)];
+        yield 'only an extension' => ['.pdf', '.pdf'];
+        yield 'only dots and an extension' => [str_repeat('.', 400) . 'pdf', str_repeat('.', 252) . 'pdf'];
+        yield 'stem trimmed before the extension' => [str_repeat('a', 240) . str_repeat(' ', 100) . '.pdf', str_repeat('a', 240) . '.pdf'];
+        yield 'extension with a space is not one' => [str_repeat('a', 300) . '.p df', str_repeat('a', 255)];
+        yield 'only the last extension is kept' => [str_repeat('a', 300) . '.tar.gz', str_repeat('a', 252) . '.gz'];
+        yield 'non-ASCII extension' => [str_repeat('é', 400) . '.файл', str_repeat('é', 250) . '.файл'];
+        yield 'hidden characters removed before the cut' => [str_repeat("a\u{200B}", 400) . '.pdf', str_repeat('a', 251) . '.pdf'];
+        yield 'override cannot fake an extension' => [str_repeat('a', 300) . ".exe\u{202E}fdp", str_repeat('a', 248) . '.exefdp'];
+    }
+
+    #[DataProvider('cutNames')]
+    public function testOverlongDownloadNamesKeepTheirExtension(string $name, string $kept): void
+    {
+        $ascii = (string) preg_replace('/[^\x20-\x7E]|["\\\\\/;]/', '_', $kept);
+        self::assertSame('attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($kept), Response::contentDisposition($name));
+        self::assertLessThanOrEqual(Response::MAX_NAME_LENGTH, mb_strlen($kept, 'UTF-8'));
+    }
+
     #[DataProvider('badNames')]
     public function testBadDownloadNamesAreRefused(string $name): void
     {
@@ -672,7 +705,8 @@ final class ResponseTest extends TestCase
     {
         $long = str_repeat("\u{1F4E6}", 5000) . '.png';
         $header = Response::contentDisposition($long, true);
-        self::assertSame('inline; filename="' . str_repeat('_', 4 * 255) . '"; filename*=UTF-8\'\'' . str_repeat('%F0%9F%93%A6', 255), $header);
+        // The extension is kept and the stem is cut (P187, T-CF7-3).
+        self::assertSame('inline; filename="' . str_repeat('_', 4 * 251) . '.png"; filename*=UTF-8\'\'' . str_repeat('%F0%9F%93%A6', 251) . '.png', $header);
         self::assertLessThan(5000, strlen($header));
         $ascii = str_repeat('x', 1000);
         self::assertSame('attachment; filename="' . str_repeat('x', 255) . '"; filename*=UTF-8\'\'' . str_repeat('x', 255), Response::contentDisposition($ascii));
@@ -751,5 +785,69 @@ final class ResponseTest extends TestCase
         self::assertFalse(Response::download($this->file('x'), 'text/csv', 'a.csv', false)->isSandboxed());
         self::assertFalse((new Response(200, [], 'x'))->isSandboxed());
         self::assertFalse(Response::redirect('/x')->isSandboxed());
+    }
+
+    // T-WEB-74: Response::attachmentText (M5 spec part 2 section 3.1).
+
+    public function testAttachmentTextHeadersAndSandbox(): void
+    {
+        $body = "<div data-tiffin-form=\"1\">\n<script>alert(1)</script>\x00\xFF</div>\n";
+        $response = Response::attachmentText($body, 'items-form.html');
+        self::assertSame(200, $response->status);
+        self::assertSame($body, $response->body);
+        self::assertSame($body, $response->body());
+        self::assertSame('application/octet-stream', $response->header('Content-Type'));
+        self::assertSame((string) strlen($body), $response->header('Content-Length'));
+        self::assertSame('attachment; filename="items-form.html"; filename*=UTF-8\'\'items-form.html', $response->header('Content-Disposition'));
+        self::assertSame('no-store', $response->header('Cache-Control'));
+        self::assertTrue($response->isSandboxed());
+        self::assertTrue($response->isDownload());
+        self::assertFalse($response->removesAfterSend());
+        self::assertCount(4, $response->headers);
+
+        $secured = (new SecurityHeaders())->apply($response);
+        self::assertTrue($secured->isSandboxed());
+        self::assertTrue($secured->isDownload());
+        self::assertSame(SecurityHeaders::FILE_CSP, $secured->header('Content-Security-Policy'));
+        self::assertSame('nosniff', $secured->header('X-Content-Type-Options'));
+        self::assertTrue($response->withHeader('X-Test', 'kept')->isDownload());
+
+        $this->expectOutputString($body);
+        $steps = self::sendAndRecord($secured, false);
+        self::assertContains(['header', 'Content-Length: ' . strlen($body)], $steps);
+        self::assertSame([], array_filter($steps, static fn (array $s): bool => $s[0] === 'chunk'), 'A string body is echoed, not streamed.');
+    }
+
+    public function testAttachmentTextHeadSendsNoBody(): void
+    {
+        $this->expectOutputString('');
+        $steps = self::sendAndRecord(Response::attachmentText('abc', 'a.html'), true);
+        self::assertContains(['header', 'Content-Length: 3'], $steps);
+        self::assertContains(['header', 'Content-Type: application/octet-stream'], $steps);
+    }
+
+    public function testAttachmentTextCleansTheName(): void
+    {
+        self::assertSame(
+            'attachment; filename="receiptlmth.exe__x_"; filename*=UTF-8\'\'receiptlmth.exe%22%3Bx%22',
+            Response::attachmentText('', "receipt\u{202E}lmth.exe\";x\"")->header('Content-Disposition'),
+        );
+        $long = Response::attachmentText('', str_repeat('y', 600) . '.html');
+        self::assertSame('attachment; filename="' . str_repeat('y', 250) . '.html"; filename*=UTF-8\'\'' . str_repeat('y', 250) . '.html', $long->header('Content-Disposition'));
+        self::assertSame('0', $long->header('Content-Length'));
+    }
+
+    #[DataProvider('badNames')]
+    public function testAttachmentTextRefusesBadNames(string $name): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        Response::attachmentText('x', $name);
+    }
+
+    public function testAttachmentTextTakesNoAfterSendCallback(): void
+    {
+        $this->expectException(LogicException::class);
+        Response::attachmentText('x', 'a.html')->withAfterSend(static function (): void {
+        });
     }
 }

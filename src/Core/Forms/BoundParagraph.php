@@ -12,12 +12,17 @@ namespace TiffinDB\Core\Forms;
 final class BoundParagraph implements BoundNode
 {
     /** @param list<Inline> $children */
-    public function __construct(public readonly array $children)
+    public function __construct(public readonly array $children, public readonly ?string $span = null)
     {
     }
 
     public function kind(): string
     {
         return 'paragraph';
+    }
+
+    public function span(): ?string
+    {
+        return $this->span;
     }
 }

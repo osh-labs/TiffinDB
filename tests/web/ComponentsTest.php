@@ -62,6 +62,16 @@ use TiffinDB\Web\ViewScope;
  */
 #[CoversClass(ValueText::class)]
 #[CoversClass(ViewScope::class)]
+/*
+ * T-WEB-72 (M5 spec part 2 section 6.1): the shared M5 partials
+ * (forms/tabs, forms/row, forms/report) through the fixture page
+ * m5-components.php: the current tab and the download link, every row
+ * kind with its inputs, names, values, `aria-label`s, the moves hidden at
+ * the edges, the one `autofocus`, hostile names, keys, summaries, and
+ * alt text escaped once, and each report line with its plural forms.
+ * T-WEB-74: form-inline writes links as `a.form-link` with the fixed rel
+ * and no target.
+ */
 final class ComponentsTest extends TestCase
 {
     private const TOKEN = 'csrf-token_0123456789abcdef';
@@ -79,7 +89,7 @@ final class ComponentsTest extends TestCase
     {
         $dir = sys_get_temp_dir() . '/tiffindb-components-test-' . bin2hex(random_bytes(6));
         self::copyTree(RepoFiles::path('templates'), $dir);
-        foreach (['m2-components', 'm3-components', 'm4-components'] as $fixture) {
+        foreach (['m2-components', 'm3-components', 'm4-components', 'm5-components'] as $fixture) {
             if (!copy(__DIR__ . "/fixtures/templates/pages/{$fixture}.php", $dir . "/pages/{$fixture}.php")) {
                 throw new RuntimeException('Cannot copy the fixture.');
             }
@@ -161,8 +171,23 @@ final class ComponentsTest extends TestCase
         return $config['source_url'];
     }
 
+    /**
+     * The page with each form link checked (the fixed markup of M5 spec
+     * part 2 section 6.3, an http or https address) and its address then
+     * replaced by `/`, so the shared assertions, which allow no other
+     * external address than the source link, check the rest.
+     */
+    public static function withoutFormLinks(string $html): string
+    {
+        $count = preg_match_all('#<a\b[^>]*\bclass="form-link"[^>]*>#', $html, $tags);
+        $checked = preg_match_all('#<a class="form-link" href="https?://[\x21\x23-\x3B\x3D\x3F-\x7E]+" rel="noopener noreferrer">#', $html);
+        self::assertSame($count, $checked, 'Every form link has exactly the fixed markup and an http or https address.');
+
+        return (string) preg_replace('#<a class="form-link" href="https?://[^"]+" rel="noopener noreferrer">#', '<a class="form-link" href="/" rel="noopener noreferrer">', $html);
+    }
+
     /** @param array<string, mixed> $data */
-    private static function render(array $data, string $basePath = ''): string
+    private static function render(array $data, string $basePath = '', bool $formLinks = false): string
     {
         $config = require RepoFiles::path('config/app.php');
         self::assertIsArray($config);
@@ -176,7 +201,7 @@ final class ComponentsTest extends TestCase
         $html = $view->page('m2-components', ['title' => 'Components', ...$data])->body;
 
         HtmlAssertions::assertWellFormed($html);
-        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+        HtmlAssertions::assertNoInlineCode($formLinks ? self::withoutFormLinks($html) : $html, self::sourceUrl());
         HtmlAssertions::assertForm($html);
         self::assertStringNotContainsString('<script>alert', $html, 'Markup in values is escaped.');
         self::assertStringNotContainsString('&amp;lt;', $html, 'Nothing is escaped twice.');
@@ -840,7 +865,7 @@ final class ComponentsTest extends TestCase
             ['kind' => 'text', 'text' => ' & the '],
             ['kind' => 'em', 'children' => [['kind' => 'text', 'text' => 'box '], ['kind' => 'strong', 'children' => [['kind' => 'text', 'text' => self::HOSTILE]]]]],
             ['kind' => 'br'],
-            ['kind' => 'link', 'children' => [['kind' => 'text', 'text' => 'the manual']]],
+            ['kind' => 'text', 'text' => 'the manual'],
             ['kind' => 'image'],
             ['kind' => 'text', 'text' => '.'],
         ];
@@ -852,7 +877,55 @@ final class ComponentsTest extends TestCase
         self::assertSame('receipt', self::one($xpath, '//p[@class="lead"]/strong')->textContent);
         self::assertSame(self::HOSTILE, self::one($xpath, '//p[@class="lead"]/em/strong')->textContent);
         self::assertSame(1, $xpath->query('//p[@class="lead"]/br')->length);
-        self::assertSame(0, $xpath->query('//p[@class="lead"]//a | //p[@class="lead"]//img')->length, 'Links are shown as text; images are dropped.');
+        self::assertSame(0, $xpath->query('//p[@class="lead"]//a | //p[@class="lead"]//img')->length, 'Images are dropped.');
+    }
+
+    // T-WEB-74: links in stored forms (M5 spec part 2 section 6.3).
+
+    public function testFormInlineWritesLinks(): void
+    {
+        $nodes = [
+            ['kind' => 'text', 'text' => 'See '],
+            ['kind' => 'link', 'href' => 'https://example.com/manual?a=1&b="2"', 'children' => [
+                ['kind' => 'text', 'text' => 'the '],
+                ['kind' => 'strong', 'children' => [['kind' => 'text', 'text' => self::HOSTILE]]],
+            ]],
+            ['kind' => 'text', 'text' => ' or '],
+            ['kind' => 'link', 'href' => 'http://192.0.2.1/help', 'children' => [['kind' => 'em', 'children' => [['kind' => 'text', 'text' => 'help']]]]],
+            ['kind' => 'text', 'text' => '.'],
+        ];
+        // A quote is refused by formLink: the page fails closed.
+        try {
+            self::render(['inline' => $nodes]);
+            self::fail('A quote in an address reached a page.');
+        } catch (InvalidArgumentException) {
+            self::addToAssertionCount(1);
+        }
+
+        $nodes[1]['href'] = 'https://example.com/manual?a=1&b=2';
+        $html = self::render(['inline' => $nodes], '', true);
+        $xpath = self::xpath($html);
+        $p = self::one($xpath, '//main/p[@class="lead"]');
+        self::assertSame('See the ' . self::HOSTILE . ' or help.', $p->textContent, 'No whitespace is added between nodes.');
+        $links = $xpath->query('//p[@class="lead"]/a');
+        self::assertSame(2, $links->length);
+        $first = $links->item(0);
+        self::assertInstanceOf(DOMElement::class, $first);
+        self::assertSame(['class' => 'form-link', 'href' => 'https://example.com/manual?a=1&b=2', 'rel' => 'noopener noreferrer'], self::attributes($first));
+        self::assertSame(self::HOSTILE, self::one($xpath, '//p[@class="lead"]/a[1]/strong')->textContent);
+        self::assertSame('help', self::one($xpath, '//p[@class="lead"]/a[2]/em')->textContent);
+        self::assertStringContainsString('href="https://example.com/manual?a=1&amp;b=2"', $html);
+        self::assertSame(0, $xpath->query('//*[@target]')->length);
+
+        foreach (['javascript:alert(1)', 'data:text/html,x', '/projects', ' https://example.com/'] as $bad) {
+            $nodes[1]['href'] = $bad;
+            try {
+                self::render(['inline' => $nodes], '', true);
+                self::fail('Accepted ' . $bad);
+            } catch (InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
     }
 
     // Ids and the id() helper.
@@ -1546,5 +1619,330 @@ final class ComponentsTest extends TestCase
             $valid = self::xpath(self::renderM4([$key => ['invalid' => false] + $data[$key]]));
             self::assertSame($label, self::one($valid, $query)->getAttribute('aria-describedby'), $name);
         }
+    }
+
+    // T-WEB-72: the shared M5 partials (M5 spec part 2 section 6.1).
+
+    private const BASE = '/projects/abcdefghijkl/tables/mnopqrstuvwx';
+
+    /** @param array<string, mixed> $data */
+    private static function renderM5(array $data): string
+    {
+        $config = require RepoFiles::path('config/app.php');
+        self::assertIsArray($config);
+        $view = (new View(
+            self::$templates,
+            self::strings(),
+            new UrlGenerator('', self::VERSION),
+            Appearance::default(),
+            $config,
+        ))->withCsrfToken(self::TOKEN)->withFormat(self::format());
+        $html = $view->page('m5-components', ['title' => 'Components', ...$data])->body;
+
+        HtmlAssertions::assertWellFormed($html);
+        HtmlAssertions::assertNoInlineCode($html, self::sourceUrl());
+        HtmlAssertions::assertForm($html);
+        self::assertStringNotContainsString('<script>alert', $html, 'Markup in values is escaped.');
+        self::assertStringNotContainsString('&amp;lt;', $html, 'Nothing is escaped twice.');
+        self::assertStringNotContainsString('&amp;amp;', $html, 'Nothing is escaped twice.');
+        self::assertStringNotContainsString(' style=', $html);
+
+        return $html;
+    }
+
+    /** @return array<string, mixed> A row as the editor controller builds it (M5 spec part 2 section 4.1). */
+    private static function row(array $overrides = []): array
+    {
+        return $overrides + [
+            'path' => '1',
+            'kind' => 'field',
+            'depth' => 0,
+            'name' => 'Name',
+            'typeLabel' => 'Text',
+            'required' => false,
+            'label' => '',
+            'legend' => '',
+            'width' => 'auto',
+            'span' => null,
+            'placed' => false,
+            'summary' => '',
+            'imageHidden' => false,
+            'canMoveUp' => true,
+            'canMoveDown' => true,
+            'children' => [],
+            'errors' => [],
+            'focus' => null,
+        ];
+    }
+
+    /** @return list<string> */
+    private static function buttons(DOMXPath $xpath, string $li): array
+    {
+        $list = [];
+        foreach ($xpath->query($li . '/div[@class="form-row-actions"]/button') as $button) {
+            /** @var DOMElement $button */
+            self::assertSame(['aria-label', 'class', 'name', 'type', 'value'], array_values(array_diff(array_keys(self::attributes($button)), ['autofocus'])));
+            self::assertSame(['button button-plain', 'submit', 'do'], [$button->getAttribute('class'), $button->getAttribute('type'), $button->getAttribute('name')]);
+            self::assertStringStartsWith(self::norm($button->textContent), $button->getAttribute('aria-label'), 'The accessible name starts with the visible text (WCAG 2.5.3).');
+            $list[] = $button->getAttribute('value') . '|' . self::norm($button->textContent) . '|' . $button->getAttribute('aria-label');
+        }
+
+        return $list;
+    }
+
+    public function testFormTabsMarkTheCurrentPage(): void
+    {
+        foreach (['arrange' => 0, 'source' => 1, 'upload' => 2, 'reset' => 4] as $current => $index) {
+            $xpath = self::xpath(self::renderM5(['tabs' => ['base' => self::BASE, 'current' => $current]]));
+            self::assertSame('Form tools', self::one($xpath, '//nav[@class="form-tabs"]')->getAttribute('aria-label'));
+            $links = '//nav[@class="form-tabs"]/ul[@class="form-tabs-list"]/li/a[@class="form-tab"]';
+            self::assertSame(['Arrange', 'Source', 'Upload a form file', 'Download the form', 'Back to the standard form'], self::texts($xpath, $links));
+            $hrefs = [];
+            foreach ($xpath->query($links) as $a) {
+                /** @var DOMElement $a */
+                $hrefs[] = $a->getAttribute('href');
+            }
+            self::assertSame([self::BASE . '/form', self::BASE . '/form/source', self::BASE . '/form/upload', self::BASE . '/form/download', self::BASE . '/form/reset'], $hrefs);
+            $currentLinks = $xpath->query($links . '[@aria-current]');
+            self::assertSame(1, $currentLinks->length, $current);
+            self::assertSame('page', $currentLinks->item(0)?->attributes?->getNamedItem('aria-current')?->nodeValue);
+            self::assertSame($hrefs[$index], $currentLinks->item(0)?->attributes?->getNamedItem('href')?->nodeValue, $current);
+        }
+    }
+
+    public function testFieldRowInputsNamesAndButtons(): void
+    {
+        $html = self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '2', 'name' => 'Price', 'typeLabel' => 'Currency', 'required' => true, 'label' => 'Cost', 'width' => 'half', 'span' => '6']), 'number' => 1],
+        ]]);
+        $xpath = self::xpath($html);
+        $li = '//form[@id="form-editor"]/ol[@class="form-rows"]/li[@class="form-row"][@id="row-2"]';
+        self::one($xpath, $li);
+        self::assertSame(['Price', 'Currency', 'Required'], self::texts($xpath, $li . '/div[@class="form-row-head"]/span'));
+        self::assertSame(['form-row-name', 'form-row-kind', 'form-row-kind'], array_map(static fn (DOMElement $e): string => $e->getAttribute('class'), iterator_to_array($xpath->query($li . '/div[@class="form-row-head"]/span'))));
+
+        $label = self::one($xpath, $li . '/div[@class="form-row-inputs"]/div[@class="field"]/input');
+        self::assertSame([
+            'aria-describedby' => 'editor-help',
+            'aria-label' => 'Label for Price',
+            'class' => 'input',
+            'id' => 'label-2',
+            'maxlength' => '60',
+            'name' => 'label[2]',
+            'type' => 'text',
+            'value' => 'Cost',
+        ], self::attributes($label));
+        self::assertSame('Label', self::one($xpath, $li . '//label[@for="label-2"]')->textContent);
+        self::assertSame('Width', self::one($xpath, $li . '//label[@for="width-2"]')->textContent);
+        $select = self::one($xpath, $li . '//select');
+        self::assertSame(['aria-label' => 'Width of Price', 'class' => 'input', 'id' => 'width-2', 'name' => 'width[2]'], self::attributes($select));
+        self::assertSame(['Automatic', 'Full width', 'Two thirds', 'Half', 'One third'], self::texts($xpath, $li . '//select/option'));
+        self::assertSame(['auto', 'full', 'two-thirds', 'half', 'one-third'], array_map(static fn (DOMElement $e): string => $e->getAttribute('value'), iterator_to_array($xpath->query($li . '//select/option'))));
+        self::assertSame(['half'], array_map(static fn (DOMElement $e): string => $e->getAttribute('value'), iterator_to_array($xpath->query($li . '//select/option[@selected="selected"]'))));
+        self::assertSame(0, $xpath->query($li . '//p[contains(@class, "form-row-note")]')->length);
+        self::assertSame(
+            ['up-2|Move up|Move up: Price', 'down-2|Move down|Move down: Price', 'hide-2|Hide|Hide Price'],
+            self::buttons($xpath, $li),
+        );
+        self::assertSame(0, $xpath->query('//*[@autofocus]')->length, 'No autofocus without a focus.');
+    }
+
+    public function testFieldRowOtherWidthPlacedErrorAndEdges(): void
+    {
+        $html = self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '1-1', 'depth' => 1, 'width' => 'other', 'span' => '5', 'placed' => true, 'canMoveUp' => false, 'label' => self::HOSTILE, 'errors' => ['label-1-1' => 'Labels can be at most 60 characters.']]), 'number' => 1],
+            ['row' => self::row(['path' => '1-2', 'depth' => 1, 'canMoveDown' => false, 'focus' => 'up']), 'number' => 1],
+        ]]);
+        $xpath = self::xpath($html);
+        $first = '//li[@id="row-1-1"]';
+        self::assertSame(['As in the source: 5 of 12 columns'], self::texts($xpath, $first . '//option[@selected="selected"]'));
+        self::assertSame('other', self::one($xpath, $first . '//option[@selected="selected"]')->getAttribute('value'));
+        self::assertSame(['Placed by the source. Shown in reading order.'], self::texts($xpath, $first . '/p[@class="help form-row-note"]'));
+        $input = self::one($xpath, $first . '//input[@id="label-1-1"]');
+        self::assertSame(self::HOSTILE, $input->getAttribute('value'));
+        self::assertSame('label[1-1]', $input->getAttribute('name'));
+        self::assertSame('editor-help err-label-1-1', $input->getAttribute('aria-describedby'));
+        self::assertSame('true', $input->getAttribute('aria-invalid'));
+        self::assertSame('Labels can be at most 60 characters.', self::one($xpath, $first . '//p[@class="error-text"][@id="err-label-1-1"]')->textContent);
+        self::assertSame(['down-1-1|Move down|Move down: Name', 'hide-1-1|Hide|Hide Name'], self::buttons($xpath, $first), 'No Move up on the first row.');
+        self::assertSame(['up-1-2|Move up|Move up: Name', 'hide-1-2|Hide|Hide Name'], self::buttons($xpath, '//li[@id="row-1-2"]'), 'No Move down on the last row.');
+        $focused = $xpath->query('//*[@autofocus]');
+        self::assertSame(1, $focused->length);
+        self::assertSame('up-1-2', $focused->item(0)?->attributes?->getNamedItem('value')?->nodeValue);
+        self::assertSame('autofocus', $focused->item(0)?->attributes?->getNamedItem('autofocus')?->nodeValue);
+    }
+
+    public function testFocusFirstFallsToTheFirstShownButton(): void
+    {
+        $cases = [
+            ['up-3', ['canMoveUp' => true]],
+            ['down-3', ['canMoveUp' => false]],
+            ['hide-3', ['canMoveUp' => false, 'canMoveDown' => false]],
+            ['remove-3', ['kind' => 'heading', 'name' => 'Heading Care', 'summary' => 'Care', 'canMoveUp' => false, 'canMoveDown' => false]],
+            ['ungroup-3', ['kind' => 'section', 'name' => 'Where', 'canMoveUp' => false, 'canMoveDown' => false]],
+        ];
+        foreach ($cases as [$value, $overrides]) {
+            $xpath = self::xpath(self::renderM5(['rows' => [['row' => self::row(['path' => '3', 'focus' => 'first'] + $overrides), 'number' => 2]]]));
+            $focused = $xpath->query('//*[@autofocus]');
+            self::assertSame(1, $focused->length, $value);
+            self::assertSame($value, $focused->item(0)?->attributes?->getNamedItem('value')?->nodeValue);
+        }
+    }
+
+    public function testSectionRowsWithChildrenAndWithout(): void
+    {
+        $html = self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '1', 'kind' => 'section', 'name' => 'Where it is', 'legend' => 'Where it is', 'canMoveUp' => false, 'children' => [
+                self::row(['path' => '1-1', 'depth' => 1, 'name' => 'Room', 'typeLabel' => 'Link', 'canMoveUp' => false]),
+                self::row(['path' => '1-2', 'depth' => 1, 'kind' => 'missing', 'name' => 'zzzzzzzzzzzz', 'typeLabel' => null, 'canMoveDown' => false]),
+            ]]), 'number' => 1],
+            ['row' => self::row(['path' => '2', 'kind' => 'section', 'name' => null, 'legend' => '', 'canMoveDown' => false, 'focus' => 'legend']), 'number' => 2],
+        ]]);
+        $xpath = self::xpath($html);
+        $section = '//ol[@class="form-rows"]/li[@class="form-row form-row-section"][@id="row-1"]';
+        self::assertSame(['Section', 'Where it is'], self::texts($xpath, $section . '/div[@class="form-row-head"]/span'));
+        $legend = self::one($xpath, $section . '/div[@class="form-row-inputs"]//input');
+        self::assertSame([
+            'aria-describedby' => 'editor-help',
+            'aria-label' => 'Section name, section 1',
+            'class' => 'input',
+            'id' => 'legend-1',
+            'maxlength' => '100',
+            'name' => 'legend[1]',
+            'type' => 'text',
+            'value' => 'Where it is',
+        ], self::attributes($legend));
+        self::assertSame('Section name', self::one($xpath, $section . '//label[@for="legend-1"]')->textContent);
+        self::assertSame(
+            ['down-1|Move down|Move down: Where it is', 'ungroup-1|Remove section|Remove section Where it is and keep what is in it'],
+            self::buttons($xpath, $section),
+        );
+        $children = $section . '/ol[@class="form-rows form-row-children"]';
+        self::assertSame(['row-1-1', 'row-1-2'], array_map(static fn (DOMElement $e): string => $e->getAttribute('id'), iterator_to_array($xpath->query($children . '/li'))));
+        self::assertSame(['down-1-1|Move down|Move down: Room', 'hide-1-1|Hide|Hide Room'], self::buttons($xpath, $children . '/li[@id="row-1-1"]'));
+        $missing = $children . '/li[@class="form-row form-row-missing"][@id="row-1-2"]';
+        self::assertSame(['zzzzzzzzzzzz'], self::texts($xpath, $missing . '/div[@class="form-row-head"]/span[@class="form-row-name"]'));
+        self::assertSame(['This field is no longer in the table. It shows nothing.'], self::texts($xpath, $missing . '/p[@class="help form-row-note"]'));
+        self::assertSame(['up-1-2|Move up|Move up: zzzzzzzzzzzz', 'remove-1-2|Remove|Remove zzzzzzzzzzzz'], self::buttons($xpath, $missing));
+        self::assertSame(0, $xpath->query($missing . '//input | ' . $missing . '//select')->length);
+
+        $empty = '//li[@id="row-2"]';
+        self::assertSame(['Section', 'Section 2, no name'], self::texts($xpath, $empty . '/div[@class="form-row-head"]/span'));
+        self::assertSame(['This section is empty.'], self::texts($xpath, $empty . '/p[@class="help form-row-note"]'));
+        self::assertSame(0, $xpath->query($empty . '/ol')->length);
+        self::assertSame(
+            ['up-2|Move up|Move up: Section 2, no name', 'ungroup-2|Remove section|Remove section Section 2, no name and keep what is in it'],
+            self::buttons($xpath, $empty),
+        );
+        $focused = $xpath->query('//*[@autofocus]');
+        self::assertSame(1, $focused->length);
+        self::assertSame('legend-2', $focused->item(0)?->attributes?->getNamedItem('id')?->nodeValue);
+        self::assertSame('Section name, section 2', $focused->item(0)?->attributes?->getNamedItem('aria-label')?->nodeValue);
+    }
+
+    public function testSectionNameProblem(): void
+    {
+        $xpath = self::xpath(self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '4', 'kind' => 'section', 'name' => 'Main', 'legend' => self::HOSTILE, 'errors' => ['legend-4' => 'Section names can be at most 100 characters.']]), 'number' => 3],
+        ]]));
+        $input = self::one($xpath, '//input[@id="legend-4"]');
+        self::assertSame(self::HOSTILE, $input->getAttribute('value'));
+        self::assertSame('editor-help err-legend-4', $input->getAttribute('aria-describedby'));
+        self::assertSame('true', $input->getAttribute('aria-invalid'));
+        self::assertSame('Section names can be at most 100 characters.', self::one($xpath, '//p[@class="error-text"][@id="err-legend-4"]')->textContent);
+    }
+
+    public function testStaticRows(): void
+    {
+        $html = self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '1', 'kind' => 'heading', 'name' => 'Heading ' . self::HOSTILE, 'summary' => self::HOSTILE, 'canMoveUp' => false, 'placed' => true]), 'number' => 0],
+            ['row' => self::row(['path' => '2', 'kind' => 'paragraph', 'name' => 'Text Keep the box', 'summary' => 'Keep the box']), 'number' => 0],
+            ['row' => self::row(['path' => '3', 'kind' => 'divider', 'name' => null]), 'number' => 0],
+            ['row' => self::row(['path' => '4', 'kind' => 'image', 'name' => 'Picture A <b>photo</b>', 'summary' => 'A <b>photo</b>', 'imageHidden' => true]), 'number' => 0],
+            ['row' => self::row(['path' => '5', 'kind' => 'image', 'name' => '', 'summary' => '', 'canMoveDown' => false]), 'number' => 0],
+        ]]);
+        $xpath = self::xpath($html);
+        self::assertSame(['Heading', 'Text', 'Divider', 'Picture', 'Picture'], self::texts($xpath, '//li[@class="form-row"]/div[@class="form-row-head"]/span[@class="form-row-kind"]'));
+        self::assertSame(0, $xpath->query('//li//input | //li//select | //li//span[@class="form-row-name"]')->length, 'Static rows are not edited here.');
+        self::assertSame([self::HOSTILE, 'Keep the box', 'A dividing line', 'Description: A <b>photo</b>', 'No description'], self::texts($xpath, '//li/p[@class="form-row-summary"]'));
+        self::assertSame(['Placed by the source. Shown in reading order.'], self::texts($xpath, '//li[@id="row-1"]/p[@class="help form-row-note"]'));
+        self::assertSame(['This picture is not shown: its file is not a picture attached to a record.'], self::texts($xpath, '//li[@id="row-4"]/p[@class="help form-row-note"]'));
+        self::assertSame(0, $xpath->query('//li[@id="row-5"]/p[@class="help form-row-note"]')->length);
+        self::assertSame(['down-1|Move down|Move down: Heading ' . self::HOSTILE, 'remove-1|Remove|Remove Heading ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-1"]'));
+        self::assertSame(['up-2|Move up|Move up: Text Keep the box', 'down-2|Move down|Move down: Text Keep the box', 'remove-2|Remove|Remove Text Keep the box'], self::buttons($xpath, '//li[@id="row-2"]'));
+        self::assertSame(['up-3|Move up|Move up: Divider', 'down-3|Move down|Move down: Divider', 'remove-3|Remove|Remove Divider'], self::buttons($xpath, '//li[@id="row-3"]'), 'A static row without a name is named by its kind.');
+        self::assertSame(['up-4|Move up|Move up: Picture A <b>photo</b>', 'down-4|Move down|Move down: Picture A <b>photo</b>', 'remove-4|Remove|Remove Picture A <b>photo</b>'], self::buttons($xpath, '//li[@id="row-4"]'));
+        self::assertSame(['up-5|Move up|Move up: Picture', 'remove-5|Remove|Remove Picture'], self::buttons($xpath, '//li[@id="row-5"]'));
+    }
+
+    public function testHostileRowNamesAreEscapedOnce(): void
+    {
+        $html = self::renderM5(['rows' => [
+            ['row' => self::row(['path' => '7', 'name' => self::HOSTILE, 'typeLabel' => self::HOSTILE, 'label' => self::HOSTILE]), 'number' => 1],
+            ['row' => self::row(['path' => '8', 'kind' => 'section', 'name' => self::HOSTILE, 'legend' => self::HOSTILE]), 'number' => 1],
+        ]]);
+        $xpath = self::xpath($html);
+        self::assertSame([self::HOSTILE, self::HOSTILE], self::texts($xpath, '//li[@id="row-7"]/div[@class="form-row-head"]/span[position() < 3]'));
+        self::assertSame('Label for ' . self::HOSTILE, self::one($xpath, '//input[@id="label-7"]')->getAttribute('aria-label'));
+        self::assertSame('Width of ' . self::HOSTILE, self::one($xpath, '//select[@id="width-7"]')->getAttribute('aria-label'));
+        self::assertSame(['up-7|Move up|Move up: ' . self::HOSTILE, 'down-7|Move down|Move down: ' . self::HOSTILE, 'hide-7|Hide|Hide ' . self::HOSTILE], self::buttons($xpath, '//li[@id="row-7"]'));
+        self::assertSame(self::HOSTILE, self::one($xpath, '//input[@id="legend-8"]')->getAttribute('value'));
+        self::assertSame([self::HOSTILE], self::texts($xpath, '//li[@id="row-8"]/div[@class="form-row-head"]/span[@class="form-row-name"]'));
+    }
+
+    public function testRowsRefuseAPathThatIsNotAnIdPart(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        self::renderM5(['rows' => [['row' => self::row(['path' => '1"><b>']), 'number' => 1]]]);
+    }
+
+    /** @return array<string, mixed> */
+    private static function report(array $overrides = []): array
+    {
+        return $overrides + ['unknown' => 0, 'notShown' => [], 'requiredHidden' => false, 'images' => 0, 'emptyLinks' => 0];
+    }
+
+    public function testReportWithNothingToSay(): void
+    {
+        $xpath = self::xpath(self::renderM5(['report' => ['report' => self::report(), 'table' => 'Items', 'full' => true]]));
+        $section = self::one($xpath, '//section[@class="panel form-report"]');
+        self::assertSame('form-report-title', $section->getAttribute('aria-labelledby'));
+        self::assertSame('What this form shows', self::one($xpath, '//section/h2[@class="section-title"][@id="form-report-title"]')->textContent);
+        self::assertSame(['Every field of Items is on this form, and nothing needs attention.'], self::texts($xpath, '//section[@class="panel form-report"]/p'));
+    }
+
+    public function testReportLinesInOrderWithPlurals(): void
+    {
+        $many = self::report([
+            'unknown' => 2,
+            'notShown' => [['name' => 'Serial number', 'required' => false], ['name' => self::HOSTILE, 'required' => true]],
+            'requiredHidden' => true,
+            'images' => 3,
+            'emptyLinks' => 2,
+        ]);
+        $xpath = self::xpath(self::renderM5(['report' => ['report' => $many, 'table' => 'Items', 'full' => true]]));
+        self::assertSame([
+            '2 fields are not on this form:',
+            'Required fields that the form does not show are not required when records are saved through it.',
+            '2 field elements name a field that is not in Items. They show nothing.',
+            '3 pictures are not shown, because the file is not a picture attached to a record.',
+            '2 links have no text, so they are not shown.',
+        ], self::texts($xpath, '//section[@class="panel form-report"]/p'));
+        self::assertSame(['Serial number', self::HOSTILE . ' Required'], self::texts($xpath, '//section/ul[@class="form-report-list"]/li'));
+        self::assertSame(['Required'], self::texts($xpath, '//ul[@class="form-report-list"]/li/span[@class="form-row-kind"]'));
+
+        $one = self::report(['unknown' => 1, 'notShown' => [['name' => 'Serial number', 'required' => false]], 'images' => 1, 'emptyLinks' => 1]);
+        $xpath = self::xpath(self::renderM5(['report' => ['report' => $one, 'table' => 'Rooms', 'full' => true]]));
+        self::assertSame([
+            '1 field is not on this form:',
+            '1 field element names a field that is not in Rooms. They show nothing.',
+            '1 picture is not shown, because the file is not a picture attached to a record.',
+            '1 link has no text, so it is not shown.',
+        ], self::texts($xpath, '//section[@class="panel form-report"]/p'));
+
+        // Without `full` (the editor lists those fields itself): no list, no required note, and not "ok".
+        $xpath = self::xpath(self::renderM5(['report' => ['report' => self::report(['notShown' => [['name' => 'Serial number', 'required' => true]], 'requiredHidden' => true, 'images' => 1]), 'table' => 'Items', 'full' => false]]));
+        self::assertSame(['1 picture is not shown, because the file is not a picture attached to a record.'], self::texts($xpath, '//section[@class="panel form-report"]/p'));
+        self::assertSame(0, $xpath->query('//ul[@class="form-report-list"]')->length);
     }
 }

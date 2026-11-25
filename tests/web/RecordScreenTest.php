@@ -43,6 +43,12 @@ require_once __DIR__ . '/fixtures/Fixtures.php';
  * attachment fields (422 with summary links), the new record opened from
  * a picker (`from`), a collection in the list state, servable form
  * images, hostile titles and file names, and access.
+ *
+ * T-WEB-74 and T-WEB-76 (M5-WP3): links in stored forms (`a.form-link`
+ * with the fixed rel, no target, empty links not written) and widths
+ * (column mode for sections and the root, a literal span class per cell,
+ * `full` and no span as whole-width cells, the Details grid unchanged
+ * without numeric spans, no style attribute).
  */
 #[CoversClass(RecordController::class)]
 final class RecordScreenTest extends TestCase
@@ -314,7 +320,12 @@ final class RecordScreenTest extends TestCase
         self::assertSame('About this item', $this->text($x, '//form[@id="record-form"]/h2[@class="section-title"]'));
         self::assertSame('this', $this->text($x, '//form/h2/em'));
         self::assertSame('Read the help page first.Then save.', $this->text($x, '//form[@id="record-form"]/p'));
-        self::assertSame(0, $x->query('//form[@id="record-form"]//a')->length, 'Links in a stored form are shown as text.');
+        self::assertSame(['https://example.com/help', 'form-link', 'noopener noreferrer', null], [
+            $this->attr($x, '//form[@id="record-form"]/p/a', 'href'),
+            $this->attr($x, '//form[@id="record-form"]/p/a', 'class'),
+            $this->attr($x, '//form[@id="record-form"]/p/a', 'rel'),
+            $this->attr($x, '//form[@id="record-form"]/p/a', 'target'),
+        ], 'Links in a stored form are followed (M5).');
         self::assertSame(1, $x->query('//form/p/br')->length);
         self::assertSame('save', $this->text($x, '//form/p/strong'));
         self::assertSame('Main', $this->text($x, '//form/fieldset[@class="fieldset-card record-section"]/legend'));
@@ -331,6 +342,152 @@ final class RecordScreenTest extends TestCase
         self::assertSame('Hammer drill', $this->stored($this->name, $id));
         self::assertSame('EX-2', $this->stored($serial, $id));
         self::assertSame('kept', $this->stored($hidden, $id));
+    }
+
+    // T-WEB-74: links (M5 spec part 2 section 6.3).
+
+    public function testLinksInAStoredForm(): void
+    {
+        $id = $this->add([$this->name => 'Drill']);
+        $this->storeForm(
+            '<div data-tiffin-form="1">'
+            . '<p>See <a href="https://example.com/manual?page=2&amp;lang=en">the <strong>manual</strong></a>,'
+            . ' <a href="http://192.0.2.10/help"><em>help</em></a>,'
+            . ' <a href="https://example.com/empty"> </a>'
+            . ' and <a href="https://example.com/nothing"></a>.</p>'
+            . '<h2>Care <a href="https://example.com/care">guide</a></h2>'
+            . '<div data-tiffin-field="' . $this->name . '"></div>'
+            . '</div>',
+        );
+        $html = $this->page(self::MEMBER, $this->r($id));
+        $x = $this->xpath($html);
+
+        $links = $x->query('//form[@id="record-form"]//a');
+        self::assertSame(3, $links->length, 'Links whose text is only white space or empty are not written.');
+        $found = [];
+        foreach ($links as $link) {
+            /** @var \DOMElement $link */
+            $attributes = [];
+            foreach ($link->attributes as $attribute) {
+                $attributes[$attribute->nodeName] = (string) $attribute->nodeValue;
+            }
+            ksort($attributes);
+            self::assertSame(['class', 'href', 'rel'], array_keys($attributes));
+            self::assertSame(['form-link', 'noopener noreferrer'], [$attributes['class'], $attributes['rel']]);
+            $found[] = [$attributes['href'], trim((string) $link->textContent)];
+        }
+        self::assertSame([
+            ['https://example.com/manual?page=2&lang=en', 'the manual'],
+            ['http://192.0.2.10/help', 'help'],
+            ['https://example.com/care', 'guide'],
+        ], $found);
+        self::assertSame('manual', $this->text($x, '//form/p/a[1]/strong'));
+        self::assertSame('help', $this->text($x, '//form/p/a[2]/em'));
+        self::assertSame('See the manual, help, and .', $this->text($x, '//form[@id="record-form"]/p'));
+        self::assertStringContainsString('href="https://example.com/manual?page=2&amp;lang=en"', $html);
+    }
+
+    public function testRefusedLinkAddressesNeverReachThePage(): void
+    {
+        $id = $this->add([$this->name => 'Drill']);
+        foreach (['javascript:alert(1)', 'data:text/html,x', '//example.com/', '/projects', 'https://example.com/a b', 'https://example.com/"x'] as $href) {
+            $this->storeForm('<div data-tiffin-form="1"><p><a href="' . htmlspecialchars($href, ENT_QUOTES) . '">x</a></p><div data-tiffin-field="' . $this->name . '"></div></div>');
+            $html = $this->page(self::MEMBER, $this->r($id));
+            $x = $this->xpath($html);
+            self::assertSame(0, $x->query('//form[@id="record-form"]//a')->length, $href);
+            self::assertStringNotContainsString('javascript', $html, $href);
+            self::assertSame(1, $x->query('//input[@id="f-' . $this->name . '"]')->length, 'The record screen still works (the generated layout).');
+        }
+    }
+
+    // T-WEB-76: widths (docs/design/m5/components.md section 1).
+
+    public function testWidthsInASectionUseColumnMode(): void
+    {
+        $brand = $this->addField('Brand', 'text');
+        $price = $this->addField('Price', 'number');
+        $notes = $this->addField('Notes', 'long_text');
+        $id = $this->add([$this->name => 'Drill']);
+        $this->storeForm(
+            '<div data-tiffin-form="1">'
+            . '<fieldset data-tiffin-section="details"><legend>Details</legend>'
+            . '<div data-tiffin-field="' . $this->name . '" data-tiffin-span="8"></div>'
+            . '<div data-tiffin-field="' . $brand . '" data-tiffin-span="4"></div>'
+            . '<div data-tiffin-field="' . $price . '"></div>'
+            . '<div data-tiffin-field="' . $notes . '" data-tiffin-span="full"></div>'
+            . '<h3 data-tiffin-span="6">Small print</h3>'
+            . '<div data-tiffin-field="zzzzzzzzzzzz" data-tiffin-span="3"></div>'
+            . '</fieldset>'
+            . '<fieldset data-tiffin-section="main"><legend>Plain</legend><hr/></fieldset>'
+            . '</div>',
+        );
+        $html = $this->page(self::MEMBER, $this->r($id));
+        $x = $this->xpath($html);
+
+        $section = '//form[@id="record-form"]/fieldset[@class="fieldset-card record-section"][legend="Details"]';
+        self::assertSame(1, $x->query($section)->length, 'A Details section with numeric spans is not the auto-fit grid.');
+        self::assertSame(0, $x->query('//fieldset[contains(@class, "record-grid")]')->length);
+        $cells = $x->query($section . '/div[@class="form-area"]/div[@class="form-cols"]/div');
+        self::assertSame(['cell span-8', 'cell span-4', 'cell', 'cell', 'cell span-6'], array_map(static fn (\DOMElement $e): string => $e->getAttribute('class'), iterator_to_array($cells)), 'One cell per bound node; the unknown slot is dropped.');
+        self::assertSame(1, $x->query($section . '/div/div/div[1]/div/input[@id="f-' . $this->name . '"]')->length);
+        self::assertSame(1, $x->query($section . '/div/div/div[3]//input[@id="f-' . $price . '"]')->length);
+        self::assertSame(1, $x->query($section . '/div/div/div[4]/div[@class="field span-full"]//textarea[@id="f-' . $notes . '"]')->length);
+        self::assertSame('Small print', $this->text($x, $section . '/div/div/div[5]/h3'));
+        self::assertSame(0, $x->query('//fieldset[legend="Plain"]/div[@class="form-area"]')->length, 'A section without numeric spans is written as in M4.');
+        self::assertSame(1, $x->query('//fieldset[legend="Plain"]/hr')->length);
+        self::assertSame(0, $x->query('//form[@id="record-form"]/div[@class="form-area"]')->length, 'The root is not in column mode.');
+        self::assertSame(0, $x->query('//*[@style]')->length);
+    }
+
+    public function testRootColumnModeAndUnchangedDetailsGrid(): void
+    {
+        $brand = $this->addField('Brand', 'text');
+        $id = $this->add([$this->name => 'Drill']);
+        $this->storeForm(
+            '<div data-tiffin-form="1">'
+            . '<fieldset data-tiffin-section="details" data-tiffin-span="6"><legend>Details</legend>'
+            . '<div data-tiffin-field="' . $this->name . '" data-tiffin-span="full"></div>'
+            . '<div data-tiffin-field="' . $brand . '"></div>'
+            . '</fieldset>'
+            . '<p data-tiffin-span="6">Kept <a href="https://example.com/x">here</a>.</p>'
+            . '<hr/>'
+            . '</div>',
+        );
+        $html = $this->page(self::MEMBER, $this->r($id));
+        $x = $this->xpath($html);
+
+        $cells = '//form[@id="record-form"]/div[@class="form-area"]/div[@class="form-cols"]/div';
+        self::assertSame(['cell span-6', 'cell span-6', 'cell'], array_map(static fn (\DOMElement $e): string => $e->getAttribute('class'), iterator_to_array($x->query($cells))));
+        // The section's own children have only "full" and no span: the Details grid, as in M4.
+        self::assertSame(1, $x->query($cells . '[1]/fieldset[@class="fieldset-card record-section record-grid"]')->length);
+        self::assertSame(1, $x->query($cells . '[1]/fieldset/div[@class="field span-full"]/input[@id="f-' . $this->name . '"]')->length);
+        self::assertSame(0, $x->query($cells . '[1]/fieldset/div[@class="form-area"]')->length);
+        self::assertSame('here', $this->text($x, $cells . '[2]/p/a[@class="form-link"]'));
+        self::assertSame(1, $x->query($cells . '[3]/hr')->length);
+        self::assertSame(1, $x->query('//form[@id="record-form"]/input[@name="version"]')->length, 'The hidden inputs stay before the cells.');
+        self::assertSame(0, $x->query('//*[@style]')->length);
+
+        // Every span 1 to 12 has its literal class.
+        $slots = '';
+        for ($n = 1; $n <= 12; $n++) {
+            $slots .= '<hr data-tiffin-span="' . $n . '"/>';
+        }
+        $this->storeForm('<div data-tiffin-form="1">' . $slots . '<div data-tiffin-field="' . $this->name . '"></div></div>');
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($id)));
+        $expected = [];
+        for ($n = 1; $n <= 12; $n++) {
+            $expected[] = 'cell span-' . $n;
+        }
+        $expected[] = 'cell';
+        self::assertSame($expected, array_map(static fn (\DOMElement $e): string => $e->getAttribute('class'), iterator_to_array($x->query($cells))));
+    }
+
+    public function testTheGeneratedFormHasNoColumns(): void
+    {
+        $id = $this->add([$this->name => 'Drill']);
+        $x = $this->xpath($this->page(self::MEMBER, $this->r($id)));
+        self::assertSame(0, $x->query('//div[@class="form-area"] | //div[contains(@class, "cell")]')->length);
+        self::assertSame(1, $x->query('//form[@id="record-form"]/fieldset[@class="fieldset-card record-section record-grid"]')->length);
     }
 
     public function testStoredFormWithScriptShowsTheGeneratedLayout(): void
@@ -1166,8 +1323,25 @@ final class RecordScreenTest extends TestCase
     private function assertScreen(string $html): void
     {
         HtmlAssertions::assertShell($html, Fixtures::SOURCE_URL, 'TiffinDB, free software under AGPL-3.0-or-later', 'Source code');
-        HtmlAssertions::assertNoInlineCode($html, Fixtures::SOURCE_URL);
+        HtmlAssertions::assertNoInlineCode(self::withoutFormLinks($html), Fixtures::SOURCE_URL);
         HtmlAssertions::assertForm($html);
+        self::assertSame(0, preg_match('/\sstyle=/', $html), 'No style attribute anywhere.');
+        self::assertSame(0, preg_match('/\s(?:form)?target=/', $html), 'No target attribute anywhere.');
+    }
+
+    /**
+     * The page with each form link checked (exactly the markup of M5 spec
+     * part 2 section 6.3, an http or https address) and its address then
+     * replaced by `/`, so the shared assertions, which allow no external
+     * address but the source link, check everything else.
+     */
+    private static function withoutFormLinks(string $html): string
+    {
+        $count = preg_match_all('#<a\b[^>]*\bclass="form-link"#', $html);
+        $checked = preg_match_all('#<a class="form-link" href="https?://[\x21\x23-\x3B\x3D\x3F-\x7E]+" rel="noopener noreferrer">#', $html);
+        self::assertSame($count, $checked, 'Every form link has exactly the fixed markup and an http or https address.');
+
+        return (string) preg_replace('#<a class="form-link" href="https?://[^"]+" rel="noopener noreferrer">#', '<a class="form-link" href="/" rel="noopener noreferrer">', $html);
     }
 
     private function xpath(string $html): DOMXPath

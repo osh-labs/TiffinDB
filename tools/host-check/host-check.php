@@ -38,6 +38,8 @@ const HC_PREFIX = 'tiffindb-hostcheck-';
 const HC_NAME_PATTERN = '/^tiffindb-hostcheck-[0-9a-f]{16}$/';
 const HC_STALE_SECONDS = 600;
 const HC_DUMMY_AUTH = 'Bearer tiffindb-hostcheck-dummy-value';
+const HC_MIB = 1048576;
+const HC_GIB = 1073741824;
 
 $GLOBALS['hc'] = array(
     'checks'   => array(),
@@ -46,15 +48,19 @@ $GLOBALS['hc'] = array(
     'last_err' => '',
     'done'     => false,
     'side_dir' => '',
+    'free_bytes' => null,
 );
 
-if (function_exists('ini_set')) {
-    @ini_set('display_errors', '0');
-    @ini_set('html_errors', '0');
-    @ini_set('log_errors', '0');
-}
+// The error trap is set first and stays for the whole run: every warning or
+// notice goes to hc_error_handler(), which records it and prints nothing, so
+// no call needs the error-suppression operator (M7 CF7-4).
 error_reporting(E_ALL);
 set_error_handler('hc_error_handler');
+if (function_exists('ini_set')) {
+    ini_set('display_errors', '0');
+    ini_set('html_errors', '0');
+    ini_set('log_errors', '0');
+}
 register_shutdown_function('hc_shutdown');
 
 hc_main();
@@ -92,7 +98,7 @@ function hc_main()
     // Remember the configured limit before raising it for this run.
     $GLOBALS['hc']['max_execution_time'] = (string) ini_get('max_execution_time');
     if (function_exists('set_time_limit')) {
-        @set_time_limit(120);
+        set_time_limit(120);
     }
 
     ob_start();
@@ -206,7 +212,7 @@ function hc_auth_source()
     }
     foreach (array('getallheaders', 'apache_request_headers') as $fn) {
         if (function_exists($fn)) {
-            $headers = @call_user_func($fn);
+            $headers = call_user_func($fn);
             if (is_array($headers)) {
                 foreach ($headers as $name => $value) {
                     if (strtolower((string) $name) === 'authorization' && (string) $value !== '') {
@@ -299,7 +305,7 @@ function hc_register_masks($isCli)
     hc_mask_add(__FILE__, $ctx['script_label'] . '/' . basename(__FILE__));
     hc_mask_add(function_exists('sys_get_temp_dir') ? sys_get_temp_dir() : '', '<tmp>');
     hc_mask_add((string) ini_get('upload_tmp_dir'), '<upload-tmp>');
-    hc_mask_add(function_exists('getcwd') ? (string) @getcwd() : '', '<cwd>');
+    hc_mask_add(function_exists('getcwd') ? (string) getcwd() : '', '<cwd>');
     if (function_exists('getenv')) {
         hc_mask_add((string) getenv('HOME'), '<home>');
     }
@@ -347,17 +353,17 @@ function hc_clean($text)
     $text = hc_mask($text);
     $names = array();
     if (function_exists('gethostname')) {
-        $names[] = (string) @gethostname();
+        $names[] = (string) gethostname();
     }
     if (function_exists('get_current_user')) {
-        $names[] = (string) @get_current_user();
+        $names[] = (string) get_current_user();
     }
     if (function_exists('getenv')) {
         $names[] = (string) getenv('USER');
         $names[] = (string) getenv('LOGNAME');
     }
     if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
-        $pw = @posix_getpwuid(posix_geteuid());
+        $pw = posix_getpwuid(posix_geteuid());
         if (is_array($pw) && isset($pw['name'])) {
             $names[] = (string) $pw['name'];
         }
@@ -470,10 +476,10 @@ function hc_list_dir($path)
         $items = array();
         $dh = hc_fs('opendir', $path);
         if (is_resource($dh)) {
-            while (($entry = @readdir($dh)) !== false) {
+            while (($entry = readdir($dh)) !== false) {
                 $items[] = $entry;
             }
-            @closedir($dh);
+            closedir($dh);
         }
     }
     $out = array();
@@ -503,7 +509,7 @@ function hc_leftovers()
     $canCheck = function_exists('file_exists');
     $linkCheck = function_exists('is_link');
     foreach ($GLOBALS['hc']['cleanup'] as $dir => $parent) {
-        if (!$canCheck || @file_exists($dir) || ($linkCheck && @is_link($dir))) {
+        if (!$canCheck || file_exists($dir) || ($linkCheck && is_link($dir))) {
             $left[] = hc_mask($dir);
         }
     }
@@ -548,7 +554,7 @@ function hc_sweep_stale($parent, $label, &$removed, &$kept)
             continue;
         }
         hc_rmtree($path);
-        if (@file_exists($path)) {
+        if (file_exists($path)) {
             $kept[] = $label . '/' . $item . ' (could not remove)';
         } else {
             $removed[] = $label . '/' . $item;
@@ -642,6 +648,7 @@ function hc_render($isCli, $selftest)
         'selftest'    => $selftest,
         'php_version' => PHP_VERSION,
         'summary'     => $summary,
+        'free_bytes'  => $GLOBALS['hc']['free_bytes'],
         'checks'      => $GLOBALS['hc']['checks'],
     );
     $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES;
@@ -767,10 +774,10 @@ function hc_check_extensions()
     $hasArgon = defined('PASSWORD_ARGON2ID') && function_exists('password_hash');
     $argonWorks = false;
     if ($hasArgon) {
-        $hash = @password_hash('tiffindb-host-check', PASSWORD_ARGON2ID);
+        $hash = password_hash('tiffindb-host-check', PASSWORD_ARGON2ID);
         $argonWorks = is_string($hash) && password_verify('tiffindb-host-check', $hash);
     }
-    $bcrypt = function_exists('password_hash') && is_string(@password_hash('tiffindb-host-check', PASSWORD_BCRYPT));
+    $bcrypt = function_exists('password_hash') && is_string(password_hash('tiffindb-host-check', PASSWORD_BCRYPT));
     if ($argonWorks) {
         hc_record('crypto.argon2id', 'PASS', 'password_hash supports Argon2id.', 'argon2id');
     } elseif ($bcrypt) {
@@ -976,6 +983,31 @@ function hc_check_filesystem($ctx, $isCli)
     }
     $upOk = $up !== '' && hc_fs('is_dir', $up) && hc_fs('is_writable', $up);
     hc_record('fs.upload_tmp_writable', $upOk ? 'PASS' : 'WARN', $upOk ? 'Upload temporary directory is writable.' : 'Upload temporary directory is not writable or not visible (open_basedir?); uploads may fail.', (bool) $upOk);
+
+    // 6. Free space where the data folder would go (M7 CF7-5).
+    hc_check_free_space($ctx['outside'], $label);
+}
+
+// Free space of $dir, as reported by disk_free_space(): INFO with whole MiB
+// (rounded down), WARN under 1 GiB, "not available" when the function is
+// disabled or fails. Quotas cannot be read portably and are not shown.
+function hc_check_free_space($dir, $label)
+{
+    $free = hc_fs('disk_free_space', $dir);
+    $bytes = null;
+    if ((is_float($free) || is_int($free)) && $free >= 0 && $free < PHP_INT_MAX) {
+        $bytes = (int) $free;
+    }
+    $GLOBALS['hc']['free_bytes'] = $bytes;
+    $quota = ' Quotas set by the host are not shown.';
+    if ($bytes === null) {
+        hc_record('fs.free', 'INFO', 'Free space in ' . $label . ': not available.' . $quota, null);
+        return;
+    }
+    $mib = intdiv($bytes, HC_MIB);
+    $status = $bytes < HC_GIB ? 'WARN' : 'INFO';
+    hc_record('fs.free', $status, 'Free space in ' . $label . ': ' . $mib . ' MiB'
+        . ($status === 'WARN' ? ' (under 1 GiB)' : '') . '.' . $quota, $mib);
 }
 
 function hc_check_sqlite_file($dir, $label)
@@ -1038,18 +1070,18 @@ function hc_check_flock($dir, $label)
         hc_record('fs.flock', 'FAIL', 'Cannot open a lock file in ' . $label . '.', false);
         return;
     }
-    if (!@flock($a, LOCK_EX | LOCK_NB)) {
+    if (!flock($a, LOCK_EX | LOCK_NB)) {
         hc_fs('fclose', $a);
         hc_fs('unlink', $file);
         hc_record('fs.flock', 'FAIL', 'flock() does not work (in ' . $label . ').', false);
         return;
     }
     $b = hc_fs('fopen', $file, 'c+');
-    $excluded = is_resource($b) && !@flock($b, LOCK_EX | LOCK_NB);
+    $excluded = is_resource($b) && !flock($b, LOCK_EX | LOCK_NB);
     if (is_resource($b)) {
         hc_fs('fclose', $b);
     }
-    @flock($a, LOCK_UN);
+    flock($a, LOCK_UN);
     hc_fs('fclose', $a);
     hc_fs('unlink', $file);
     if ($excluded) {
@@ -1305,7 +1337,7 @@ function hc_http_get($target, $path, $headers)
     )));
     $errno = 0;
     $errstr = '';
-    $fp = @stream_socket_client($target['connect'], $errno, $errstr, 5, STREAM_CLIENT_CONNECT, $ctx);
+    $fp = stream_socket_client($target['connect'], $errno, $errstr, 5, STREAM_CLIENT_CONNECT, $ctx);
     if (!is_resource($fp)) {
         $res['error'] = $target['tls'] ? 'connection or TLS handshake failed' : 'connection failed';
         return $res;
@@ -1321,7 +1353,7 @@ function hc_http_get($target, $path, $headers)
         $req .= $h . "\r\n";
     }
     $req .= "\r\n";
-    if (@fwrite($fp, $req) === false) {
+    if (fwrite($fp, $req) === false) {
         fclose($fp);
         $res['error'] = 'could not send request';
         return $res;
@@ -1329,7 +1361,7 @@ function hc_http_get($target, $path, $headers)
     $buf = '';
     $timedOut = false;
     while (!feof($fp) && strlen($buf) < 131072) {
-        $chunk = @fread($fp, 8192);
+        $chunk = fread($fp, 8192);
         if ($chunk === false || $chunk === '') {
             $meta = stream_get_meta_data($fp);
             if (!empty($meta['timed_out'])) {

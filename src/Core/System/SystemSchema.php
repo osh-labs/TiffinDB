@@ -140,8 +140,9 @@ final class SystemSchema
 
     /**
      * Brings $db up to the highest version in $steps (default STEPS).
-     * Throws Unavailable('newer') when the database is already at a higher
-     * version, and \LogicException when called inside a transaction.
+     * Throws Unavailable('system-newer') when the database is already at a
+     * higher version (written by a newer TiffinDB; M7 spec part 1 section
+     * 12.2), and \LogicException when called inside a transaction.
      *
      * @param array<int, list<string>>|null $steps test seam; versions 1..N, contiguous
      * @param Clock|null $clock for the name of the copy taken before a step (default: the system clock)
@@ -155,7 +156,7 @@ final class SystemSchema
         $target = self::checkSteps($steps);
         $current = self::currentVersion($db);
         if ($current > $target) {
-            throw new Unavailable(Unavailable::NEWER);
+            throw new Unavailable(Unavailable::SYSTEM_NEWER);
         }
         for ($version = $current + 1; $version <= $target; $version++) {
             // Another process may have applied this step since the version was read.

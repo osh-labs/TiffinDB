@@ -37,11 +37,15 @@ use TiffinDB\Tests\Core\Schema\ProjectFixture;
 
 require_once __DIR__ . '/../schema/ProjectFixture.php';
 
-/** T-FORM-9: FormBinder joins a form with field definitions and plain values (M2 spec section 5.7). */
+/** T-FORM-9 and T-FORM-13: FormBinder joins a form with field definitions and plain values (M2 spec section 5.7). */
 #[CoversClass(FormBinder::class)]
 #[CoversClass(BoundForm::class)]
 #[CoversClass(BoundField::class)]
 #[CoversClass(BoundSection::class)]
+#[CoversClass(BoundHeading::class)]
+#[CoversClass(BoundParagraph::class)]
+#[CoversClass(BoundDivider::class)]
+#[CoversClass(BoundImage::class)]
 final class FormBinderTest extends TestCase
 {
     use ProjectFixture;
@@ -216,5 +220,87 @@ final class FormBinderTest extends TestCase
         self::assertSame([$this->name], $bound->editableKeys());
         self::assertFalse($bound->hasGrid());
         self::assertFalse($bound->nodes[0]->grid);
+    }
+
+    // T-FORM-13: spans and column mode (M5 spec section 8).
+
+    public function testEveryBoundKindCarriesItsSpan(): void
+    {
+        $span = static fn (string $s): Placement => new Placement(null, null, $s);
+        $form = new FormDocument([
+            new Section('details', 'Main', [
+                new FieldSlot($this->name, null, $span('8')),
+                new FieldSlot($this->price, null, $span('full')),
+                new FieldSlot($this->due),
+                new Heading(3, [new TextRun('Small')], $span('4')),
+                new Paragraph([new TextRun('Text')], $span('6')),
+                new Divider($span('12')),
+                new Image(4, 'Photo', new Placement(2, 3, '3')),
+                new Image(5, 'Placed', new Placement(2, null, null)),
+            ], $span('full')),
+            new Section('main', null, [new FieldSlot($this->notes)], $span('6')),
+            new Section('main', null, []),
+        ]);
+        $bound = $this->bind($form, new BindData(servableImages: [4]));
+
+        [$main, $half, $plain] = $bound->nodes;
+        self::assertInstanceOf(BoundSection::class, $main);
+        self::assertSame('full', $main->span);
+        self::assertTrue($main->spanFull);
+        self::assertSame(
+            ['8', 'full', null, '4', '6', '12', '3', null],
+            array_map(static fn ($n): ?string => $n->span, $main->children),
+        );
+        self::assertSame(
+            ['8', 'full', null, '4', '6', '12', '3', null],
+            array_map(static fn ($n): ?string => $n->span(), $main->children),
+        );
+        self::assertFalse($main->children[0]->spanFull);
+        self::assertTrue($main->children[1]->spanFull);
+        self::assertEquals(new BoundImage(4, 'Photo', true, new Placement(2, 3, '3'), '3'), $main->children[6]);
+        self::assertTrue($main->columns, 'Numeric spans put the Details section in column mode.');
+        self::assertTrue($main->grid, 'grid stays as built; the template chooses columns first.');
+        self::assertSame('6', $half->span);
+        self::assertFalse($half->spanFull);
+        self::assertFalse($half->columns, 'Its only child has no span.');
+        self::assertNull($plain->span);
+        self::assertFalse($plain->columns);
+        self::assertTrue($bound->columns, 'A root section spans six columns.');
+    }
+
+    public function testColumnsComeOnlyFromDirectBoundChildrenWithANumericSpan(): void
+    {
+        $span = static fn (string $s): Placement => new Placement(null, null, $s);
+
+        // Only "full" and no span: no column mode anywhere.
+        $full = $this->bind(new FormDocument([
+            new Section('details', null, [new FieldSlot($this->name, null, $span('full')), new FieldSlot($this->due)], $span('full')),
+            new FieldSlot($this->price, null, $span('full')),
+        ]), new BindData());
+        self::assertFalse($full->columns);
+        self::assertFalse($full->nodes[0]->columns);
+        self::assertTrue($full->nodes[0]->grid);
+
+        // A heading alone gives column mode.
+        $heading = $this->bind(new FormDocument([
+            new Section('main', null, [new Heading(2, [new TextRun('Card')], $span('6')), new FieldSlot($this->name)]),
+        ]), new BindData());
+        self::assertTrue($heading->nodes[0]->columns);
+        self::assertFalse($heading->columns, 'A grandchild span does not make the root a column container.');
+
+        // A dropped unknown slot does not count.
+        $dropped = $this->bind(new FormDocument([
+            new Section('main', null, [new FieldSlot('k2xq7vn4mz3t', null, $span('4')), new FieldSlot($this->name)]),
+            new FieldSlot('b7xk2mq4nz3p', null, $span('6')),
+        ]), new BindData());
+        self::assertFalse($dropped->nodes[0]->columns);
+        self::assertFalse($dropped->columns);
+        self::assertCount(1, $dropped->nodes);
+
+        // A root field with a span puts the root in column mode.
+        $root = $this->bind(new FormDocument([new FieldSlot($this->name, null, $span('4')), new Divider()]), new BindData());
+        self::assertTrue($root->columns);
+        self::assertSame('4', $root->nodes[0]->span);
+        self::assertNull($root->nodes[1]->span);
     }
 }

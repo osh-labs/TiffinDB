@@ -185,9 +185,11 @@ final class FileServingTest extends TestCase
         $id = $this->attach(FileFixture::pdf(), 'x.pdf');
         $this->core->projectDb($this->project)->run('UPDATE "_tiffin_attachments" SET "original_name" = ? WHERE "id" = ?', [str_repeat("\u{1F4E6}", 5000) . '.pdf', $id]);
         $header = (string) $this->get(self::MEMBER, $this->serve($id))->header('Content-Disposition');
-        // 255 code points at most (P181): 255 emoji are 1,020 `_` and 3,060 percent-encoded characters.
+        // 255 code points at most (P181), keeping the extension (P187, M7 CF7-3):
+        // 251 emoji and `.pdf` are 1,004 `_` and 3,012 percent-encoded characters.
         self::assertLessThan(4200, strlen($header));
-        self::assertSame(255, substr_count($header, '%F0%9F%93%A6'));
+        self::assertSame(251, substr_count($header, '%F0%9F%93%A6'));
+        self::assertStringEndsWith('.pdf', $header);
     }
 
     // Refusals: the plain 404 page (ADR 0018 decision 5).

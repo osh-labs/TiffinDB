@@ -1,6 +1,6 @@
 # TiffinDB Project Plan
 
-Status: draft 5, planning phase. No application code exists yet.
+Status: draft 5. Milestones M0 to M4 are built and closed (see `docs/build/ledger.md`); M5 is next.
 Decisions referenced here are recorded in `docs/decisions/`. The visual design is covered by `docs/ui-design-plan.md`.
 
 ## 1. Goal

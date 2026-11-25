@@ -214,10 +214,12 @@ final class ProjectFile
             // The connection settings could not be applied: the file is not an SQLite database.
             throw new Unavailable(Unavailable::NOT_PROJECT);
         }
+        $migrations ??= new FormatMigrations();
         try {
-            $version = self::checkIdentity($db, $expectedKey);
-            if ($version < self::VERSION) {
-                ($migrations ?? new FormatMigrations())->upgrade($db, dirname($path), $snapshots, $version);
+            // The target is VERSION, except with the test seam's simulated next step (T-UPG-5).
+            $version = self::checkIdentity($db, $expectedKey, $migrations->target());
+            if ($version < $migrations->target()) {
+                $migrations->upgrade($db, dirname($path), $snapshots, $version);
             }
         } catch (\Throwable $error) {
             $db->close();
@@ -245,7 +247,7 @@ final class ProjectFile
     }
 
     /** The file's format version, after checking application id, format, version, and key. */
-    private static function checkIdentity(Database $db, string $expectedKey): int
+    private static function checkIdentity(Database $db, string $expectedKey, int $newest): int
     {
         try {
             $applicationId = $db->value('PRAGMA application_id');
@@ -259,7 +261,7 @@ final class ProjectFile
         if ($applicationId !== self::APPLICATION_ID || $format !== self::FORMAT || !is_int($version) || $version < 0) {
             throw new Unavailable(Unavailable::NOT_PROJECT);
         }
-        if ($version > self::VERSION) {
+        if ($version > $newest) {
             throw new Unavailable(Unavailable::NEWER);
         }
         if ($projectKey !== $expectedKey) {

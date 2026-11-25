@@ -13,6 +13,7 @@ use TiffinDB\Core\App\AuditOperations;
 use TiffinDB\Core\App\Operations;
 use TiffinDB\Core\Auth\Role;
 use TiffinDB\Core\Error\AccessDenied;
+use TiffinDB\Core\Install\RecoveryCode;
 use TiffinDB\Core\Schema\Cardinality;
 use TiffinDB\Core\System\AuditAction;
 use TiffinDB\Core\System\AuditEntry;
@@ -174,8 +175,17 @@ final class AuditTrailTest extends AppTestCase
         $projects->delete($this->admin, $shed->key, 'example shed', 0);
         $expect(AuditAction::PROJECT_DELETED, $admin, null, 'project', $shed->key, ['name' => 'Example Shed', 'records' => 0, 'trashed' => 0, 'files' => 0, 'snapshots' => 0]);
 
+        // M7 (spec section 11.2, T-REC-13): no acting person; never the code or a path.
+        $recovery = $this->ops->recovery();
+        $recovery->start(true, CoreFixture::ADDRESS);
+        $expect(AuditAction::RECOVERY_STARTED, null, null, null, null, ['written' => true]);
+        $code = RecoveryCode::current($this->fx->data->path(), $this->fx->clock->now());
+        self::assertNotNull($code);
+        self::assertSame('done', $recovery->recover(true, 'admin', $code, self::NEW, self::NEW, CoreFixture::ADDRESS)->outcome);
+        $expect(AuditAction::RECOVERED, null, null, 'user', $this->admin->userKey);
+
         $all = json_encode($this->auditEntries(), JSON_THROW_ON_ERROR);
-        foreach (['Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987', 'Synthetic form note'] as $text) {
+        foreach ([$code, str_replace('-', '', $code), RecoveryCode::FILE, 'Synthetic basil', 'basil.csv', 'garden.zip', '.csv', 'synthetic-leaf', 'Synthetic tall', '987', 'Synthetic form note'] as $text) {
             self::assertStringNotContainsString($text, $all);
         }
 

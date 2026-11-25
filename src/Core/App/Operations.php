@@ -46,12 +46,16 @@ final class Operations
     private ?AttachmentOperations $attachments = null;
     private ?CollectionOperations $collections = null;
     private ?FormOperations $forms = null;
+    private ?RecoveryOperations $recovery = null;
+    private ?AboutOperations $about = null;
 
     /**
      * @param (\Closure(string): void)|null $seam Test seam (T-APP-30), not for
      *        production use: called with a point name inside a guarded
      *        system-database write, after the check and before the change
-     *        (`people.last_admin`).
+     *        (`people.last_admin`); and `recovery.hashed`, between the
+     *        recovery throttle check and the write that checks the code
+     *        (M7 spec section 9.3 steps 4 and 5), outside any write.
      */
     public function __construct(
         SystemDatabase $system,
@@ -143,6 +147,18 @@ final class Operations
     public function forms(): FormOperations
     {
         return $this->forms ??= new FormOperations($this->context);
+    }
+
+    /** Admin recovery by a code file (M7 spec section 9); the person is signed out. */
+    public function recovery(): RecoveryOperations
+    {
+        return $this->recovery ??= new RecoveryOperations($this->context);
+    }
+
+    /** The About facts (M7 spec section 10), from this installation's own application root. */
+    public function about(): AboutOperations
+    {
+        return $this->about ??= new AboutOperations($this->context);
     }
 
     /**

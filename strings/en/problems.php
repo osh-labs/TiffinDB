@@ -169,4 +169,6 @@ return [
     'problem.project.delete_name' => 'Type the project\'s name exactly as it is shown above.',
     'problem.project.delete_failed' => 'TiffinDB could not move the project folder, so nothing was deleted. The person who looks after this TiffinDB can check the data folder.',
     'problem.lock.unavailable' => 'This server cannot lock files, so TiffinDB cannot do this safely here. Nothing was changed. The host documentation describes how to do it by hand.',
+    'problem.password.mismatch' => 'The two new passwords are different.',
+    'problem.recovery.failed' => 'That did not work. Check the username and the code, or start again for a new code.',
 ];

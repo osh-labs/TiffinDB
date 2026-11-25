@@ -10,7 +10,8 @@
  * Data: `signedOut` (bool), `username` (the submitted username, or ''),
  * `error` ('invalid', 'throttled', or null), `throttledText` (the
  * formatted problem.throttled text, or null). The password is never
- * printed back.
+ * printed back. M7: `recovered` (bool: the notice after Admin
+ * recovery) and `recoveryLink` (bool: the link to /recover).
  */
 
 declare(strict_types=1);
@@ -19,6 +20,11 @@ declare(strict_types=1);
 <?php if ($data['signedOut'] === true) : ?>
 <div class="form-narrow">
 <?= $this->partial('notice', ['key' => 'notice.signed_out', 'params' => [], 'tone' => 'info']) ?>
+</div>
+<?php endif; ?>
+<?php if ($data['recovered'] === true) : ?>
+<div class="form-narrow">
+<?= $this->partial('notice', ['key' => 'notice.recovered', 'params' => [], 'tone' => 'info']) ?>
 </div>
 <?php endif; ?>
 <form class="form form-card form-narrow" method="post" action="<?= $this->url('/sign-in') ?>">
@@ -53,3 +59,6 @@ declare(strict_types=1);
 <?= $this->partial('form-actions', ['submit' => 'signin.submit', 'block' => true, 'cancel' => null]) ?>
 <p class="form-note"><?= $this->t('signin.reset_note') ?></p>
 </form>
+<?php if ($data['recoveryLink'] === true) : ?>
+<p class="help form-narrow"><a href="<?= $this->url('/recover') ?>"><?= $this->t('signin.recover') ?></a></p>
+<?php endif; ?>

@@ -76,6 +76,13 @@ final class ScreenStructureTest extends TestCase
         \TiffinDB\Web\Controller\SnapshotController::class,
     ];
 
+    /** The M7 activity, About, and recovery controllers (M7-WP5); T-SCR-6 visits every GET route they handle. */
+    private const M7_ADMIN_CONTROLLERS = [
+        \TiffinDB\Web\Controller\AuditController::class,
+        \TiffinDB\Web\Controller\AboutController::class,
+        \TiffinDB\Web\Controller\RecoveryController::class,
+    ];
+
     private const PASSWORD = 'example admin passphrase 1';
     private const MEMBER_TEMPORARY = 'temporary words 0101';
     private const MEMBER_PASSWORD = 'example member passphrase 2';
@@ -345,6 +352,9 @@ final class ScreenStructureTest extends TestCase
 
         // M7 snapshot and deletion screens (T-SCR-6, M7-WP4), on Home Inventory and Recipes.
         $this->m7SnapshotScreens($admin, $home, $recipes);
+
+        // M7 activity, About, and recovery screens (T-SCR-6, M7-WP5).
+        $this->m7AdminScreens($admin);
 
         // Signing out, and the signed-out sign-in page.
         self::assertSame(303, $admin->submit('/sign-out')->status);
@@ -769,6 +779,114 @@ final class ScreenStructureTest extends TestCase
         foreach ($m5Patterns as $pattern) {
             self::assertContains($pattern, $visited, "{$pattern} is visited.");
         }
+    }
+
+    /**
+     * T-SCR-6 (M7 screens spec section 11.1, M7-WP5): the activity, About,
+     * licence, and recovery pages in each state their designs under
+     * docs/design/m7/ list that a GET can reach, over a CoreFixture with
+     * synthetic audit entries, as the Admin, as the Member (403 on the
+     * activity page; About without server facts), and signed out (the
+     * recovery page; with `admin_recovery` off its routes are 404 and the
+     * sign-in page has no link to it). States reached only by a POST (422,
+     * 429) are covered by RecoveryScreenTest and KeyboardStructureTest.
+     */
+    public function testEveryM7AdminScreenInEveryState(): void
+    {
+        $core = new CoreFixture();
+        try {
+            $core->clock->set('2026-11-03T10:00:00Z');
+            $config = Fixtures::config(false) + ['data_dir' => $core->temp->path('data'), 'timezone' => 'UTC'];
+            $services = static fn (string $seed): CoreServices => new CoreServices($config, Fixtures::appRoot(), $core->clock, new SeededRandom($seed), $core->hasher);
+            $kernel = new Kernel($config, Fixtures::appRoot(), null, $services('tiffindb-screen-structure-m7-seed'));
+            $admin = $this->signIn($kernel, 'admin');
+            $member = $this->signIn($kernel, 'member');
+            $main = fn (EndToEndClient $client): string => (string) $client->xpath()->query('//main/@class')->item(0)?->nodeValue;
+            $entries = fn (EndToEndClient $client): int => $client->xpath()->query('//ol[@class="audit-list"]/li[@class="audit-entry"]')->length;
+
+            // Activity (audit.md section 2): no filters, filtered, last page, empty result.
+            $audit = new \TiffinDB\Core\System\AuditLog($core->system, $core->clock);
+            for ($i = 0; $i < 60; $i++) {
+                $audit->record('snapshot.taken', $core->person('admin')->id);
+            }
+            $this->screen($admin, '/admin/activity', 'Activity', 'Activity');
+            self::assertSame('page page-io', $main($admin));
+            self::assertSame(50, $entries($admin));
+            self::assertSame(0, $admin->xpath()->query('//a[normalize-space(.)="Show everything"]')->length, 'No Show everything without a filter.');
+            $adminKey = $core->person('admin')->key;
+            $this->screen($admin, '/admin/activity?person=' . $adminKey . '&action=auth.sign_in', 'Activity', 'Activity');
+            self::assertSame(1, $entries($admin));
+            self::assertSame(['Example Admin signed in.'], $admin->texts('//p[@class="audit-what"]'));
+            self::assertSame(1, $admin->xpath()->query('//a[normalize-space(.)="Show everything"]')->length);
+            self::assertSame('auth.sign_in', (string) $admin->xpath()->query('//select[@name="action"]/option[@selected]/@value')->item(0)?->nodeValue);
+            $this->screen($admin, '/admin/activity?page=2', 'Activity', 'Activity');
+            self::assertSame(12, $entries($admin), '60 snapshots and two sign-ins: 12 on the last page.');
+            self::assertSame(1, $admin->xpath()->query('//nav[@class="pager"]//span[@aria-disabled="true"][normalize-space(.)="Next"]')->length);
+            $this->screen($admin, '/admin/activity?project=deleted', 'Activity', 'Activity');
+            self::assertSame(0, $entries($admin));
+            self::assertSame(['Nothing matches these choices.'], $admin->texts('//p[@class="empty-state-title"]'));
+            $this->visit('/admin/activity', 403, $member);
+
+            // About (about.md section 2): the Admin with server facts, the Member without; licence pages.
+            $this->screen($admin, '/about', 'About TiffinDB', 'About TiffinDB');
+            self::assertSame('page page-settings', $main($admin));
+            self::assertSame(['Made with', 'Plugins', 'This server'], $admin->texts('//main//h2'));
+            $this->screen($member, '/about', 'About TiffinDB', 'About TiffinDB');
+            self::assertSame(['Made with', 'Plugins'], $member->texts('//main//h2'));
+            $this->screen($member, '/about/licences/tiffindb', 'Licence: TiffinDB', 'Licence: TiffinDB');
+            self::assertSame('page page-settings', $main($member));
+            self::assertSame(1, $member->xpath()->query('//pre[@class="licence-text"]')->length);
+            $this->screen($admin, '/about/licences/openspout', 'Licence: OpenSpout', 'Licence: OpenSpout');
+            self::assertSame(['LICENSE', 'LICENSE-for-cc42c1d'], $admin->texts('//main//h2'));
+            $this->visit('/about/licences/no-such-part', 404, $admin);
+            $this->visit('/about/licences/Not_An_Id', 404, $admin);
+
+            // Recovery (recovery.md sections 2 and 3), signed out: the page, after starting, the sign-in link and notice.
+            $guest = new EndToEndClient($kernel);
+            $this->screen($guest, '/sign-in', 'Sign in', 'Sign in');
+            self::assertSame(['Locked out of the Admin account?'], $guest->texts('//main//p[@class="help form-narrow"]/a[@href="/recover"]'));
+            $this->screen($guest, '/recover', 'Get back into an Admin account', 'Get back into an Admin account');
+            self::assertSame('page page-plain', $main($guest));
+            self::assertSame(303, $guest->submit('/recover/start')->status);
+            $this->screen($guest, '/recover?started=1', 'Get back into an Admin account', 'Get back into an Admin account');
+            self::assertSame(1, $guest->xpath()->query('//main//section//div[@role="status"]')->length, 'The started text.');
+            $this->screen($guest, '/sign-in?recovered=1', 'Sign in', 'Sign in', 'The password has been changed. Sign in with the new password.');
+            $this->visit('/recover', 303, $admin);
+
+            // With admin_recovery off: the recovery routes are not found and the sign-in page has no link.
+            $off = new EndToEndClient(new Kernel(['admin_recovery' => false] + $config, Fixtures::appRoot(), null, $services('tiffindb-screen-structure-m7-off-seed')));
+            $this->screen($off, '/sign-in', 'Sign in', 'Sign in');
+            self::assertSame(0, $off->xpath()->query('//a[@href="/recover"]')->length);
+            $this->visit('/recover', 404, $off);
+        } finally {
+            $core->remove();
+        }
+
+        $m7Patterns = [];
+        foreach (Fixtures::applicationRoutes() as $route) {
+            if (is_array($route) && $route[0] === 'GET' && in_array($route[2][0], self::M7_ADMIN_CONTROLLERS, true)) {
+                $m7Patterns[] = (string) $route[1];
+            }
+        }
+        self::assertCount(4, $m7Patterns, 'Four M7-WP5 GET routes.');
+        $visited = array_values(array_unique($this->visited));
+        foreach ($m7Patterns as $pattern) {
+            self::assertContains($pattern, $visited, "{$pattern} is visited.");
+        }
+    }
+
+    /**
+     * The M7-WP5 screens inside testEveryScreenInEveryState, so that its
+     * every-route check covers them: the activity page, About, a licence
+     * page as the Admin, and the recovery page signed out.
+     */
+    private function m7AdminScreens(EndToEndClient $admin): void
+    {
+        $this->screen($admin, '/admin/activity', 'Activity', 'Activity');
+        $this->screen($admin, '/about', 'About TiffinDB', 'About TiffinDB');
+        $this->screen($admin, '/about/licences/inter', 'Licence: Inter', 'Licence: Inter');
+        $guest = new EndToEndClient($this->kernel);
+        $this->screen($guest, '/recover', 'Get back into an Admin account', 'Get back into an Admin account');
     }
 
     /**

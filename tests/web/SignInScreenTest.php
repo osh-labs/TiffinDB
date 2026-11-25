@@ -489,4 +489,45 @@ final class SignInScreenTest extends TestCase
         self::assertSame(['key' => 'notice.password_changed', 'params' => []], $this->services->flash[$new->value] ?? null);
         self::assertStringNotContainsString(self::NEW_PASSWORD, $done->body);
     }
+
+    // ---------------------------------------------------------------- M7: recovery link and notice (T-WEB-92)
+
+    public function testTheRecoveryLinkIsBelowTheFormByDefault(): void
+    {
+        $response = $this->send('GET', '/sign-in');
+        $x = self::assertPage($response, 200, 'Sign in - TiffinDB', 'Sign in');
+        $link = $x->query('//main/p[@class="help form-narrow"]/a[@href="/recover"]');
+        self::assertSame(1, $link->length);
+        self::assertSame('Locked out of the Admin account?', trim((string) $link->item(0)?->textContent));
+        self::assertSame(1, $x->query('//main/form/following-sibling::p/a[@href="/recover"]')->length, 'Below the form.');
+        self::assertSame(0, $x->query('//main//*[@role="status"]')->length, 'No notice without ?recovered=1.');
+
+        // After a failed attempt and when throttled, the link stays.
+        $failed = $this->send('POST', '/sign-in', ['username' => 'admin', 'password' => 'wrong words 1']);
+        self::assertSame(1, self::assertPage($failed, 422, 'Error: Sign in - TiffinDB', 'Sign in')->query('//a[@href="/recover"]')->length);
+    }
+
+    public function testNoRecoveryLinkWhenRecoveryIsOff(): void
+    {
+        $response = $this->send('GET', '/sign-in', [], null, [], ['admin_recovery' => false]);
+        $x = self::assertPage($response, 200, 'Sign in - TiffinDB', 'Sign in');
+        self::assertSame(0, $x->query('//a[@href="/recover"]')->length);
+        self::assertStringNotContainsString('Locked out', $response->body);
+    }
+
+    public function testTheRecoveredNoticeAfterRecovery(): void
+    {
+        $response = $this->send('GET', '/sign-in?recovered=1');
+        $x = self::assertPage($response, 200, 'Sign in - TiffinDB', 'Sign in');
+        self::assertSame(
+            'The password has been changed. Sign in with the new password.',
+            HtmlAssertions::text($response->body, '//main/div[@class="form-narrow"]/div[@class="notice"][@role="status"]'),
+        );
+        self::assertSame(1, $x->query('//main/div[@class="form-narrow"]/following-sibling::form[@action="/sign-in"]')->length, 'Above the form.');
+        foreach (['/sign-in?recovered=0', '/sign-in?recovered[]=1', '/sign-in?recovered=%3Cb%3E'] as $uri) {
+            $other = $this->send('GET', $uri);
+            self::assertSame(200, $other->status, $uri);
+            self::assertStringNotContainsString('The password has been changed.', $other->body, $uri);
+        }
+    }
 }

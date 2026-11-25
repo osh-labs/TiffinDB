@@ -6,7 +6,7 @@ Single source of truth for the v1 build. Updated and pushed after every state ch
 
 | Item | Value |
 |---|---|
-| Milestone | M4 CLOSED 2026-11-22; M5 starting (session plan approved by the maintainer) |
+| Milestone | M5 CLOSED 2026-11-23; M7 part 1 complete, release candidate built; M6 deferred to the end; M7 part 2 gated (G7-release) |
 | Phase | Phase 0 (resume set-up) of `docs/build/M5-M7-session-plan.md` section 5 done. The M0 to M4 work is carried on the assigned integration branch `claude/determined-johnson-d3rjl1`. Suite 9498 tests OK (1 skipped), lint 786 files 0 failed |
 | Window start | 2026-11-22 (assigned integration branch `claude/determined-johnson-d3rjl1`) |
 | Resume reminder | none armed (not armed in Phase 0) |

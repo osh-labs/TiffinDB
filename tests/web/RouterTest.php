@@ -270,6 +270,8 @@ final class RouterTest extends TestCase
             ['POST', '/projects/{project}/settings', 'ProjectController::settings', 'user'],
             ['GET', '/projects/{project}/sharing', 'SharingController::form', 'user'],
             ['POST', '/projects/{project}/sharing', 'SharingController::save', 'user'],
+            ['GET', '/projects/{project}/delete', 'ProjectController::deleteForm', 'user'],
+            ['POST', '/projects/{project}/delete', 'ProjectController::delete', 'user'],
             ['GET', $s, 'SnapshotController::index', 'user'],
             ['POST', $s, 'SnapshotController::take', 'user'],
             ['GET', $s . '/{snapshot}/restore', 'SnapshotController::restoreForm', 'user'],
@@ -621,6 +623,24 @@ final class RouterTest extends TestCase
         }
         self::assertGreaterThan($at('POST /admin/plugins/{kind}/{plugin}/disable'), $at('GET /admin/activity'));
 
+        // The two project deletion routes (M7-WP4), on the existing ProjectController.
+        $delete = [
+            ['GET', '/projects/{project}/delete', 'ProjectController::deleteForm', 'user'],
+            ['POST', '/projects/{project}/delete', 'ProjectController::delete', 'user'],
+        ];
+        $deleteActual = [];
+        foreach (Router::applicationRoutes() as $route) {
+            [$method, $pattern, [$class, $name], $access] = $route;
+            if ($class === \TiffinDB\Web\Controller\ProjectController::class && in_array($name, ['deleteForm', 'delete'], true)) {
+                $deleteActual[] = [$method, $pattern, 'ProjectController::' . $name, $access];
+            }
+        }
+        self::assertSame($delete, $deleteActual);
+        foreach ($delete as [$method, $pattern]) {
+            self::assertGreaterThan($at('POST /projects/{project}/sharing'), $at("{$method} {$pattern}"), "{$method} {$pattern}");
+            self::assertLessThan($at('GET /projects/{project}/import'), $at("{$method} {$pattern}"), "{$method} {$pattern}");
+        }
+
         $router = new Router(Router::applicationRoutes());
         $project = '/projects/abcdefghijkl';
         $snapshot = '20261112T031500Z-manual-k3m7';
@@ -635,6 +655,9 @@ final class RouterTest extends TestCase
         self::assertTrue($router->match('GET', $project . '/snapshots/' . $snapshot)->isNotFound());
         self::assertTrue($router->match('GET', $project . '/snapshots/a.tiffin/restore')->isNotFound());
         self::assertTrue($router->match('POST', '/admin/activity')->isMethodNotAllowed());
+        self::assertSame('deleteForm', $router->match('GET', $project . '/delete')->handler[1] ?? null);
+        self::assertSame('delete', $router->match('POST', $project . '/delete')->handler[1] ?? null);
+        self::assertSame(AccessLevel::User, $router->match('POST', $project . '/delete')->access);
     }
 
     /**

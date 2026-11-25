@@ -42,6 +42,7 @@ final class ProjectLockTest extends TestCase
     protected function tearDown(): void
     {
         ProjectLock::$waitScaleForTests = 1.0;
+        ProjectLock::$flockDisabledForTests = false;
         foreach ($this->holders as $holder) {
             $holder->stop();
         }
@@ -206,5 +207,15 @@ final class ProjectLockTest extends TestCase
         } catch (LocksUnavailable) {
             $this->addToAssertionCount(1);
         }
+    }
+
+    public function testWithFlockDisabledSharedIsNoLockAndExclusiveRefuses(): void
+    {
+        ProjectLock::$flockDisabledForTests = true;
+        self::assertNull(ProjectLock::shared($this->folder));
+        $this->expectUnavailable(fn () => ProjectLock::exclusive($this->folder));
+        $this->expectUnavailable(fn () => ProjectLock::tryExclusive($this->folder));
+        ProjectLock::$flockDisabledForTests = false;
+        self::assertSame('held', $this->hold('exclusive')->answer, 'No descriptor was left holding anything.');
     }
 }

@@ -207,7 +207,8 @@ final class StagingArea
         if (!is_resource($handle)) {
             return false;
         }
-        $free = flock($handle, LOCK_EX | LOCK_NB);
+        // Where flock is disabled the lock cannot be tested: the entry is kept, never removed under a running deletion.
+        $free = function_exists('flock') && flock($handle, LOCK_EX | LOCK_NB);
         if ($free) {
             flock($handle, LOCK_UN);
         }

@@ -48,6 +48,8 @@ final class AuditAction
     public const FORM_RESET = 'form.reset';
     public const SNAPSHOT_RESTORED = 'snapshot.restored';
     public const PROJECT_DELETED = 'project.deleted';
+    public const RECOVERY_STARTED = 'auth.recovery_started';
+    public const RECOVERED = 'auth.recovered';
 
     /** Values of the `reason` detail of auth.sign_in_failed. */
     public const REASON_UNKNOWN_USER = 'unknown-user';
@@ -65,6 +67,7 @@ final class AuditAction
         self::ARCHIVE_EXPORTED, self::ARCHIVE_IMPORTED, self::PLUGIN_ENABLED, self::PLUGIN_DISABLED,
         self::ATTACHMENT_ADDED, self::ATTACHMENT_REMOVED, self::COLLECTION_SAVED, self::COLLECTION_DELETED,
         self::FORM_SAVED, self::FORM_RESET, self::SNAPSHOT_RESTORED, self::PROJECT_DELETED,
+        self::RECOVERY_STARTED, self::RECOVERED,
     ];
 
     private function __construct()

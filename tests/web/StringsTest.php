@@ -27,7 +27,7 @@ use UnexpectedValueException;
 final class StringsTest extends TestCase
 {
     /** The M7 packages whose problem rows (M7 spec section 11.3) are built; each adds its own. */
-    private const M7_PROBLEM_PACKAGES = ['WP1'];
+    private const M7_PROBLEM_PACKAGES = ['WP1', 'WP2'];
 
     private static function strings(): Strings
     {
@@ -333,7 +333,7 @@ final class StringsTest extends TestCase
                 $m7[$key] = $cell[2];
             }
         }
-        self::assertCount(4, $m7, 'The M7 specification table was read.');
+        self::assertCount(6, $m7, 'The M7 specification table was read.');
         self::assertSame([], array_intersect_key($m1 + $m2 + $m3 + $m4 + $m5, $m7), 'The M7 table adds keys only.');
 
         $problems = require RepoFiles::path('strings/en/problems.php');

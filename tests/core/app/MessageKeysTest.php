@@ -43,7 +43,7 @@ final class MessageKeysTest extends TestCase
     private const PENDING_SPEC_KEYS = [];
 
     /** The M7 packages whose rows of M7 spec section 11.3 are built (each package adds its own). */
-    private const M7_PACKAGES = ['WP1'];
+    private const M7_PACKAGES = ['WP1', 'WP2'];
 
     /** Keys FormOperations produces itself (M5 spec section 9). */
     private const M5_APP_KEYS = [

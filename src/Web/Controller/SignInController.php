@@ -21,6 +21,10 @@ use TiffinDB\Web\Response;
  * (Invalid or Throttled, and the wait), never on whether the username
  * exists, so unknown and known usernames get the same answer. The
  * password is never printed back.
+ *
+ * M7: the page links to Admin recovery when `admin_recovery` is on, and
+ * shows the "password changed" notice after `?recovered=1` (M7 screens
+ * spec section 9; docs/design/m7/recovery.md section 2).
  */
 final class SignInController
 {
@@ -28,12 +32,13 @@ final class SignInController
     {
     }
 
-    /** GET /sign-in, optionally with `?signed-out=1`. */
+    /** GET /sign-in, optionally with `?signed-out=1` or `?recovered=1` (after Admin recovery). */
     public function form(Request $request): Response
     {
         $signedOut = ($request->query['signed-out'] ?? null) === '1';
+        $recovered = ($request->query['recovered'] ?? null) === '1';
 
-        return $this->render($signedOut, '', null, null, 200);
+        return $this->render($signedOut, '', null, null, 200, $recovered);
     }
 
     /** POST /sign-in. */
@@ -75,7 +80,7 @@ final class SignInController
     }
 
     /** @param 'invalid'|'throttled'|null $error */
-    private function render(bool $signedOut, string $username, ?string $error, ?string $throttledText, int $status): Response
+    private function render(bool $signedOut, string $username, ?string $error, ?string $throttledText, int $status, bool $recovered = false): Response
     {
         return $this->context->plainPage('sign-in', [
             'title' => $this->context->view()->text('signin.title'),
@@ -85,6 +90,8 @@ final class SignInController
             'username' => $username,
             'error' => $error,
             'throttledText' => $throttledText,
+            'recovered' => $recovered,
+            'recoveryLink' => $this->context->adminRecovery(),
         ], $status);
     }
 }
